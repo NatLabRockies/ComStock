@@ -120,7 +120,7 @@ def main():
         database = "enduse"
         dataset_name = f"{comstock.comstock_run_name}/{comstock.comstock_run_name}" # name of the dir in s3_dir we want to make new tables and views for
         crawler_name = comstock.comstock_run_name # used to set name of crawler, cannot include slashes
-        workgroup = "eulp"  # Athena workgroup to use
+        workgroup = "buildstock"  # Athena workgroup; matches comstockpostproc.athena_config.ATHENA_WORKGROUP
         glue_service_role = "service-role/AWSGlueServiceRole-default"
 
         # Export parquet files to S3 for Athena/Glue

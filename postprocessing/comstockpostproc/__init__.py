@@ -1,5 +1,6 @@
 # ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
+from .athena_config import ATHENA_WORKGROUP
 from .comstock import ComStock
 from .cbecs import CBECS
 from .eia import EIA
