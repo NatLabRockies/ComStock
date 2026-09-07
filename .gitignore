@@ -36,6 +36,7 @@ postprocessing/compare_comstock_to_cbecs.py
 postprocessing/compare_comstock_to_eia.py
 postprocessing/compare_runs.py
 postprocessing/compare_upgrades.py
+postprocessing/compare_calibration.py
 postprocessing/extract_models_and_errors.py
 
 # Rubocop output

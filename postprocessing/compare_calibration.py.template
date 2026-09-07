@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Calibration / QAQC assessment: a ComStock run vs CBECS, AMI, and past releases.
+
+Writes metric CSVs plus one self-contained dashboard.html to /output.
+Deterministic -- Athena SQL, pandas, and a hand-written JS bundle. No model.
+
+RUN THIS AFTER create_sightglass_tables. The assessment reads the published
+Athena aggregate tables that step's Glue crawlers create. It probes for them and
+skips with a stated reason if they are absent, so leaving it enabled is safe even
+on a run that never creates Athena tables.
+"""
+
+import logging
+
+import comstockpostproc as cspp
+
+logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
+logger = logging.getLogger(__name__)
+
+
+def main():
+    # The run under review.
+    comstock = cspp.ComStock(
+        s3_base_dir='com-sdr',  # If run not on S3, download results_up**.parquet manually
+        comstock_run_name='your_run_name',  # Name of the run on S3
+        comstock_run_version='your_run_name',  # Used in plot and folder names
+        comstock_year=2018,  # Typically don't change this
+        athena_table_name=None,  # Typically don't change this
+        truth_data_version='v01',  # Typically don't change this
+        buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
+        acceptable_failure_percentage=0.25,
+        drop_failed_runs=True,
+        color_hex='#0072B2',  # Color used to represent this run
+        skip_missing_columns=True,
+        reload_from_cache=False,
+        include_upgrades=True,  # False if not looking at upgrades
+        )
+
+    # CBECS. Optional, but without it the annual, distribution and heating-fuel
+    # legs skip. Its export must have been run so 'CBECS wide.csv' exists.
+    cbecs = cspp.CBECS(
+        cbecs_year=2018,  # 2012 and 2018 currently available
+        truth_data_version='v01',
+        color_hex='#009E73',
+        reload_from_csv=True,
+        )
+    # cbecs.export_to_csv_wide()  # uncomment the first time
+
+    # AMI. Optional; without it only the AMI leg skips. Needs 'AMI long.csv'.
+    # ami = cspp.AMI(truth_data_version='v01')
+
+    # Published releases to compare against, addressed by their Athena tables
+    # alone -- no local simulation results, no buildstock.csv, no apportionment.
+    r3_2025 = cspp.AthenaRunRef(
+        key='r3_2025',
+        label='2025 R3',
+        md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
+        database='buildstock_sdr',   # published releases live here
+        color='#E69F00',
+        )
+
+    # The assessment. `enabled` defaults to True; a missing Athena table skips
+    # the step with a stated reason rather than failing the run.
+    #
+    # `database` is where THIS run's crawled tables live. Set it deliberately:
+    # create_sightglass_tables writes to 'vizstock' by default while other
+    # postprocessing code reads 'enduse'.
+    #
+    # `include_measures` defaults to the run's own upgrade list, baseline
+    # excluded. Pass [] to skip the measure legs, or a list of ids to restrict
+    # them. Do not rely on include_upgrades or upgrade_ids_to_skip for this.
+    calib = cspp.CalibrationAssessment(
+        comstock,
+        cbecs=cbecs,
+        ami=None,                        # pass `ami` once its export exists
+        comparison_runs=[r3_2025],       # [] for a single-run assessment
+        database='enduse',
+        measure_states='CO',             # states for the measure timeseries leg
+        # enabled=True,
+        # include_measures=None,
+        # output_dir=None,               # defaults to output/Calibration <run>
+        )
+
+    if calib.skipped_reason:
+        logger.warning('calibration assessment skipped: %s', calib.skipped_reason)
+    else:
+        logger.info('dashboard: %s', calib.dashboard_path)
+
+
+# Code to execute the script
+if __name__ == "__main__":
+    main()

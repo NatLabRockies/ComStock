@@ -141,6 +141,35 @@ $ pip install -e .[dev,gap]
 4. Look in the `/output` directory for results
 
 
+### Calibration / QAQC assessment
+
+Compares one or more ComStock runs against CBECS, AMI, and each other, writing
+metric CSVs plus one self-contained `dashboard.html`. Deterministic: Athena SQL,
+pandas, and a hand-written JS bundle.
+
+It reads the published Athena aggregate tables that `create_sightglass_tables`
+creates, so it must run **after** that step. It is safe to leave enabled either
+way -- if the tables are not reachable it skips with a stated reason rather than
+failing the run.
+
+1. Copy the `compare_calibration.py.template` file to `compare_calibration.py`
+2. Edit `compare_calibration.py` to point at the run you are reviewing, and at
+   any published releases you want to compare against
+3. Open an Anaconda prompt, activate the environment, and run the file:
+    ```
+    $ conda activate comstockpostproc
+    $ python compare_calibration.py
+    ```
+4. Look in the `/output` directory for results, and open `dashboard.html`
+
+Notes:
+ - A comparison release is referenced by its Athena tables alone (`AthenaRunRef`),
+   so it needs no local simulation results and no apportionment.
+ - `cbecs` and `ami` are optional. Each must have had its export run
+   (`export_to_csv_wide()`), and a missing one skips only the legs that need it.
+ - The upgrade list is taken from the run's own data. Do not rely on
+   `include_upgrades` or `upgrade_ids_to_skip` to control it.
+
 ### NREL Staff - Extracting simulations and summarizing EnergyPlus warnings and errors on HPC
 
 1. First time only: install `comstockpostproc` to your `comstockpostproc_<myname>` environment on HPC (see installation instructions above)
