@@ -519,7 +519,7 @@ class CalibrationAssessment:
     """
 
     def __init__(self, comstock, cbecs=None, ami=None, comparison_runs=(),
-                 enabled: bool = True, database: str = "enduse",
+                 comparison=None, enabled: bool = True, database: str = "enduse",
                  output_dir=None, region: str = "all",
                  measure_states: str = "CO", include_measures=None,
                  skip_distributions: bool = False,
@@ -535,6 +535,10 @@ class CalibrationAssessment:
             ami: a cspp.AMI. Without it the AMI leg skips.
             comparison_runs: AthenaRunRef values for releases to compare
                 against. These need no local results and no apportionment.
+            comparison: the ComStockToCBECSComparison for this driver run, if
+                there is one. Output then lands in a `calibration/` subfolder of
+                that comparison's own folder, so the dashboard sits with the
+                plots covering the same runs instead of in a folder of its own.
             enabled: master toggle. Default True; a missing metadata table
                 skips the step rather than raising, so on is safe.
             database: Athena database holding the run's crawled tables. Note
@@ -551,6 +555,7 @@ class CalibrationAssessment:
         self.cbecs = cbecs
         self.ami = ami
         self.comparison_runs = list(comparison_runs)
+        self.comparison = comparison
         self.enabled = enabled
         self.database = database
         self.region = region
@@ -599,24 +604,42 @@ class CalibrationAssessment:
             return None
         return path
 
-    # One parent for every assessment, so `output/` gains exactly ONE entry no
-    # matter how many runs are assessed. A single run already scatters several
-    # top-level folders ("ComStock <run>", "CBECS 2018 vs ComStock <run> - ...")
-    # and adding a third made it hard to see which output belonged to which run.
-    OUTPUT_PARENT = "Calibration QAQC Dashboard"
+    # Subfolder created INSIDE the run's existing output folder. The assessment
+    # does not create a top-level folder of its own: a run already owns
+    # "ComStock <run>" and a comparison already owns
+    # "CBECS 2018 vs ComStock <run> - ...", and adding a third sibling made one
+    # run map to several unrelated-looking folders.
+    OUTPUT_SUBDIR = "calibration"
 
     def _default_output_dir(self) -> Path:
-        """`output/Calibration QAQC Dashboard/<run>/`.
+        """`<the folder this run's results already go to>/calibration/`.
 
-        Nested under one parent rather than sitting beside the comparison
-        folders. Named for the run under review, so re-assessing that run
-        replaces its own results instead of accumulating near-duplicates --
-        which is what the comparison folders do and what made them confusing.
-        The runs it was compared against are recorded in the dashboard title and
-        the Coverage tab, where they belong.
+        Preferred parent is the comparison's own output folder, when one was
+        passed -- the assessment then sits with the plots describing the same
+        runs. Falling back to the ComStock run's folder keeps it next to that
+        run's results when there is no comparison.
         """
-        root = Path(__file__).resolve().parents[2] / "output"
-        return root / self.OUTPUT_PARENT / self.comstock.comstock_run_name
+        if self.comparison is not None:
+            return Path(self.comparison.output_dir) / self.OUTPUT_SUBDIR
+
+        # ComStock.output_dir is an fsspec mapping, not a path, and can point at
+        # S3. The assessment writes with plain Path, so an S3 target has to be
+        # named rather than silently written somewhere local.
+        out = getattr(self.comstock, "output_dir", None)
+        if isinstance(out, dict):
+            fs, fs_path = out.get("fs"), out.get("fs_path")
+            if fs is not None and type(fs).__name__ == "S3FileSystem":
+                raise ValueError(
+                    "This run's output_dir is on S3; the calibration assessment "
+                    "writes locally. Pass output_dir=... explicitly, or pass "
+                    "comparison=<the ComStockToCBECSComparison> to write beside "
+                    "its plots.")
+            if fs_path:
+                return Path(fs_path) / self.OUTPUT_SUBDIR
+        if out:
+            return Path(str(out)) / self.OUTPUT_SUBDIR
+        raise ValueError(
+            "Cannot determine where to write: pass comparison=... or output_dir=...")
 
     def _upgrade_ids(self) -> list:
         """Upgrades to assess, derived from the run's own data.

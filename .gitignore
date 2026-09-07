@@ -46,5 +46,6 @@ postprocessing/extract_models_and_errors.py
 # test results
 test/reports
 # Calibration assessment output (generated; large self-contained dashboards).
-# One parent holding a subfolder per assessed run.
-postprocessing/output/Calibration QAQC Dashboard/
+# Written to a calibration/ subfolder of whichever output folder the run's other
+# results already go to.
+postprocessing/output/**/calibration/
