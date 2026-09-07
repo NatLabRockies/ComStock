@@ -160,7 +160,13 @@ failing the run.
     $ conda activate comstockpostproc
     $ python compare_calibration.py
     ```
-4. Look in the `/output` directory for results, and open `dashboard.html`
+4. Open the dashboard at
+   `/output/Calibration QAQC Dashboard/<run name>/dashboard.html`
+
+   Everything the assessment writes lives under that one parent folder, one
+   subfolder per run assessed, so it does not add a top-level folder per run
+   beside the comparison output. Metric CSVs, `findings.md` and the exact SQL
+   are in that same subfolder.
 
 Notes:
  - A comparison release is referenced by its Athena tables alone (`AthenaRunRef`),

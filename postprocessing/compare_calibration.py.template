@@ -79,7 +79,9 @@ def main():
         measure_states='CO',             # states for the measure timeseries leg
         # enabled=True,
         # include_measures=None,
-        # output_dir=None,               # defaults to output/Calibration <run>
+        # output_dir=None,               # defaults to
+        #   output/Calibration QAQC Dashboard/<run name>/
+        # One parent for every assessment, one subfolder per run.
         )
 
     if calib.skipped_reason:

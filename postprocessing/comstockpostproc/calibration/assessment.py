@@ -599,10 +599,24 @@ class CalibrationAssessment:
             return None
         return path
 
+    # One parent for every assessment, so `output/` gains exactly ONE entry no
+    # matter how many runs are assessed. A single run already scatters several
+    # top-level folders ("ComStock <run>", "CBECS 2018 vs ComStock <run> - ...")
+    # and adding a third made it hard to see which output belonged to which run.
+    OUTPUT_PARENT = "Calibration QAQC Dashboard"
+
     def _default_output_dir(self) -> Path:
-        """Alongside the other comparison output, named for the run."""
+        """`output/Calibration QAQC Dashboard/<run>/`.
+
+        Nested under one parent rather than sitting beside the comparison
+        folders. Named for the run under review, so re-assessing that run
+        replaces its own results instead of accumulating near-duplicates --
+        which is what the comparison folders do and what made them confusing.
+        The runs it was compared against are recorded in the dashboard title and
+        the Coverage tab, where they belong.
+        """
         root = Path(__file__).resolve().parents[2] / "output"
-        return root / f"Calibration {self.comstock.comstock_run_name}"
+        return root / self.OUTPUT_PARENT / self.comstock.comstock_run_name
 
     def _upgrade_ids(self) -> list:
         """Upgrades to assess, derived from the run's own data.
