@@ -221,7 +221,18 @@ def build_payload(assess: Path) -> dict:
             ["dataset", "run", "btype", "dimension", "category", "fuel"],
             ["area", "area_share_pct", "n", "cell_n"]),
         "heatingFuelProv": _read_json(m / "heating_fuel_provenance.json"),
-        "quantiles": _read(m / "eui_quantiles.csv"),
+        # Packed like the design-parameter frame. Crossing every breakdown with
+        # building type takes this table from ~750 rows to ~8,000, and as an
+        # array of objects the repeated key names alone would cost more than the
+        # numbers. `kde` and `outliers` are long JSON strings carried only on the
+        # pooled rows, so they stay as plain columns rather than being
+        # dictionary-encoded.
+        "quantiles": _pack_frame(
+            _read(m / "eui_quantiles.csv"),
+            ["dataset", "dimension", "category", "btype", "metric", "basis",
+             "kde", "outliers"],
+            ["p05", "p25", "p50", "p75", "p95", "mean", "n_models",
+             "weighted_total", "thin"]),
         "distDims": {k: {"label": v["label"]} for k, v in DIST_DIMENSIONS.items()},
         "sizeBinOrder": SIZE_BIN_LABELS,
         "histograms": _read(m / "eui_histograms.csv"),

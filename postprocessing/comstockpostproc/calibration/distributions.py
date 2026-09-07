@@ -215,8 +215,51 @@ def _prepare(df: pd.DataFrame, cols: dict[str, str], is_cbecs: bool) -> pd.DataF
     return out
 
 
+# Building type crossed with each of the other breakdowns, so the header's
+# building-type selection can actually filter a distribution. Without these
+# rows the boxplots are pooled over all types and the selector changes nothing
+# but the histogram -- which is what it did, and what made the control look
+# broken.
+BTYPE_CROSS_DIMS = ("census_division", "vintage", "size_bin")
+BTYPE_COL = "building_type"
+
+# A crossed cell is one type in one bin, so it can rest on very few models. Below
+# this the box is noise and is flagged rather than drawn as if it were solid.
+THIN_MODELS = 10
+
+
+def _quantile_cell(g: pd.DataFrame, dataset: str, dimension: str, category: str,
+                   metric: str, basis: str, btype: str, with_kde: bool) -> dict:
+    """One box: weighted quantiles for one cell on one weighting basis."""
+    v = g[metric].to_numpy(float)
+    w = g["w_count" if basis == "count" else "w_area"].to_numpy(float)
+    qs = weighted_quantile(v, w, QUANTILES)
+    n = int(np.isfinite(v).sum())
+    return {
+        "dataset": dataset, "dimension": dimension, "category": category,
+        "btype": btype, "metric": metric, "basis": basis,
+        "p05": qs[0], "p25": qs[1], "p50": qs[2], "p75": qs[3], "p95": qs[4],
+        "mean": weighted_mean(v, w),
+        "n_models": n,
+        "thin": bool(n < THIN_MODELS),
+        "weighted_total": float(np.nansum(w[np.isfinite(v)])),
+        # Violin outline + outliers, on the same weighting as the quantiles so
+        # the shape and the box agree. Omitted on crossed rows: the KDE strings
+        # are ~40% of this table's size, and the cross multiplies the row count
+        # about tenfold, so carrying them there would cost several MB in the
+        # page for a shape read off a handful of models.
+        "kde": kde_json(v, w) if with_kde else None,
+        "outliers": outlier_json(v, qs[1], qs[3]) if with_kde else None,
+    }
+
+
 def _quantile_rows(prep: pd.DataFrame, dataset: str, metrics: list[str]) -> list[dict]:
-    """Quantiles per (dimension, category, metric, weighting basis)."""
+    """Quantiles per (dimension, category, metric, basis), pooled and per type.
+
+    `btype` is "All" on the pooled rows and the building type on the crossed
+    ones, so the dashboard reads the same table either way and simply picks the
+    scope the header selector asks for.
+    """
     rows = []
     for dim, spec in DIST_DIMENSIONS.items():
         col = spec["col"]
@@ -224,22 +267,25 @@ def _quantile_rows(prep: pd.DataFrame, dataset: str, metrics: list[str]) -> list
             continue
         for cat, g in prep.groupby(col, dropna=True, observed=True):
             for metric in metrics:
-                v = g[metric].to_numpy(float)
                 for basis in BASES:
-                    w = g["w_count" if basis == "count" else "w_area"].to_numpy(float)
-                    qs = weighted_quantile(v, w, QUANTILES)
-                    rows.append({
-                        "dataset": dataset, "dimension": dim, "category": str(cat),
-                        "metric": metric, "basis": basis,
-                        "p05": qs[0], "p25": qs[1], "p50": qs[2], "p75": qs[3], "p95": qs[4],
-                        "mean": weighted_mean(v, w),
-                        "n_models": int(np.isfinite(v).sum()),
-                        "weighted_total": float(np.nansum(w[np.isfinite(v)])),
-                        # violin outline + outliers, on the same weighting as the
-                        # quantiles above so the shape and the box agree
-                        "kde": kde_json(v, w),
-                        "outliers": outlier_json(v, qs[1], qs[3]),
-                    })
+                    rows.append(_quantile_cell(g, dataset, dim, str(cat),
+                                               metric, basis, "All", True))
+
+    # the cross: one type at a time, against the other breakdowns
+    if BTYPE_COL in prep.columns and not prep[BTYPE_COL].isna().all():
+        for bt, gbt in prep.groupby(BTYPE_COL, dropna=True, observed=True):
+            for dim in BTYPE_CROSS_DIMS:
+                spec = DIST_DIMENSIONS.get(dim)
+                if not spec:
+                    continue
+                col = spec["col"]
+                if col not in gbt.columns or gbt[col].isna().all():
+                    continue
+                for cat, g in gbt.groupby(col, dropna=True, observed=True):
+                    for metric in metrics:
+                        for basis in BASES:
+                            rows.append(_quantile_cell(g, dataset, dim, str(cat),
+                                                       metric, basis, str(bt), False))
     return rows
 
 

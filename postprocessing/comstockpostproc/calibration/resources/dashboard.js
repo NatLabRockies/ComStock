@@ -1978,8 +1978,21 @@ function renderAnnual(){
   $("#t-all").innerHTML=t+`</tbody></table>`;
 }
 
+/* Scope for the distribution boxes: the selected building type when the table
+   carries a crossed row for it, otherwise pooled. Older assessments have no
+   `btype` column at all, so treat a missing one as "All" and behave as before
+   rather than filtering everything away. */
+const distScope = () => {
+  if(state.type===CROSS) return "All";
+  const q=QUANT||[];
+  if(!q.length || q[0].btype===undefined) return "All";
+  return q.some(r=>r.btype===state.type) ? state.type : "All";
+};
+
 function distBoxCats(dim, metric, basis, datasets){
-  const q=D.quantiles.filter(r=>r.metric===metric&&r.basis===basis&&r.dimension===dim);
+  const scope=distScope();
+  const q=QUANT.filter(r=>r.metric===metric&&r.basis===basis&&r.dimension===dim
+    && (r.btype===undefined || r.btype===scope));
   const order=D.ordered[dim]||D.sizeBinOrder;
   const cands=[...new Set(q.map(r=>r.category))];
   cands.sort((a,b)=> order?order.indexOf(a)-order.indexOf(b):String(a).localeCompare(String(b)));
@@ -2024,7 +2037,10 @@ function renderDistributions(){
   // "By building type" is a cross-stock cut: it appears only in the "All types"
   // view, since with one building type selected it would just repeat 15 types.
   const distAvail=Object.keys(D.distDims)
-    .filter(dim=>dim!=="building_type"||state.type===CROSS);
+    /* "by building type" only makes sense pooled -- inside one type it would be
+       a single box. The other breakdowns now filter to the selected type, so
+       selecting one no longer leaves every panel unchanged. */
+    .filter(dim=>dim!=="building_type"||distScope()==="All");
   const distDims=dimsToShow(distAvail, state.distDim);
   h+=`<div class="panel"><div class="head" style="margin:0">
       <h2 style="margin:0">EUI distributions by breakdown</h2></div>
@@ -2035,14 +2051,14 @@ function renderDistributions(){
   distDims.forEach(dim=>{
     const lab=(D.distDims[dim]||{}).label||dim;
     if(dim==="building_type"){
-      h+=`<div class="panel"><h2 style="margin-top:0">EUI distribution by ${lab.toLowerCase()} — kBtu/ft²·yr <span class="badge">${basis==="count"?"building-count weighted":"floor-area weighted"}</span><span class="badge">one box per building type${state.type!==CROSS?` — the header "${state.type}" selection does not apply here`:""}</span></h2>`;
+      h+=`<div class="panel"><h2 style="margin-top:0">EUI distribution by ${lab.toLowerCase()} — kBtu/ft²·yr <span class="badge">${basis==="count"?"building-count weighted":"floor-area weighted"}</span><span class="badge">one box per building type</span></h2>`;
       EUI_METRICS.forEach(([m,ml])=>{
         h+=`<h3>${ml} EUI by ${lab.toLowerCase()} — kBtu/ft²·yr</h3>
             <div class="scroll" id="dist-${dim}-${m.replace(/[^a-z_]/g,"")}"></div>`;
       });
       h+=`</div>`;
     } else {
-      h+=`<div class="panel"><h2 style="margin-top:0">EUI distribution by ${lab.toLowerCase()} — kBtu/ft²·yr <span class="badge">${basis==="count"?"building-count weighted":"floor-area weighted"}</span><span class="badge">all building types pooled${state.type!==CROSS?` — the header "${state.type}" selection does not apply here`:""}</span></h2><div class="grid-dist">`;
+      h+=`<div class="panel"><h2 style="margin-top:0">EUI distribution by ${lab.toLowerCase()} — kBtu/ft²·yr <span class="badge">${basis==="count"?"building-count weighted":"floor-area weighted"}</span><span class="badge">${distScope()==="All"?"all building types pooled":distScope()}</span></h2><div class="grid-dist">`;
       EUI_METRICS.forEach(([m,ml])=>{
         h+=`<div><h3>${ml} EUI by ${lab.toLowerCase()} — kBtu/ft²·yr</h3>
             <div id="dist-${dim}-${m.replace(/[^a-z_]/g,"")}"></div></div>`;
@@ -4361,6 +4377,10 @@ function dpUnpack(P){
   return out;
 }
 const DP = dpUnpack(D.designParams);
+/* Rehydrated once at load, same as the design-parameter frame. Crossing every
+   breakdown with building type makes this table ~8,000 rows, which is why it
+   arrives packed. */
+const QUANT = dpUnpack(D.quantiles);
 /* Metric descriptions are stored once and joined here: repeated on every value
    row they were 42% of this tab's payload, which is what made crossing by
    building type unaffordable. */
