@@ -15,6 +15,15 @@ This package automates the common postprocessing tasks that are part of running 
 
 ## AWS Access
 
+### Athena Workgroup
+
+Athena queries run in a named workgroup, set once in
+`comstockpostproc/athena_config.py` as `ATHENA_WORKGROUP` and imported by every
+query site. It currently points at `buildstock`. If your account uses a
+different workgroup, change it in that one file rather than at the call sites.
+The workgroup must have a query result location configured, since the client
+does not supply one.
+
 ### Non-NREL Staff
 
 To download your BuildStockBatch simulation results from S3 for postprocessing, you’ll need to configure your user account with your AWS credentials. This setup only needs to be done once.
