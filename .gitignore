@@ -44,3 +44,5 @@ postprocessing/extract_models_and_errors.py
 
 # test results
 test/reports
+# Calibration assessment output (generated; large self-contained dashboards)
+postprocessing/output/Calibration */

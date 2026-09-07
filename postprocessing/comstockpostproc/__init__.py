@@ -12,6 +12,7 @@ from .comstock_to_eia_comparison import ComStockToEIAComparison
 from .comstock_to_ami_comparison import ComStockToAMIComparison
 from .comstock_to_eia_comparison import ComStockToEIAComparison
 from .resstock import ResStock
+from .calibration import AthenaRunRef, CalibrationAssessment
 from .utils.hpc import *
 
 from .__version__ import (
