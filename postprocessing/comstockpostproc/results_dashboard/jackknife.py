@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """CBECS jackknife replicate-weight confidence intervals.
 
 Port of the variance math in ComStock's comstockpostproc/rse_utils_mixin.py

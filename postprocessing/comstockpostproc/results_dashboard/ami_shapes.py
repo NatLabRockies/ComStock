@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """AMI shape comparison for one region.
 
 ComStock side: Athena timeseries joined to the by-state-and-county metadata
@@ -19,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from . import athena
-from .timeseries import (enduse_sums, hour_trunc, join_on,
+from .timeseries import (enduse_sums, hour_trunc, join_on, time_expr,
                          state_filter, total_sum, ts_dialect)
 from .metrics_def import (
     BLDG_TYPE_COL,
@@ -84,12 +86,13 @@ MIN_BLDG_COUNT = 3  # mirrors comstock_to_ami_comparison.py skip guard
 
 # The COMSTOCK-side equivalent, which did not exist. MIN_BLDG_COUNT guards only
 # the metered side, so a cell backed by ONE sampled model rendered as a
-# confident 24-hour profile beside a well-metered truth curve. On a national
-# ~100k run only about 2% of models land in the AMI counties -- a median near a
-# dozen per (region x building type) cell, and single digits in the thinnest
-# regions -- so this is the common case, not an edge case. Cells below this are
-# still drawn (hiding them would misreport coverage) but are flagged, so a
-# reader can tell a shape from a coincidence.
+# confident 24-hour profile beside a well-metered truth curve. Only about 2% of
+# models are SIMULATED in the AMI counties, but apportionment spreads each model
+# across the counties it represents, so the count that matters is models
+# carrying WEIGHT there: roughly 70-240 per (region x building type) cell on a
+# national ~100k run, 20-440 on a 10k run -- and the thinnest cells still fall
+# below this. Cells below this are still drawn (hiding them would misreport
+# coverage) but are flagged, so a reader can tell a shape from a coincidence.
 MIN_COMSTOCK_MODELS = 10
 
 
@@ -186,10 +189,13 @@ def build_membership_sql(ts_table: str, md_county_table: str, region: dict,
     d = dialect or PUBLISHED
     counties = ", ".join(f"'{c}'" for c in region["counties"])
     states = ", ".join(f"'{s}'" for s in region["states"])
-    tcol = f'"{d["time"]}"'
-    ts_where = [f"upgrade = 0", f"{tcol} < from_iso8601_timestamp('2018-01-02T00:00:00')"]
+    # Same dialect handling as the profile query: epoch-nanosecond timestamps
+    # are converted and the upgrade literal is typed to the column, so an older
+    # published table cannot make this probe fail and hide the coverage gap.
+    ts_where = [f"upgrade = {athena.upgrade_literal(0, d.get('up_type'))}",
+                f"{time_expr(d, 't')} < from_iso8601_timestamp('2018-01-02T00:00:00')"]
     if d["state"]:
-        ts_where.append(f'"{d["state"]}" IN ({states})')
+        ts_where.append(f't."{d["state"]}" IN ({states})')
     return (
         "SELECT COUNT(DISTINCT m.bldg_id) AS md_bldgs,\n"
         "    COUNT(DISTINCT CASE WHEN t.b IS NOT NULL THEN m.bldg_id END) AS ts_bldgs,\n"
@@ -197,7 +203,7 @@ def build_membership_sql(ts_table: str, md_county_table: str, region: dict,
         "    SUM(CASE WHEN t.b IS NOT NULL THEN m.weight * "
         f'm."{SQFT_COL}" END) AS sqft_with_ts\n'
         f"FROM {md_county_table} m\n"
-        f'LEFT JOIN (SELECT DISTINCT "{d["bldg"]}" AS b FROM {ts_table}\n'
+        f'LEFT JOIN (SELECT DISTINCT t."{d["bldg"]}" AS b FROM {ts_table} t\n'
         f"           WHERE {' AND '.join(ts_where)}) t ON t.b = m.bldg_id\n"
         f"WHERE m.state IN ({states}) AND CAST(m.upgrade AS varchar) = '0'\n"
         "  AND m.completed_status = 'Success'\n"
@@ -213,7 +219,8 @@ def check_membership(ts_table: str, md_county_table: str, region_name: str,
             build_membership_sql(ts_table, md_county_table, REGIONS[region_name], dialect),
             no_cache=no_cache, label=f"{region_name} membership")
     except Exception as exc:                                      # noqa: BLE001
-        logger.info("membership check failed for %s: %s", region_name, exc)
+        logger.warning("membership check for %s could not run (%s); timeseries "
+                       "coverage of this region is unverified", region_name, exc)
         return {}
     if df.empty:
         return {}

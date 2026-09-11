@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 MD_NATIONAL_SUFFIX = "_md_agg_national_parquet"
 # The crawled _parquet TABLE, deliberately not the _vu VIEW. create_views
 # renames `in.sqft..ft2` to `in.sqft` ("Special requirement for SightGlass",
-# comstock.py:4626) and strips units from every out.* column, but
+# ComStock.create_views) and strips units from every out.* column, but
 # ami_shapes.build_sqft_sql selects "in.sqft..ft2" -- so the view is the one
 # table this SQL cannot run against. This pointed at _vu and would have failed
 # with a column-not-found the first time the AMI leg ran on a crawled run.

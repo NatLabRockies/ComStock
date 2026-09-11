@@ -11,12 +11,14 @@ logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
 # Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # keep 'enduse': the timeseries plots and the AMI comparison read it unconditionally
+ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
+                                   # the timeseries plots and the AMI comparison hard-code it
 EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
-INCLUDE_AMI            = True      # metered load-shape tab; on here because this driver builds the AMI comparison anyway
+INCLUDE_AMI            = True      # metered load-shape tab. False only drops the tab: the county export
+                                   # still runs (ami=True below) because the AMI comparison needs it
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
 #   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
 #         database='buildstock_sdr', color='#E69F00')]
@@ -126,7 +128,7 @@ def main():
     # logs and skips rather than raising, so an AWS problem here cannot cost
     # you the plots above. See README for the full contract.
     if MAKE_RESULTS_DASHBOARD:
-        calib = cspp.ResultsDashboard(
+        dashboard = cspp.ResultsDashboard(
             comstock,
             cbecs=cbecs,
             ami=ami if INCLUDE_AMI else None,
@@ -134,10 +136,10 @@ def main():
             comparison=comparison,       # -> <comparison folder>/results_dashboard/
             database=ATHENA_DATABASE,
             )
-        if calib.skipped_reason:
-            logger.warning('results dashboard skipped: %s', calib.skipped_reason)
+        if dashboard.skipped_reason:
+            logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
         else:
-            logger.info('results dashboard: %s', calib.dashboard_path)
+            logger.info('results dashboard: %s', dashboard.dashboard_path)
 
 # Code to execute the script
 if __name__ == "__main__":

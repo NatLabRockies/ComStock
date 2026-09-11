@@ -29,8 +29,11 @@ def test_nothing_missing_means_nothing_to_do():
 def test_empty_run_exports_national_only_unless_county_wanted():
     p = at.plan(set(), RUN, "enduse")
     assert p.export == [at.NATIONAL_EXPORT] and p.crawl and not p.views
-    p = at.plan(set(), RUN, "enduse", county=True)
+    # County only joins the export when the timeseries table it serves exists.
+    p = at.plan({TS}, RUN, "enduse", county=True)
     assert p.export == [at.NATIONAL_EXPORT, at.COUNTY_EXPORT]
+    p = at.plan(set(), RUN, "enduse", county=True)
+    assert p.export == [at.NATIONAL_EXPORT] and p.county_skipped
 
 
 def test_county_is_not_re_exported_when_present():
@@ -46,7 +49,7 @@ def test_views_alone_are_created_without_an_export():
 
 
 def test_new_export_always_gets_views_when_views_are_wanted():
-    p = at.plan({NATIONAL, NATIONAL.replace("_parquet", "_vu")}, RUN, "enduse",
+    p = at.plan({NATIONAL, NATIONAL.replace("_parquet", "_vu"), TS}, RUN, "enduse",
                 county=True, views=True)
     assert p.export == [at.COUNTY_EXPORT] and p.views
 
@@ -125,6 +128,7 @@ def test_baseline_only_driver_exports_the_baseline_alone():
 
 
 def test_upgrade_ids_restricts_county_but_never_national(monkeypatch):
+    monkeypatch.setattr(at, "_forget_cached_queries", lambda run: None)   # keep off ~/.cache
     monkeypatch.setattr(at, "existing_tables", lambda run, db: set())
     stub = _stub()
     stub.STATE_ABBRV, stub.CZ_ASHRAE, stub.COUNTY_ID = "s", "cz", "c"
@@ -137,7 +141,7 @@ def test_upgrade_ids_restricts_county_but_never_national(monkeypatch):
     stub.fix_timeseries_tables = lambda *a: None       # ami=True also builds views
     stub.create_views = lambda *a: None
     # After the crawl the tables are "there".
-    listed = iter([set(), {NATIONAL, COUNTY}])
+    listed = iter([{TS}, {NATIONAL, COUNTY, TS}])
     monkeypatch.setattr(at, "existing_tables", lambda run, db: next(listed))
     assert at.prepare_athena_tables(stub, "enduse", ami=True, upgrade_ids=[0]) is True
     assert calls == [(0, (at.NATIONAL_EXPORT, at.COUNTY_EXPORT)),
@@ -146,6 +150,7 @@ def test_upgrade_ids_restricts_county_but_never_national(monkeypatch):
 
 
 def test_prepare_reports_a_crawl_that_built_nothing(monkeypatch):
+    monkeypatch.setattr(at, "_forget_cached_queries", lambda run: None)   # keep off ~/.cache
     listed = iter([set(), set()])
     monkeypatch.setattr(at, "existing_tables", lambda run, db: next(listed))
     stub = _stub(include_upgrades=False)
@@ -154,3 +159,18 @@ def test_prepare_reports_a_crawl_that_built_nothing(monkeypatch):
     stub.export_metadata_and_annual_results_for_upgrade = lambda **kw: None
     stub.create_sightglass_tables = lambda **kw: None
     assert at.prepare_athena_tables(stub, "enduse") is False
+
+
+def test_county_export_is_skipped_when_the_timeseries_table_is_absent():
+    # The county aggregate only serves legs that also need <run>_timeseries,
+    # which nothing here creates -- so no ~3,100-file export for legs that skip.
+    p = at.plan({NATIONAL}, RUN, "enduse", county=True, views=True)
+    assert p.export == [] and p.county_skipped and p.timeseries_missing
+    assert "county export is skipped" in p.describe()
+    p = at.plan({NATIONAL, TS}, RUN, "enduse", county=True, views=True)
+    assert p.export == [at.COUNTY_EXPORT] and not p.county_skipped
+
+
+def test_timeseries_absence_is_only_noted_when_something_wants_it():
+    p = at.plan({NATIONAL, NATIONAL.replace("_parquet", "_vu")}, RUN, "enduse")
+    assert p.timeseries_missing and "absent" not in p.describe()

@@ -130,6 +130,8 @@ class Plan:
     views: bool = False
     timeseries_missing: bool = False                   # cannot be fixed here
     unknown: bool = False                              # could not list Glue
+    wants_timeseries: bool = False                     # views/timeseries were asked for
+    county_skipped: bool = False                       # county wanted, but no timeseries table
 
     @property
     def nothing_to_do(self) -> bool:
@@ -150,10 +152,12 @@ class Plan:
             if self.views:
                 steps.append("create views")
             s = f"{self.run} in {self.database}: " + ", ".join(steps)
-        if self.timeseries_missing:
+        if self.timeseries_missing and (self.wants_timeseries or self.county_skipped):
             s += (f". Note: {self.run}_timeseries is absent -- that table comes "
                   "from buildstockbatch's crawl, not from here, so timeseries "
-                  "plots and the AMI legs will skip")
+                  "plots and the AMI legs will skip"
+                  + ("; the county export is skipped for the same reason"
+                     if self.county_skipped else ""))
         return s
 
 
@@ -166,7 +170,7 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
         county: the county aggregate is wanted.
         views: the `_vu` views are wanted (timeseries plots, AMI).
     """
-    p = Plan(run=run, database=database)
+    p = Plan(run=run, database=database, wants_timeseries=views)
     if names is None:
         p.unknown = True
         p.export = [NATIONAL_EXPORT] + ([COUNTY_EXPORT] if county else [])
@@ -180,12 +184,19 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
     cty = f"{run}_md_agg_{COUNTY_EXPORT}_parquet"
     if nat not in names:
         p.export.append(NATIONAL_EXPORT)
-    if county and cty not in names:
-        p.export.append(COUNTY_EXPORT)
-    p.crawl = bool(p.export)
-
     ts_table = f"{run}_timeseries"
-    p.timeseries_missing = views and ts_table not in names
+    p.timeseries_missing = ts_table not in names
+    if county and cty not in names:
+        if p.timeseries_missing:
+            # Everything that reads the county aggregate -- the AMI comparison,
+            # the AMI tab, county timeseries profiles -- also needs the
+            # timeseries table, which only buildstockbatch's crawl creates.
+            # Hours of ~3,100 files per upgrade for legs that will skip anyway
+            # is the one expensive mistake this probe exists to prevent.
+            p.county_skipped = True
+        else:
+            p.export.append(COUNTY_EXPORT)
+    p.crawl = bool(p.export)
     if views:
         # Only the views something reads: national always, county only when
         # county is wanted. create_views names PUMA views differently, and
@@ -257,7 +268,9 @@ def prepare_athena_tables(comstock, database: str = "enduse",
             per table, not per upgrade, so a county table exported for [0]
             counts as present afterwards -- use rebuild=True to extend it.
 
-    Returns True when the tables are in place, False otherwise. It LOGS rather
+    Returns True when the tables are in place, False otherwise -- including
+    when timeseries or AMI was asked for and the run has no `<run>_timeseries`
+    table, which only buildstockbatch's crawl creates. It LOGS rather
     than raising: this runs inside someone's postprocessing job, and a Glue or
     S3 problem must not destroy the results it already produced. On False the
     results dashboard skips the affected legs and says why; the timeseries plots
@@ -271,7 +284,7 @@ def prepare_athena_tables(comstock, database: str = "enduse",
     try:
         county = ami or (timeseries and _plots_county_location(comstock))
         views = timeseries or ami
-
+        ts_needed = timeseries or ami
         if rebuild:
             p = plan(None, run, database, county=county, views=views)
             p.unknown = False
@@ -286,55 +299,63 @@ def prepare_athena_tables(comstock, database: str = "enduse",
                     "%s first -- fix the credentials, or set rebuild=True "
                     "(REBUILD_ATHENA_TABLES) to export regardless.", run, database)
                 return False
-        if p.nothing_to_do:
-            return True
-
-        s3_dir = f"s3://{comstock.s3_base_dir}/{run}/{run}"
-        if p.export:
-            step = "exporting to S3"
-            # Only the resolutions that are missing, always as parquet -- the
-            # crawler builds tables from parquet, whatever a driver writes locally.
-            by_dir = {g["geo_top_dir"]: g
-                      for g in required_geo_exports(comstock, county=county)}
-            s3_out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
-            all_ids = _run_upgrade_ids(comstock)
-            county_ids = all_ids if upgrade_ids is None else list(upgrade_ids)
-            if COUNTY_EXPORT in p.export and len(county_ids) > 1:
-                logger.warning("athena tables: the county export runs for %d "
-                               "upgrades, ~3,100 files each", len(county_ids))
-            for upgrade_id in sorted(set(all_ids) | set(county_ids)):
-                geo = [by_dir[g] for g in p.export
-                       if upgrade_id in (all_ids if g == NATIONAL_EXPORT else county_ids)]
-                if not geo:
-                    continue
-                logger.info("athena tables: exporting upgrade %s of %s (%s) to S3",
-                            upgrade_id, run, ", ".join(g["geo_top_dir"] for g in geo))
-                comstock.export_metadata_and_annual_results_for_upgrade(
-                    upgrade_id=upgrade_id, geo_exports=geo, output_dir=s3_out)
-
-        if p.crawl:
-            step = "crawling"
-            logger.info("athena tables: crawling %s into %s", run, database)
-            comstock.create_sightglass_tables(
-                s3_location=f"{s3_dir}/metadata_and_annual_results_aggregates",
-                dataset_name=run, database_name=database,
-                glue_service_role=glue_service_role)
-            # The crawler reports READY whether or not it built anything: look.
-            after = plan(existing_tables(run, database), run, database,
-                         county=county, views=False)
-            if after.unknown or after.export:
-                logger.warning(
-                    "athena tables: after crawling, %s still lacks %s in %s; check "
-                    "the crawler's last run in the Glue console", run,
-                    " + ".join(after.export) or "(could not list)", database)
-                return False
-
-        if p.views:
-            step = "creating views"
-            # fix_timeseries_tables aligns the `upgrade` partition dtype with the
-            # metadata tables so joins work; create_views builds every _vu.
-            comstock.fix_timeseries_tables(run, database)
-            comstock.create_views(run, database, ATHENA_WORKGROUP)
+        ts_absent = p.timeseries_missing
+        if not p.nothing_to_do:
+            s3_dir = f"s3://{comstock.s3_base_dir}/{run}/{run}"
+            if p.export:
+                step = "exporting to S3"
+                # Only the resolutions that are missing, always as parquet -- the
+                # crawler builds tables from parquet, whatever a driver writes locally.
+                by_dir = {g["geo_top_dir"]: g
+                          for g in required_geo_exports(comstock, county=county)}
+                s3_out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
+                all_ids = _run_upgrade_ids(comstock)
+                county_ids = all_ids if upgrade_ids is None else list(upgrade_ids)
+                if COUNTY_EXPORT in p.export and len(county_ids) > 1:
+                    logger.warning("athena tables: the county export runs for %d "
+                                   "upgrades, ~3,100 files each", len(county_ids))
+                for upgrade_id in sorted(set(all_ids) | set(county_ids)):
+                    geo = [by_dir[g] for g in p.export
+                           if upgrade_id in (all_ids if g == NATIONAL_EXPORT else county_ids)]
+                    if not geo:
+                        continue
+                    logger.info("athena tables: exporting upgrade %s of %s (%s) to S3",
+                                upgrade_id, run, ", ".join(g["geo_top_dir"] for g in geo))
+                    comstock.export_metadata_and_annual_results_for_upgrade(
+                        upgrade_id=upgrade_id, geo_exports=geo, output_dir=s3_out)
+            if p.crawl:
+                step = "crawling"
+                logger.info("athena tables: crawling %s into %s", run, database)
+                comstock.create_sightglass_tables(
+                    s3_location=f"{s3_dir}/metadata_and_annual_results_aggregates",
+                    dataset_name=run, database_name=database,
+                    glue_service_role=glue_service_role)
+                # The crawler reports READY whether or not it built anything: look.
+                after = plan(existing_tables(run, database), run, database,
+                             county=county, views=False)
+                if after.unknown or after.export:
+                    logger.warning(
+                        "athena tables: after crawling, %s still lacks %s in %s; check "
+                        "the crawler's last run in the Glue console", run,
+                        " + ".join(after.export) or "(could not list)", database)
+                    _forget_cached_queries(run)
+                    return False
+                ts_absent = after.timeseries_missing
+            if p.views:
+                step = "creating views"
+                # fix_timeseries_tables aligns the `upgrade` partition dtype with the
+                # metadata tables so joins work; create_views builds every _vu.
+                comstock.fix_timeseries_tables(run, database)
+                comstock.create_views(run, database, ATHENA_WORKGROUP)
+            # The tables changed under every cached query that read them.
+            _forget_cached_queries(run)
+        if ts_needed and ts_absent:
+            logger.warning(
+                "athena tables: %s has no %s_timeseries table in %s. That table comes "
+                "from buildstockbatch's own postprocessing crawl of the run, not from "
+                "here, so the timeseries plots and the AMI comparison cannot run and "
+                "the dashboard's timeseries legs will skip.", run, run, database)
+            return False
         return True
     except Exception as exc:                                      # noqa: BLE001
         logger.warning(
@@ -343,3 +364,16 @@ def prepare_athena_tables(comstock, database: str = "enduse",
             "legs whose tables are missing and says so; the timeseries plots and "
             "the AMI comparison need them.", run, step, exc)
         return False
+
+
+def _forget_cached_queries(run: str) -> None:
+    """Drop the dashboard's cached query results that read this run's tables.
+
+    The query cache is keyed on SQL text, so after an export or crawl the same
+    SQL would keep answering from the previous tables.
+    """
+    try:
+        from .results_dashboard import athena
+        athena.invalidate_cache(run)
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("athena tables: could not clear cached queries for %s (%s)", run, exc)

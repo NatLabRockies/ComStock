@@ -9,8 +9,9 @@ call `cspp.prepare_athena_tables(...)` once per run, and the assessment reads
 what that produced. Constructing `ResultsDashboard` creates NO tables: it
 probes and skips what it cannot find, reporting the cause.
 
-What is left here is the one input the assessment needs that nothing else
-does: the AMI truth data.
+What is left here are the two truth inputs the assessment reads from disk --
+`AMI long.csv` (load_ami) and `CBECS wide.csv` (load_cbecs) -- each loaded from
+its export if present and built otherwise.
 """
 
 from __future__ import annotations

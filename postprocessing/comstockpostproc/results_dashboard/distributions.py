@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Weighted EUI distributions: box-plot quantiles and histograms by building type.
 
 Both datasets are weighted samples, so every statistic here is weight-aware — an
@@ -76,7 +78,8 @@ HIST_CLIP_Q = 0.99
 BASES = ("count", "area")
 
 
-def build_dist_sql(md_table: str, have: set[str] | None = None) -> str:
+def build_dist_sql(md_table: str, have: set[str] | None = None,
+                   base_where: str = athena.DEFAULT_BASE_WHERE) -> str:
     present = {k: c for k, c in EUI_METRICS.items() if have is None or c in have}
     cols = ",\n".join(f'    "{c}" AS {k}' for k, c in present.items())
     dims = ",\n".join(
@@ -92,7 +95,7 @@ def build_dist_sql(md_table: str, have: set[str] | None = None) -> str:
         f'SELECT\n    bldg_id,\n    "{BLDG_TYPE_COL}" AS building_type,\n{dims},\n'
         f'    weight,\n    "{SQFT_COL}" AS sqft,\n{cols}\n'
         f"FROM {md_table}\n"
-        f"WHERE upgrade = 0 AND completed_status = 'Success'"
+        f"WHERE {base_where}"
     )
 
 
@@ -128,7 +131,8 @@ def fetch_comstock_buildings(md_table: str, no_cache: bool = False) -> pd.DataFr
     not caught.
     """
     have = athena.table_columns(md_table, no_cache=no_cache)
-    df = athena.query(build_dist_sql(md_table, have), no_cache=no_cache,
+    df = athena.query(build_dist_sql(md_table, have, athena.baseline_where(md_table, no_cache=no_cache)),
+                      no_cache=no_cache,
                       label=f"building-level EUI ({md_table})")
     return collapse_to_models(df, md_table)
 

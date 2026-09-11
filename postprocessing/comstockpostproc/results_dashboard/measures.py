@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Measure (upgrade) assessment, downstream of the published metadata tables.
 
 QAQC-first: where do savings occur (end use x fuel, bills, emissions), and do

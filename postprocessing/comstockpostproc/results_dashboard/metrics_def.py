@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Shared metric definitions for annual CBECS comparisons.
 
 CBECS wide.csv (produced by comstockpostproc's CBECS class) already uses

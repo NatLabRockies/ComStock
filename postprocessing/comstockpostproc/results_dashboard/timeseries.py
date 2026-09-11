@@ -104,7 +104,7 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
                    building (published tables), 'local' otherwise
       missing      what a timeseries query needs and cannot find
     """
-    d = {"bldg": "", "time": "", "state": "", "epoch_ns": False,
+    d = {"bldg": "", "time": "", "state": "", "epoch_ns": False, "up_type": "",
          "enduses": {}, "totals": {}, "kind": "unknown", "tz": "local", "missing": []}
     try:
         types = athena.table_column_types(ts_table, no_cache=no_cache)
@@ -122,6 +122,8 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
     d["state"] = "state" if "state" in cols else ""
     if d["time"]:
         d["epoch_ns"] = str(types.get(d["time"], "")).startswith("bigint")
+    # So every literal against `upgrade` can be typed to the column.
+    d["up_type"] = str(types.get("upgrade", ""))
 
     for e in ENDUSE_STACK_ORDER:
         d["enduses"][e] = next(
@@ -164,6 +166,7 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
 
 PUBLISHED = {
     "bldg": "bldg_id", "time": "timestamp", "state": "state", "epoch_ns": False,
+    "up_type": "bigint",
     "enduses": {e: TS_ENDUSE_COL.format(e) for e in ENDUSE_STACK_ORDER},
     "totals": {f: c[0] for f, c in TOTAL_CANDIDATES.items()},
     "kind": "published", "tz": "est", "missing": [],
@@ -211,7 +214,7 @@ def hour_trunc(dialect: dict | None, alias: str = "t") -> str:
 
 def check_no_duplicate_hours(ts_table: str, dialect: dict | None = None,
                              no_cache: bool = False) -> str:
-    """"" if each (building, hour) appears once, else a description of the problem.
+    """Return "" if each (building, hour) appears once, else a description of the problem.
 
     WHY THIS IS CHECKED RATHER THAN ASSUMED. ComStock timeseries output is
     written per state, and a building apportioned into several states can have

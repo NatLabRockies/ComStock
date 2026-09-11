@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Main heating fuel prevalence: ComStock vs CBECS 2018, by census division.
 
 WHY THIS IS ITS OWN MODULE. Heating fuel is the one design input where the two
@@ -166,7 +168,7 @@ SELECT "{BLDG_TYPE_COL}"          AS btype_col,
        SUM(weight * "{SQFT_COL}") AS area,
        COUNT(DISTINCT bldg_id)    AS n
 FROM {md_table}
-WHERE upgrade = 0 AND completed_status = 'Success'
+WHERE {athena.baseline_where(md_table, no_cache=no_cache)}
 GROUP BY 1, 2, 3
 """
     g = athena.query(sql, no_cache=no_cache, label=f"heating fuel {run_key}")

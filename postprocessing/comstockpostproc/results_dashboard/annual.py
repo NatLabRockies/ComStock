@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Annual comparison: ComStock (Athena metadata table) vs CBECS wide.csv.
 
 One fine-grained query groups by building type x census division x vintage x
@@ -55,7 +57,8 @@ def available_group_cols(md_table: str, no_cache: bool = False) -> dict[str, str
 
 
 def build_annual_sql(md_table: str, group_cols: dict[str, str] | None = None,
-                     have: set[str] | None = None) -> str:
+                     have: set[str] | None = None,
+                     base_where: str = athena.DEFAULT_BASE_WHERE) -> str:
     group_cols = group_cols or GROUP_COLS
     metrics = {k: c for k, (c, _p) in ALL_KWH_METRICS.items() if have is None or c in have}
     sel = [f'    "{col}" AS {alias}' for alias, col in group_cols.items()]
@@ -78,7 +81,7 @@ def build_annual_sql(md_table: str, group_cols: dict[str, str] | None = None,
     return (
         f"SELECT\n{body}\n"
         f"FROM {md_table}\n"
-        f"WHERE upgrade = 0 AND completed_status = 'Success'\n"
+        f"WHERE {base_where}\n"
         f"GROUP BY {group}\n"
         f"ORDER BY {group}"
     )
@@ -91,7 +94,7 @@ def fetch_comstock_annual(md_table: str, no_cache: bool = False) -> pd.DataFrame
     missing = [k for k, (c, _p) in ALL_KWH_METRICS.items() if c not in have]
     if missing:
         logger.info("%s: no column for metrics %s", md_table, ", ".join(missing))
-    sql = build_annual_sql(md_table, cols, have)
+    sql = build_annual_sql(md_table, cols, have, athena.baseline_where(md_table, no_cache=no_cache))
     return athena.query(sql, no_cache=no_cache, label=f"annual by {len(cols)} dimensions")
 
 

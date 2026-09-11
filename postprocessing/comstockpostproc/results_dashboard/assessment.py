@@ -6,8 +6,8 @@ Writes metric CSVs plus one self-contained `dashboard.html`. FULLY
 DETERMINISTIC -- Athena queries, pandas, and a hand-written JS bundle. No model
 is involved at any point.
 
-    calib = cspp.ResultsDashboard(comstock, cbecs=cbecs, ami=ami)
-    calib.run()
+    dashboard = cspp.ResultsDashboard(comstock, cbecs=cbecs, ami=ami)  # runs on construction
+    dashboard.skipped_reason or dashboard.dashboard_path
 
 Every metric table carries a `run` column, so run-vs-reference and run-vs-run
 differences are read off the same tables. The AMI and measure-timeseries legs
@@ -15,14 +15,16 @@ need county-split weights and therefore only cover runs that publish a
 by-state-and-county metadata table.
 
 WHAT IT NEEDS, AND WHAT HAPPENS WHEN IT IS ABSENT. The assessment reads
-PUBLISHED Athena aggregate tables -- the ones `create_sightglass_tables` creates
-via Glue. That step is not part of a default postprocessing run, so the tables
-often do not exist, and this is an optional step that must never take a run
-down. Every prerequisite is therefore probed, and a missing one skips its leg
-with a stated reason: no reachable metadata table skips the whole assessment;
-no CBECS skips the annual, distribution and heating-fuel legs; no AMI truth data
-skips the AMI leg; no upgrades skips the measure legs. The dashboard renders an
-honest "not computed" state for whatever was skipped rather than implying zero.
+Athena aggregate tables -- the ones `prepare_athena_tables` exports and crawls
+in the drivers, or a published release's. This is an optional step that must
+never take a postprocessing run down, so every prerequisite is probed and a
+missing one skips its leg with a stated reason: no reachable metadata table
+skips the whole assessment; no CBECS makes the annual comparison ComStock-only
+and skips the distribution and heating-fuel legs; no AMI truth data skips the
+AMI leg; no upgrades skips the measure legs; and a query that fails once it
+runs is caught in run(), which keeps what was written and records the error.
+The dashboard renders an honest "not computed" state for whatever was skipped
+rather than implying zero.
 """
 
 from __future__ import annotations
@@ -205,8 +207,12 @@ def _assess(args) -> None:
     for r in runs:
         logger.info("run %s: annual from %s", r.key, r.md_table)
         gcols = annual.available_group_cols(r.md_table, no_cache=args.no_cache)
+        # The saved SQL is the one that ran: same column filter, same literal.
         (out / "queries" / f"annual_{r.key}.sql").write_text(
-            annual.build_annual_sql(r.md_table, gcols), encoding="utf-8")
+            annual.build_annual_sql(
+                r.md_table, gcols, athena.table_columns(r.md_table, no_cache=args.no_cache),
+                athena.baseline_where(r.md_table, no_cache=args.no_cache)),
+            encoding="utf-8")
         fine = annual.fetch_comstock_annual(r.md_table, no_cache=args.no_cache)
         logger.info("  %d fine-grained rows", len(fine))
         audits.update({f"{r.key}.{k}": v for k, v in annual.check_categories(fine, r.key).items()})
@@ -247,7 +253,8 @@ def _assess(args) -> None:
 
         if not args.skip_distributions:
             (out / "queries" / f"distributions_{r.key}.sql").write_text(
-                distributions.build_dist_sql(r.md_table, athena.table_columns(r.md_table)),
+                distributions.build_dist_sql(r.md_table, athena.table_columns(r.md_table),
+                                             athena.baseline_where(r.md_table)),
                 encoding="utf-8")
             cs_buildings[r.key] = distributions.fetch_comstock_buildings(
                 r.md_table, no_cache=args.no_cache)
@@ -310,27 +317,31 @@ def _assess(args) -> None:
     # every region SQL was built around a zero-length table name.
     runs = [primary if r.key == primary.key else r for r in runs]
     ts_dial = ami_shapes.ts_dialect(ts_table, no_cache=args.no_cache) if ts_table else None
-    # The single condition every county-weighted leg must satisfy.
-    county_ts_ok = bool(county_table and ts_table and ts_dial
-                        and not ts_dial["missing"])
-    county_ts_missing = [
-        label for label, t in (("the by-state-and-county metadata table", county_table),
-                               ("a timeseries table", ts_table)) if not t]
-    if ts_table and ts_dial and ts_dial["missing"]:
-        county_ts_missing.append(
-            f"a queryable timeseries table ({ts_table} is missing "
-            f"{'; '.join(ts_dial['missing'])})")
+    # Is the timeseries table usable at all? Shared by every leg that reads it
+    # -- AMI shapes, county AND state measure profiles -- so a defect found
+    # here declines all of them, not only the county-weighted ones.
+    ts_usable = bool(ts_table and ts_dial and not ts_dial["missing"])
+    ts_problems = []
+    if not ts_table:
+        ts_problems.append("a timeseries table")
+    elif ts_dial and ts_dial["missing"]:
+        ts_problems.append(f"a queryable timeseries table ({ts_table} is missing "
+                           f"{'; '.join(ts_dial['missing'])})")
     # A duplicated (building, hour) would inflate every weighted timeseries sum
-    # by the number of copies, invisibly. Better to decline the two legs that
-    # read it and say why than to publish a number that is wrong by an unknown
-    # factor. Only checked when the table is otherwise usable.
-    if county_ts_ok:
+    # by the number of copies, invisibly. Better to decline the legs that read
+    # it and say why than to publish a number that is wrong by an unknown
+    # factor. Checked once, for state and county profiles alike.
+    if ts_usable:
         dup = timeseries.check_no_duplicate_hours(
             ts_table, ts_dial, no_cache=args.no_cache)
         if dup:
             logger.warning("timeseries not usable: %s", dup)
-            county_ts_missing.append(dup)
-            county_ts_ok = False
+            ts_problems.append(dup)
+            ts_usable = False
+    # The single condition every county-weighted leg must satisfy.
+    county_ts_ok = bool(county_table and ts_usable)
+    county_ts_missing = ([] if county_table else
+                         ["the by-state-and-county metadata table"]) + ts_problems
     if county_ts_ok:
         logger.info("county-weighted legs: %s + %s (%s schema) -> id=%s time=%s "
                     "state=%s end uses=%d/%d", county_table, ts_table,
@@ -653,8 +664,7 @@ def _assess(args) -> None:
         # postprocessed the normal way -- compare_upgrades exports national only
         # -- for data it does not use. The county table is still preferred when
         # present, since it is the finer grain and costs nothing extra to read.
-        ts_leg_ok = bool(ts_table and ts_dial and not ts_dial["missing"]
-                         and primary.md_table)
+        ts_leg_ok = bool(ts_usable and primary.md_table)
         if not ts_leg_ok:
             # A console warning is not enough: whoever opens the dashboard is
             # not the person who watched the log. Without a coverage entry the
@@ -662,9 +672,8 @@ def _assess(args) -> None:
             # run has no load-shape story".
             logger.warning("no usable timeseries table; skipping measure timeseries")
             coverage["measures_ts_skipped_reason"] = (
-                f"{primary.key} has no queryable timeseries table"
-                + (f" ({'; '.join(ts_dial['missing'])})" if ts_dial
-                   and ts_dial["missing"] else "")
+                f"{primary.key} has no usable timeseries table"
+                + (f" ({'; '.join(ts_problems)})" if ts_problems else "")
                 + ". The measure ANNUAL figures above are unaffected. The "
                 "timeseries table comes from buildstockbatch's own "
                 "postprocessing crawl of the run, not from this assessment.")
@@ -856,18 +865,17 @@ class ResultsDashboard:
 
     Deterministic: Athena SQL, pandas, and a hand-written JS bundle. No model.
 
-        calib = cspp.ResultsDashboard(
+        dashboard = cspp.ResultsDashboard(
             comstock,                      # the run under review
             cbecs=cbecs, ami=ami,          # references the driver already built
             comparison_runs=[r2],          # optional, Athena-tables-only
-        )
-        calib.run()
+        )                                  # runs on construction (run_now=True)
 
-    RUN IT AFTER `create_sightglass_tables`. The assessment reads the published
-    aggregate tables that step's Glue crawlers create, so it cannot run before
-    them. It probes for them and skips with a stated reason if they are absent,
-    which is why `enabled=True` is a safe default even though most
-    postprocessing runs never create Athena tables at all.
+    RUN IT AFTER `prepare_athena_tables`. The assessment reads the aggregate
+    tables that call exports and crawls (the drivers make it under
+    MAKE_RESULTS_DASHBOARD), so it cannot run before them. It probes for them
+    and skips with a stated reason if they are absent, which is why
+    `enabled=True` is a safe default.
     """
 
     def __init__(self, comstock, cbecs=None, ami=None, comparison_runs=(),
@@ -882,24 +890,26 @@ class ResultsDashboard:
         Args:
             comstock: the ComStock run under review. Supplies the run name the
                 Athena table names are derived from, and the upgrade list.
-            cbecs: a cspp.CBECS. Without it the annual, distribution and
-                heating-fuel legs skip.
+            cbecs: a cspp.CBECS. Without it the annual comparison is
+                ComStock-only and the distribution and heating-fuel legs skip.
             ami: a cspp.AMI. Without it the AMI leg skips.
             comparison_runs: AthenaRunRef values for releases to compare
                 against. These need no local results and no apportionment.
-            comparison: the ComStockToCBECSComparison for this driver run, if
-                there is one. Output then lands in a `results_dashboard/` subfolder of
-                that comparison's own folder, so the dashboard sits with the
-                plots covering the same runs instead of in a folder of its own.
+            comparison: the driver's comparison object, if there is one --
+                ComStockToCBECSComparison, ComStockMeasureComparison or
+                ComStockToAMIComparison; anything with an `output_dir`. Output
+                then lands in a `results_dashboard/` subfolder of that
+                comparison's own folder, so the dashboard sits with the plots
+                covering the same runs instead of in a folder of its own.
             enabled: master toggle. Default True; a missing metadata table
                 skips the step rather than raising, so on is safe.
-            database: Athena database holding the run's crawled tables. Note
-                `create_sightglass_tables` writes to 'vizstock' by default while
-                other postproc code reads 'enduse', so set this deliberately.
+            database: Athena database holding the run's crawled tables -- the
+                driver's ATHENA_DATABASE, 'enduse' for every driver here.
             include_measures: None takes the upgrade list from the run
                 (`upgrade_ids_to_process`, which `upgrade_ids_to_skip` does
-                restrict). Pass a list of upgrade ids to restrict it further,
-                or [] to skip the measure legs.
+                restrict; `include_upgrades=False` turns the measure legs off).
+                Pass a list of upgrade ids to restrict it further, or [] to
+                skip the measure legs.
             run_now: False builds the object without running, for inspection.
         """
         self.comstock = comstock
@@ -1021,7 +1031,7 @@ class ResultsDashboard:
                 raise ValueError(
                     "This run's output_dir is on S3; the results dashboard "
                     "writes locally. Pass output_dir=... explicitly, or pass "
-                    "comparison=<the ComStockToCBECSComparison> to write beside "
+                    "comparison=<the driver's comparison object> to write beside "
                     "its plots.")
             if fs_path:
                 return Path(fs_path) / self.OUTPUT_SUBDIR
@@ -1038,6 +1048,14 @@ class ResultsDashboard:
         """
         if self.include_measures is not None:
             return [str(u) for u in self.include_measures]
+        if not getattr(self.comstock, "include_upgrades", True):
+            # A baseline-only driver: prepare_athena_tables exported upgrade 0
+            # alone, so the measure legs would query partitions that are not
+            # there -- even though stale results_up*.parquet files on disk can
+            # still put ids into upgrade_ids_to_process.
+            logger.info("include_upgrades=False: measure legs off "
+                        "(pass include_measures=[ids] to force them)")
+            return []
         ids = getattr(self.comstock, "upgrade_ids_to_process", None) or []
         if not ids and isinstance(self.comstock, AthenaRunRef):
             # A ref carries no upgrade list, so the measure legs disappear --
@@ -1091,9 +1109,10 @@ class ResultsDashboard:
                 f"No metadata aggregate table for run '{self.primary.key}' in "
                 f"database {self.database} (looked for {self.primary.md_table} and "
                 f"any {self.primary.md_table.split('_md_agg_')[0]}_md_agg_*parquet). "
-                "The assessment reads the aggregate tables created by "
-                "create_sightglass_tables; run that first, or pass an AthenaRunRef "
-                "for a published release.")
+                "The dashboard reads the aggregate tables prepare_athena_tables "
+                "exports and crawls (MAKE_RESULTS_DASHBOARD = True in the driver does "
+                "that; REBUILD_ATHENA_TABLES = True redoes it), or pass an "
+                "AthenaRunRef for a published release.")
             logger.warning("results dashboard skipped: %s", self.skipped_reason)
             return self
         self.primary = replace(self.primary, md_table=primary_table)
@@ -1159,13 +1178,26 @@ class ResultsDashboard:
         )
         logger.info("results dashboard: %d run(s), %d measure(s) -> %s",
                     len(args.runs), len(measure_ids), self.output_dir)
-        _assess(args)
-
-        # Build the page in the same call. In the standalone tool this was a
-        # SECOND command (`python -m ...dashboard --assessment <dir>`), which is
-        # why a first port of run() wrote every metric CSV and no dashboard at
-        # all. One entry point, or the deliverable silently goes missing.
-        page = dashboard.build(self.output_dir, self.dashboard_path)
+        # Fail soft from here on. Every prerequisite above was probed, but a
+        # query can still fail once it runs -- permissions, a network drop, a
+        # column an older release spells differently. This is an optional step
+        # inside someone's postprocessing job, so that must not take the job
+        # down: keep whatever was written, say what failed, and return.
+        try:
+            _assess(args)
+            # Build the page in the same call. In the standalone tool this was
+            # a SECOND command (`python -m ...dashboard --assessment <dir>`),
+            # which is why a first port of run() wrote every metric CSV and no
+            # dashboard at all. One entry point, or the deliverable silently
+            # goes missing.
+            page = dashboard.build(self.output_dir, self.dashboard_path)
+        except Exception as exc:                                  # noqa: BLE001
+            self.skipped_reason = (
+                f"failed while assessing ({type(exc).__name__}: {exc}); metric "
+                f"files written before the failure are in {self.output_dir}")
+            logger.warning("results dashboard skipped: %s", self.skipped_reason,
+                           exc_info=True)
+            return self
         logger.info("dashboard: %s (%.0f KB)", page, page.stat().st_size / 1024)
         return self
 

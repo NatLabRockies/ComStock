@@ -1,5 +1,6 @@
-
-const D = window.__CALIB__;
+// ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+// See top level LICENSE.txt file for license terms.
+const D = window.__DASHBOARD__;
 const $ = s => document.querySelector(s);
 /* ---------- one word per REASON a cell is empty ----------
    "n/a" was doing at least three jobs -- the number is missing, the release does
@@ -2207,8 +2208,8 @@ function renderAmiAgreement(){
   const ag=D.amiAgreement||[];
   if(!ag.length){
     $("#view").innerHTML=`<div class="panel"><h2>Cross-region agreement</h2>
-      <p class="note">No agreement table in this assessment — re-run the assessment with
-      <code>--region all</code>.</p></div>`;
+      <p class="note">No agreement table in this assessment — it is built when the
+      dashboard runs with <code>region="all"</code> (the default).</p></div>`;
     return;
   }
   const regions=[...new Set(ag.map(r=>r.region))].sort();
@@ -4755,7 +4756,8 @@ function renderHeatingFuel(host){
   const nat = hfRows(btype,"none");
   if(!HF.length){
     host.innerHTML = `<div class="panel"><p class="note">No heating-fuel comparison in this
-      assessment — re-run without <code>--skip-heating-fuel</code>.</p></div>`;
+      assessment — it needs CBECS (<code>cbecs=</code>) and
+      <code>skip_heating_fuel=False</code>.</p></div>`;
     return;
   }
   if(!nat.length){

@@ -32,6 +32,10 @@ TWO THINGS THAT LOOK LIKE THEY SHOULD BE SIMPLER AND ARE NOT.
    was a cache hit, so the first genuinely new query was the first to reach
    Athena at all, and it failed long after the run looked healthy. A cached
    result is only valid for the database and workgroup that produced it.
+   Rebuilding a table is the other way a cached result goes stale, so every
+   entry keeps its SQL in a `.sql` sidecar and `invalidate_cache(run)` drops
+   the entries that read a run once prepare_athena_tables has exported or
+   crawled it again.
 
 2. Column introspection stays on `information_schema` rather than
    `BuildStockQuery.get_cols`. Callers string-match the RAW Athena `data_type`
@@ -56,7 +60,7 @@ from ..athena_config import ATHENA_WORKGROUP
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(os.environ.get(
-    "CALIB_CACHE_DIR", Path.home() / ".cache" / "comstock_results_dashboard"))
+    "RESULTS_DASHBOARD_CACHE_DIR", Path.home() / ".cache" / "comstock_results_dashboard"))
 
 # Published SDR/OEDI releases live here. A privately crawled run lives in
 # whichever database create_sightglass_tables wrote it to.
@@ -145,7 +149,37 @@ def query(sql: str, no_cache: bool = False, label: str = "") -> pd.DataFrame:
     if not df.empty:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path)
+        # The SQL beside the result, so invalidate_cache can find every entry
+        # that read a given run's tables after those tables are rebuilt.
+        path.with_suffix(".sql").write_text(sql, encoding="utf-8")
     return df
+
+
+def invalidate_cache(needle: str) -> int:
+    """Drop every cached result whose SQL mentions `needle` -- a run's table
+    prefix, after prepare_athena_tables has re-exported or re-crawled it.
+
+    The cache is keyed on SQL text, so a rebuilt table would otherwise keep
+    answering from the results of its previous incarnation, silently. Entries
+    written before the `.sql` sidecar existed cannot be matched and are left
+    alone; `no_cache=True` (or deleting CACHE_DIR) covers those.
+    """
+    if not CACHE_DIR.exists():
+        return 0
+    needle, n = needle.lower(), 0
+    for sidecar in CACHE_DIR.glob("*.sql"):
+        try:
+            if needle not in sidecar.read_text(encoding="utf-8").lower():
+                continue
+            for p in (sidecar.with_suffix(".parquet"), sidecar):
+                if p.exists():
+                    p.unlink()
+            n += 1
+        except OSError as exc:
+            logger.info("cache: could not drop %s (%s)", sidecar.name, exc)
+    if n:
+        logger.info("cache: dropped %d cached result(s) that read %s", n, needle)
+    return n
 
 
 def glue_table_names(database: str | None = None, prefix: str = "") -> list[str]:
@@ -276,3 +310,32 @@ def qualify(table: str, database: str | None) -> str:
     if not table or not database or "." in table:
         return table
     return table if database == _cfg()["database"] else f"{database}.{table}"
+
+
+# ---------------------------------------------------------------------------
+# baseline predicate, typed to the column
+# ---------------------------------------------------------------------------
+# Published releases and crawled runs store `upgrade` as bigint; some older
+# releases expose it as varchar, and Athena does not coerce `varchar = integer`.
+# `measures` probes the type for its own literals; the single-run legs share
+# this one.
+DEFAULT_BASE_WHERE = "upgrade = 0 AND completed_status = 'Success'"
+
+
+def upgrade_literal(value, col_type: str | None) -> str:
+    """`0` for an integer `upgrade` column, `'0'` for a varchar one."""
+    t = str(col_type or "").lower()
+    return f"'{value}'" if ("char" in t or "string" in t) else str(value)
+
+
+def baseline_where(table: str, no_cache: bool = False) -> str:
+    """`upgrade = 0 AND completed_status = 'Success'`, the literal typed to
+    `table`'s own `upgrade` column. Falls back to the integer form when the
+    column types cannot be read -- what every table seen so far uses."""
+    try:
+        col_type = table_column_types(table, no_cache=no_cache).get("upgrade")
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("cannot read column types of %s (%s); assuming integer upgrade",
+                    table, exc)
+        col_type = None
+    return f"upgrade = {upgrade_literal(0, col_type)} AND completed_status = 'Success'"

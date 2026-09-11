@@ -44,9 +44,9 @@ def main():
     # results aggregate. The county metadata and timeseries tables the AMI leg
     # needs are DISCOVERED from its stem, so they need not be named here.
     #
-    # `database`: published releases live in 'buildstock_sdr'; a privately
-    # crawled run lives wherever create_sightglass_tables wrote it (its own
-    # default is 'vizstock', while the rest of postprocessing reads 'enduse').
+    # `database`: 'buildstock_sdr' for a published release; 'enduse' for a run
+    # crawled by one of the compare_*.py drivers (their ATHENA_DATABASE). A
+    # crawled run's md_table is <run>_md_agg_national_by_state_parquet.
     primary = cspp.AthenaRunRef(
         key='r3_2025',
         label='2025 R3',
@@ -68,15 +68,17 @@ def main():
 
     # CBECS. Without it the annual comparison is ComStock-only and the
     # distribution and heating-fuel legs skip, each with a stated reason.
-    # load_cbecs() reads 'CBECS wide.csv' if it is present and builds
-    # and exports it if not. None skips those legs.
+    # load_cbecs() reads 'CBECS wide.csv' if it is present and builds and
+    # exports it if not (first run on a machine: downloads truth_data/v01 from
+    # S3). None skips those legs.
     cbecs = cspp.load_cbecs()
 
-    # AMI adds the load-shape tab. load_ami() reads 'AMI long.csv' if it
-    # is present and builds it if not. None skips the leg.
+    # AMI adds the load-shape tab. load_ami() reads 'AMI long.csv' if it is
+    # present and builds it if not (first run: downloads the AMI truth data and
+    # takes several minutes). None skips the leg.
     ami = cspp.load_ami()
 
-    calib = cspp.ResultsDashboard(
+    dashboard = cspp.ResultsDashboard(
         primary,
         cbecs=cbecs,
         ami=ami,
@@ -85,17 +87,18 @@ def main():
         # REQUIRED here. With a ComStock object the assessment infers a
         # `results_dashboard/` subfolder of that run's output folder; a ref has no run
         # folder to infer one from, so say where to write. Same shape a driver
-        # would use: output/ComStock <run>/results_dashboard.
+        # would use: output/ComStock <run>/results_dashboard. Relative to where
+        # you run from -- run from postprocessing/, or give an absolute path.
         output_dir=f'output/ComStock {primary.key}/results_dashboard',
         # A ref carries no upgrade list, so the measure legs cannot be derived.
         # [] states they are not wanted; a list of ids restricts them.
         include_measures=[],
         )
 
-    if calib.skipped_reason:
-        logger.warning('results dashboard skipped: %s', calib.skipped_reason)
+    if dashboard.skipped_reason:
+        logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
     else:
-        logger.info('results dashboard: %s', calib.dashboard_path)
+        logger.info('results dashboard: %s', dashboard.dashboard_path)
 
 
 # Code to execute the script

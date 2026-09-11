@@ -1,3 +1,5 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Design-parameter review: the modelling inputs that drive calibration choices.
 
 What the model was TOLD to do, before arguing about what it produced. Lighting
@@ -336,7 +338,7 @@ def _per_model_weight(expr: str) -> str:
 
 
 def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
-                     by_btype: bool = False) -> str:
+                     by_btype: bool = False, base_where: str | None = None) -> str:
     """Weighted mean, median, p10/p90 and coverage for each metric.
 
     Coverage is the point of the CASE guards: it reports how much of the
@@ -387,7 +389,7 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
                  f"        SUM({W}) OVER (PARTITION BY bldg_id) AS weight_model,\n"
                  f"        ROW_NUMBER() OVER (PARTITION BY bldg_id"
                  f" ORDER BY bldg_id) AS _rn\n"
-                 f" FROM {md_table}\n WHERE {BASE_WHERE}) t")
+                 f" FROM {md_table}\n WHERE {base_where or athena.baseline_where(md_table)}) t")
     return (f"SELECT\n{grp}"
             f"  COUNT(*) AS n_rows,\n  SUM(weight_model) AS w_total,\n"
             + ",\n".join(sel) + f"\nFROM {per_model}\nWHERE t._rn = 1\n{tail}")

@@ -40,8 +40,9 @@ postprocessing/results_dashboard_from_athena.py
 # Dashboard test drivers: runnable copies of the templates, one per run type.
 postprocessing/*_dbtest*.py
 postprocessing/*_test_dashboard.py
-postprocessing/compare_tsv_versions.py
 postprocessing/extract_models_and_errors.py
+# setuptools metadata from a local install
+postprocessing/*.egg-info/
 
 # Rubocop output
 /.rubocop

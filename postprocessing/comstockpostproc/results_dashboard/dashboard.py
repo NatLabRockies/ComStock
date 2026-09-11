@@ -1,6 +1,8 @@
+# ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
+# See top level LICENSE.txt file for license terms.
 """Build a self-contained results dashboard from an assessment directory.
 
-    python -m comstock_results_dashboard.dashboard --assessment <dir> [--out dashboard.html]
+    dashboard.build(<assessment dir>, <dashboard.html>)    # called by cspp.ResultsDashboard
 
 Reads metrics/*.csv + coverage.json + manifest.json and writes one HTML file with
 no external dependencies (charts are hand-rolled SVG). Open it in any browser; no
@@ -498,10 +500,17 @@ HTML = """<!doctype html>
   </div>
   <div id="view"></div>
 </div>
-<script>window.__CALIB__ = {payload};</script>
+<script>window.__DASHBOARD__ = {payload};</script>
 <script>{js}</script>
 </body></html>
 """
+
+
+def _script_safe(text: str) -> str:
+    """JSON that cannot terminate the <script> it is embedded in: a `</script>`
+    in a run label or category would otherwise end the element early."""
+    return (text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+            .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
 
 
 def build(assess: Path, out: Path) -> Path:
@@ -510,11 +519,11 @@ def build(assess: Path, out: Path) -> Path:
     html = HTML.format(
         title=f"ComStock results dashboard — {runs}",
         css=CSS, js=JS,
-        payload=json.dumps(payload, allow_nan=False),
+        payload=_script_safe(json.dumps(payload, allow_nan=False)),
         runs=runs,
         created=(payload["created"] or "")[:10],
-        # `--region all` used to print literally as "AMI all"; name the count of
-        # regions actually compared instead of the CLI argument.
+        # region="all" used to print literally as "AMI all"; name the count of
+        # regions actually compared instead of the argument.
         references=_references_label(payload),
     )
     out.write_text(html, encoding="utf-8")
