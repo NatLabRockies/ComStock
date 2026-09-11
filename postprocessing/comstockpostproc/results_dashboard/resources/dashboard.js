@@ -101,6 +101,7 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               dimSig: false, rankDim: "building_type",
               rankFuel: "electricity.total", rankSig: true,
               measView: "single",
+              measLoc: "",          // measure-timeseries location; "" = first available
               measSel: D.measures&&D.measures.summary.length
                 ? String(D.measures.summary[0].upgrade) : "",
               measMulti: D.measures
@@ -3564,6 +3565,12 @@ function renderMeasuresAnnual(){
     <p class="note">Positive = the measure saves. Bills use the mean-rate bill; emissions use
     eGRID 2021 subregion factors for electricity plus fuel factors.</p>
     ${measSummaryTable(sel)}</div>`;
+  // State an absent load-shape leg here, on the tab where a reader would look
+  // for it. Logged-only skips are invisible to whoever opens the file.
+  if(D.coverage && D.coverage.measures_ts_skipped_reason){
+    h+=`<div class="panel"><p class="note"><b>Measure load shapes not computed.</b>
+      ${D.coverage.measures_ts_skipped_reason}</p></div>`;
+  }
   h+=measReleasePanel();
 
   if(!sel.length){
@@ -4012,9 +4019,27 @@ function renderMeasuresAnnual(){
 
 function renderMeasuresTs(){
   const states=Object.keys(MEAS.ts||{});
+  // One location at a time. `states` stays the full list for the dropdown;
+  // `shown` is what gets rendered. A stale hash value falls back to the first.
+  if(!states.includes(state.measLoc)) state.measLoc=states[0]||"";
+  const shown=states.filter(st=>st===state.measLoc);
+  const locSelect=states.length>1?`<label class="note" style="margin:0 8px 0 0">location
+      <select id="measLoc" aria-label="measure timeseries location">${states.map(st=>
+        `<option value="${st}" ${st===state.measLoc?"selected":""}>${st.replace(/_/g," ")}</option>`
+      ).join("")}</select></label>`:"";
   if(!states.length){
-    $("#view").innerHTML=`<div class="panel"><p class="note">No measure timeseries in this
-      assessment — re-run with <code>--measures</code> and <code>--measure-states</code>.</p></div>`;
+    // The assessment records WHY this leg did not run. Show that, rather than a
+    // generic placeholder: the reason is almost never "you forgot to ask for
+    // it", and the old text named two CLI flags that no longer exist -- this
+    // runs as a step inside a postprocessing driver, so there is nothing to
+    // re-run with.
+    const why=(D.coverage||{}).measures_ts_skipped_reason;
+    $("#view").innerHTML=`<div class="panel"><h2>Measure load shapes — not computed</h2>
+      <p class="note">${why||`No measure timeseries in this assessment. This leg needs the run's
+      by-state-and-county metadata aggregate plus a queryable timeseries table, and at least one
+      state to profile (taken from the run's <code>timeseries_locations_to_plot</code>).`}</p>
+      <p class="note">The measure <b>annual</b> savings on the previous tab do not depend on any of
+      that and are unaffected.</p></div>`;
     return;
   }
   const sel=measSelected();
@@ -4066,6 +4091,53 @@ function renderMeasuresTs(){
   // it does not — a measure cannot change a building it is not applicable to
   const tsScenFor=up=>mk=>((mk & measBit(up))?String(up):"0");
   const tsBaseScen=()=>"0";
+
+  /* ---- comparison series WITHOUT the masked leg -------------------------
+     The masked hourly leg is capped at 8 measures (the mask space is 2^M), so
+     a run with more of them has no masks at all -- and the comparison view
+     read ONLY masked rows, so every panel bailed at `if(!hours.length) return`
+     and the tab rendered its headings with no charts under them. That is the
+     "nothing shows up" case.
+
+     Two of the four bases never needed masks. measures_ts_<location>.csv
+     already carries, per (season, day type, hour):
+        upgrade "<n>"       the measure over its applicable buildings
+        upgrade "base_<n>"  those SAME buildings at baseline
+        upgrade "0"         the whole stock at baseline
+     so "each measure's own applicability" is a direct read, and "entire stock"
+     is stock baseline minus that measure's applicable baseline plus the
+     measure. Only union and intersection genuinely require the masks, because
+     only they need to know which buildings several measures share. */
+  function tsRaw(st, sn, dayType, col, upgradeKey){
+    const wd={}, we={};
+    (MEAS.ts[st]||[]).forEach(r=>{
+      if(r.season!==sn) return;
+      if(String(r.upgrade)!==String(upgradeKey)) return;
+      const v=r[col];
+      if(v===null||v===undefined) return;
+      const t=r.day_type==="Weekend"?we:wd;
+      t[r.hour]=(t[r.hour]||0)+ +v;
+    });
+    if(dayType==="Weekday") return wd;
+    if(dayType==="Weekend") return we;
+    const out={};
+    for(let hh=0;hh<24;hh++){
+      const a=wd[hh], b=we[hh];
+      if(a===undefined&&b===undefined) continue;
+      // same 5/7 weekday + 2/7 weekend mix as the masked path
+      out[hh]=((a===undefined?b:a)*5+(b===undefined?a:b)*2)/7;
+    }
+    return out;
+  }
+  /* stock basis for one measure: the whole stock, with only its applicable
+     buildings changed. Hours present in any term are kept; a term missing an
+     hour contributes nothing rather than voiding the hour. */
+  const tsCombine=(base0, baseUp, meas)=>{
+    const out={};
+    new Set([...Object.keys(base0), ...Object.keys(baseUp), ...Object.keys(meas)])
+      .forEach(k=>{ out[k]=(+base0[k]||0)-(+baseUp[k]||0)+(+meas[k]||0); });
+    return out;
+  };
   /* The population badge here must be state-scoped: the mask weights in
      measures_masks.csv are national, while these profiles cover one state, so
      the share is computed from these rows as a share of the state's baseline
@@ -4091,7 +4163,7 @@ function renderMeasuresTs(){
         <span class="badge" title="The measure timeseries leg was queried against this release only, so this tab has no release comparison and the header compare control is disabled here.">${
           ALL_RUNS.length>1?`${runShort(PRIMARY)} only — no release comparison`:runShort(PRIMARY)}</span>
         ${state.measView==="multi"?`<span class="badge">${tsBas[1]}</span>`:""}</h2>
-      <span class="spacer"></span>${measControls()}</div>
+      <span class="spacer"></span>${locSelect}${measControls()}</div>
     <p class="note">Seasonal average electricity demand, replicating the measure postprocessing
     timeseries figures. ${seasonSentence()} Values are hourly-mean stock megawatts.
     ${state.measView==="multi"?`<b>Population: ${tsBas[2]}.</b>`
@@ -4101,9 +4173,9 @@ function renderMeasuresTs(){
       <label class="note" style="margin:0">population
       <select id="measBasisTs">${TS_BASES.map(([k,lab])=>
         `<option value="${k}" ${k===tsBasis?"selected":""}>${lab}</option>`).join("")}
-      </select></label>${states.map(st=>tsPopBadge(st,tsBasis)).join(" ")}</div>`:""}</div>`;
+      </select></label>${shown.map(st=>tsPopBadge(st,tsBasis)).join(" ")}</div>`:""}</div>`;
 
-  states.forEach(st=>{
+  shown.forEach(st=>{
     if(state.measView==="single"&&sel.length){
       const mm=sel[0];
       h+=`<div class="panel"><h2>Average hourly electricity demand by end use — ${st} — MW
@@ -4175,9 +4247,12 @@ function renderMeasuresTs(){
   });
   $("#view").innerHTML=h;
 
+  const locSel=$("#measLoc");
+  if(locSel) locSel.addEventListener("change",e=>{
+    state.measLoc=e.target.value; renderMeasuresTs(); syncHash(); });
   const MW=v=>(v===null||v===undefined)?null:v/1000;
   const tsLegendItems=(stack,lines)=>(stack?enduseLegendItemsVisible():[]).concat(lines);
-  states.forEach(st=>{
+  shown.forEach(st=>{
     const rows=MEAS.ts[st];
     const get=(up,sn,d)=>rows.filter(r=>String(r.upgrade)===String(up)&&r.season===sn
       &&(d?r.day_type===d:true));
@@ -4246,7 +4321,24 @@ function renderMeasuresTs(){
       SEASONS.forEach(sn=>["Weekday","Weekend"].forEach(d=>{
         const build=col=>{
           const series={};
-          if(tsBasis==="own"){
+          if(!hasTsMask){
+            // No masks: read the per-measure and baseline scenarios directly.
+            // TS_BASES is already restricted to stock/own in this case, so
+            // union and intersection cannot be selected here.
+            if(tsBasis==="own"){
+              sel.forEach(mm=>{
+                series[`m_${mm.up}`]=tsRaw(st,sn,d,col,mm.up);
+                series[`b_${mm.up}`]=tsRaw(st,sn,d,col,`base_${mm.up}`);
+              });
+            } else {
+              series.btot=tsRaw(st,sn,d,col,"0");
+              sel.forEach(mm=>{
+                series[`m_${mm.up}`]=tsCombine(
+                  tsRaw(st,sn,d,col,"0"), tsRaw(st,sn,d,col,`base_${mm.up}`),
+                  tsRaw(st,sn,d,col,mm.up));
+              });
+            }
+          } else if(tsBasis==="own"){
             sel.forEach(mm=>{
               const ok=mk=>(mk & measBit(mm.up))!==0;
               series[`m_${mm.up}`]=tsSeries(st,sn,d,col,tsScenFor(mm.up),ok);
@@ -4923,6 +5015,11 @@ function renderCoverage(){
       ${r.label}${r.key===D.primaryRun?" <b>(primary)</b>":""}</td>
       <td style="font-size:12px">${r.md_table}${r.ts_table?"<br>"+r.ts_table:""}</td></tr>`).join("")}
     </tbody></table>
+    ${Object.keys(man.dropped_runs||{}).length?`<p class="note"><b>Requested but not
+      included:</b> ${Object.entries(man.dropped_runs).map(([k,why])=>
+      `<b>${k}</b> — ${why}`).join("; ")}. This panel lists what the assessment COVERED;
+      without this line a run that was asked for and could not be reached is
+      indistinguishable from one that was never requested.</p>`:""}
     ${c.ami_skipped_reason?`<p class="note"><b>AMI skipped:</b> ${c.ami_skipped_reason}.</p>`:""}</div>`;
 
   /* AMI coverage is PER REGION. Flattening one region's slice into a single
@@ -4933,6 +5030,14 @@ function renderCoverage(){
   const regKeys=Object.keys(regs).sort();
   const amiAll=(c.ami_regions_compared||regKeys);
   const rowFor=(o,k)=>((o||{})[k]||[]).join(", ")||"—";
+  // Thin ComStock cells, each with its own model count. The count is the point:
+  // "retail" tells a reader nothing, "retail (2)" tells them not to trust that
+  // shape. These are DRAWN in the charts, not dropped, so naming them here is
+  // the only thing separating a real profile from two buildings' worth of noise.
+  const thinCs=(o)=>{
+    const t=(o||{}).comstock_thin_sample_types||[], n=(o||{}).comstock_model_counts||{};
+    return t.length ? t.map(bt=>`${bt}${n[bt]!==undefined?` (${n[bt]})`:""}`).join(", ") : "—";
+  };
   h+=`<div class="panel"><h2>AMI coverage by region — which building types each region can test
       <span class="badge">${amiAll.length} region${amiAll.length===1?"":"s"} in this
       assessment</span></h2>
@@ -4941,7 +5046,8 @@ function renderCoverage(){
          showing. A type absent in one region may be well covered in another, so read across the
          row before concluding there is no metered evidence for it.</p>
          <div class="scroll"><table><thead><tr><th>Region</th><th>Types compared</th>
-           <th>No AMI truth data</th><th>Skipped — thin sample (&lt;3 buildings)</th>
+           <th>No AMI truth data</th><th>Skipped — thin AMI sample (&lt;3 buildings)</th>
+           <th>Thin ComStock sample (&lt;${c.comstock_min_models_threshold||10} models)</th>
            <th>In AMI, absent from ComStock</th></tr></thead><tbody>
          ${regKeys.map(rk=>{
             const o=regs[rk]||{};
@@ -4950,6 +5056,7 @@ function renderCoverage(){
               <td style="text-align:left;font-size:12px">${rowFor(o,"compared_types")}</td>
               <td style="text-align:left;font-size:12px">${rowFor(o,"ami_missing_types")}</td>
               <td style="text-align:left;font-size:12px">${rowFor(o,"ami_thin_sample_types_skipped")}</td>
+              <td style="text-align:left;font-size:12px">${thinCs(o)}</td>
               <td style="text-align:left;font-size:12px">${rowFor(o,"comstock_missing_types")}</td>
               </tr>`;}).join("")}
          </tbody></table></div>`
@@ -4959,11 +5066,20 @@ function renderCoverage(){
           <tr><td>No AMI truth data</td><td>${(c.ami_missing_types||[]).join(", ")||"none"}</td></tr>
           <tr><td>Skipped — thin AMI sample (&lt;3 buildings)</td>
               <td>${(c.ami_thin_sample_types_skipped||[]).join(", ")||"none"}</td></tr>
+          <tr><td>Thin ComStock sample (&lt;${c.comstock_min_models_threshold||10} models)</td>
+              <td>${thinCs(c)}</td></tr>
           <tr><td>In AMI but absent from ComStock</td>
               <td>${(c.comstock_missing_types||[]).join(", ")||"none"}</td></tr>
         </tbody></table>`}
+    ${c.ami_headline_region_note?`<p class="note"><b>Headline AMI numbers are one region, not a
+      national result.</b> ${c.ami_headline_region_note}</p>`:""}
     ${c.ami_runs_skipped?`<p class="note">Runs without an AMI leg: ${
-      JSON.stringify(c.ami_runs_skipped)}.</p>`:""}</div>`;
+      JSON.stringify(c.ami_runs_skipped)}.</p>`:""}
+    ${Object.values(c.ami_timeseries_clock||{}).includes("est")?`<p class="note"><b>Clock:</b> ${
+      Object.entries(c.ami_timeseries_clock).filter(([,v])=>v==="est").map(([k])=>k).join(", ")
+      } read a published-release table, which stores every building's timestamps in Eastern
+      Standard Time; they were converted back to local standard time by state before comparison
+      (split-zone states use their majority zone). AMI meters and crawled runs are already local.</p>`:""}</div>`;
 
   // Every measure scenario in the assessment, named: the measure tabs show a
   // truncated label, and a reader needs the full upgrade name and its share of
@@ -5069,12 +5185,14 @@ function renderCoverage(){
    specific view can be shared by sending the URL */
 const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim",
                  "dpGroup","dpDim","hfView",
-                 "rankDim","rankFuel","dimSig","rankSig","measView","measSel",
+                 "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
                  "measDistGroup","measMulti","showCompare","measBasis","measPop",
                  "measCatGroup","euHidden","feHidden","measHidden"];
 function syncHash(){
   const p=new URLSearchParams();
-  HASH_KEYS.forEach(k=>p.set(k,String(state[k])));
+  // Unset state (e.g. amiRegion with no AMI regions) is left out rather than
+  // written as the string "undefined".
+  HASH_KEYS.forEach(k=>{ if(state[k]!==undefined&&state[k]!==null) p.set(k,String(state[k])); });
   history.replaceState(null,"","#"+p.toString());
 }
 function parseHash(){

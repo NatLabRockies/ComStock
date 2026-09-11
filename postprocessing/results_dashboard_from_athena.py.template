@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Results dashboard for runs that are ALREADY in Athena.
+
+WHAT THIS IS FOR. Reviewing a run without downloading or reprocessing it --
+a published SDR/OEDI release, or a private run crawled by an earlier
+postprocessing pass. The assessment never opens simulation results: no
+buildstock.csv, no apportionment, no results_up*.parquet. So a run that is
+already crawled needs none of that work repeated.
+
+WHY IT IS NOT PART OF compare_runs.py / compare_upgrades.py. Those build
+`cspp.ComStock` objects, and `ComStock.__init__` calls download_data() and then
+globs local results_up*.parquet unconditionally -- so they cannot address a run
+whose outputs are not on this machine, which is exactly this case. For runs you
+ARE postprocessing, use those drivers instead: they carry MAKE_RESULTS_DASHBOARD
+and build the same dashboard as one step of the job. Do not use this file for
+that.
+
+WHAT THIS FILE MUST NEVER GROW INTO. An earlier version of it constructed a
+ComStock object, which made it a redundant copy of compare_runs.py's tail and
+cost more to maintain than it was worth. If you find yourself adding
+`cspp.ComStock`, `cspp.Apportion`, a comparison object, or an export/crawl call
+here, the work belongs in one of the four primary drivers, not in this file.
+The absence of those four things is the whole reason this one is cheap.
+
+THE TABLES MUST ALREADY EXIST. Nothing here creates them. If the run has not
+been crawled, run it through the appropriate compare_*.py driver with
+MAKE_RESULTS_DASHBOARD = True -- its prepare_athena_tables call exports the
+aggregates to S3 and crawls them. This file only reads.
+"""
+
+import logging
+
+import comstockpostproc as cspp
+
+logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
+logger = logging.getLogger(__name__)
+
+
+def main():
+    # The run under review, addressed by its Athena tables alone.
+    #
+    # `md_table` is the only REQUIRED one -- the national metadata + annual
+    # results aggregate. The county metadata and timeseries tables the AMI leg
+    # needs are DISCOVERED from its stem, so they need not be named here.
+    #
+    # `database`: published releases live in 'buildstock_sdr'; a privately
+    # crawled run lives wherever create_sightglass_tables wrote it (its own
+    # default is 'vizstock', while the rest of postprocessing reads 'enduse').
+    primary = cspp.AthenaRunRef(
+        key='r3_2025',
+        label='2025 R3',
+        md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
+        database='buildstock_sdr',
+        color='#0072B2',
+        )
+
+    # Releases to compare against, same form. [] for a single-run review.
+    others = [
+        cspp.AthenaRunRef(
+            key='r2_2025',
+            label='2025 R2',
+            md_table='comstock_amy2018_r2_2025_md_agg_national_parquet',
+            database='buildstock_sdr',
+            color='#E69F00',
+            ),
+        ]
+
+    # CBECS. Without it the annual comparison is ComStock-only and the
+    # distribution and heating-fuel legs skip, each with a stated reason.
+    # load_cbecs() reads 'CBECS wide.csv' if it is present and builds
+    # and exports it if not. None skips those legs.
+    cbecs = cspp.load_cbecs()
+
+    # AMI adds the load-shape tab. load_ami() reads 'AMI long.csv' if it
+    # is present and builds it if not. None skips the leg.
+    ami = cspp.load_ami()
+
+    calib = cspp.ResultsDashboard(
+        primary,
+        cbecs=cbecs,
+        ami=ami,
+        comparison_runs=others,
+        database=primary.database,
+        # REQUIRED here. With a ComStock object the assessment infers a
+        # `results_dashboard/` subfolder of that run's output folder; a ref has no run
+        # folder to infer one from, so say where to write. Same shape a driver
+        # would use: output/ComStock <run>/results_dashboard.
+        output_dir=f'output/ComStock {primary.key}/results_dashboard',
+        # A ref carries no upgrade list, so the measure legs cannot be derived.
+        # [] states they are not wanted; a list of ids restricts them.
+        include_measures=[],
+        )
+
+    if calib.skipped_reason:
+        logger.warning('results dashboard skipped: %s', calib.skipped_reason)
+    else:
+        logger.info('results dashboard: %s', calib.dashboard_path)
+
+
+# Code to execute the script
+if __name__ == '__main__':
+    main()

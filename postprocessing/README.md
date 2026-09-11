@@ -141,40 +141,129 @@ $ pip install -e .[dev,gap]
 4. Look in the `/output` directory for results
 
 
-### Calibration / QAQC assessment
+### Results dashboard
 
 Compares one or more ComStock runs against CBECS, AMI, and each other, writing
 metric CSVs plus one self-contained `dashboard.html`. Deterministic: Athena SQL,
 pandas, and a hand-written JS bundle.
 
-It reads the published Athena aggregate tables that `create_sightglass_tables`
-creates, so it must run **after** that step. It is safe to leave enabled either
-way -- if the tables are not reachable it skips with a stated reason rather than
-failing the run.
+**For a run you are postprocessing**, this is a step inside the driver you
+already use -- `compare_runs.py`, `compare_upgrades.py`,
+`compare_comstock_to_cbecs.py` or `compare_comstock_to_ami.py` -- each of which
+carries these settings near the top:
 
-1. Copy the `compare_calibration.py.template` file to `compare_calibration.py`
-2. Edit `compare_calibration.py` to point at the run you are reviewing, and at
-   any published releases you want to compare against
+```python
+# ---- Settings ---------------------------------------------------------------
+# Details in README, "Results dashboard".
+ATHENA_DATABASE        = 'enduse'  # keep 'enduse': the timeseries plots and the AMI comparison read it unconditionally
+EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
+REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
+                                   # True:  export and crawl again (what is up there is stale)
+MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
+COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
+#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
+#         database='buildstock_sdr', color='#E69F00')]
+```
+
+The dashboard reads the same Athena tables the timeseries plots and the AMI
+comparison do, and every driver gets them the same way: one
+`cspp.prepare_athena_tables(...)` call per run, which checks Glue first and
+exports, crawls and creates views only for what is missing. Nothing has to be
+commented out on a second run; set `REBUILD_ATHENA_TABLES = True` when the
+tables exist but are out of date (files for upgrades no longer in the run stay
+on S3 and in the table). It logs and returns `False` rather than raising, so an
+S3 or Glue problem cannot cost you the comparison plots that already completed
+-- and if Glue cannot be listed at all (expired credentials) it exports nothing
+rather than exporting blind. On `False` the dashboard skips the affected legs
+and says why; the timeseries plots and the AMI comparison cannot, so those two
+drivers stop with an error naming the cause. `cspp.ResultsDashboard(...)`
+then reads the tables and creates **none** of its own: it skips what it cannot
+find and says why.
+
+Open the dashboard at `<the comparison folder>/results_dashboard/dashboard.html`. The
+assessment writes into a `results_dashboard/` subfolder of the folder that run's
+results already go to -- the comparison folder when a comparison object is
+passed, otherwise `output/ComStock <run>/`. It never creates a top-level folder
+of its own. Metric CSVs, `findings.md` and the exact SQL are in that same
+subfolder.
+
+Notes:
+ - **Comparing your run to a published release** is what `COMPARE_TO_RELEASES`
+   in each driver is for -- "is my run better or worse than the last release?".
+   A release is referenced by its Athena tables alone, so it needs no download,
+   no local simulation results and no apportionment. Releases live in
+   `buildstock_sdr` while your own crawled run lives in `enduse`; the assessment
+   reads both in one pass by qualifying the release's table names, so no extra
+   setup is needed. A release whose tables cannot be found is reported as a
+   dropped run in the dashboard rather than silently omitted.
+ - The four drivers above cover a run you are postprocessing. See
+   *Reviewing a run that is already in Athena* below for one that is not.
+ - `cbecs` and `ami` are optional, and a missing one skips only the legs that
+   need it. Each reads a truth CSV: `CBECS wide.csv`, which only
+   `cbecs.export_to_csv_wide()` writes (the drivers call it), and `AMI long.csv`,
+   which `AMI.__init__` writes when not reloading. `cspp.load_cbecs()`
+   and `cspp.load_ami()` read the file if it is present and build it if
+   not, so the Athena-only driver never has to know which.
+ - **The AMI leg needs the county aggregate.** It weights by county, so it
+   reads the run's `_md_agg_by_state_and_county_parquet` table, which only
+   exists if that resolution was exported. `INCLUDE_AMI = True` is all a driver
+   has to say: `prepare_athena_tables(..., ami=True)` exports the county
+   resolution -- the expensive one, one file per state-county pair, per upgrade
+   -- and crawls it. Without it the AMI leg skips and says so, and the cause is
+   the export config, not the run.
+ - **The AMI leg also needs a timeseries table, and nothing here creates one.**
+   `<run>_timeseries` comes from buildstockbatch's own postprocessing crawl of
+   the run; the crawler here only covers the metadata prefixes. What
+   `prepare_athena_tables` does add is the `<run>_timeseries_vu` view, which
+   translates the raw `electricity_<enduse>_kwh` columns into the
+   `out.electricity.<enduse>.energy_consumption` names these queries use. The
+   assessment prefers that view, and adapts to the two remaining differences
+   from a published `<release>_ts_by_state` -- `building_id` vs `bldg_id`,
+   `time` vs `timestamp` -- and to the `state` column crawled runs do not have
+   (its only role was pruning a state-partitioned published table; the region is
+   selected by the county filter on the metadata side). End-use columns are the
+   union over the run's own models, so a run that metered no heat recovery just
+   has one fewer layer in the stack. See `ami_shapes.ts_dialect`.
+ - AMI coverage is thin on a national run. Only about 2% of models fall in the
+   ten AMI counties. On a national ~100k run that still gives a median of
+   roughly 70-240 models per (region x building type) cell, because
+   apportionment spreads each model across the counties it represents -- the
+   count that matters is models carrying WEIGHT in those counties, not models
+   simulated there. Cells below `MIN_COMSTOCK_MODELS` are drawn but flagged with
+   their model count, and the headline AMI numbers are for one region (`pepco`,
+   the best-sampled) rather than a national result. The `v01` truth data covers
+   9 of the 10 regions -- `seattle` has none and is reported as skipped.
+ - The measure legs cover the run's `upgrade_ids_to_process`, so
+   `upgrade_ids_to_skip` restricts them the same way it restricts the driver's
+   own plots. `include_upgrades` does not: it only gates downloads.
+
+### Reviewing a run that is already in Athena
+
+A published SDR/OEDI release, or a private run crawled by an earlier
+postprocessing pass. Use this when you want the dashboard WITHOUT downloading or
+reprocessing the run -- `sdr_2025_r3_combined` is 32 GB of local run data, and
+its aggregate tables are already published, so there is nothing to repeat.
+
+The four drivers above cannot do this: they build `cspp.ComStock` objects, and
+`ComStock.__init__` downloads and globs `results_up*.parquet` unconditionally.
+The assessment itself never opens run data, so a crawled run needs none of it.
+
+1. Copy `results_dashboard_from_athena.py.template` to `results_dashboard_from_athena.py`
+2. Edit it to name the run's `md_table` and database, plus any releases to
+   compare against
 3. Open an Anaconda prompt, activate the environment, and run the file:
     ```
     $ conda activate comstockpostproc
-    $ python compare_calibration.py
+    $ python results_dashboard_from_athena.py
     ```
-4. Open the dashboard at `<the run's output folder>/calibration/dashboard.html`
 
-   The assessment writes into a `calibration/` subfolder of the folder that
-   run's results already go to -- the comparison folder when a
-   `ComStockToCBECSComparison` is passed, otherwise `output/ComStock <run>/`.
-   It never creates a top-level folder of its own. Metric CSVs, `findings.md`
-   and the exact SQL are in that same subfolder.
-
-Notes:
- - A comparison release is referenced by its Athena tables alone (`AthenaRunRef`),
-   so it needs no local simulation results and no apportionment.
- - `cbecs` and `ami` are optional. Each must have had its export run
-   (`export_to_csv_wide()`), and a missing one skips only the legs that need it.
- - The upgrade list is taken from the run's own data. Do not rely on
-   `include_upgrades` or `upgrade_ids_to_skip` to control it.
+Two things differ from the driver path: `output_dir` is required (a table
+reference carries no run folder to infer one from), and `include_measures` must
+be stated explicitly for the same reason. This file only READS -- if the run has
+not been crawled yet, run it through one of the four drivers with
+`MAKE_RESULTS_DASHBOARD = True` first; their `prepare_athena_tables` call exports
+and crawls the tables.
 
 ### NREL Staff - Extracting simulations and summarizing EnergyPlus warnings and errors on HPC
 

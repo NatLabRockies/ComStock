@@ -26,8 +26,18 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 # Suffixes create_sightglass_tables' Glue crawlers produce for a crawled run.
+# These are STARTING GUESSES only -- the assessment probes each and falls back
+# to discovery, because the real name depends on the geo_top_dir of the export
+# that fed the crawler and on whether the run is crawled or published.
 MD_NATIONAL_SUFFIX = "_md_agg_national_parquet"
-MD_COUNTY_SUFFIX = "_md_agg_by_state_and_county_vu"
+# The crawled _parquet TABLE, deliberately not the _vu VIEW. create_views
+# renames `in.sqft..ft2` to `in.sqft` ("Special requirement for SightGlass",
+# comstock.py:4626) and strips units from every out.* column, but
+# ami_shapes.build_sqft_sql selects "in.sqft..ft2" -- so the view is the one
+# table this SQL cannot run against. This pointed at _vu and would have failed
+# with a column-not-found the first time the AMI leg ran on a crawled run.
+MD_COUNTY_SUFFIX = "_md_agg_by_state_and_county_parquet"
+# Crawled runs get <run>_timeseries; published releases use <run>_ts_by_state.
 TS_SUFFIX = "_timeseries"
 
 

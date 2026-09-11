@@ -19,6 +19,7 @@ so a future partitioned table cannot silently full-scan.
 from __future__ import annotations
 
 import logging
+import re
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,8 @@ import pandas as pd
 from . import athena
 from .distributions import kde_json, outlier_json, weighted_quantile
 from .metrics_def import BLDG_TYPE_COL, ENDUSE_STACK_ORDER, SQFT_COL, TS_ENDUSE_COL
+from .timeseries import (bldg_col, enduse_sums, hour_trunc, join_on,
+                         state_filter, total_sum, ts_dialect)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,87 @@ KWH_PER_FT2_TO_KBTU = 3.412141633
 def _up_lit(up_type: str, u: str) -> str:
     """A single upgrade literal, typed to the column it is compared against."""
     return f"'{u}'" if str(up_type).startswith("varchar") else str(int(u))
+
+
+# The county identifier on the by-state-and-county aggregate. The national
+# aggregate has no equivalent -- its in.as_simulated_nhgis_county_gisjoin is the
+# county a model was SIMULATED in, not the apportioned one, so it cannot stand
+# in for county attribution.
+COUNTY_COL = "in.nhgis_county_gisjoin"
+
+
+def classify_location(value) -> str:
+    """'state' or 'county' for one location id.
+
+    Same convention as ComStock.determine_state_or_county_timeseries_table: a
+    two-letter alphabetic id is a state, a G-prefixed id is a county gisjoin.
+    Reused rather than reinvented so a driver's geography means the same thing
+    to the plots and to this dashboard.
+    """
+    s = str(value).strip()
+    if len(s) == 2 and s.isalpha():
+        return "state"
+    if s.upper().startswith("G") and len(s) > 2:
+        return "county"
+    return "unknown"
+
+
+def parse_locations(value) -> list[dict]:
+    """`timeseries_locations_to_plot` (or a string/list) -> location specs.
+
+    Each spec is {kind, values, label}. A tuple key becomes ONE location with
+    several ids, which is what the driver means by it -- ('MA','NH',...):
+    'New England' is one profile, not five.
+
+    Mixed kinds inside a single location are rejected rather than guessed: a
+    profile is either state-attributed or county-attributed, and combining the
+    two would double count any county inside one of the named states.
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        items = [(v.strip(), v.strip()) for v in value.split(",") if v.strip()]
+    elif isinstance(value, dict):
+        items = list(value.items())
+    else:
+        items = [(v, v) for v in value]
+
+    out = []
+    for key, label in items:
+        ids = [str(v).strip() for v in
+               (key if isinstance(key, (tuple, list)) else [key]) if str(v).strip()]
+        if not ids:
+            continue
+        kinds = {classify_location(i) for i in ids}
+        name = str(label) if not isinstance(label, (tuple, list)) else "+".join(map(str, label))
+        if len(kinds) > 1:
+            logger.warning("location %r mixes %s ids; skipping it -- a profile must be "
+                           "attributed one way or the other", name, "/".join(sorted(kinds)))
+            continue
+        kind = kinds.pop()
+        if kind == "unknown":
+            logger.warning("location %r: cannot tell whether %s is a state or a county "
+                           "gisjoin; skipping", name, ids[0])
+            continue
+        out.append({"kind": kind, "values": ids, "label": name})
+    return out
+
+
+def location_col(loc: dict, md_state: str) -> str:
+    """The metadata column a location is filtered on."""
+    return md_state if loc["kind"] == "state" else COUNTY_COL
+
+
+def location_pred(loc: dict, md_state: str, alias: str = "") -> str:
+    """`<col> IN (...)` for one location, optionally qualified by a table alias."""
+    a = f"{alias}." if alias else ""
+    vals = ", ".join(f"'{v}'" for v in loc["values"])
+    return f'{a}"{location_col(loc, md_state)}" IN ({vals})'
+
+
+def location_slug(loc: dict) -> str:
+    """A filesystem- and column-safe name for one location."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", loc["label"]).strip("_") or "location"
 
 
 def up_in(col: str, upgrades, up_type: str) -> str:
@@ -179,14 +263,33 @@ def build_pair_sql(md_table: str, upgrade: str, have: set[str],
     # of them is available through one code path. The total mean bill is
     # already carried as bill|total_mean.
     body = ",\n".join(_agg_sums(have, "t"))
+    # The applicable set, at the aggregate's OWN grain. This used to select
+    # (bldg_id, state) with no DISTINCT and join on those two columns, over a
+    # table whose grain is (bldg_id, state, climate zone) -- so every baseline
+    # row matched every sibling climate-zone row of the same building, and a
+    # baseline row absent from the measure partition still matched through a
+    # sibling. On dual_fuel_rtus_10k_02 that turned a 5,847-row baseline into
+    # 7,019 rows and overstated baseline weight by 8.5%, which understated every
+    # percentage saving computed against it.
+    # A semi-join on bldg_id, NOT a key join. Applicability is a per-building
+    # property and all of a building's geography rows share its
+    # completed_status, so this selects every baseline row of the applicable
+    # buildings -- at whatever grain the table has, carrying their full weight.
+    #
+    # Joining on a geography key instead would need to know the grain, and the
+    # grain follows the export: (bldg_id, state, climate zone) for a
+    # national_by_state aggregate, (bldg_id, county) for a county one, bldg_id
+    # alone for a true national one. Any hardcoded key is wrong for one of them.
+    # This also makes the pair query agree with the mask leg by construction:
+    # both aggregate all rows of the same building set.
     return (
         "WITH app AS (\n"
-        f'  SELECT bldg_id, "{st}" AS st FROM {md_table}\n'
+        f"  SELECT DISTINCT bldg_id FROM {md_table}\n"
         f"  WHERE {up_eq('upgrade', upgrade, up_type)} AND completed_status = 'Success'\n"
         ")\n"
         "SELECT scenario,\n" + body + "\nFROM (\n"
         f"  SELECT 'baseline' AS scenario, b.* FROM {md_table} b\n"
-        f'  JOIN app ON b.bldg_id = app.bldg_id AND b."{st}" = app.st\n'
+        f"  JOIN app ON b.bldg_id = app.bldg_id\n"
         f"  WHERE {up_eq('b.upgrade', '0', up_type)} AND b.completed_status = 'Success'\n"
         "  UNION ALL\n"
         f"  SELECT 'measure' AS scenario, m.* FROM {md_table} m\n"
@@ -200,7 +303,14 @@ def _agg_sums(have: set[str], alias: str = "") -> list[str]:
     pair, whole-stock, and bitmask queries stay column-identical."""
     a = f"{alias}." if alias else ""
     fe = fuel_enduses(have, FUELS_ALL)
+    # n counts ROWS; n_models counts models. On an apportioned aggregate a
+    # model appears once per geography, so COUNT(*) reported as a model count
+    # overstates it by the mean multiplicity (1.74x on baseline_10k's national
+    # aggregate, 15.6x on its county one). Both are kept: the pair, stock and
+    # bitmask queries must stay column-identical, and `n` is what the mask
+    # cross-check compares.
     sums = [f"    SUM({a}weight) AS w", "    COUNT(*) AS n",
+            f"    COUNT(DISTINCT {a}bldg_id) AS n_models",
             f'    SUM({a}weight * {a}"{SQFT_COL}") AS sqft']
     for f, eus in fe.items():
         for e in eus:
@@ -222,11 +332,71 @@ def build_stock_sql(md_table: str, have: set[str], up_type: str = "varchar") -> 
             f"WHERE {up_eq('upgrade', '0', up_type)} AND completed_status = 'Success'")
 
 
-# Cap on how many measures get the bitmask leg: the mask space is 2^M, so the
-# payload (and the union/intersection toggle it powers) is only offered while
-# that stays small. Above the cap the dashboard falls back to the two bases it
-# can build from the pair rows alone (entire stock, own applicability).
-MASK_MEASURE_CAP = 8
+# Hard limit on the bitmask leg, and it is structural rather than a cost
+# guess: the dashboard composes masks with JavaScript bitwise operators, which
+# are 32-bit, so `1 << i` is undefined past 31 bits. 30 leaves headroom.
+#
+# This USED to be 8, justified as "the mask space is 2^M". That reasoning
+# confused the theoretical space with the cost. What a query actually returns is
+# the number of DISTINCT masks PRESENT, bounded by buildings and small in
+# practice, because a building is applicable to only a handful of measures.
+# Measured on an 11-measure run: 5 distinct masks out of 2,048 theoretical, over
+# 3,245 buildings. The old cap refused a nearly free leg -- and refusing it
+# removed the union and intersection bases from both measure tabs and left the
+# timeseries comparison view drawing no charts at all.
+MASK_MEASURE_CAP = 30
+
+# Row budget for the TIMESERIES mask variant, which multiplies the mask count by
+# 3 seasons x 2 day types x 24 hours x the scenarios. The annual variant returns
+# one row per (mask, scenario) and needs no budget.
+MASK_TS_ROW_BUDGET = 400_000
+
+
+def count_distinct_masks(md_table: str, upgrades: list[str], up_type: str = "varchar",
+                         no_cache: bool = False) -> int:
+    """How many applicability masks the data actually contains.
+
+    One cheap aggregate, so the decision to run the mask leg is made on the real
+    cost rather than on 2^M. Returns -1 when it cannot be determined, which the
+    caller treats as "do not risk it".
+    """
+    bits = " +\n      ".join(
+        f"MAX(CASE WHEN up = {_up_lit(up_type, u)} THEN {1 << i} ELSE 0 END)"
+        for i, u in enumerate(upgrades))
+    sql = (
+        "WITH app AS (\n"
+        f"  SELECT DISTINCT bldg_id, upgrade AS up FROM {md_table}\n"
+        f"  WHERE {up_in('upgrade', upgrades, up_type)}"
+        " AND completed_status = 'Success'\n"
+        "), msk AS (\n"
+        f"  SELECT bldg_id, {bits} AS mask FROM app GROUP BY bldg_id\n"
+        ")\n"
+        "SELECT COUNT(DISTINCT mask) AS n FROM msk"
+    )
+    try:
+        df = athena.query(sql, no_cache=no_cache, label="distinct applicability masks")
+        return int(df["n"].iloc[0]) if not df.empty else -1
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("could not count applicability masks: %s", exc)
+        return -1
+
+
+def mask_leg_ok(md_table: str, upgrades: list[str], up_type: str = "varchar",
+                for_timeseries: bool = False, no_cache: bool = False) -> tuple[bool, str]:
+    """Whether to run the mask leg, and why not when the answer is no."""
+    if len(upgrades) > MASK_MEASURE_CAP:
+        return False, (f"{len(upgrades)} measures exceeds {MASK_MEASURE_CAP}, the limit "
+                       "imposed by 32-bit JavaScript bitwise operators in the dashboard")
+    n = count_distinct_masks(md_table, upgrades, up_type, no_cache=no_cache)
+    if n < 0:
+        return False, "could not count the applicability masks to size the query"
+    if for_timeseries:
+        rows = n * 3 * 2 * 24 * (len(upgrades) + 1)
+        if rows > MASK_TS_ROW_BUDGET:
+            return False, (f"{n} distinct masks would make roughly {rows:,} hourly rows, "
+                           f"over the {MASK_TS_ROW_BUDGET:,} budget")
+    logger.info("applicability-mask leg: %d distinct masks over %d measures", n, len(upgrades))
+    return True, ""
 
 
 def build_mask_sql(md_table: str, upgrades: list[str], have: set[str],
@@ -275,6 +445,9 @@ def build_mask_sql(md_table: str, upgrades: list[str], have: set[str],
         f"  SELECT CAST(m.upgrade AS varchar) AS scenario, m.* FROM {md_table} m\n"
         f"  WHERE {up_in('m.upgrade', upgrades, up_type)} AND m.completed_status = 'Success'\n"
         ") t\n"
+        # t is a subquery over the METADATA table here, not a timeseries
+        # table, so the identifier is always bldg_id: the
+        # building_id/bldg_id split belongs to the timeseries producers.
         "LEFT JOIN msk ON t.bldg_id = msk.bldg_id\n"
         # positional, so a real column named `mask` on t cannot shadow the alias
         "GROUP BY 1, 2"
@@ -327,6 +500,9 @@ def build_category_sql(md_table: str, upgrades: list[str], have: set[str], dim: 
         f"  SELECT CAST(m.upgrade AS varchar) AS scenario, m.* FROM {md_table} m\n"
         f"  WHERE {up_in('m.upgrade', upgrades, up_type)} AND m.completed_status = 'Success'\n"
         ") t\n"
+        # t is a subquery over the METADATA table here, not a timeseries
+        # table, so the identifier is always bldg_id: the
+        # building_id/bldg_id split belongs to the timeseries producers.
         "LEFT JOIN msk ON t.bldg_id = msk.bldg_id\n"
         "GROUP BY 1, 2, 3"
     )
@@ -357,7 +533,12 @@ def build_savings_sql(md_table: str, upgrade: str, have: set[str],
 def build_dist_sql(md_table: str, upgrade: str, have: set[str],
                    up_type: str = "varchar") -> str:
     cats = dist_columns(have)
-    cols = [f'    "{c["col"]}" AS "{c["kind"]}|{c["group"]}|{c["label"]}"' for c in cats]
+    # bldg_id so the caller can collapse a model's per-geography rows. The
+    # distribution stats here are UNWEIGHTED -- quantiles, KDE, outliers, one
+    # point per model -- so leaving a model in once per geography row silently
+    # weights it by its geographic spread.
+    cols = ['    bldg_id']
+    cols += [f'    "{c["col"]}" AS "{c["kind"]}|{c["group"]}|{c["label"]}"' for c in cats]
     for kind, c in DIM_KIND_COLS.items():
         if c in have:
             cols.append(f'    "{c}" AS "T|{kind}"')
@@ -370,43 +551,62 @@ def build_dist_sql(md_table: str, upgrade: str, have: set[str],
     )
 
 
-# Generic season months for the measure timeseries (a national convention, not
-# region-tuned like the AMI legs; stated on the chart).
-MEASURE_SEASONS = {"Summer": [6, 7, 8, 9], "Winter": [12, 1, 2], "Shoulder": [3, 4, 5, 10, 11]}
+# Season months for the measure timeseries: the same national convention as
+# plot_measure_timeseries_season_average_by_state (map_to_season in
+# plotting_mixin: 6-8 summer, 3-5 and 9-11 shoulder, else winter), so the
+# dashboard's seasonal profiles match the measure postprocessing plots. Not
+# region-tuned like the AMI legs; stated on the chart.
+MEASURE_SEASONS = {"Summer": [6, 7, 8], "Winter": [12, 1, 2], "Shoulder": [3, 4, 5, 9, 10, 11]}
 
 
-def build_ts_sql(ts_table: str, md_county_table: str, state: str,
-                 upgrades: list[str], ts_epoch_ns: bool = False,
-                 up_type: str = "varchar") -> str:
-    ts_expr = ("from_unixtime(t.timestamp / 1000000000)" if ts_epoch_ns else "t.timestamp")
+def _ts_state_line(dialect, loc):
+    """The timeseries-side state predicate as a WHOLE line, or "" when there is
+    nothing to prune on.
+
+    Empty for a COUNTY location: the timeseries table is partitioned by state,
+    not county, and which states a county set falls in is not known here. The
+    metadata side selects the rows either way, so this only ever prunes.
+
+    A whole line so an absent predicate cannot leave a dangling AND. Only
+    the timeseries side is conditional -- the metadata side always carries
+    the real state filter, which is what actually selects the rows.
+    """
+    if loc.get("kind") != "state":
+        return ""
+    f = state_filter(dialect, loc["values"])
+    return f"  AND {f}\n" if f else ""
+
+
+def build_ts_sql(ts_table: str, md_table: str, loc: dict,
+                 upgrades: list[str], dialect: dict | None = None,
+                 up_type: str = "varchar", md_state: str = "state") -> str:
     # With both sides typed the join compares the raw partition columns; a CAST
     # on either side would block pruning on the timeseries table too.
     up_join = ("CAST(t.upgrade AS varchar) = CAST(m.upgrade AS varchar)"
                if str(up_type).startswith("varchar") else "t.upgrade = m.upgrade")
-    enduses = ",\n".join(
-        f'    SUM(t."{TS_ENDUSE_COL.format(e)}" * m.weight) AS {e}'
-        for e in ENDUSE_STACK_ORDER)
+    enduses = enduse_sums(dialect)
     return (
         "SELECT\n"
         "    CAST(t.upgrade AS varchar) AS upgrade,\n"
-        f"    date_trunc('hour', date_add('minute', -15, {ts_expr})) AS hour_ts,\n"
-        '    SUM(t."out.electricity.total.energy_consumption" * m.weight) AS elec_kwh,\n'
-        '    SUM(t."out.natural_gas.total.energy_consumption" * m.weight) AS gas_kwh,\n'
+        f"    {hour_trunc(dialect)} AS hour_ts,\n"
+        f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
+        f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
-        f"JOIN {md_county_table} m\n"
-        "  ON t.bldg_id = m.bldg_id AND t.state = m.state\n"
+        f"JOIN {md_table} m\n"
+        f"  ON {join_on(dialect, md_state=md_state)}\n"
         f"    AND {up_join}\n"
-        f"WHERE t.state = '{state}' AND m.state = '{state}'\n"
+        f"WHERE {location_pred(loc, md_state, 'm')}\n"
+        f"{_ts_state_line(dialect, loc)}"
         f"  AND {up_in('t.upgrade', ['0'] + list(upgrades), up_type)}\n"
         "  AND m.completed_status = 'Success'\n"
         "GROUP BY 1, 2"
     )
 
 
-def build_ts_mask_sql(ts_table: str, md_county_table: str, state: str,
-                      upgrades: list[str], ts_epoch_ns: bool = False,
-                      up_type: str = "varchar") -> str:
+def build_ts_mask_sql(ts_table: str, md_table: str, loc: dict,
+                      upgrades: list[str], dialect: dict | None = None,
+                      up_type: str = "varchar", md_state: str = "state") -> str:
     """Hourly profiles for every scenario, split by applicability BITMASK.
 
     The hourly twin of build_mask_sql: with the population decomposed by mask,
@@ -415,23 +615,21 @@ def build_ts_mask_sql(ts_table: str, md_county_table: str, state: str,
     no longer has to fall back to the two bases a per-measure baseline can
     express. Profiles are weighted kWh, so MW = kWh / 1000 for hourly means.
     """
-    ts_expr = ("from_unixtime(t.timestamp / 1000000000)" if ts_epoch_ns else "t.timestamp")
     up_join = ("CAST(t.upgrade AS varchar) = CAST(m.upgrade AS varchar)"
                if str(up_type).startswith("varchar") else "t.upgrade = m.upgrade")
     bits = "\n".join(
         f"      MAX(CASE WHEN up = '{u}' THEN {1 << i} ELSE 0 END)"
         + ("" if i == len(upgrades) - 1 else " +")
         for i, u in enumerate(upgrades))
-    enduses = ",\n".join(
-        f'    SUM(t."{TS_ENDUSE_COL.format(e)}" * m.weight) AS {e}'
-        for e in ENDUSE_STACK_ORDER)
+    enduses = enduse_sums(dialect)
     return (
         "WITH app AS (\n"
         # DISTINCT first: the county table carries one row per building PER
         # COUNTY, and without it the mask CTE and the join both fan out.
         "  SELECT DISTINCT bldg_id, CAST(upgrade AS varchar) AS up\n"
-        f"  FROM {md_county_table}\n"
-        f"  WHERE state = '{state}' AND {up_in('upgrade', upgrades, up_type)}\n"
+        f"  FROM {md_table}\n"
+        f"  WHERE {location_pred(loc, md_state)}"
+        f" AND {up_in('upgrade', upgrades, up_type)}\n"
         "    AND completed_status = 'Success'\n"
         "),\n"
         "msk AS (\n"
@@ -441,25 +639,26 @@ def build_ts_mask_sql(ts_table: str, md_county_table: str, state: str,
         "SELECT\n"
         "    CAST(t.upgrade AS varchar) AS upgrade,\n"
         "    COALESCE(msk.mask, 0) AS mask,\n"
-        f"    date_trunc('hour', date_add('minute', -15, {ts_expr})) AS hour_ts,\n"
-        '    SUM(t."out.electricity.total.energy_consumption" * m.weight) AS elec_kwh,\n'
-        '    SUM(t."out.natural_gas.total.energy_consumption" * m.weight) AS gas_kwh,\n'
+        f"    {hour_trunc(dialect)} AS hour_ts,\n"
+        f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
+        f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
-        f"JOIN {md_county_table} m\n"
-        "  ON t.bldg_id = m.bldg_id AND t.state = m.state\n"
+        f"JOIN {md_table} m\n"
+        f"  ON {join_on(dialect, md_state=md_state)}\n"
         f"    AND {up_join}\n"
-        "LEFT JOIN msk ON t.bldg_id = msk.bldg_id\n"
-        f"WHERE t.state = '{state}' AND m.state = '{state}'\n"
+        f"LEFT JOIN msk ON {bldg_col(dialect)} = msk.bldg_id\n"
+        f"WHERE {location_pred(loc, md_state, 'm')}\n"
+        f"{_ts_state_line(dialect, loc)}"
         f"  AND {up_in('t.upgrade', ['0'] + list(upgrades), up_type)}\n"
         "  AND m.completed_status = 'Success'\n"
         "GROUP BY 1, 2, 3"
     )
 
 
-def build_ts_base_sql(ts_table: str, md_county_table: str, state: str,
-                      upgrade: str, ts_epoch_ns: bool = False,
-                      up_type: str = "varchar") -> str:
+def build_ts_base_sql(ts_table: str, md_table: str, loc: dict,
+                      upgrade: str, dialect: dict | None = None,
+                      up_type: str = "varchar", md_state: str = "state") -> str:
     """Baseline profile restricted to ONE measure's applicable buildings.
 
     Without this, a measure's line (normalized over its applicable floor area)
@@ -468,63 +667,72 @@ def build_ts_base_sql(ts_table: str, md_county_table: str, state: str,
     not what the measure did. Savings reads as the gap between a measure's own
     solid (this baseline) and dashed (measure) lines.
     """
-    ts_expr = ("from_unixtime(t.timestamp / 1000000000)" if ts_epoch_ns else "t.timestamp")
     up_join = ("CAST(t.upgrade AS varchar) = CAST(m.upgrade AS varchar)"
                if str(up_type).startswith("varchar") else "t.upgrade = m.upgrade")
     # End uses are carried here as well as on the measure rows so the dashboard
     # can re-base a measure's profile onto the whole stock
     # (stock + measure - applicable baseline) end use by end use.
-    enduses = ",\n".join(
-        f'    SUM(t."{TS_ENDUSE_COL.format(e)}" * m.weight) AS {e}'
-        for e in ENDUSE_STACK_ORDER)
+    enduses = enduse_sums(dialect)
     return (
         "WITH app AS (\n"
         # DISTINCT is load-bearing: the county table carries one row per
         # building PER COUNTY (apportionment), so without it the join fans out
         # k-fold and inflates the baseline.
-        f"  SELECT DISTINCT bldg_id, state FROM {md_county_table}\n"
-        f"  WHERE state = '{state}' AND {up_eq('upgrade', upgrade, up_type)}\n"
+        f'  SELECT DISTINCT bldg_id, "{location_col(loc, md_state)}" AS loc'
+        f" FROM {md_table}\n"
+        f"  WHERE {location_pred(loc, md_state)}"
+        f" AND {up_eq('upgrade', upgrade, up_type)}\n"
         "    AND completed_status = 'Success'\n"
         ")\n"
         "SELECT\n"
         f"    'base_{upgrade}' AS upgrade,\n"
-        f"    date_trunc('hour', date_add('minute', -15, {ts_expr})) AS hour_ts,\n"
-        '    SUM(t."out.electricity.total.energy_consumption" * m.weight) AS elec_kwh,\n'
-        '    SUM(t."out.natural_gas.total.energy_consumption" * m.weight) AS gas_kwh,\n'
+        f"    {hour_trunc(dialect)} AS hour_ts,\n"
+        f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
+        f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
-        f"JOIN {md_county_table} m\n"
-        "  ON t.bldg_id = m.bldg_id AND t.state = m.state\n"
+        f"JOIN {md_table} m\n"
+        f"  ON {join_on(dialect, md_state=md_state)}\n"
         f"    AND {up_join}\n"
-        "JOIN app ON t.bldg_id = app.bldg_id AND t.state = app.state\n"
-        f"WHERE t.state = '{state}' AND m.state = '{state}'\n"
+        f"JOIN app ON {join_on(dialect, md='app', md_state='loc')}\n"
+        f"WHERE {location_pred(loc, md_state, 'm')}\n"
+        f"{_ts_state_line(dialect, loc)}"
         f"  AND {up_eq('t.upgrade', '0', up_type)} AND {up_eq('m.upgrade', '0', up_type)}\n"
         "  AND m.completed_status = 'Success'\n"
         "GROUP BY 1, 2"
     )
 
 
-def build_ts_base_sqft_sql(md_county_table: str, state: str, upgrade: str,
-                          up_type: str = "varchar") -> str:
+def build_ts_base_sqft_sql(md_table: str, loc: dict, upgrade: str,
+                           up_type: str = "varchar",
+                           md_state: str = "state") -> str:
     return (
         f'SELECT SUM(b.weight * b."{SQFT_COL}") AS sqft_weighted\n'
-        f"FROM {md_county_table} b\n"
-        f"JOIN (SELECT DISTINCT bldg_id, state FROM {md_county_table}\n"
-        f"      WHERE state = '{state}' AND {up_eq('upgrade', upgrade, up_type)}\n"
+        f"FROM {md_table} b\n"
+        f'JOIN (SELECT DISTINCT bldg_id, "{location_col(loc, md_state)}" AS loc'
+        f" FROM {md_table}\n"
+        f"      WHERE {location_pred(loc, md_state)}"
+        f" AND {up_eq('upgrade', upgrade, up_type)}\n"
         "        AND completed_status = 'Success') app\n"
-        "  ON b.bldg_id = app.bldg_id AND b.state = app.state\n"
-        f"WHERE b.state = '{state}' AND {up_eq('b.upgrade', '0', up_type)}\n"
+        # app already aliases the metadata state column to `state`, so only the
+        # b side needs adapting: `state` on a county aggregate, `in.state` on a
+        # national one.
+        f'  ON b.bldg_id = app.bldg_id'
+        f' AND b."{location_col(loc, md_state)}" = app.loc\n'
+        f"WHERE {location_pred(loc, md_state, 'b')}"
+        f" AND {up_eq('b.upgrade', '0', up_type)}\n"
         "  AND b.completed_status = 'Success'"
     )
 
 
-def build_ts_sqft_sql(md_county_table: str, state: str, upgrades: list[str],
-                      up_type: str = "varchar") -> str:
+def build_ts_sqft_sql(md_table: str, loc: dict, upgrades: list[str],
+                      up_type: str = "varchar",
+                      md_state: str = "state") -> str:
     return (
         "SELECT CAST(upgrade AS varchar) AS upgrade,\n"
         f'    SUM(weight * "{SQFT_COL}") AS sqft_weighted\n'
-        f"FROM {md_county_table}\n"
-        f"WHERE state = '{state}' AND "
+        f"FROM {md_table}\n"
+        f"WHERE {location_pred(loc, md_state)} AND "
         f"{up_in('upgrade', ['0'] + list(upgrades), up_type)}\n"
         "  AND completed_status = 'Success'\n"
         "GROUP BY 1"
@@ -631,7 +839,10 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
         bill_sav_busd = float(s.get("bill_savings_busd", np.nan))
         summaries.append({
             "upgrade": up, "upgrade_name": name,
-            "n_models": int(pb.loc["measure", "n"]),
+            # Models, not apportionment rows -- see _agg_sums.
+            "n_models": int(pb.loc["measure", "n_models"]
+                            if "n_models" in pb.columns
+                            else pb.loc["measure", "n"]),
             "weighted_bldgs": w_app,
             "pct_of_stock": 100.0 * w_app / stock_w,
             "site_savings_tbtu": site_sav,
@@ -683,8 +894,18 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
                 "outliers": outlier_json(v, qs[2], qs[4]),
             })
 
+        # One row per model. The distribution columns are model-level
+        # (percent savings and intensities are identical across a model's
+        # geography rows), so dropping the duplicates is a de-replication, not
+        # an aggregation choice.
+        if "bldg_id" in dist.columns:
+            before = len(dist)
+            dist = dist.drop_duplicates(subset="bldg_id")
+            if len(dist) != before:
+                logger.info("distributions: %d apportionment rows -> %d models",
+                            before, len(dist))
         for col in dist.columns:
-            if col.startswith("T|") or col.startswith("D|"):
+            if col in ("bldg_id",) or col.startswith("T|") or col.startswith("D|"):
                 continue
             kind, group, label = col.split("|")
             _stat(dist[col], kind, group, label)
@@ -705,8 +926,9 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
     dists = pd.DataFrame(dist_rows)
     scenarios = pd.DataFrame(scen_rows)
 
+    mask_ok, mask_why = mask_leg_ok(md_table, upgrades, up_type, no_cache=no_cache)
     cats = []
-    if len(upgrades) <= MASK_MEASURE_CAP:
+    if mask_ok:
         for dim in CAT_DIMS:
             if CAT_DIMS[dim] not in have:
                 logger.warning("skipping the %s by-category leg: column absent", dim)
@@ -720,15 +942,15 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
         categories.insert(1, "bit_order", ",".join(upgrades))
 
     masks = pd.DataFrame()
-    if len(upgrades) <= MASK_MEASURE_CAP:
+    if mask_ok:
         masks = athena.query(build_mask_sql(md_table, upgrades, have, up_type),
                              no_cache=no_cache, label="scenario aggregates by applicability mask")
         masks.insert(1, "bit_order", ",".join(upgrades))
         _check_masks(masks, scenarios, upgrades)
     else:
-        logger.warning("skipping the applicability-mask leg: %d measures exceeds the cap of %d "
-                       "(2^M mask space); union/intersection bases will be unavailable",
-                       len(upgrades), MASK_MEASURE_CAP)
+        logger.warning("skipping the applicability-mask leg: %s; union and intersection "
+                       "bases will be unavailable (entire stock and own applicability "
+                       "are not affected)", mask_why)
     return summary, enduse_pairs, enduse_savings, dists, scenarios, masks, categories
 
 
@@ -761,8 +983,14 @@ def _check_masks(masks: pd.DataFrame, scenarios: pd.DataFrame, upgrades: list[st
             for c in cols:
                 rel = float(abs(got[c] - want[c]) / (abs(want[c]) or 1))
                 if rel > 1e-6:
-                    logger.warning("mask leg disagrees with the pair query for upgrade %s "
-                                   "(%s, %s): %.1f vs %.1f (%.3f%%)",
+                    # Neither leg is named as the culprit: which one is wrong
+                    # depends on the mismatch. The mask leg aggregates a
+                    # per-building applicability mask (many-to-one, cannot
+                    # duplicate); the pair query semi-joins at the aggregate's
+                    # grain. A disagreement means those two disagree about the
+                    # applicable set -- worth investigating, not attributing.
+                    logger.warning("mask and pair legs disagree for upgrade %s "
+                                   "(%s, %s): mask %.1f vs pair %.1f (%.3f%%)",
                                    up, scen, c, got[c], want[c], rel * 100)
     stock = scenarios[scenarios["scenario"] == "stock_baseline"]
     if not stock.empty:
@@ -772,7 +1000,23 @@ def _check_masks(masks: pd.DataFrame, scenarios: pd.DataFrame, upgrades: list[st
             logger.warning("mask baseline (%.1f) != whole-stock baseline (%.1f)", got, want)
 
 
-def assess_measure_timeseries_masked(ts_table: str, md_county_table: str, state: str,
+def _md_state_col(md_table: str, no_cache: bool = False) -> str:
+    """The metadata table's state column: bare `state`, or `in.state`.
+
+    Bare `state` is a partition column on the by-state-and-county aggregate; the
+    national aggregate carries `in.state` instead. measures.py already adapts
+    this way for the annual queries (see build_applicability_sql); the
+    timeseries builders used to hardcode `m.state`, which is what tied them to
+    the county table.
+    """
+    try:
+        have = athena.table_columns(md_table, no_cache=no_cache)
+    except Exception:                                             # noqa: BLE001
+        return "state"
+    return "state" if "state" in have else "in.state"
+
+
+def assess_measure_timeseries_masked(ts_table: str, md_table: str, loc: dict,
                                      upgrades: list[str],
                                      no_cache: bool = False) -> pd.DataFrame:
     """Seasonal-average profiles per (scenario, applicability mask).
@@ -781,11 +1025,13 @@ def assess_measure_timeseries_masked(ts_table: str, md_county_table: str, state:
     Values stay in weighted kWh (MW = kWh / 1000 for an hourly mean).
     """
     tt = athena.table_column_types(ts_table)
-    ts_epoch_ns = str(tt.get("timestamp", "")).startswith("bigint")
+    dialect = ts_dialect(ts_table, no_cache=no_cache)
     up_type = str(tt.get("upgrade", "varchar"))
+    md_state = _md_state_col(md_table, no_cache=no_cache)
     ts = athena.query(
-        build_ts_mask_sql(ts_table, md_county_table, state, upgrades, ts_epoch_ns, up_type),
-        no_cache=no_cache, label=f"measure ts by mask {state}")
+        build_ts_mask_sql(ts_table, md_table, loc, upgrades, dialect, up_type,
+                          md_state=md_state),
+        no_cache=no_cache, label=f"measure ts by mask {loc['label']}")
     ts["hour_ts"] = pd.to_datetime(ts["hour_ts"])
     month = ts["hour_ts"].dt.month
     season = pd.Series(np.nan, index=ts.index, dtype=object)
@@ -826,23 +1072,27 @@ def check_ts_masks(masked: pd.DataFrame, prof: pd.DataFrame, upgrades: list[str]
                                ref_up, rel * 100)
 
 
-def assess_measure_timeseries(ts_table: str, md_county_table: str, state: str,
+def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
                               upgrades: list[str], no_cache: bool = False) -> pd.DataFrame:
     tt = athena.table_column_types(ts_table)
-    ts_epoch_ns = str(tt.get("timestamp", "")).startswith("bigint")
+    dialect = ts_dialect(ts_table, no_cache=no_cache)
     up_type = str(tt.get("upgrade", "varchar"))
-    sqft = athena.query(build_ts_sqft_sql(md_county_table, state, upgrades, up_type),
-                        no_cache=no_cache, label=f"measure ts sqft {state}")
-    ts = athena.query(build_ts_sql(ts_table, md_county_table, state, upgrades,
-                                   ts_epoch_ns, up_type),
-                      no_cache=no_cache, label=f"measure ts {state}")
+    md_state = _md_state_col(md_table, no_cache=no_cache)
+    sqft = athena.query(build_ts_sqft_sql(md_table, loc, upgrades, up_type,
+                                              md_state=md_state),
+                        no_cache=no_cache, label=f"measure ts sqft {loc['label']}")
+    ts = athena.query(build_ts_sql(ts_table, md_table, loc, upgrades,
+                                   dialect, up_type, md_state=md_state),
+                      no_cache=no_cache, label=f"measure ts {loc['label']}")
     parts = [ts.merge(sqft, on="upgrade", how="left")]
     for up in upgrades:
-        b = athena.query(build_ts_base_sql(ts_table, md_county_table, state, up,
-                                           ts_epoch_ns, up_type),
-                         no_cache=no_cache, label=f"measure ts base {up} {state}")
-        bs = athena.query(build_ts_base_sqft_sql(md_county_table, state, up, up_type),
-                          no_cache=no_cache, label=f"measure ts base sqft {up} {state}")
+        b = athena.query(build_ts_base_sql(ts_table, md_table, loc, up,
+                                           dialect, up_type,
+                                           md_state=md_state),
+                         no_cache=no_cache, label=f"measure ts base {up} {loc['label']}")
+        bs = athena.query(build_ts_base_sqft_sql(md_table, loc, up, up_type,
+                                                   md_state=md_state),
+                          no_cache=no_cache, label=f"measure ts base sqft {up} {loc['label']}")
         b["sqft_weighted"] = float(bs["sqft_weighted"].iloc[0])
         parts.append(b)
     ts = pd.concat(parts, ignore_index=True)

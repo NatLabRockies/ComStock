@@ -1,6 +1,6 @@
 # ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
-"""Athena adapter for the calibration assessment.
+"""Athena adapter for the results dashboard.
 
 Runs SQL against ComStock Athena tables -- published SDR/OEDI releases in
 `buildstock_sdr`, or run tables crawled into another database -- and returns
@@ -56,7 +56,7 @@ from ..athena_config import ATHENA_WORKGROUP
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(os.environ.get(
-    "CALIB_CACHE_DIR", Path.home() / ".cache" / "comstock_calibration"))
+    "CALIB_CACHE_DIR", Path.home() / ".cache" / "comstock_results_dashboard"))
 
 # Published SDR/OEDI releases live here. A privately crawled run lives in
 # whichever database create_sightglass_tables wrote it to.
@@ -97,7 +97,7 @@ def _client():
     cfg, table = _cfg(), _STATE["reflect_table"]
     if not table:
         raise RuntimeError(
-            "calibration.athena.configure(database=..., reflect_table=...) must be "
+            "results_dashboard.athena.configure(database=..., reflect_table=...) must be "
             "called before any query; reflect_table selects the schema "
             "BuildStockQuery reflects on construction.")
     logger.info("connecting to Athena: db=%s workgroup=%s (reflecting %s)",
@@ -136,46 +136,143 @@ def query(sql: str, no_cache: bool = False, label: str = "") -> pd.DataFrame:
             f"BuildStockQuery.execute returned {type(df).__name__}, expected DataFrame")
     logger.info("athena%s: %d rows in %.1fs",
                 f" ({label})" if label else "", len(df), time.time() - t0)
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(path)
+    # An EMPTY result is deliberately NOT cached. Every existence probe below is
+    # an information_schema query, and there "no rows" means "no such table
+    # YET", not "no such table". Caching that makes a table created later --
+    # e.g. by create_sightglass_tables earlier in the SAME postprocessing run --
+    # permanently invisible, so the assessment skips a run whose tables are
+    # sitting right there. Absence is the one answer that must not be cached.
+    if not df.empty:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(path)
     return df
 
 
-def table_columns(table: str, no_cache: bool = False) -> set[str]:
+def glue_table_names(database: str | None = None, prefix: str = "") -> list[str]:
+    """Tables in a database, listed through GLUE rather than Athena SQL.
+
+    WHY NOT information_schema. Every SQL path here goes through
+    BuildStockQuery, whose constructor EAGERLY reflects the table it is given --
+    so building a client requires a table that already exists, which is the very
+    thing table discovery is trying to establish. That is a deadlock, and it is
+    not hypothetical: `from_comstock` guesses the published-release name
+    `<run>_md_agg_national_parquet`, a crawled run actually gets
+    `<run>_md_agg_national_by_state_parquet`, and the guess being wrong meant the
+    client could not be constructed, so discovery could not run, so the
+    assessment skipped a run whose tables were sitting right there.
+
+    Glue answers "what tables exist" with no reflection and no bootstrap.
+    """
+    import boto3
+
+    db = database or _cfg()["database"]
+    glue = boto3.client("glue", region_name="us-west-2")
+    kw = {"DatabaseName": db}
+    if prefix:
+        kw["Expression"] = f"{prefix}*"
+    names, resp = [], glue.get_tables(**kw)
+    names += [t["Name"] for t in resp["TableList"]]
+    while "NextToken" in resp:
+        resp = glue.get_tables(NextToken=resp["NextToken"], **kw)
+        names += [t["Name"] for t in resp["TableList"]]
+    return sorted(names)
+
+
+def _split(table: str, database: str | None) -> tuple[str, str]:
+    """Resolve a possibly-qualified table into (bare name, database to look in).
+
+    A `db.table` reference must be PROBED in its own database:
+    `information_schema` matches `table_name` against the bare name, so passing
+    the qualified string through would look for a table literally called
+    "buildstock_sdr.foo" and find nothing. Splitting here rather than at each
+    call site keeps the dozen probe callers -- annual, distributions,
+    design_params, measures, timeseries -- working unchanged whether the run
+    they are describing is local or cross-database.
+    """
+    if "." in table:
+        db, _, bare = table.partition(".")
+        return bare, db
+    return table, (database or _cfg()["database"])
+
+
+def table_columns(table: str, no_cache: bool = False,
+                  database: str | None = None) -> set[str]:
     """Columns a table actually has.
 
     Queries are built from what exists rather than from what the data dictionary
     lists, because schemas drift between releases: 2024 R2 publishes no
     as-simulated climate zone and no fuel-oil totals.
     """
-    cfg = _cfg()
+    table, db = _split(table, database)
     sql = ("SELECT column_name FROM information_schema.columns "
-           f"WHERE table_schema = '{cfg['database']}' AND table_name = '{table}'")
-    return set(query(sql, no_cache=no_cache, label=f"columns of {table}")["column_name"])
+           f"WHERE table_schema = '{db}' AND table_name = '{table}'")
+    return set(query(sql, no_cache=no_cache, label=f"columns of {db}.{table}")["column_name"])
 
 
-def table_column_types(table: str, no_cache: bool = False) -> dict[str, str]:
+def table_column_types(table: str, no_cache: bool = False,
+                       database: str | None = None) -> dict[str, str]:
     """Column name -> RAW Athena data_type string.
 
     Raw on purpose: callers match the lower-case Athena spelling. See note 2 in
     the module docstring before replacing this with get_cols.
     """
-    cfg = _cfg()
+    table, db = _split(table, database)
     sql = ("SELECT column_name, data_type FROM information_schema.columns "
-           f"WHERE table_schema = '{cfg['database']}' AND table_name = '{table}'")
-    df = query(sql, no_cache=no_cache, label=f"column types of {table}")
+           f"WHERE table_schema = '{db}' AND table_name = '{table}'")
+    df = query(sql, no_cache=no_cache, label=f"column types of {db}.{table}")
     return dict(zip(df["column_name"], df["data_type"]))
 
 
-def table_exists(table: str) -> bool:
+def table_names(no_cache: bool = False,
+                database: str | None = None) -> list[str]:
+    """Every table in the configured database.
+
+    Used to DISCOVER a run's aggregate table rather than assume its name. The
+    crawled table name follows the `geo_top_dir` of the export that produced it
+    -- `geo_top_dir='national_by_state'` yields
+    `<run>_md_agg_national_by_state_parquet`, not the published releases'
+    `<run>_md_agg_national_parquet` -- so it cannot be derived from the run name
+    alone. Filtering happens in Python on purpose: `_` is a single-character
+    wildcard in SQL LIKE, so a run name containing one makes a LIKE pattern
+    match tables belonging to other runs.
+    """
+    # Glue, not information_schema: this is called BEFORE any table name is
+    # known, and an Athena query cannot run until one is. See glue_table_names.
+    return glue_table_names(database)
+
+
+def table_exists(table: str, database: str | None = None) -> bool:
     """Whether a table is reachable; decides whether a leg runs or is skipped.
 
     Returns False rather than raising on ANY failure -- missing table, missing
     workgroup, expired credentials. The assessment is an optional step and must
     never take a postprocessing run down with it.
     """
+    # Asked through Glue rather than by querying the table, so that a table
+    # which does not exist reports False instead of failing to construct a
+    # client -- the two were indistinguishable before, and the second took
+    # discovery down with it.
+    bare, db = _split(table, database)
     try:
-        return bool(table_columns(table))
+        return bare in set(glue_table_names(db, prefix=bare.split("_")[0]))
     except Exception as exc:                                  # noqa: BLE001
         logger.warning("cannot reach %s: %s", table, exc)
         return False
+
+
+def qualify(table: str, database: str | None) -> str:
+    """`database.table` when that database is not the configured one.
+
+    Athena resolves a qualified name from any configured database -- one query
+    can read an unqualified table in `enduse` and a qualified one in
+    `buildstock_sdr` at the same time. So comparing your own crawled run against
+    a published release needs only this, not a second assessment: qualify the
+    release's tables and every existing SQL builder keeps working unchanged.
+
+    Returns the name untouched when it is already qualified, when no database is
+    given, or when it matches the configured one -- the common case, kept bare
+    so the emitted SQL stays readable.
+    """
+    if not table or not database or "." in table:
+        return table
+    return table if database == _cfg()["database"] else f"{database}.{table}"

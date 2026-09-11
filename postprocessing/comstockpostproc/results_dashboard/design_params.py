@@ -35,6 +35,8 @@ interpretable when two thirds of the stock is excluded by definition.
 
 from __future__ import annotations
 
+import re
+
 import logging
 
 import pandas as pd
@@ -323,6 +325,16 @@ def metric_meta(md_table: str) -> pd.DataFrame:
     } for m in mets])
 
 
+def _per_model_weight(expr: str) -> str:
+    """A weight basis rewritten to use the per-model total weight.
+
+    Only the bare `weight` token is replaced. The other factors in every basis
+    (floor area, lighting power density, exterior areas) are model-level and
+    identical across a model's geography rows, so they are left alone.
+    """
+    return re.sub(r"\bweight\b", "weight_model", expr)
+
+
 def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
                      by_btype: bool = False) -> str:
     """Weighted mean, median, p10/p90 and coverage for each metric.
@@ -333,7 +345,10 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
     """
     sel = []
     for m in metrics:
-        g, e, w = m.guard, m.expr, m.weight
+        # weight -> weight_model: the per-model total from the window below.
+        # Every basis is `weight` times model-level factors, so this is an exact
+        # substitution, not an approximation. See the module note on grain.
+        g, e, w = m.guard, m.expr, _per_model_weight(m.weight)
         sel += [
             f"  SUM(CASE WHEN {g} THEN ({w}) * ({e}) END)"
             f" / NULLIF(SUM(CASE WHEN {g} THEN ({w}) END), 0) AS {m.key}__wmean",
@@ -343,7 +358,10 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
             f" AS {m.key}__p10",
             f"  APPROX_PERCENTILE(CASE WHEN {g} THEN CAST({e} AS double) END, 0.9)"
             f" AS {m.key}__p90",
-            f"  COUNT(CASE WHEN {g} THEN 1 END) AS {m.key}__n",
+            # DISTINCT: on an apportioned aggregate a model appears once
+            # per geography, so COUNT counted rows and reported them as a
+            # model count (1.89x on the run measured).
+            f"  COUNT(DISTINCT CASE WHEN {g} THEN bldg_id END) AS {m.key}__n",
             # Coverage on the metric's OWN weighting basis. Reporting it as a
             # share of building count understates an area-weighted parameter:
             # central air systems are in 8% of buildings by count but a far
@@ -358,9 +376,21 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
         keys.append((q(dim), "category"))
     grp = "".join(f"  {col} AS {alias},\n" for col, alias in keys)
     tail = ("GROUP BY " + ", ".join(c for c, _ in keys) + "\n") if keys else ""
+    # One row per MODEL, carrying the model's total weight. Without this the
+    # APPROX_PERCENTILEs below run over apportionment rows, so a model spread
+    # across k geographies counts k times and the "unweighted across models"
+    # percentiles are really weighted by geographic spread.
+    #
+    # SELECT * is deliberate: the metric guards and expressions are arbitrary
+    # SQL over columns this function never enumerates, so they must all survive.
+    per_model = (f"(SELECT *,\n"
+                 f"        SUM({W}) OVER (PARTITION BY bldg_id) AS weight_model,\n"
+                 f"        ROW_NUMBER() OVER (PARTITION BY bldg_id"
+                 f" ORDER BY bldg_id) AS _rn\n"
+                 f" FROM {md_table}\n WHERE {BASE_WHERE}) t")
     return (f"SELECT\n{grp}"
-            f"  COUNT(*) AS n_rows,\n  SUM({W}) AS w_total,\n"
-            + ",\n".join(sel) + f"\nFROM {md_table}\nWHERE {BASE_WHERE}\n{tail}")
+            f"  COUNT(*) AS n_rows,\n  SUM(weight_model) AS w_total,\n"
+            + ",\n".join(sel) + f"\nFROM {per_model}\nWHERE t._rn = 1\n{tail}")
 
 
 def assess_design_params(md_table: str, run_key: str,

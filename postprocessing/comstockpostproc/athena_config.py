@@ -5,7 +5,7 @@
 One constant instead of eight literals. The workgroup used to be hardcoded as
 'comcore' at every BuildStockQuery() call, and that workgroup does not exist on
 the NLR account -- every query failed with "WorkGroup is not found". Because
-the calibration tooling cached query results by SQL text, the failure stayed
+the results dashboarding cached query results by SQL text, the failure stayed
 hidden for months behind cache hits. Keeping the name in exactly one place means
 the next account move is a one-line change that cannot be half-applied.
 """

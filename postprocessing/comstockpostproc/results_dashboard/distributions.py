@@ -85,18 +85,52 @@ def build_dist_sql(md_table: str, have: set[str] | None = None) -> str:
         if have is None or c in have
     )
     return (
-        f'SELECT\n    "{BLDG_TYPE_COL}" AS building_type,\n{dims},\n'
+        # bldg_id so the caller can collapse a model's per-geography rows. An
+        # apportioned aggregate carries one row per (building, geography) with a
+        # PARTIAL weight, so without this every unweighted statistic below --
+        # n_models, and the KDE's effective sample size -- counts rows.
+        f'SELECT\n    bldg_id,\n    "{BLDG_TYPE_COL}" AS building_type,\n{dims},\n'
         f'    weight,\n    "{SQFT_COL}" AS sqft,\n{cols}\n'
         f"FROM {md_table}\n"
         f"WHERE upgrade = 0 AND completed_status = 'Success'"
     )
 
 
+def collapse_to_models(df: pd.DataFrame, label: str = "") -> pd.DataFrame:
+    """One row per MODEL, with its apportioned weights SUMMED.
+
+    An apportioned metadata aggregate has one row per (building, geography),
+    each carrying a partial weight. The EUI values are model-level -- identical
+    across a model's geography rows -- so keeping one value and summing the
+    weight is an exact de-replication, not an aggregation choice: every WEIGHTED
+    statistic is unchanged, while every unweighted one starts counting models
+    instead of rows.
+    """
+    if "bldg_id" not in df.columns or df.empty:
+        return df
+    n0 = len(df)
+    agg = {c: "first" for c in df.columns if c not in ("bldg_id", "weight")}
+    if "weight" in df.columns:
+        agg["weight"] = "sum"
+    out = df.groupby("bldg_id", as_index=False).agg(agg)
+    if len(out) != n0:
+        logger.info("distributions%s: %d apportionment rows -> %d models",
+                    f" ({label})" if label else "", n0, len(out))
+    return out
+
+
 def fetch_comstock_buildings(md_table: str, no_cache: bool = False) -> pd.DataFrame:
-    """Building-level EUI + weight + area (one row per model)."""
+    """Building-level EUI + weight + area, one row per MODEL.
+
+    Collapsed from the aggregate's own (building, geography) grain -- see
+    collapse_to_models. The docstring used to claim one row per model without
+    doing anything to make it so, which is why the row-count metrics below were
+    not caught.
+    """
     have = athena.table_columns(md_table, no_cache=no_cache)
-    return athena.query(build_dist_sql(md_table, have), no_cache=no_cache,
-                        label=f"building-level EUI ({md_table})")
+    df = athena.query(build_dist_sql(md_table, have), no_cache=no_cache,
+                      label=f"building-level EUI ({md_table})")
+    return collapse_to_models(df, md_table)
 
 
 def weighted_quantile(values: np.ndarray, weights: np.ndarray, qs: list[float]) -> list[float]:

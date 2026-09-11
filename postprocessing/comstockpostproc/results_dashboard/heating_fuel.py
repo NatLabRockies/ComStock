@@ -164,7 +164,7 @@ SELECT "{BLDG_TYPE_COL}"          AS btype_col,
        "{DIV_COL}"                AS division,
        "in.heating_fuel"          AS fuel_raw,
        SUM(weight * "{SQFT_COL}") AS area,
-       COUNT(*)                   AS n
+       COUNT(DISTINCT bldg_id)    AS n
 FROM {md_table}
 WHERE upgrade = 0 AND completed_status = 'Success'
 GROUP BY 1, 2, 3

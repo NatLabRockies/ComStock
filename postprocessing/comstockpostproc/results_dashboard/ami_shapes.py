@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 
 from . import athena
+from .timeseries import (enduse_sums, hour_trunc, join_on,
+                         state_filter, total_sum, ts_dialect)
 from .metrics_def import (
     BLDG_TYPE_COL,
     BLDG_TYPE_TO_SNAKE,
@@ -80,6 +82,21 @@ REGIONS = {
 
 MIN_BLDG_COUNT = 3  # mirrors comstock_to_ami_comparison.py skip guard
 
+# The COMSTOCK-side equivalent, which did not exist. MIN_BLDG_COUNT guards only
+# the metered side, so a cell backed by ONE sampled model rendered as a
+# confident 24-hour profile beside a well-metered truth curve. On a national
+# ~100k run only about 2% of models land in the AMI counties -- a median near a
+# dozen per (region x building type) cell, and single digits in the thinnest
+# regions -- so this is the common case, not an edge case. Cells below this are
+# still drawn (hiding them would misreport coverage) but are flagged, so a
+# reader can tell a shape from a coincidence.
+MIN_COMSTOCK_MODELS = 10
+
+
+# Timeseries column addressing lives in .timeseries, shared with the measure
+# leg, so a crawled run cannot work on one tab and error on the other.
+# Re-exported here because callers and tests reach for ami_shapes.ts_dialect.
+
 
 def build_sqft_sql(md_county_table: str, region: dict) -> str:
     counties = ", ".join(f"'{c}'" for c in region["counties"])
@@ -87,6 +104,20 @@ def build_sqft_sql(md_county_table: str, region: dict) -> str:
     return (
         f'SELECT "{BLDG_TYPE_COL}" AS building_type,\n'
         f'    SUM(weight) AS bldg_count_weighted,\n'
+        # The number of SAMPLED MODELS behind the cell, which is what decides
+        # whether its shape means anything. bldg_count_weighted is the stock it
+        # represents -- a single model carrying a large weight looks reassuring
+        # there while being one building's simulated shape.
+        #
+        # DISTINCT is load-bearing. This table holds one row per (bldg_id,
+        # county), because apportionment spreads each model across the counties
+        # it represents, so a plain COUNT(*) counts apportionment rows and
+        # inflates any MULTI-county region by roughly its county count --
+        # measured at 2.05x for cherryland's six counties and 1.00x for
+        # single-county epb. Inflating this number defeats the guard: it makes
+        # thin cells look adequately sampled, which is worse than not
+        # reporting it.
+        f'    COUNT(DISTINCT bldg_id) AS comstock_model_count,\n'
         f'    SUM(weight * "{SQFT_COL}") AS sqft_weighted\n'
         f"FROM {md_county_table}\n"
         f"WHERE state IN ({states}) AND CAST(upgrade AS varchar) = '0'\n"
@@ -97,28 +128,32 @@ def build_sqft_sql(md_county_table: str, region: dict) -> str:
 
 
 def build_ts_sql(ts_table: str, md_county_table: str, region: dict,
-                 ts_epoch_ns: bool = False) -> str:
+                 dialect: dict | None = None) -> str:
+    """Weighted hourly end-use SQL, addressed through `dialect`.
+
+    `dialect` comes from ts_dialect(); the default is the published schema, so
+    dumping the SQL for inspection without an Athena round-trip still works.
+    """
     counties = ", ".join(f"'{c}'" for c in region["counties"])
     states = ", ".join(f"'{s}'" for s in region["states"])
-    # One column per stacked end use plus the total reference line. The published
-    # timeseries tables use bare column names (no ..units suffix).
-    enduses = ",\n".join(
-        f'    SUM(t."{TS_ENDUSE_COL.format(e)}" * m.weight) AS {e}'
-        for e in ENDUSE_STACK_ORDER
-    )
-    # 2025 R3 stores timestamp as a timestamp; 2024 R2 stores epoch nanoseconds.
-    ts_expr = ("from_unixtime(t.timestamp / 1000000000)" if ts_epoch_ns else "t.timestamp")
+    # Every column reference goes through .timeseries so this leg and the
+    # measure leg address a crawled run identically.
+    ts_state = state_filter(dialect, region["states"])
+    # "" on a crawled table, which has no state column. Kept as a whole line so
+    # an empty value cannot leave a dangling AND.
+    ts_state_line = f"  AND {ts_state}\n" if ts_state else ""
     return (
         "SELECT\n"
         f'    m."{BLDG_TYPE_COL}" AS building_type,\n'
-        f"    date_trunc('hour', date_add('minute', -15, {ts_expr})) AS hour_ts,\n"
-        '    SUM(t."out.electricity.total.energy_consumption" * m.weight) AS kwh_weighted,\n'
-        f"{enduses}\n"
+        f"    {hour_trunc(dialect)} AS hour_ts,\n"
+        f"    {total_sum(dialect, 'electricity', 'kwh_weighted')},\n"
+        f"{enduse_sums(dialect)}\n"
         f"FROM {ts_table} t\n"
         f"JOIN {md_county_table} m\n"
-        "  ON t.bldg_id = m.bldg_id AND t.state = m.state\n"
+        f"  ON {join_on(dialect)}\n"
         "    AND CAST(t.upgrade AS varchar) = CAST(m.upgrade AS varchar)\n"
-        f"WHERE t.state IN ({states}) AND m.state IN ({states})\n"
+        f"WHERE m.state IN ({states})\n"
+        f"{ts_state_line}"
         # upgrade is bigint on 2025 R3 tables and varchar on 2024 R2 — comparing
         # as varchar works on both.
         "  AND CAST(t.upgrade AS varchar) = '0' AND CAST(m.upgrade AS varchar) = '0'\n"
@@ -128,16 +163,93 @@ def build_ts_sql(ts_table: str, md_county_table: str, region: dict,
     )
 
 
+def build_membership_sql(ts_table: str, md_county_table: str, region: dict,
+                         dialect: dict | None = None) -> str:
+    """Do the region's metadata buildings all HAVE timeseries rows?
+
+    The two halves of kWh/ft2 come from different queries: the numerator sums
+    energy over buildings that appear in BOTH tables (it joins them), while the
+    denominator sums floor area over the metadata table alone. If some region
+    buildings have no timeseries rows -- which happens when a run writes
+    timeseries for a subset of its models -- the denominator covers more
+    buildings than the numerator and kWh/ft2 is biased LOW.
+
+    Measured as zero on the run this was written against: pepco had 3,171
+    metadata buildings and 3,171 with timeseries, identical weighted area. So
+    this reports rather than corrects: a real gap is a property of the run, and
+    silently reweighting one side would hide it.
+
+    One day of the timeseries is enough -- a building either has a profile or it
+    does not -- and scanning a year to establish set membership is not worth it.
+    """
+    from .timeseries import PUBLISHED
+    d = dialect or PUBLISHED
+    counties = ", ".join(f"'{c}'" for c in region["counties"])
+    states = ", ".join(f"'{s}'" for s in region["states"])
+    tcol = f'"{d["time"]}"'
+    ts_where = [f"upgrade = 0", f"{tcol} < from_iso8601_timestamp('2018-01-02T00:00:00')"]
+    if d["state"]:
+        ts_where.append(f'"{d["state"]}" IN ({states})')
+    return (
+        "SELECT COUNT(DISTINCT m.bldg_id) AS md_bldgs,\n"
+        "    COUNT(DISTINCT CASE WHEN t.b IS NOT NULL THEN m.bldg_id END) AS ts_bldgs,\n"
+        f'    SUM(m.weight * m."{SQFT_COL}") AS sqft_all,\n'
+        "    SUM(CASE WHEN t.b IS NOT NULL THEN m.weight * "
+        f'm."{SQFT_COL}" END) AS sqft_with_ts\n'
+        f"FROM {md_county_table} m\n"
+        f'LEFT JOIN (SELECT DISTINCT "{d["bldg"]}" AS b FROM {ts_table}\n'
+        f"           WHERE {' AND '.join(ts_where)}) t ON t.b = m.bldg_id\n"
+        f"WHERE m.state IN ({states}) AND CAST(m.upgrade AS varchar) = '0'\n"
+        "  AND m.completed_status = 'Success'\n"
+        f'  AND m."in.nhgis_county_gisjoin" IN ({counties})'
+    )
+
+
+def check_membership(ts_table: str, md_county_table: str, region_name: str,
+                     dialect: dict | None = None, no_cache: bool = False) -> dict:
+    """{} when the two sides cover the same buildings, else the measured gap."""
+    try:
+        df = athena.query(
+            build_membership_sql(ts_table, md_county_table, REGIONS[region_name], dialect),
+            no_cache=no_cache, label=f"{region_name} membership")
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("membership check failed for %s: %s", region_name, exc)
+        return {}
+    if df.empty:
+        return {}
+    r = df.iloc[0]
+    md, ts = float(r["md_bldgs"] or 0), float(r["ts_bldgs"] or 0)
+    a_all, a_ts = float(r["sqft_all"] or 0), float(r["sqft_with_ts"] or 0)
+    if not md or not a_all or abs(a_all - a_ts) <= a_all * 1e-6:
+        return {}
+    return {
+        "md_bldgs": int(md), "ts_bldgs": int(ts),
+        "area_covered_pct": round(100.0 * a_ts / a_all, 2),
+        "note": (f"{int(md - ts)} of {int(md)} buildings in this region have no "
+                 f"timeseries rows, so the kWh/ft2 denominator covers "
+                 f"{100.0 * a_all / a_ts:.2f}x the floor area the numerator does "
+                 f"— kWh/ft2 is biased LOW by "
+                 f"{100.0 * (1 - a_ts / a_all):.1f}%."),
+    }
+
+
 def fetch_comstock_profiles(ts_table: str, md_county_table: str, region_name: str,
                             no_cache: bool = False) -> pd.DataFrame:
     """Weighted hourly kWh/sqft by AMI building type for the region (long df)."""
     region = REGIONS[region_name]
-    ts_epoch_ns = str(athena.table_column_types(ts_table).get("timestamp", "")).startswith("bigint")
+    dialect = ts_dialect(ts_table, no_cache=no_cache)
+    # The numerator joins the two tables; the denominator reads the metadata
+    # alone. Measure whether they cover the same buildings, and say so if not.
+    gap = check_membership(ts_table, md_county_table, region_name, dialect,
+                           no_cache=no_cache)
+    if gap:
+        logger.warning("%s: %s", region_name, gap["note"])
     sqft = athena.query(build_sqft_sql(md_county_table, region), no_cache=no_cache,
                         label=f"{region_name} sqft")
-    ts = athena.query(build_ts_sql(ts_table, md_county_table, region, ts_epoch_ns),
+    ts = athena.query(build_ts_sql(ts_table, md_county_table, region, dialect),
                       no_cache=no_cache, label=f"{region_name} timeseries")
-    ts = ts.merge(sqft[["building_type", "sqft_weighted"]], on="building_type", how="left")
+    ts = ts.merge(sqft[["building_type", "sqft_weighted", "comstock_model_count"]],
+                  on="building_type", how="left")
     ts["kwh_per_sf"] = ts["kwh_weighted"] / ts["sqft_weighted"]
     for e in ENDUSE_STACK_ORDER:
         if e in ts.columns:
@@ -145,6 +257,10 @@ def fetch_comstock_profiles(ts_table: str, md_county_table: str, region_name: st
     ts["building_type"] = ts["building_type"].map(BLDG_TYPE_TO_SNAKE)
     ts = ts.dropna(subset=["building_type"])  # Grocery has no AMI counterpart
     ts["hour_ts"] = pd.to_datetime(ts["hour_ts"])
+    # Carried on the frame rather than logged only, so compare_region can put it
+    # in coverage and the page can show it. attrs survives the merges above.
+    ts.attrs["membership_gap"] = gap
+    ts.attrs["tz"] = dialect.get("tz", "local")   # 'est' = converted to local by state
     return ts
 
 
@@ -277,8 +393,8 @@ def annual_totals(cs: pd.DataFrame, ami: pd.DataFrame) -> pd.DataFrame:
 
 
 def compare_region(cs: pd.DataFrame, ami: pd.DataFrame, region_name: str
-                   ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """Returns (profiles long, shape metrics, coverage)."""
+                   ) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame]:
+    """Returns (profiles long, shape metrics, coverage, load-duration curve)."""
     seasons = REGIONS[region_name]["seasons"]
 
     counts = ami.groupby("building_type")["bldg_count"].agg(["min", "mean", "count"])
@@ -286,13 +402,32 @@ def compare_region(cs: pd.DataFrame, ami: pd.DataFrame, region_name: str
     ami_types = set(counts.index) - set(thin) - {"total"}
     cs_types = set(cs["building_type"].unique())
     both = sorted(ami_types & cs_types)
+    # ComStock-side model counts per compared type, so thin cells are visible
+    # rather than implied. Reported, not dropped: removing them would understate
+    # which types the run actually covers.
+    cs_counts, cs_thin = {}, []
+    if "comstock_model_count" in cs.columns:
+        per_type = (cs.groupby("building_type")["comstock_model_count"]
+                    .max().dropna().astype(int))
+        cs_counts = {bt: int(n) for bt, n in per_type.items() if bt in both}
+        cs_thin = sorted(bt for bt, n in cs_counts.items() if n < MIN_COMSTOCK_MODELS)
+
     coverage = {
         "region": region_name,
         "compared_types": both,
         "ami_missing_types": sorted(cs_types - ami_types - {"total"}),
         "comstock_missing_types": sorted(ami_types - cs_types),
         "ami_thin_sample_types_skipped": thin,
+        "comstock_model_counts": cs_counts,
+        "comstock_thin_sample_types": cs_thin,
+        "comstock_min_models_threshold": MIN_COMSTOCK_MODELS,
     }
+    # Measured zero on the run this was built against, so it is normally absent.
+    # When present, kWh/ft2 levels for this region are biased and the shape
+    # metrics (day-sum normalized) are not.
+    if cs.attrs.get("membership_gap"):
+        coverage["timeseries_membership_gap"] = cs.attrs["membership_gap"]
+    coverage["timeseries_clock"] = cs.attrs.get("tz", "local")
 
     eu_cols = [f"eu_{e}" for e in ENDUSE_STACK_ORDER if f"eu_{e}" in cs.columns]
     cs_prof = _mean_profiles(cs[cs["building_type"].isin(both)], "hour_ts",

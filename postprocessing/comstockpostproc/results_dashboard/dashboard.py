@@ -1,6 +1,6 @@
-"""Build a self-contained calibration dashboard from an assessment directory.
+"""Build a self-contained results dashboard from an assessment directory.
 
-    python -m comstock_calibration.dashboard --assessment <dir> [--out dashboard.html]
+    python -m comstock_results_dashboard.dashboard --assessment <dir> [--out dashboard.html]
 
 Reads metrics/*.csv + coverage.json + manifest.json and writes one HTML file with
 no external dependencies (charts are hand-rolled SVG). Open it in any browser; no
@@ -113,20 +113,27 @@ def _ami_profiles(path: Path, primary: str) -> list[dict]:
     return _records(pd.concat([df[df["run"] == primary], sec], ignore_index=True))
 
 
-def _ami_region_label(payload: dict) -> str:
-    """How to name the AMI reference in the page subtitle.
+def _references_label(payload: dict) -> str:
+    """The subtitle's reference list: what was ACTUALLY compared against.
 
-    `manifest["region"]` is the raw `--region` argument, so the default printed
-    as "AMI all". Name the regions actually compared instead.
+    This used to be the literal string "references: CBECS 2018, AMI {region}",
+    which claimed CBECS on every run whether or not one was supplied, and
+    rendered "AMI no value" when the AMI leg had not run -- reading as a broken
+    field rather than as an absence. Both references are optional, so the line
+    has to be built from what happened.
     """
-    compared = (payload.get("coverage") or {}).get("ami_regions_compared") or []
-    if len(compared) > 1:
-        return f"{len(compared)} regions"
-    if len(compared) == 1:
-        return compared[0]
-    region = payload.get("amiRegion")
-    # Matches the page's absence vocabulary rather than a bare "n/a".
-    return "no value" if not region or region == "all" else str(region)
+    cov = payload.get("coverage") or {}
+    refs = payload.get("manifest", {}).get("references") or {}
+    parts = []
+    if any("cbecs" in k.lower() for k in refs):
+        parts.append("CBECS 2018")
+    compared = cov.get("ami_regions_compared") or []
+    if compared:
+        parts.append(f"AMI {compared[0]}" if len(compared) == 1
+                     else f"AMI ({len(compared)} regions)")
+    if not parts:
+        return "no external reference — ComStock only"
+    return "references: " + ", ".join(parts)
 
 
 def _pack_frame(rows: list[dict], str_cols: list[str], num_cols: list[str]) -> dict:
@@ -474,8 +481,8 @@ HTML = """<!doctype html>
 <style>{css}</style></head>
 <body>
 <div class="wrap">
-  <h1>ComStock calibration dashboard</h1>
-  <p class="sub">{runs} · generated {created} · references: CBECS 2018, AMI {region}</p>
+  <h1>ComStock results dashboard</h1>
+  <p class="sub">{runs} · generated {created} · {references}</p>
   <div class="controls">
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="overview">Overview</button>
@@ -501,14 +508,14 @@ def build(assess: Path, out: Path) -> Path:
     payload = build_payload(assess)
     runs = " vs ".join(r["label"] for r in payload["runs"]) or "ComStock"
     html = HTML.format(
-        title=f"ComStock calibration — {runs}",
+        title=f"ComStock results dashboard — {runs}",
         css=CSS, js=JS,
         payload=json.dumps(payload, allow_nan=False),
         runs=runs,
         created=(payload["created"] or "")[:10],
         # `--region all` used to print literally as "AMI all"; name the count of
         # regions actually compared instead of the CLI argument.
-        region=_ami_region_label(payload),
+        references=_references_label(payload),
     )
     out.write_text(html, encoding="utf-8")
     return out

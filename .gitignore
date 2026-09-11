@@ -36,7 +36,11 @@ postprocessing/compare_comstock_to_cbecs.py
 postprocessing/compare_comstock_to_eia.py
 postprocessing/compare_runs.py
 postprocessing/compare_upgrades.py
-postprocessing/compare_calibration.py
+postprocessing/results_dashboard_from_athena.py
+# Dashboard test drivers: runnable copies of the templates, one per run type.
+postprocessing/*_dbtest*.py
+postprocessing/*_test_dashboard.py
+postprocessing/compare_tsv_versions.py
 postprocessing/extract_models_and_errors.py
 
 # Rubocop output
@@ -45,7 +49,7 @@ postprocessing/extract_models_and_errors.py
 
 # test results
 test/reports
-# Calibration assessment output (generated; large self-contained dashboards).
-# Written to a calibration/ subfolder of whichever output folder the run's other
+# Results dashboard output (generated; large self-contained dashboards).
+# Written to a results_dashboard/ subfolder of whichever output folder the run's other
 # results already go to.
-postprocessing/output/**/calibration/
+postprocessing/output/**/results_dashboard/

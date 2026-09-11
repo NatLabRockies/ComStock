@@ -7,6 +7,19 @@ import comstockpostproc as cspp
 logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
 logger = logging.getLogger(__name__)
 
+# ---- Settings ---------------------------------------------------------------
+# Details in README, "Results dashboard".
+ATHENA_DATABASE        = 'enduse'  # keep 'enduse': the timeseries plots and the AMI comparison read it unconditionally
+EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
+REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
+                                   # True:  export and crawl again (what is up there is stale)
+MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
+COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
+#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
+#         database='buildstock_sdr', color='#E69F00')]
+
+
 def main():
     # ComStock run
     comstock = cspp.ComStock(
@@ -35,7 +48,7 @@ def main():
                                         #'TN': 'Tennessee',
                                         #('MA', 'NH', 'CT', 'VT', 'RI'): 'New England', # example of multiple states together - using tuples as keys
                                         #'G4900350': 'Salt Lake City',
-                                        #'G2500250': 'Boston', # if specifying a county, you must export county level data to S3
+                                        #'G2500250': 'Boston', # a county makes prepare_athena_tables below add the county S3 export (~3,100 files per upgrade)
                                         #'G4804530': 'Austin',
                                         #('G2500250', 'G4804530'):'Baustin'  # multiple counties together - using tuples as keys
                                     },
@@ -68,6 +81,7 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock.get_allocated_weights()
     comstock.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
+    cbecs.export_to_csv_wide()  # the results dashboard reads 'CBECS wide.csv'
 
     # Add utility bills onto allocated weights
     for upgrade_id in comstock.upgrade_ids_to_process:
@@ -97,42 +111,51 @@ def main():
                         'file_types': ['parquet'], # other options:'parquet'
                         }
 
-    # specify the export level
-    # IMPORTANT: if making county level timeseries plots, must export county level data to S3. This does not occur automatically.
-    geo_exports = [state_resolution] #state_resolution
+    # Export level for the LOCAL metadata files (EXPORT_LOCAL_METADATA at the
+    # top). The S3 side is handled below: county is added there when something
+    # needs it (a county timeseries location, or INCLUDE_AMI).
+    geo_exports = [state_resolution]
 
-    for geo_export in geo_exports:
+    if EXPORT_LOCAL_METADATA:
         for upgrade_id in comstock.upgrade_ids_to_process:
-        #    if upgrade_id == 0:
-        #        continue
-            comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id, [geo_export])
+            comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id, geo_exports)
 
-            # Also write to S3 if making timeseries plots
-            if comstock.make_timeseries_plots: #TODO: force geo exports to county data if county timeseries is requested.
-                s3_dir = f"s3://{comstock.s3_base_dir}/{comstock.comstock_run_name}/{comstock.comstock_run_name}"
-                s3_output_dir = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
-                comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id=upgrade_id, geo_exports=[geo_export], output_dir=s3_output_dir)
-
-
-    # write select results to S3 for Athena/Glue when needed for timeseries plots
-    if comstock.make_timeseries_plots:
-        s3_dir = f"s3://{comstock.s3_base_dir}/{comstock.comstock_run_name}/{comstock.comstock_run_name}"
-        database = "enduse"
-        dataset_name = f"{comstock.comstock_run_name}/{comstock.comstock_run_name}" # name of the dir in s3_dir we want to make new tables and views for
-        crawler_name = comstock.comstock_run_name # used to set name of crawler, cannot include slashes
-        workgroup = "buildstock"  # Athena workgroup; matches comstockpostproc.athena_config.ATHENA_WORKGROUP
-        glue_service_role = "service-role/AWSGlueServiceRole-default"
-
-        # Export parquet files to S3 for Athena/Glue
-        comstock.create_sightglass_tables(s3_location=f"{s3_dir}/metadata_and_annual_results_aggregates",
-                                            dataset_name=crawler_name,
-                                            database_name=database,
-                                            glue_service_role=glue_service_role)
-        comstock.fix_timeseries_tables(crawler_name, database)
-        comstock.create_views(crawler_name, database, workgroup)
+    # ---- S3 exports + Athena tables ----------------------------------------
+    # One call replaces the export / crawl / views block. It checks Glue first
+    # and builds only what this run is missing, unless REBUILD_ATHENA_TABLES.
+    # Read by the timeseries plots and by the results dashboard below, whose
+    # measure-timeseries tab reads the same _vu views the plots do.
+    if comstock.make_timeseries_plots or MAKE_RESULTS_DASHBOARD:
+        tables_ok = cspp.prepare_athena_tables(
+            comstock, database=ATHENA_DATABASE,
+            timeseries=True,                 # the _vu views (plots and dashboard)
+            ami=INCLUDE_AMI,                 # + county export for the AMI tab
+            rebuild=REBUILD_ATHENA_TABLES)
+        if not tables_ok and comstock.make_timeseries_plots:
+            # The dashboard skips and says why; the timeseries plots cannot.
+            raise RuntimeError(f'Athena tables for {comstock.comstock_run_name} could not be '
+                               'prepared (see the warning above); the timeseries plots need them')
 
     # Create measure run comparisons; only use if run has measures
     comparison = cspp.ComStockMeasureComparison(comstock, timeseries_locations_to_plot=comstock.timeseries_locations_to_plot, make_comparison_plots = comstock.make_comparison_plots, make_timeseries_plots = comstock.make_timeseries_plots)
+
+    # ---- Results dashboard --------------------------------------
+    # Reads the Athena tables prepared above and creates none of its own. It
+    # logs and skips rather than raising, so an AWS problem here cannot cost
+    # you the plots above. See README for the full contract.
+    if MAKE_RESULTS_DASHBOARD:
+        calib = cspp.ResultsDashboard(
+            comstock,
+            cbecs=cbecs,
+            ami=cspp.load_ami() if INCLUDE_AMI else None,
+            comparison_runs=[cspp.AthenaRunRef(**r) for r in COMPARE_TO_RELEASES],
+            comparison=comparison,       # -> <comparison folder>/results_dashboard/
+            database=ATHENA_DATABASE,
+            )
+        if calib.skipped_reason:
+            logger.warning('results dashboard skipped: %s', calib.skipped_reason)
+        else:
+            logger.info('results dashboard: %s', calib.dashboard_path)
 
     # Export dictionaries corresponding to the exported columns
     #comstock.export_data_and_enumeration_dictionary()
