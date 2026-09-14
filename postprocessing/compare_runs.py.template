@@ -9,6 +9,20 @@ import comstockpostproc as cspp
 logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
 logger = logging.getLogger(__name__)
 
+# ---- Settings ---------------------------------------------------------------
+# Details in README, "Results dashboard".
+ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
+                                   # the timeseries plots and the AMI comparison hard-code it
+REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
+                                   # True:  export and crawl again (what is up there is stale)
+MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
+                                   # and the run's <run>_timeseries table (from buildstockbatch's crawl)
+COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
+#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
+#         database='buildstock_sdr', color='#E69F00')]
+
+
 def main():
     # First ComStock run
     comstock_a = cspp.ComStock(
@@ -79,7 +93,7 @@ def main():
     comstock_b.create_allocated_weights_plus_util_bills_for_upgrade(0)
 
     # Export CBECS and ComStock data to wide and long formats for Tableau and to skip processing later
-    cbecs.export_to_csv_wide()  # May comment this out if CSV output isn't needed
+    cbecs.export_to_csv_wide()  # the results dashboard reads 'CBECS wide.csv'
     # TODO This (long CSV export) is not yet re-implemented
     # comstock_a.export_to_csv_long()  # Long format useful for stacking end uses and fuels
     # comstock_b.export_to_csv_long()  # Long format useful for stacking end uses and fuels
@@ -93,6 +107,33 @@ def main():
 
     # Export the comparison data to wide format for Tableau
     comparison.export_to_csv_wide()
+
+    # ---- Results dashboard --------------------------------------
+    # The assessment reads each run's Athena tables and creates none of its own,
+    # so prepare_athena_tables makes sure they exist first: it checks Glue and
+    # builds only what is missing (REBUILD_ATHENA_TABLES at the top redoes it).
+    # Both log and skip rather than raising, so an AWS problem here cannot cost
+    # you the plots above. See README for the full contract.
+    if MAKE_RESULTS_DASHBOARD:
+        for run in (comstock_a, comstock_b):
+            cspp.prepare_athena_tables(run, database=ATHENA_DATABASE,
+                                       ami=INCLUDE_AMI, rebuild=REBUILD_ATHENA_TABLES)
+
+        dashboard = cspp.ResultsDashboard(
+            comstock_a,                  # the run under review
+            cbecs=cbecs,
+            ami=cspp.load_ami() if INCLUDE_AMI else None,
+            # The other local run, plus any published releases.
+            comparison_runs=(
+                [cspp.AthenaRunRef.from_comstock(comstock_b, database=ATHENA_DATABASE)]
+                + [cspp.AthenaRunRef(**r) for r in COMPARE_TO_RELEASES]),
+            comparison=comparison,       # -> <comparison folder>/results_dashboard/
+            database=ATHENA_DATABASE,
+            )
+        if dashboard.skipped_reason:
+            logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
+        else:
+            logger.info('results dashboard: %s', dashboard.dashboard_path)
 
 # Code to execute the script
 if __name__=="__main__":

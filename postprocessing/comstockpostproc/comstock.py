@@ -30,6 +30,7 @@ from natsort import natsort_keygen, natsorted
 from pathlib import Path
 
 from buildstock_query import BuildStockQuery
+from comstockpostproc.athena_config import ATHENA_WORKGROUP
 from .comstock_query_builder import ComStockQueryBuilder
 from comstockpostproc.ami import AMI
 from comstockpostproc.cbecs import CBECS
@@ -116,7 +117,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # self.s3_client = boto3.client('s3', config=botocore.client.Config(max_pool_connections=50))
         # self.s3_resource = boto3.resource('s3')
         if self.athena_table_name is not None:
-            self.athena_client = BuildStockQuery(workgroup='comcore',
+            self.athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                                  db_name='enduse',
                                                  buildstock_type='comstock',
                                                  table_name=self.athena_table_name,
@@ -387,7 +388,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def download_timeseries_data_for_ami_comparison(self, ami, reload_from_csv=True, save_individual_regions=False):
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
@@ -4562,7 +4563,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
     @staticmethod
     def create_views(
-            dataset_name: str, database_name: str = "vizstock", workgroup: str = "eulp"
+            dataset_name: str, database_name: str = "vizstock", workgroup: str = ATHENA_WORKGROUP
         ):
             glue = boto3.client("glue", region_name="us-west-2")
 
@@ -4820,7 +4821,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             weight_view_table = f'{self.comstock_run_name}_md_agg_national_by_state_vu'
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',

@@ -30,6 +30,7 @@ setup(
     include_package_data=True,
     package_data={
         'comstockpostproc': ['resources/*.csv'],
+        'comstockpostproc.results_dashboard': ['resources/*.js'],
     },
     license=about['__license__'],
     zip_safe=False,
