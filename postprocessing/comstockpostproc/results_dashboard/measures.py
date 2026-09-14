@@ -800,6 +800,12 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
         f"WHERE {up_eq('upgrade', '0', up_type)} AND completed_status = 'Success'",
         no_cache=no_cache, label="baseline stock weight")
     stock_w = float(base_stock["w"].iloc[0])
+    # Floor area denominator for applicability. Weighted BUILDINGS and weighted
+    # FLOOR AREA give very different shares for an HVAC measure -- packaged RTUs
+    # sit on many small buildings, so ~61% of buildings is ~40% of floor area --
+    # and the published applicability figures people carry in their heads are
+    # the floor-area ones. Reporting only one invites a false discrepancy.
+    stock_sqft = float(srow.get("sqft") or 0)
 
     for up in upgrades:
         sav = athena.query(build_savings_sql(md_table, up, have, up_type),
@@ -837,6 +843,7 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
         bill_base = float(pb.loc["baseline"].get("bill|total_mean", np.nan))
         bill_meas = float(pb.loc["measure"].get("bill|total_mean", np.nan))
         w_app = float(pb.loc["measure", "w"])
+        sqft_app = float(pb.loc["measure", "sqft"])
         site_sav = float(s.get("s|site_energy|total", np.nan))
         bill_sav_busd = float(s.get("bill_savings_busd", np.nan))
         summaries.append({
@@ -847,6 +854,17 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
                             else pb.loc["measure", "n"]),
             "weighted_bldgs": w_app,
             "pct_of_stock": 100.0 * w_app / stock_w,
+            "sqft_applicable": sqft_app,
+            "pct_of_stock_sqft": (100.0 * sqft_app / stock_sqft
+                                  if stock_sqft else np.nan),
+            # The four end uses an HVAC measure actually moves. They do NOT sum
+            # to the site total (lighting, plug loads and water heating are
+            # untouched), and heating is split by fuel because a fuel-switching
+            # measure moves the two in opposite directions.
+            "heating_elec_savings_tbtu": float(s.get("s|electricity|heating", np.nan)),
+            "heating_gas_savings_tbtu": float(s.get("s|natural_gas|heating", np.nan)),
+            "cooling_savings_tbtu": float(s.get("s|electricity|cooling", np.nan)),
+            "fans_savings_tbtu": float(s.get("s|electricity|fans", np.nan)),
             "site_savings_tbtu": site_sav,
             "elec_savings_tbtu": float(s.get("s|electricity|total", np.nan)),
             "gas_savings_tbtu": float(s.get("s|natural_gas|total", np.nan)),

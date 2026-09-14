@@ -3354,17 +3354,45 @@ function measKeyLegend(list, dashed){
       mm.color};display:inline-block;flex:none"></span>${mm.short}</span>`).join("");
 }
 
+/* APPLICABILITY IS REPORTED ON BOTH DENOMINATORS. Weighted buildings and
+   weighted floor area are far apart for an HVAC measure -- packaged RTUs sit on
+   many small buildings, so ~61% of buildings is ~40% of floor area -- and the
+   applicability figures in circulation are the floor-area ones. A single
+   "applicable stock" column invited the reader to compare it against whichever
+   denominator they had in mind, which reads as a discrepancy in the data when
+   it is a difference in the question.
+   Columns are grouped over two header rows: thirteen columns of mixed units
+   under one flat header is a wall of numbers. An assessment written before
+   these columns existed simply omits them rather than showing a column of
+   dashes. */
 function measSummaryTable(list){
-  let h=`<div class="scroll"><table><thead><tr><th>Measure</th><th>Applicable stock</th>
-    <th>Site savings (TBtu)</th><th>Elec (TBtu)</th><th>Gas (TBtu)</th>
-    <th>Avg bill savings ($/bldg·yr)</th><th>National bill savings ($M/yr)</th>
-    <th>Emissions savings (MMT CO₂e)</th><th>Emissions savings %</th></tr></thead><tbody>`;
+  const num=k=>(MEAS.summary||[]).some(r=>r[k]!==undefined&&r[k]!==null&&!isNaN(+r[k]));
+  const area=num("pct_of_stock_sqft");
+  const EU=[["heating_elec_savings_tbtu","heating (elec)"],
+            ["heating_gas_savings_tbtu","heating (gas)"],
+            ["cooling_savings_tbtu","cooling"],
+            ["fans_savings_tbtu","fans"]].filter(c=>num(c[0]));
+  const share=v=>(v===null||v===undefined||isNaN(+v))?ABSENT.noValue:fmt(+v,1)+"%";
+  let h=`<div class="scroll"><table><thead>
+    <tr><th rowspan="2" style="text-align:left">Measure</th>
+      <th colspan="${area?2:1}">Applicable stock</th>
+      <th colspan="3">Savings (TBtu)</th>
+      ${EU.length?`<th colspan="${EU.length}">End-use savings (TBtu)</th>`:""}
+      <th colspan="2">Bill savings</th>
+      <th colspan="2">Emissions savings</th></tr>
+    <tr>${area?"<th>floor area</th>":""}<th>buildings</th>
+      <th>site</th><th>electricity</th><th>natural gas</th>
+      ${EU.map(c=>`<th>${c[1]}</th>`).join("")}
+      <th>$/bldg·yr</th><th>$M/yr</th>
+      <th>MMT CO₂e</th><th>%</th></tr></thead><tbody>`;
   MEAS.summary.filter(r=>list.some(mm=>mm.up===String(r.upgrade))).forEach(r=>{
     h+=`<tr><td style="text-align:left"><span class="sw" style="background:${measColor(r.upgrade)}"></span>
       ${r.upgrade} · ${r.upgrade_name}</td>
-      <td>${fmt(r.pct_of_stock)}% (${fmt(r.weighted_bldgs/1e3,0)}k bldgs)</td>
+      ${area?`<td>${share(r.pct_of_stock_sqft)}</td>`:""}
+      <td>${share(r.pct_of_stock)} <span class="note">(${fmt(r.weighted_bldgs/1e3,0)}k)</span></td>
       <td>${fmt(r.site_savings_tbtu)}</td><td>${fmt(r.elec_savings_tbtu)}</td>
       <td>${fmt(r.gas_savings_tbtu)}</td>
+      ${EU.map(c=>`<td>${fmt(r[c[0]])}</td>`).join("")}
       <td>${fmt(r.bill_avg_savings_usd_per_bldg,0)}</td>
       <td>${fmt(r.bill_total_savings_musd,0)}</td>
       <td>${fmt(r.emissions_savings_co2e_mmt,2)}</td>
@@ -3558,14 +3586,23 @@ function renderMeasReleaseBars(){
 }
 function renderMeasuresAnnual(){
   const sel=measSelected();
-  let h=`<div class="panel"><div class="head">
-      <h2>Measure savings summary — TBtu, $M/yr, MMT CO₂e
+  /* FIGURES FIRST, TABLE LAST. The stacked bars are what this tab is for; the
+     summary table is the reference a reader checks against them afterwards, so
+     it goes at the bottom. The measure selector stays at the top because it
+     drives everything below it -- it is appended to every exit path, including
+     the two early returns. */
+  const summaryPanel=`<div class="panel"><div class="head">
+      <h2 style="margin-top:0">Measure savings summary — TBtu, $M/yr, MMT CO₂e
       <span class="badge">${runShort(PRIMARY)}</span>
-      <span class="badge">savings = baseline − measure, each measure's applicable buildings</span></h2>
-      <span class="spacer"></span>${measControls()}</div>
+      <span class="badge">savings = baseline − measure, each measure's applicable buildings</span></h2></div>
     <p class="note">Positive = the measure saves. Bills use the mean-rate bill; emissions use
-    eGRID 2021 subregion factors for electricity plus fuel factors.</p>
+    eGRID 2021 subregion factors for electricity plus fuel factors. The end-use columns are the
+    four an HVAC measure moves — they do not sum to the site total, since lighting, plug loads
+    and water heating are untouched.</p>
     ${measSummaryTable(sel)}</div>`;
+  let h=`<div class="panel"><div class="head">
+      <h2 style="margin-top:0">Measures <span class="badge">${runShort(PRIMARY)}</span></h2>
+      <span class="spacer"></span>${measControls()}</div></div>`;
   // State an absent load-shape leg here, on the tab where a reader would look
   // for it. Logged-only skips are invisible to whoever opens the file.
   if(D.coverage && D.coverage.measures_ts_skipped_reason){
@@ -3577,7 +3614,7 @@ function renderMeasuresAnnual(){
   if(!sel.length){
     h+=`<div class="panel"><p class="note">No measure selected. Pick one from the
       <b>Measures</b> list above — <b>First 3</b> restores the default.</p></div>`;
-    $("#view").innerHTML=h;
+    $("#view").innerHTML=h+summaryPanel;
     renderMeasReleaseBars();
     wireMeasControls(renderMeasuresAnnual);
     wireGroups();
@@ -3684,7 +3721,7 @@ function renderMeasuresAnnual(){
           <p class="legend-title">End use &amp; fuel</p><div id="fe-legend"></div></div>
       </div>`}</div>`;
     if(empty){
-      $("#view").innerHTML=h;
+      $("#view").innerHTML=h+summaryPanel;
       renderMeasReleaseBars();
       const mb0=$("#measBasis");
       if(mb0) mb0.addEventListener("change",e=>{
@@ -3743,7 +3780,7 @@ function renderMeasuresAnnual(){
         <th>% of models beyond ±150%</th>
         </tr></thead><tbody id="ms-flags"></tbody></table></div></div>`;
   }
-  $("#view").innerHTML=h;
+  $("#view").innerHTML=h+summaryPanel;
 
   if(state.measView==="single"&&sel.length){
     const mm=sel[0];
