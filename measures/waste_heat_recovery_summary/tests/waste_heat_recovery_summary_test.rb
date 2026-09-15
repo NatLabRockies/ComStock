@@ -2,6 +2,7 @@
 # See top level LICENSE.txt file for license terms.
 
 # dependencies
+require 'csv'
 require 'fileutils'
 require 'minitest/autorun'
 require 'openstudio'
@@ -23,6 +24,54 @@ class WasteHeatRecoverySummaryTest < Minitest::Test
 
   def sql_path(test_name)
     return "#{run_dir(test_name)}/run/eplusout.sql"
+  end
+
+  def timeseries_output_csv_path(test_name)
+    return "#{run_dir(test_name)}/timeseries_output.csv"
+  end
+
+  # Queries the PythonPlugin:OutputVariable timeseries produced by the measure
+  # from the run's sql file and writes them to a single long-format CSV.
+  def save_timeseries_csv(test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+
+    ann_env_pd = nil
+    sql.availableEnvPeriods.each do |env_pd|
+      env_type = sql.environmentType(env_pd)
+      if env_type.is_initialized && (env_type.get == OpenStudio::EnvironmentType.new('WeatherRunPeriod'))
+        ann_env_pd = env_pd
+      end
+    end
+    assert(!ann_env_pd.nil?, 'Could not find a weather run period in the sql file')
+
+    variable_names = [
+      'total_heating_coil_energy',
+      'total_cooling_coil_energy',
+      'simultaneous_energy',
+      'total_hot_water_volume',
+      'avg_drain_temperature'
+    ]
+
+    csv_path = timeseries_output_csv_path(test_name)
+    CSV.open(csv_path, 'w') do |csv|
+      csv << ['datetime', 'variable_name', 'value', 'units']
+      variable_names.each do |var_name|
+        ts = sql.timeSeries(ann_env_pd, 'Zone Timestep', 'PythonPlugin:OutputVariable', var_name)
+        next unless ts.is_initialized
+
+        ts = ts.get
+        date_times = ts.dateTimes
+        values = ts.values
+        units = ts.units
+        (0...values.size).each do |i|
+          csv << [date_times[i].to_s, var_name, values[i], units]
+        end
+      end
+    end
+
+    sql.close
+    assert(File.exist?(csv_path), "Expected timeseries CSV to be created at #{csv_path}")
+    return csv_path
   end
 
   def get_run_env()
@@ -108,11 +157,13 @@ class WasteHeatRecoverySummaryTest < Minitest::Test
     osm_path = "#{__dir__}/LargeOffice04.osm"
     epw_path = "#{__dir__}/USA_CO_Golden-NREL.724666_TMY3.epw"
 
-    # set the arguments to test
-    args_hash = {}
+    # enable timeseries output so the plugin variables are reported at Zone Timestep
+    args_hash = { 'timeseries_output' => true }
 
-    # run the measure
     run_in_workflow(__method__, osm_path, args_hash, epw_path)
+
+    csv_path = save_timeseries_csv(__method__)
+    puts "Saved timeseries output to #{csv_path}"
 
     return true
   end
@@ -123,10 +174,13 @@ class WasteHeatRecoverySummaryTest < Minitest::Test
     epw_path = "#{__dir__}/USA_NY_New.York-John.F.Kennedy.Intl.AP.744860_TMY3.epw"
 
     # set the arguments to test
-    args_hash = {}
+    args_hash = { 'timeseries_output' => true }
 
     # run the measure
     run_in_workflow(__method__, osm_path, args_hash, epw_path)
+
+    csv_path = save_timeseries_csv(__method__)
+    puts "Saved timeseries output to #{csv_path}"
 
     return true
   end
@@ -137,10 +191,13 @@ class WasteHeatRecoverySummaryTest < Minitest::Test
     epw_path = "#{__dir__}/USA_NY_New.York-John.F.Kennedy.Intl.AP.744860_TMY3.epw"
 
     # set the arguments to test
-    args_hash = {}
+    args_hash = { 'timeseries_output' => true }
 
     # run the measure
     run_in_workflow(__method__, osm_path, args_hash, epw_path)
+
+    csv_path = save_timeseries_csv(__method__)
+    puts "Saved timeseries output to #{csv_path}"
 
     return true
   end
@@ -151,10 +208,13 @@ class WasteHeatRecoverySummaryTest < Minitest::Test
     epw_path = "#{__dir__}/USA_CO_Golden-NREL.724666_TMY3.epw"
 
     # set the arguments to test
-    args_hash = {}
+    args_hash = { 'timeseries_output' => true }
 
     # run the measure
     run_in_workflow(__method__, osm_path, args_hash, epw_path)
+
+    csv_path = save_timeseries_csv(__method__)
+    puts "Saved timeseries output to #{csv_path}"
 
     return true
   end
