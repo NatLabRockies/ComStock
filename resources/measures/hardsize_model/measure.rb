@@ -114,6 +114,41 @@ class HardsizeModel < OpenStudio::Measure::ModelMeasure
       sizing_system.setSystemOutdoorAirMethod('ZoneSum')
     end
 
+    # Every OpenStudio outdoor air controller carries a Controller:MechanicalVentilation. Once the
+    # minimum outdoor air flow above has been hard-sized to the sizing run's design value, a
+    # ZoneSum controller with demand controlled ventilation off can never ask for more than
+    # that fixed minimum, so it governs nothing - but EnergyPlus compares the two every
+    # iteration and logs "Min OA fraction > Mechanical ventilation OA fraction" each time it
+    # loses. In the leg D validation that one message was 58% of all annual warnings, 125
+    # million occurrences, 415,000 per controller on a secondary school, and the buildings
+    # carrying it were the slowest annual runs in the fleet.
+    #
+    # Turning the controller off through its availability schedule leaves the outdoor air
+    # delivered identical - measured to 1e-13 over two weeks on a school and a medium office -
+    # and removes the warning. Controllers with a zero or autosized minimum (the multizone
+    # VAV path, and any loop with DCV enabled) rely on the mechanical ventilation controller
+    # for their outdoor air and are left alone.
+    mech_vent_off = 0
+    model.getAirLoopHVACs.each do |air_loop|
+      next unless air_loop.airLoopHVACOutdoorAirSystem.is_initialized
+
+      controller_oa = air_loop.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+      next unless controller_oa.minimumOutdoorAirFlowRate.is_initialized
+      next unless controller_oa.minimumOutdoorAirFlowRate.get > 0.0
+      # a plain string in this SDK; an optional in older ones
+      limit_type = controller_oa.getMinimumLimitType
+      limit_type = limit_type.is_initialized ? limit_type.get : nil if limit_type.respond_to?(:is_initialized)
+      next unless limit_type == 'FixedMinimum'
+
+      controller_mv = controller_oa.controllerMechanicalVentilation
+      next if controller_mv.demandControlledVentilation
+      next unless controller_mv.systemOutdoorAirMethod == 'ZoneSum'
+
+      controller_mv.setAvailabilitySchedule(model.alwaysOffDiscreteSchedule)
+      mech_vent_off += 1
+    end
+    runner.registerInfo("Set the mechanical ventilation controller availability to always off on #{mech_vent_off} air loops whose hard-sized fixed minimum outdoor air already governs.")
+
     # TODO: remove once this functionality is added to the OpenStudio C++ for hard sizing
     model.getAirTerminalSingleDuctVAVReheats.each do |term|
       next unless term.damperHeatingAction == 'Normal'

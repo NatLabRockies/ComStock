@@ -1,0 +1,3817 @@
+{
+  "metadata": {
+    "description": "ComStock-owned building type definitions used by the create_custom_building_from_spec measure. Space type ratios and building form defaults in all_level_space_types vocabulary, so no prototype space type mapping is needed at runtime.",
+    "openstudio_standards_version": "0.8.6",
+    "space_type_vocabulary": "all_level_space_types",
+    "notes": [
+      "building_subtype \"NA\" means the entry applies to any subtype.",
+      "applicable_templates lists every template the entry covers, ASHRAE and DEER together.",
+      "DEER templates reuse the ASHRAE ratios for their era: vintages before 2004 join the DOE Ref entry, 2004 and later join the 90.1 entry.",
+      "construction_defaults carries the envelope every building type shares under a template; a building type entry carries only what differs from it. Merge the two, default first, one level into slots.",
+      "A merged construction spec names every surface, so it does not need a row in the standards construction_sets table. That table is keyed on the building types of the template family and holds no ASHRAE name under a DEER template."
+    ]
+  },
+  "building_types": {
+    "FullServiceRestaurant": {
+      "form_defaults": {
+        "aspect_ratio": 1.0,
+        "wwr": 0.18,
+        "typical_story": 10.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "RSD",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "dining": {
+              "ratio": 0.7272,
+              "space_type_gen": true,
+              "default": true
+            },
+            "food preparation": {
+              "ratio": 0.2728,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004"
+          ],
+          "spec": {
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_roof_type": "Attic and Other"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 4in Slab Floor"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "HighriseApartment": {
+      "form_defaults": {
+        "aspect_ratio": 2.75,
+        "wwr": 0.15,
+        "typical_story": 10.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "OfL",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "apartment": {
+              "ratio": 0.8896,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor": {
+              "ratio": 0.0991,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "office": {
+              "ratio": 0.0113,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "building_category": "Residential",
+            "is_residential": true,
+            "surfaces": {
+              "ground_contact_ceiling": {
+                "building_category": "Nonresidential"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "SteelFramed",
+            "exterior_roof_type": "Mass"
+          }
+        }
+      ]
+    },
+    "Hospital": {
+      "form_defaults": {
+        "aspect_ratio": 1.33,
+        "wwr": 0.16,
+        "typical_story": 14.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "Hsp",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "electrical/mechanical": {
+              "ratio": 0.1667,
+              "space_type_gen": false,
+              "default": false
+            },
+            "corridor - hospital": {
+              "ratio": 0.1741,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining - cafeteria/fast food": {
+              "ratio": 0.0311,
+              "space_type_gen": true,
+              "default": false
+            },
+            "exam/treatment": {
+              "ratio": 0.0374,
+              "space_type_gen": true,
+              "default": false
+            },
+            "nurses station": {
+              "ratio": 0.2572,
+              "space_type_gen": true,
+              "default": false
+            },
+            "emergency room": {
+              "ratio": 0.0075,
+              "space_type_gen": true,
+              "default": false
+            },
+            "patient room": {
+              "ratio": 0.096,
+              "space_type_gen": true,
+              "default": false
+            },
+            "food preparation": {
+              "ratio": 0.0414,
+              "space_type_gen": true,
+              "default": false
+            },
+            "laboratory": {
+              "ratio": 0.0236,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.0657,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0286,
+              "space_type_gen": true,
+              "default": false
+            },
+            "operating room": {
+              "ratio": 0.0273,
+              "space_type_gen": true,
+              "default": false
+            },
+            "physical therapy": {
+              "ratio": 0.0217,
+              "space_type_gen": true,
+              "default": false
+            },
+            "imaging": {
+              "ratio": 0.0217,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "food preparation",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.006
+            },
+            "Dishwasher Booster": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.009
+            }
+          }
+        }
+      ],
+      "exhaust_overrides": [
+        {
+          "space_type": "imaging",
+          "exhaust": {
+            "exhaust_per_area": 0.0
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_roof_type": "Mass",
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 6in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 6in Slab Floor"
+            }
+          }
+        }
+      ]
+    },
+    "LargeHotel": {
+      "form_defaults": {
+        "aspect_ratio": 5.1,
+        "wwr": 0.27,
+        "typical_story": 10.0,
+        "first_story": 13.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "Htl",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "dining": {
+              "ratio": 0.0751,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.1889,
+              "space_type_gen": false,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.1736,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "guest room": {
+              "ratio": 0.4099,
+              "space_type_gen": true,
+              "default": true
+            },
+            "food preparation": {
+              "ratio": 0.0091,
+              "space_type_gen": true,
+              "default": false
+            },
+            "laundry/washing": {
+              "ratio": 0.0069,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.1153,
+              "space_type_gen": true,
+              "default": false
+            },
+            "retail": {
+              "ratio": 0.0128,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.0084,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "food preparation",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.048
+            },
+            "Dishwasher Booster": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.072
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              },
+              "interior_floors": "LargeHotel Interior Floor",
+              "interior_walls": "LargeHotel Interior Wall",
+              "interior_ceilings": "LargeHotel Interior Ceiling"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              },
+              "interior_floors": "LargeHotel Interior Floor",
+              "interior_walls": "LargeHotel Interior Wall",
+              "interior_ceilings": "LargeHotel Interior Ceiling"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              },
+              "interior_floors": "LargeHotel Interior Floor",
+              "interior_walls": "LargeHotel Interior Wall",
+              "interior_ceilings": "LargeHotel Interior Ceiling"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "interior_floors": "LargeHotel Interior Floor",
+              "interior_walls": "LargeHotel Interior Wall",
+              "interior_ceilings": "LargeHotel Interior Ceiling"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_roof_type": "IEAD"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "LargeOffice": {
+      "form_defaults": {
+        "aspect_ratio": 1.5,
+        "wwr": 0.15,
+        "typical_story": 13.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "OfL",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020"
+          ],
+          "space_types": {
+            "lounge/breakroom": {
+              "ratio": 0.0167,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.0038,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.64,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0144,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.0431,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.0151,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0885,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.052,
+              "space_type_gen": true,
+              "default": false
+            },
+            "datacenter/low ite": {
+              "ratio": 0.0077,
+              "space_type_gen": true,
+              "default": false
+            },
+            "datacenter/high ite": {
+              "ratio": 0.055,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.029,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.0169,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.0178,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "lounge/breakroom": {
+              "ratio": 0.0178,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.004,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.683,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0153,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.046,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.0161,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0944,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.0554,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.031,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.018,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.019,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "largeoffice_datacenteronly",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "datacenter/low ite": {
+              "ratio": 1.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "largeoffice_datacenter",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020"
+          ],
+          "space_types": {
+            "datacenter/low ite": {
+              "ratio": 0.016897,
+              "space_type_gen": true,
+              "default": false
+            },
+            "datacenter/high ite": {
+              "ratio": 0.070454,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lounge/breakroom": {
+              "ratio": 0.016261,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.0037,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.623168,
+              "space_type_gen": true,
+              "default": true
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.014021,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.041966,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.014703,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.086172,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.050632,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.028237,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.016456,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.017332,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "largeoffice_datacenter",
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "datacenter/low ite": {
+              "ratio": 0.0094,
+              "space_type_gen": true,
+              "default": false
+            },
+            "datacenter/high ite": {
+              "ratio": 0.0169,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lounge/breakroom": {
+              "ratio": 0.017332,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.003895,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.665037,
+              "space_type_gen": true,
+              "default": true
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.014898,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.04479,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.015677,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.091917,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.053943,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.030185,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.017527,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.0185,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "largeoffice_nodatacenter",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020"
+          ],
+          "space_types": {
+            "lounge/breakroom": {
+              "ratio": 0.017817,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.004054,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.682812,
+              "space_type_gen": true,
+              "default": true
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.015363,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.045983,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.01611,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.09442,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.055479,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.03094,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.018031,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.018991,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "largeoffice_nodatacenter",
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "lounge/breakroom": {
+              "ratio": 0.0178,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.004,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.683,
+              "space_type_gen": true,
+              "default": true
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0153,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.046,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.0161,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0944,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.0554,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.031,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.018,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.019,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "SteelFramed",
+            "exterior_roof_type": "Mass"
+          }
+        }
+      ]
+    },
+    "MediumOffice": {
+      "form_defaults": {
+        "aspect_ratio": 1.5,
+        "wwr": 0.33,
+        "typical_story": 13.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "OfL",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "classroom/lecture/training": {
+              "ratio": 0.006,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.6121,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0519,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.0896,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "dining": {
+              "ratio": 0.0138,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.03,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.055,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.036,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.037,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.0686,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "SteelFramed",
+            "exterior_roof_type": "Mass"
+          }
+        }
+      ]
+    },
+    "MidriseApartment": {
+      "form_defaults": {
+        "aspect_ratio": 2.75,
+        "wwr": 0.15,
+        "typical_story": 10.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "MFm",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "apartment": {
+              "ratio": 0.8727,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor": {
+              "ratio": 0.0991,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "office": {
+              "ratio": 0.0282,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Residential"
+              },
+              "exterior_wall": {
+                "building_category": "Residential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Residential"
+              },
+              "ground_contact_wall": {
+                "construction_type": "Mass",
+                "building_category": "Residential"
+              },
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "building_category": "Residential",
+            "is_residential": true,
+            "surfaces": {
+              "ground_contact_ceiling": {
+                "building_category": "Nonresidential"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "is_residential": true,
+            "exterior_wall_type": "SteelFramed",
+            "exterior_roof_type": "Mass",
+            "surfaces": {
+              "exterior_wall": {
+                "building_category": "HighriseResidential"
+              },
+              "exterior_roof": {
+                "building_category": "HighriseResidential"
+              },
+              "ground_contact_ceiling": {
+                "building_category": "HighriseResidential"
+              },
+              "exterior_fixed_window": {
+                "construction_type": "Nonmetal framing (all)",
+                "building_category": "HighriseResidential"
+              },
+              "exterior_operable_window": {
+                "construction_type": "Nonmetal framing (all)",
+                "building_category": "HighriseResidential"
+              },
+              "exterior_skylight": {
+                "construction_type": "Glass with Curb",
+                "building_category": "HighriseResidential"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Outpatient": {
+      "form_defaults": {
+        "aspect_ratio": 1.6,
+        "wwr": 0.2,
+        "typical_story": 10.0,
+        "perim_mult": 1.121
+      },
+      "deer_building_type": "OfL",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "exam/treatment": {
+              "ratio": 0.12490000000000001,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.1521,
+              "space_type_gen": true,
+              "default": false
+            },
+            "dining": {
+              "ratio": 0.0103,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0082,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0131,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.1924,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "datacenter/low ite": {
+              "ratio": 0.0027,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.051699999999999996,
+              "space_type_gen": true,
+              "default": false
+            },
+            "locker room": {
+              "ratio": 0.019,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lounge/breakroom": {
+              "ratio": 0.0293,
+              "space_type_gen": true,
+              "default": false
+            },
+            "imaging": {
+              "ratio": 0.0368,
+              "space_type_gen": true,
+              "default": false
+            },
+            "nurses station": {
+              "ratio": 0.0189,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.1828,
+              "space_type_gen": true,
+              "default": false
+            },
+            "operating room": {
+              "ratio": 0.0545,
+              "space_type_gen": true,
+              "default": false
+            },
+            "recovery": {
+              "ratio": 0.0232,
+              "space_type_gen": true,
+              "default": false
+            },
+            "physical therapy": {
+              "ratio": 0.0462,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.0146,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.0193,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "SteelFramed",
+            "exterior_roof_type": "Mass"
+          }
+        }
+      ]
+    },
+    "PrimarySchool": {
+      "form_defaults": {
+        "aspect_ratio": 2.8,
+        "wwr": 0.35,
+        "typical_story": 13.0,
+        "perim_mult": 1.914
+      },
+      "deer_building_type": "EPr",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020"
+          ],
+          "space_types": {
+            "dining - primary school": {
+              "ratio": 0.0458,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.4793,
+              "space_type_gen": true,
+              "default": true
+            },
+            "computer room": {
+              "ratio": 0.0236,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor - primary school": {
+              "ratio": 0.1633,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "playing area - primary school": {
+              "ratio": 0.052,
+              "space_type_gen": true,
+              "default": false
+            },
+            "food preparation - primary school": {
+              "ratio": 0.0244,
+              "space_type_gen": true,
+              "default": false
+            },
+            "library - primary school": {
+              "ratio": 0.0581,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby - primary school": {
+              "ratio": 0.0249,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0367,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0642,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom - primary school": {
+              "ratio": 0.0277,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "dining - primary school": {
+              "ratio": 0.0458,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.561,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor - primary school": {
+              "ratio": 0.1633,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "playing area - primary school": {
+              "ratio": 0.052,
+              "space_type_gen": true,
+              "default": false
+            },
+            "food preparation - primary school": {
+              "ratio": 0.0244,
+              "space_type_gen": true,
+              "default": false
+            },
+            "library - primary school": {
+              "ratio": 0.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby - primary school": {
+              "ratio": 0.0249,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0367,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0642,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom - primary school": {
+              "ratio": 0.0277,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed"
+          }
+        }
+      ]
+    },
+    "QuickServiceRestaurant": {
+      "form_defaults": {
+        "aspect_ratio": 1.0,
+        "wwr": 0.18,
+        "typical_story": 10.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "RFF",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "dining": {
+              "ratio": 0.5,
+              "space_type_gen": true,
+              "default": true
+            },
+            "food preparation": {
+              "ratio": 0.5,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "food preparation",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.032,
+              "mixed_water_temperature_f": 110.0
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "exterior_roof_type": "Attic and Other"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 4in Slab Floor"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RetailStandalone": {
+      "form_defaults": {
+        "aspect_ratio": 1.28,
+        "wwr": 0.07,
+        "typical_story": 20.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "RtL",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage": {
+              "ratio": 0.1656,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.0052,
+              "space_type_gen": true,
+              "default": false
+            },
+            "retail": {
+              "ratio": 0.8291999999999999,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_roof_type": "IEAD",
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 4in Slab Floor"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RetailStripmall": {
+      "form_defaults": {
+        "aspect_ratio": 4.0,
+        "wwr": 0.11,
+        "typical_story": 17.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "RtS",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "retail": {
+              "ratio": 1.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 4in Slab Floor"
+            }
+          }
+        }
+      ]
+    },
+    "SecondarySchool": {
+      "form_defaults": {
+        "aspect_ratio": 2.1,
+        "wwr": 0.33,
+        "typical_story": 13.0,
+        "perim_mult": 1.568
+      },
+      "deer_building_type": "ESe",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020"
+          ],
+          "space_types": {
+            "audience seating - secondary school": {
+              "ratio": 0.0504,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "dining - secondary school": {
+              "ratio": 0.0319,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.3041,
+              "space_type_gen": true,
+              "default": true
+            },
+            "computer room": {
+              "ratio": 0.0487,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor - secondary school": {
+              "ratio": 0.2144,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "playing area - secondary school": {
+              "ratio": 0.1009,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "audience seating - gymnasium - secondary school": {
+              "ratio": 0.0637,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "food preparation - secondary school": {
+              "ratio": 0.011,
+              "space_type_gen": true,
+              "default": false
+            },
+            "library - secondary school": {
+              "ratio": 0.0429,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby - secondary school": {
+              "ratio": 0.0214,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0349,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0543,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom - secondary school": {
+              "ratio": 0.0214,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "audience seating - secondary school": {
+              "ratio": 0.0504,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "dining - secondary school": {
+              "ratio": 0.0319,
+              "space_type_gen": true,
+              "default": false
+            },
+            "classroom/lecture/training": {
+              "ratio": 0.3528,
+              "space_type_gen": true,
+              "default": true
+            },
+            "corridor - secondary school": {
+              "ratio": 0.2144,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "playing area - secondary school": {
+              "ratio": 0.1009,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "audience seating - gymnasium - secondary school": {
+              "ratio": 0.0637,
+              "story_height": 26.0,
+              "space_type_gen": true,
+              "default": false
+            },
+            "food preparation - secondary school": {
+              "ratio": 0.011,
+              "space_type_gen": true,
+              "default": false
+            },
+            "library - secondary school": {
+              "ratio": 0.0429,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby - secondary school": {
+              "ratio": 0.0214,
+              "space_type_gen": true,
+              "default": false
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0349,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0543,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom - secondary school": {
+              "ratio": 0.0214,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SmallHotel": {
+      "form_defaults": {
+        "aspect_ratio": 3.0,
+        "wwr": 0.11,
+        "typical_story": 9.0,
+        "first_story": 11.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "Mtl",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "corridor": {
+              "ratio": 0.1313,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "electrical/mechanical": {
+              "ratio": 0.011899999999999999,
+              "space_type_gen": true,
+              "default": false
+            },
+            "shaft": {
+              "ratio": 0.0113,
+              "space_type_gen": true,
+              "default": false
+            },
+            "exercise area": {
+              "ratio": 0.0081,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lounge/breakroom": {
+              "ratio": 0.04869999999999999,
+              "space_type_gen": true,
+              "default": false
+            },
+            "guest room": {
+              "ratio": 0.6312,
+              "space_type_gen": true,
+              "default": true
+            },
+            "laundry/washing": {
+              "ratio": 0.0244,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.02,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0325,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.0081,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.04,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.0325,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              },
+              "interior_floors": "int_slab_floor_smallhotel",
+              "interior_walls": "int_wall_smallhotel",
+              "interior_ceilings": "int_slab_ceiling_smallhotel"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              },
+              "interior_floors": "int_slab_floor_smallhotel",
+              "interior_walls": "int_wall_smallhotel",
+              "interior_ceilings": "int_slab_ceiling_smallhotel"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              },
+              "interior_floors": "int_slab_floor_smallhotel",
+              "interior_walls": "int_wall_smallhotel",
+              "interior_ceilings": "int_slab_ceiling_smallhotel"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "surfaces": {
+              "interior_floors": "int_slab_floor_smallhotel",
+              "interior_walls": "int_wall_smallhotel",
+              "interior_ceilings": "int_slab_ceiling_smallhotel"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "is_residential": true,
+            "exterior_wall_type": "WoodFramed",
+            "surfaces": {
+              "exterior_wall": {
+                "building_category": "HighriseResidential"
+              },
+              "exterior_roof": {
+                "building_category": "HighriseResidential"
+              },
+              "ground_contact_ceiling": {
+                "building_category": "HighriseResidential"
+              },
+              "exterior_fixed_window": {
+                "construction_type": "Nonmetal framing (all)",
+                "building_category": "HighriseResidential"
+              },
+              "exterior_operable_window": {
+                "construction_type": "Nonmetal framing (all)",
+                "building_category": "HighriseResidential"
+              },
+              "exterior_skylight": {
+                "construction_type": "Glass with Curb",
+                "building_category": "HighriseResidential"
+              },
+              "interior_floors": "DEER Carpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Carpeted 4in Slab Floor"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_roof_type": "Attic and Other",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SmallOffice": {
+      "form_defaults": {
+        "aspect_ratio": 1.5,
+        "wwr": 0.15,
+        "typical_story": 10.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "OfS",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "office": {
+              "ratio": 0.4984,
+              "space_type_gen": true,
+              "default": false
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0818,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.1213,
+              "space_type_gen": true,
+              "default": false,
+              "circ": true
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0201,
+              "space_type_gen": true,
+              "default": false
+            },
+            "lobby": {
+              "ratio": 0.0818,
+              "space_type_gen": true,
+              "default": false
+            },
+            "restroom": {
+              "ratio": 0.0402,
+              "space_type_gen": true,
+              "default": false
+            },
+            "stairwell": {
+              "ratio": 0.0201,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.1363,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_wall_type": "WoodFramed",
+            "surfaces": {
+              "interior_floors": "DEER Carpeted 4in Slab Floor",
+              "interior_ceilings": "DEER Carpeted 4in Slab Floor"
+            }
+          }
+        }
+      ]
+    },
+    "SuperMarket": {
+      "form_defaults": {
+        "aspect_ratio": 1.5,
+        "wwr": 0.11,
+        "typical_story": 20.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "Gro",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "food preparation": {
+              "ratio": 0.05,
+              "space_type_gen": true,
+              "default": false
+            },
+            "retail - supermarket": {
+              "ratio": 0.7733,
+              "space_type_gen": true,
+              "default": false
+            },
+            "storage": {
+              "ratio": 0.101,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.0067,
+              "space_type_gen": true,
+              "default": false
+            },
+            "corridor": {
+              "ratio": 0.0118,
+              "space_type_gen": true,
+              "default": true
+            },
+            "dining": {
+              "ratio": 0.0111,
+              "space_type_gen": true,
+              "default": true
+            },
+            "electrical/mechanical": {
+              "ratio": 0.0133,
+              "space_type_gen": true,
+              "default": true
+            },
+            "conference/meeting/multipurpose": {
+              "ratio": 0.0111,
+              "space_type_gen": true,
+              "default": true
+            },
+            "restroom": {
+              "ratio": 0.015,
+              "space_type_gen": true,
+              "default": true
+            },
+            "lobby": {
+              "ratio": 0.0067,
+              "space_type_gen": true,
+              "default": true
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing (entrance door)"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2013"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass",
+            "surfaces": {
+              "exterior_glass_door": {
+                "construction_type": "Metal framing, entrance door"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Mass"
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "exterior_roof_type": "IEAD",
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 6in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 6in Slab Floor"
+            }
+          }
+        }
+      ]
+    },
+    "Warehouse": {
+      "form_defaults": {
+        "aspect_ratio": 2.2,
+        "wwr": 0.0,
+        "typical_story": 28.0,
+        "perim_mult": 1.0
+      },
+      "deer_building_type": "SUn",
+      "space_type_ratios": [
+        {
+          "building_subtype": "NA",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - medium to bulky palletized items": {
+              "ratio": 0.6628,
+              "space_type_gen": true,
+              "default": true
+            },
+            "storage - warehouse - smaller hand-carried items": {
+              "ratio": 0.2882,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.049,
+              "wwr": 0.71,
+              "story_height": 14.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "warehouse_bulk100",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - medium to bulky palletized items": {
+              "ratio": 1.0,
+              "space_type_gen": true,
+              "default": true
+            }
+          }
+        },
+        {
+          "building_subtype": "warehouse_bulk20",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - medium to bulky palletized items": {
+              "ratio": 0.2,
+              "space_type_gen": true,
+              "default": true
+            },
+            "storage - warehouse - smaller hand-carried items": {
+              "ratio": 0.751,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.049,
+              "wwr": 0.71,
+              "story_height": 14.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "warehouse_bulk40",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - medium to bulky palletized items": {
+              "ratio": 0.4,
+              "space_type_gen": true,
+              "default": true
+            },
+            "storage - warehouse - smaller hand-carried items": {
+              "ratio": 0.551,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.049,
+              "wwr": 0.71,
+              "story_height": 14.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "warehouse_bulk80",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - medium to bulky palletized items": {
+              "ratio": 0.8,
+              "space_type_gen": true,
+              "default": true
+            },
+            "storage - warehouse - smaller hand-carried items": {
+              "ratio": 0.151,
+              "space_type_gen": true,
+              "default": false
+            },
+            "office": {
+              "ratio": 0.049,
+              "wwr": 0.71,
+              "story_height": 14.0,
+              "space_type_gen": true,
+              "default": false
+            }
+          }
+        },
+        {
+          "building_subtype": "warehouse_fine100",
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019",
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975",
+            "ComStock DOE Ref 1980-2004",
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "space_types": {
+            "storage - warehouse - smaller hand-carried items": {
+              "ratio": 1.0,
+              "space_type_gen": true,
+              "default": true
+            }
+          }
+        }
+      ],
+      "constructions": [
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2004",
+            "ComStock 90.1-2007",
+            "ComStock 90.1-2010",
+            "ComStock 90.1-2013",
+            "ComStock DOE Ref 1980-2004"
+          ],
+          "spec": {
+            "exterior_wall_type": "Metal Building",
+            "exterior_roof_type": "Metal Building",
+            "surfaces": {
+              "exterior_wall": {
+                "building_category": "Nonresidential"
+              },
+              "exterior_roof": {
+                "building_category": "Nonresidential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Nonresidential"
+              },
+              "exterior_door": {
+                "construction_type": "Swinging",
+                "building_category": "Nonresidential"
+              },
+              "exterior_overhead_door": {
+                "construction_type": "NonSwinging",
+                "building_category": "Nonresidential"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock 90.1-2016",
+            "ComStock 90.1-2019"
+          ],
+          "spec": {
+            "exterior_wall_type": "Metal Building",
+            "exterior_roof_type": "Metal Building",
+            "surfaces": {
+              "exterior_floor": {
+                "building_category": "Nonresidential"
+              }
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DEER 1985",
+            "ComStock DEER 1996",
+            "ComStock DEER 2003",
+            "ComStock DEER 2007",
+            "ComStock DEER 2011",
+            "ComStock DEER 2014",
+            "ComStock DEER 2015",
+            "ComStock DEER 2017",
+            "ComStock DEER 2020",
+            "ComStock DEER Pre-1975"
+          ],
+          "spec": {
+            "surfaces": {
+              "interior_floors": "DEER Uncarpeted 6in Slab Floor",
+              "interior_ceilings": "DEER Uncarpeted 6in Slab Floor"
+            }
+          }
+        },
+        {
+          "applicable_templates": [
+            "ComStock DOE Ref Pre-1980"
+          ],
+          "spec": {
+            "exterior_wall_type": "Metal Building",
+            "surfaces": {
+              "exterior_wall": {
+                "building_category": "Nonresidential"
+              },
+              "exterior_roof": {
+                "building_category": "Nonresidential"
+              },
+              "ground_contact_floor": {
+                "construction_type": "Unheated",
+                "building_category": "Nonresidential"
+              },
+              "exterior_door": {
+                "construction_type": "Swinging",
+                "building_category": "Nonresidential"
+              },
+              "exterior_overhead_door": {
+                "construction_type": "NonSwinging",
+                "building_category": "Nonresidential"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "construction_defaults": [
+    {
+      "applicable_templates": [
+        "ComStock 90.1-2004"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Fixed"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Operable"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock 90.1-2007",
+        "ComStock 90.1-2010"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Metal framing (all other)"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Metal framing (all other)"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock 90.1-2013"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Metal framing, fixed"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Metal framing, operable"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock 90.1-2016"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Metal framing, fixed"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Metal framing, operable"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_glass_door": {
+            "construction_type": "Metal framing, entrance door"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock 90.1-2019"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Fixed"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Operable"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_glass_door": {
+            "construction_type": "Entrance door"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock DEER 1985",
+        "ComStock DEER 1996",
+        "ComStock DEER 2003",
+        "ComStock DEER 2007",
+        "ComStock DEER 2011",
+        "ComStock DEER 2014",
+        "ComStock DEER 2015",
+        "ComStock DEER 2017",
+        "ComStock DEER 2020",
+        "ComStock DEER Pre-1975"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "Mass",
+        "exterior_roof_type": "WoodFramed",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Nonmetal framing (all)"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Nonmetal framing (all)"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_glass_door": {
+            "construction_type": "Metal framing (entrance door)"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "exterior_skylight": {
+            "construction_type": "Glass with Curb"
+          },
+          "interior_floors": "DEER Carpeted 6in Slab Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "DEER Carpeted 6in Slab Floor",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    },
+    {
+      "applicable_templates": [
+        "ComStock DOE Ref 1980-2004",
+        "ComStock DOE Ref Pre-1980"
+      ],
+      "spec": {
+        "building_category": "Nonresidential",
+        "is_residential": false,
+        "exterior_wall_type": "SteelFramed",
+        "exterior_roof_type": "IEAD",
+        "exterior_floor_type": "Mass",
+        "surfaces": {
+          "ground_contact_floor": {
+            "construction_type": "Unheated"
+          },
+          "ground_contact_wall": {
+            "construction_type": "Mass"
+          },
+          "exterior_fixed_window": {
+            "construction_type": "Metal framing (all other)"
+          },
+          "exterior_operable_window": {
+            "construction_type": "Metal framing (all other)"
+          },
+          "exterior_door": {
+            "construction_type": "Swinging"
+          },
+          "exterior_overhead_door": {
+            "construction_type": "NonSwinging"
+          },
+          "interior_floors": "Typical Interior Floor",
+          "interior_walls": "Typical Interior Wall",
+          "interior_ceilings": "Typical Interior Ceiling",
+          "tubular_daylight_domes": "Typical Interior Window",
+          "tubular_daylight_diffusers": "Typical Interior Window",
+          "interior_fixed_windows": "Typical Interior Window",
+          "interior_operable_windows": "Typical Interior Window",
+          "interior_doors": "Typical Interior Door",
+          "interior_partitions": "Typical Interior Partition"
+        }
+      }
+    }
+  ]
+}

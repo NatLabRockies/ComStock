@@ -172,7 +172,7 @@ class AddThermostatSetpointVariability < OpenStudio::Measure::ModelMeasure
       clg_schedule = zone_thermostat.coolingSetpointTemperatureSchedule
       if adjust_cooling
         if clg_schedule.empty?
-          runner.registerWarning("Cooling setpoint schedule not found for zone '#{zone.name.get}'")
+          runner.registerWarning("Cooling setpoint schedule not found for zone '#{thermal_zone.name.get}'")
         elsif clg_schedule.get.to_ScheduleRuleset.empty?
           runner.registerWarning("Schedule '#{clg_schedule.get.name.get}' is not a ScheduleRuleset, will not be adjusted")
         else
@@ -183,7 +183,7 @@ class AddThermostatSetpointVariability < OpenStudio::Measure::ModelMeasure
       htg_schedule = zone_thermostat.heatingSetpointTemperatureSchedule
       if adjust_heating
         if htg_schedule.empty?
-          runner.registerWarning("Heating setpoint schedule not found for zone '#{zone.name.get}'")
+          runner.registerWarning("Heating setpoint schedule not found for zone '#{thermal_zone.name.get}'")
         elsif htg_schedule.get.to_ScheduleRuleset.empty?
           runner.registerWarning("Schedule '#{htg_schedule.get.name.get}' is not a ScheduleRuleset, will not be adjusted")
         else

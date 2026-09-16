@@ -89,7 +89,8 @@
     openstudio --verbose --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems --bundle_without native_ext gem_list
 
     # You should see output similar to this.
-    # Verify that the openstudio-standards gem specified has the expected SHA:
+    # Verify that the comstock-typical gem specified has the expected SHA (it replaces openstudio-standards;
+    # the listing below is an old example and the surrounding gem versions will differ):
     bundler (1.17.1) ':/ruby/2.2.0/gems/bundler-1.17.1'
     rake (12.3.1) '/var/oscli/gems/ruby/2.2.0/gems/rake-12.3.1'
     ansi (1.5.0) '/var/oscli/gems/ruby/2.2.0/gems/ansi-1.5.0'
@@ -114,11 +115,11 @@
     openstudio_measure_tester (0.1.7) '/var/oscli/gems/ruby/2.2.0/gems/openstudio_measure_tester-0.1.7'
     openstudio-extension (0.1.2) '/var/oscli/gems/ruby/2.2.0/gems/openstudio-extension-0.1.2'
     openstudio-gems (2.9.0) '/var/oscli'
-    openstudio-standards (0.2.11) '/var/oscli/gems/ruby/2.2.0/bundler/gems/openstudio-standards-841741dfcd5f'
+    comstock-typical (0.1.0) '/var/oscli/gems/ruby/3.2.0/bundler/gems/ComStock-Typical-d6c98cfa3342'
                                                                                               ^^^^SHA HERE^^^^
     ```
 
-* If the above returned the expected OpenStudio Standards version, push rename the sif file and push it to Eagle. [`SIF_VERSION_NAME` and `SIF_VERSION_SHA`](https://buildstockbatch.readthedocs.io/en/latest/project_defn.html#openstudio-version-overrides) should be set to a unique combination for each new apptainer image. This provides the means of specifying this apptainer image in the ComStock project YAML. See also the [ComStock HPC Training document.](../comstock_hpc_training.md#example-yml-file-contents-documentation). __`SIF_VERSION_SHA` must be the SHA of the version of OpenStudio included, NOT the SHA of openstudio-standards.__ To signify a custom version of openstudio-standards, set the `SIF_VERSION_NAME` to something meaningful. Something like: `SIF_VERSION_NAME=os_340_stds_b50172b4cc18` and `SIF_VERSION_SHA=4bd816f785`.
+* If the above returned the expected comstock-typical SHA, push rename the sif file and push it to Eagle. [`SIF_VERSION_NAME` and `SIF_VERSION_SHA`](https://buildstockbatch.readthedocs.io/en/latest/project_defn.html#openstudio-version-overrides) should be set to a unique combination for each new apptainer image. This provides the means of specifying this apptainer image in the ComStock project YAML. See also the [ComStock HPC Training document.](../comstock_hpc_training.md#example-yml-file-contents-documentation). __`SIF_VERSION_SHA` must be the SHA of the version of OpenStudio included, NOT the SHA of openstudio-standards.__ To signify a custom version of openstudio-standards, set the `SIF_VERSION_NAME` to something meaningful. Something like: `SIF_VERSION_NAME=os_340_stds_b50172b4cc18` and `SIF_VERSION_SHA=4bd816f785`.
 
     ```bash
     # Rename the container

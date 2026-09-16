@@ -297,6 +297,13 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_avail_sch = OpenStudio::Model::ScheduleConstant.new(model)
         air_loop_avail_sch.setName("#{air_loop_hvac.name}_constant_night_fan_schedule")
         air_loop_avail_sch.setValue(1)
+        # State the type limits. The air loop availability and fan operating mode slots this
+        # schedule goes into do not stamp them the way the OA controller's minimum outdoor
+        # air slot stamps the vent schedule above, so without this EnergyPlus reports
+        # "Schedule Type Limits Name is empty ... Schedule will not be validated" for it.
+        air_loop_avail_sch.setScheduleTypeLimits(
+          OpenstudioStandards::Schedules.create_schedule_type_limits(model, standard_schedule_type_limit: 'Fractional')
+        )
         # set hvac avail schedule
         air_loop_hvac.setAvailabilitySchedule(air_loop_avail_sch)
         op_schd_1_count += 1
@@ -368,6 +375,13 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_avail_sch = OpenStudio::Model::ScheduleConstant.new(model)
         air_loop_avail_sch.setName("#{air_loop_hvac.name}_constant_night_fan_schedule")
         air_loop_avail_sch.setValue(1)
+        # State the type limits. The air loop availability and fan operating mode slots this
+        # schedule goes into do not stamp them the way the OA controller's minimum outdoor
+        # air slot stamps the vent schedule above, so without this EnergyPlus reports
+        # "Schedule Type Limits Name is empty ... Schedule will not be validated" for it.
+        air_loop_avail_sch.setScheduleTypeLimits(
+          OpenstudioStandards::Schedules.create_schedule_type_limits(model, standard_schedule_type_limit: 'Fractional')
+        )
         # set hvac avail schedule
         air_loop_hvac.setAvailabilitySchedule(air_loop_avail_sch)
         op_schd_1_count += 1

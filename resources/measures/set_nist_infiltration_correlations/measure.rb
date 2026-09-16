@@ -36,6 +36,7 @@
 # *******************************************************************************
 
 require 'csv'
+require 'openstudio-standards'
 
 # start the measure
 class SetNISTInfiltrationCorrelations < OpenStudio::Measure::ModelMeasure
@@ -150,30 +151,35 @@ class SetNISTInfiltrationCorrelations < OpenStudio::Measure::ModelMeasure
     new_schedule = OpenStudio::Model::ScheduleRuleset.new(model, 0.0)
     new_schedule.setName(new_schedule_name)
 
+    # The design day setters CLONE the day schedule they are handed, so a day schedule built
+    # first and handed over is left in the model with no parent once the clone becomes the
+    # real child - and orphaned day schedules reach the IDF with no schedule type limits,
+    # 214 "Schedule Type Limits Name is empty" lines across a 50-building validation run.
+    # As openstudio-standards' create_simple_schedule does: set the design day from the
+    # ruleset's own getter, take the clone back, clear it, and fill that.
     # change summer design day
-    summer_design_day_schedule = schedule_ruleset.summerDesignDaySchedule
-    new_summer_design_day_schedule = OpenStudio::Model::ScheduleDay.new(model)
-    invert_schedule_day(summer_design_day_schedule, new_summer_design_day_schedule, "#{new_schedule_name} Summer Design Day Schedule")
-    new_schedule.setSummerDesignDaySchedule(new_summer_design_day_schedule)
+    new_schedule.setSummerDesignDaySchedule(new_schedule.summerDesignDaySchedule)
+    new_summer_design_day_schedule = new_schedule.summerDesignDaySchedule
+    new_summer_design_day_schedule.clearValues
+    invert_schedule_day(schedule_ruleset.summerDesignDaySchedule, new_summer_design_day_schedule, "#{new_schedule_name} Summer Design Day Schedule")
 
     # change winter design day
-    winter_design_day_schedule = schedule_ruleset.winterDesignDaySchedule
-    new_winter_design_day_schedule = OpenStudio::Model::ScheduleDay.new(model)
-    invert_schedule_day(winter_design_day_schedule, new_winter_design_day_schedule, "#{new_schedule_name} Winter Design Day Schedule")
-    new_schedule.setWinterDesignDaySchedule(new_winter_design_day_schedule)
+    new_schedule.setWinterDesignDaySchedule(new_schedule.winterDesignDaySchedule)
+    new_winter_design_day_schedule = new_schedule.winterDesignDaySchedule
+    new_winter_design_day_schedule.clearValues
+    invert_schedule_day(schedule_ruleset.winterDesignDaySchedule, new_winter_design_day_schedule, "#{new_schedule_name} Winter Design Day Schedule")
 
     # change the default day values
     default_day_schedule = schedule_ruleset.defaultDaySchedule
     new_default_day_schedule = new_schedule.defaultDaySchedule
     invert_schedule_day(default_day_schedule, new_default_day_schedule, "#{new_schedule_name} Default Day Schedule")
 
-    # change for schedule rules
+    # change for schedule rules: a rule made on the ruleset owns its day schedule from the
+    # start, so fill that rather than handing the constructor one to clone
     schedule_ruleset.scheduleRules.each_with_index do |rule, i|
       old_schedule_day = rule.daySchedule
-      new_schedule_day = OpenStudio::Model::ScheduleDay.new(model)
-      invert_schedule_day(old_schedule_day, new_schedule_day, "#{new_schedule_name} Schedule Day #{i}")
-
-      new_rule = OpenStudio::Model::ScheduleRule.new(new_schedule, new_schedule_day)
+      new_rule = OpenStudio::Model::ScheduleRule.new(new_schedule)
+      new_schedule_day = invert_schedule_day(old_schedule_day, new_rule.daySchedule, "#{new_schedule_name} Schedule Day #{i}")
       new_rule.setName("#{new_schedule_day.name} Rule")
       new_rule.setApplySunday(rule.applySunday)
       new_rule.setApplyMonday(rule.applyMonday)
@@ -503,6 +509,14 @@ class SetNISTInfiltrationCorrelations < OpenStudio::Measure::ModelMeasure
       on_schedule.setName('Infiltration HVAC On Schedule')
       off_schedule = invert_schedule_ruleset(hvac_schedule, 'Infiltration HVAC Off Schedule')
     end
+
+    # State the type limits. The infiltration schedule slot does not stamp them, so without
+    # this EnergyPlus reports "Schedule Type Limits Name is empty ... Schedule will not be
+    # validated" for these schedules and every day profile inside them. This mirrors what
+    # OpenstudioStandards::Infiltration.model_set_nist_infiltration_schedules does; this
+    # measure carries its own copy of that logic.
+    infiltration_schedule_type_limits = OpenstudioStandards::Schedules.create_schedule_type_limits(model, standard_schedule_type_limit: 'Fractional')
+    [on_schedule, off_schedule].each { |schedule| schedule.setScheduleTypeLimits(infiltration_schedule_type_limits) }
 
     # validate climate zone
     if climate_zone == 'Lookup From Model'

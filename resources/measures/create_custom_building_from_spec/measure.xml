@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>create_custom_building_from_spec</name>
+  <uid>7f3c1a92-4d6b-4a0e-9c21-8b5f2d0e4c77</uid>
+  <version_id>2a9e6b41-5c73-4f18-b0d9-1e6a3c8f5b22</version_id>
+  <version_modified>2026-08-04T00:00:00Z</version_modified>
+  <xml_checksum>00000000</xml_checksum>
+  <class_name>CreateCustomBuildingFromSpec</class_name>
+  <display_name>Create Custom Building From Spec</display_name>
+  <description>Builds the baseline model through OpenstudioStandards::CreateTypical.create_custom_building_from_spec, replacing create_bar_from_building_type_ratios and create_typical_building_from_model.</description>
+  <modeler_description>Assembles a custom building specification from the same buildstock-driven arguments the replaced measures received, expanding building type ratios into space type ratios, then calls create_custom_building_from_spec. Arguments are inherited at runtime from the two measures it replaces.</modeler_description>
+  <arguments />
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.10.0</identifier>
+        <min_compatible>3.10.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>00000000</checksum>
+    </file>
+  </files>
+</measure>
