@@ -86,7 +86,7 @@
 
     ```bash
     # List the gems available to the openstudio CLI
-    openstudio --verbose --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems --bundle_without native_ext gem_list
+    openstudio --verbose --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems --bundle_without test gem_list
 
     # You should see output similar to this.
     # Verify that the comstock-typical gem specified has the expected SHA (it replaces openstudio-standards;

@@ -44,7 +44,9 @@ RUN rm -rf /var/oscli/gems/ruby/3.2.0/bundler/gems/**/.git \
 
 
 # Create a slimmer container without development libraries leftover by OpenStudio
-FROM ubuntu:22.04 AS os-comstock
+# Must match the glibc of the nrel/openstudio:3.10.0 base (Ubuntu 24.04, glibc 2.39);
+# an older base like 22.04 lacks GLIBC_2.38 and the copied openstudio binaries fail to load.
+FROM ubuntu:24.04 AS os-comstock
 
 ARG OPENSTUDIO_VERSION=3.10.0
 ARG OPENSTUDIO_VERSION_EXT=""
@@ -91,7 +93,7 @@ RUN apt-get update && apt-get install -y \
     apt-get update && \
     apt-get install -y python3.11 python3.11-dev python3.11-distutils curl && \
     curl -sS https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-    python3.11 get-pip.py && \
+    python3.11 get-pip.py --ignore-installed && \
     rm get-pip.py
 
 RUN apt-get update && apt-get install -y git
@@ -110,4 +112,5 @@ VOLUME /var/simdata/openstudio
 WORKDIR /var/simdata/openstudio
 
 # Ensure that openstudio can load the custom gems
-RUN openstudio --verbose --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems --bundle_without native_ext gem_list
+# Must exclude the same 'test' group that was skipped during `bundle install` in the os-base stage;
+RUN openstudio --verbose --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems --bundle_without test gem_list
