@@ -2,6 +2,7 @@
 # See top level LICENSE.txt file for license terms.
 
 # dependencies
+require 'csv'
 require 'fileutils'
 require 'minitest/autorun'
 require 'open3'
@@ -120,7 +121,8 @@ class TimeseriesCSVExportTest < Minitest::Test
   end
 
   # create test files if they do not exist when the test first runs
-  def setup_test(test_name, idf_output_requests, model_in_path = model_in_path_default, epw_path = epw_path_default)
+  def setup_test(test_name, measure, argument_map, idf_output_requests, model_in_path = model_in_path_default,
+                 epw_path = epw_path_default)
     FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
     FileUtils.rm_f(report_path(test_name))
@@ -138,6 +140,12 @@ class TimeseriesCSVExportTest < Minitest::Test
     assert(!model.empty?)
     model = model.get
     model.addObjects(request_model.objects)
+
+    # add the reporting-related model objects requested by the measure, in this case the request
+    # for the native EnergyPlus CSV output.  The C++ CLI does this automatically when the measure
+    # is run as part of a workflow.
+    measure.modelOutputRequests(model, OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new), argument_map)
+
     model.save(model_out_path(test_name), true)
 
     FileUtils.rm_f(sql_path(test_name)) if ENV['OPENSTUDIO_TEST_NO_CACHE_SQLFILE'] && File.exist?(sql_path(test_name))
@@ -168,6 +176,16 @@ class TimeseriesCSVExportTest < Minitest::Test
     end
 
     section_errors
+  end
+
+  # assert that the exported timeseries has the timestamp columns, at least one end use,
+  # and at least one row of results
+  def assert_report_contents(test_name)
+    rows = CSV.read(report_path(test_name))
+    header = rows.first
+    assert_equal(['Time', 'TimeDST', 'TimeUTC'], header[0..2])
+    assert(header.include?('total_site_electricity_kwh'))
+    assert(rows.size > 1, "Expected timeseries results in #{report_path(test_name)}, but found no rows")
   end
 
   def test_sm_hotel
@@ -205,7 +223,7 @@ class TimeseriesCSVExportTest < Minitest::Test
 
     # mimic the process of running this measure in OS App or PAT
     epw_path_default
-    setup_test(test_name, idf_output_requests, model_in_path)
+    setup_test(test_name, measure, argument_map, idf_output_requests, model_in_path)
 
     assert(File.exist?(model_out_path(test_name)))
     assert(File.exist?(sql_path(test_name)), "Could not find sql file at #{sql_path(test_name)}")
@@ -241,8 +259,9 @@ class TimeseriesCSVExportTest < Minitest::Test
       Dir.chdir(start_dir)
     end
 
-    # make sure the report file exists
+    # make sure the report file exists and holds the expected timeseries
     assert(File.exist?(report_path(test_name)))
+    assert_report_contents(test_name)
   end
 
   def test_restaurant
@@ -280,7 +299,7 @@ class TimeseriesCSVExportTest < Minitest::Test
 
     # mimic the process of running this measure in OS App or PAT
     epw_path_default
-    setup_test(test_name, idf_output_requests, model_in_path)
+    setup_test(test_name, measure, argument_map, idf_output_requests, model_in_path)
 
     assert(File.exist?(model_out_path(test_name)))
     assert(File.exist?(sql_path(test_name)), "Could not find sql file at #{sql_path(test_name)}")
@@ -318,6 +337,7 @@ class TimeseriesCSVExportTest < Minitest::Test
 
     # make sure the report file exists
     assert(File.exist?(report_path(test_name)))
+    assert_report_contents(test_name)
 
     # make sure that the expected columns are in the file
     File.open(report_path(test_name), 'r').each_with_index do |line, i|
@@ -394,7 +414,7 @@ class TimeseriesCSVExportTest < Minitest::Test
 
     # mimic the process of running this measure in OS App or PAT
     epw_path_default
-    setup_test(test_name, idf_output_requests, model_in_path)
+    setup_test(test_name, measure, argument_map, idf_output_requests, model_in_path)
 
     assert(File.exist?(model_out_path(test_name)))
     assert(File.exist?(sql_path(test_name)), "Could not find sql file at #{sql_path(test_name)}")
@@ -430,7 +450,8 @@ class TimeseriesCSVExportTest < Minitest::Test
       Dir.chdir(start_dir)
     end
 
-    # make sure the report file exists
+    # make sure the report file exists and holds the expected timeseries
     assert(File.exist?(report_path(test_name)))
+    assert_report_contents(test_name)
   end
 end

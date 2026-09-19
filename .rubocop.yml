@@ -23,6 +23,7 @@ Metrics/BlockLength:
 Naming/MethodName:
   AllowedPatterns:
   - 'energyPlusOutputRequests'
+  - 'modelOutputRequests'
 
 Style/FrozenStringLiteralComment:
   Enabled: false

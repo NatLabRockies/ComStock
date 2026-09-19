@@ -45,7 +45,7 @@ You are welcome to use this repository for your own use. However, we do not prov
 ## Developer Installation
 This is needed if you are a developer making changes to the `comstock-typical` gem (the fork of `openstudio-standards` that builds ComStock's models; see `resources/Gemfile`) or are running simulations locally using [BuildStock Batch](https://buildstockbatch.readthedocs.io/en/stable/).
 
-1. Install the [latest version of OpenStudio](https://github.com/NREL/OpenStudio/releases). ComStock requires **OpenStudio 3.8.0** or newer.
+1. Install the [latest version of OpenStudio](https://github.com/NREL/OpenStudio/releases). ComStock requires **OpenStudio 3.10.0** or newer. Simulations must be run with the default `openstudio run` command, not `openstudio classic run`, because the timeseries export relies on output requests that only the C++ CLI applies.
 2. Install the Ruby version that corresponds to your OpenStudio install. See the [OpenStudio SDK Version Compatibility Matrix](https://github.com/NREL/OpenStudio/wiki/OpenStudio-SDK-Version-Compatibility-Matrix).
       1. **On Mac**:
       2. Install Ruby 3.2.2 using [rbenv](http://octopress.org/docs/setup/rbenv/) (`ruby -v` from command prompt to check installed version).
@@ -55,11 +55,11 @@ This is needed if you are a developer making changes to the `comstock-typical` g
 3. Connect Ruby to OpenStudio:
 	1. **On Mac**:
 	2. Create a file called `openstudio.rb`
-	3. Contents: `require "/Applications/openstudio-3.8.0/Ruby/openstudio.rb"` Modify `3.8.0` to the version you installed.
+	3. Contents: `require "/Applications/openstudio-3.10.0/Ruby/openstudio.rb"` Modify `3.10.0` to the version you installed.
 	4. Save it here: `/usr/lib/ruby/site_ruby/openstudio.rb`
 	5. **On Windows**:
 	6. Create a file called `openstudio.rb`
-	7. Contents: `require "C:/openstudio-3.8.0/Ruby/openstudio.rb"`  Modify `3.8.0` to the version you installed.
+	7. Contents: `require "C:/openstudio-3.10.0/Ruby/openstudio.rb"`  Modify `3.10.0` to the version you installed.
 	8. Save it here: `C:/Ruby32-x64/lib/ruby/site_ruby/openstudio.rb`
 
 4. `gem install bundler` This installs the `bundler` ruby gem.

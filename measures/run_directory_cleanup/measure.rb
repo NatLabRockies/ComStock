@@ -39,10 +39,8 @@ class RunDirectoryCleanup < OpenStudio::Measure::ReportingMeasure
       './../*.mtd',
       './../eplusssz.csv',
       './../*.mtr',
-      './../*.rvi',
-      './../convert.txt',
-      './../convertESOMTR*',
-      './../ReadVarsESO*',
+      './../eplusout.csv',
+      './../eplusmtr.csv',
       './../data_point.zip',
       # Sizing run files
       './../**/*SR*/**/*.epw',
@@ -58,10 +56,8 @@ class RunDirectoryCleanup < OpenStudio::Measure::ReportingMeasure
       './../**/*SR*/**/*.mtd',
       './../**/*SR*/**/eplusssz.csv',
       './../**/*SR*/**/*.mtr',
-      './../**/*SR*/**/*.rvi',
-      './../**/*SR*/**/convert.txt',
-      './../**/*SR*/**/convertESOMTR*',
-      './../**/*SR*/**/ReadVarsESO*',
+      './../**/*SR*/**/eplusout.csv',
+      './../**/*SR*/**/eplusmtr.csv',
       './../**/*SR*/**/data_point.zip'
     ]
 

@@ -3,13 +3,13 @@
   <schema_version>3.1</schema_version>
   <name>timeseries_csv_export</name>
   <uid>2a3442c1-944d-4e91-9e11-11e0cf368c64</uid>
-  <version_id>edaf5866-05ea-4bcb-b703-93c4d708ac8e</version_id>
-  <version_modified>2025-04-25T21:06:01Z</version_modified>
+  <version_id>89f09f39-1a63-46bb-93e4-bf8d772797e6</version_id>
+  <version_modified>2026-08-19T20:35:58Z</version_modified>
   <xml_checksum>15BF4E57</xml_checksum>
   <class_name>TimeseriesCSVExport</class_name>
   <display_name>Timeseries CSV Export</display_name>
   <description>Exports all available hourly timeseries enduses to csv, and uses them for utility bill calculations.</description>
-  <modeler_description>Exports all available hourly timeseries enduses to csv, and uses them for utility bill calculations.</modeler_description>
+  <modeler_description>Requests the native EnergyPlus CSV output (OutputControl:Files) and reformats the resulting eplusmtr.csv and eplusout.csv into enduse_timeseries.csv, converting the raw SI values to kWh, kBtu, and gal and adding local, daylight savings, and UTC timestamp columns.</modeler_description>
   <arguments>
     <argument>
       <name>reporting_frequency</name>
@@ -82,61 +82,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>D2B4C5E3</checksum>
-    </file>
-    <file>
-      <filename>ReadVarsESO</filename>
-      <filetype></filetype>
-      <usage_type>resource</usage_type>
-      <checksum>9C999B6A</checksum>
-    </file>
-    <file>
-      <filename>ReadVarsESO.exe</filename>
-      <filetype>exe</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>23549EDD</checksum>
-    </file>
-    <file>
-      <filename>ReadVarsESO.osx</filename>
-      <filetype>osx</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>01852C1F</checksum>
-    </file>
-    <file>
-      <filename>convertESOMTR</filename>
-      <filetype></filetype>
-      <usage_type>resource</usage_type>
-      <checksum>C0321BC5</checksum>
-    </file>
-    <file>
-      <filename>convertESOMTR.exe</filename>
-      <filetype>exe</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>26D19FFE</checksum>
-    </file>
-    <file>
-      <filename>convertESOMTR.osx</filename>
-      <filetype>osx</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>256793AA</checksum>
-    </file>
-    <file>
-      <filename>libgcc_s.1.dylib</filename>
-      <filetype>dylib</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>6BB97941</checksum>
-    </file>
-    <file>
-      <filename>libgfortran.5.dylib</filename>
-      <filetype>dylib</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>3CDB62CC</checksum>
-    </file>
-    <file>
-      <filename>libquadmath.0.dylib</filename>
-      <filetype>dylib</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>1CFD34FF</checksum>
+      <checksum>DA94782A</checksum>
     </file>
     <file>
       <filename>1004_SmallHotel_a.osm</filename>
@@ -178,7 +124,7 @@
       <filename>timeseries_csv_export_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>C49B80F8</checksum>
+      <checksum>B4A7803E</checksum>
     </file>
   </files>
 </measure>
