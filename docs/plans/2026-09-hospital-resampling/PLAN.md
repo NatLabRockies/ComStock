@@ -46,11 +46,31 @@ profile `nlr-aws-resbldg-resbldg-user`, though no S3 download turned out to be n
 | 2 | Fix the retired-FIPS tract remap in `join_geospatial.py` | **done**, tested |
 | 3 | Stage the stock estimate and tract list as `2026-09-16_12-13_*` | **done** |
 | 4 | Regenerate the bucket definition files | **done** — 8,634 buckets. `sample_input_20260919-1409_8634.csv` and `_103608.csv` (8,634 × 12). The two 2025-09-16 files are untouched. |
-| 5 | Sample the ~10k: `tsv_sampling.py v35 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **running** |
-| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | pending step 5 (run sequentially — the sampler saturates every core) |
-| 7 | `join_geospatial.py` on both | pending |
-| 8 | Cut the 100-row subset of the ~10k, with provenance | pending |
-| 9 | Commit bucket files; report | pending |
+| 5 | Sample the ~10k: `tsv_sampling.py v35 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **done** — 8,634 rows, 97 cols, 1.7 min |
+| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | **running** (sequential — the sampler saturates every core) |
+| 7 | `join_geospatial.py` on both | **10k done**, 119 cols, 1 tract resampled, no nulls; 100k pending step 6 |
+| 8 | Cut the 100-row subset of the ~10k, with provenance | **done** — seed 20260919 |
+| 9 | Commit bucket files; report | bucket files committed in `23e2c737`; buildstocks are gitignored |
+
+### Outputs so far
+
+All under `sampling/output-buildstocks/`, **gitignored — on disk only**:
+
+| file | rows | cols |
+|---|---:|---:|
+| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (intermediate) | 8,634 | 97 |
+| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (final) | 8,634 | 119 |
+| `buildstock_20260919-1409_v35_2018_ccaradon_100_hardsize.csv` (both) | 100 | 97 / 119 |
+| `..._100_hardsize.provenance.csv` (both) | 100 | 2 |
+
+Checks that passed on the ~10k: `baseline_hvac_sizing` is uniformly `hardsize`, `year_of_simulation`
+uniformly `2018`, 15 building types, 209 hospitals, no blank tracts, `Building` contiguous 1..N after the
+join, no blank geospatial values, and no retired FIPS left in the `tract` column. The join reported
+"Resampling 1 tracts", and one row fell in a remapped county — so section 4.1's fix was exercised on live
+data and held.
+
+The 100 is verified row-for-row identical to its parents in the ~10k, not an independent draw. Provenance
+is 1-based in `final` and 0-based in `intermediate`, matching each file's own `Building` convention.
 
 **Expected duration.** The 2026-09-06 set ran 22:04 → 03:25 for its 114,360-row sample, so budget
 roughly five hours for the ~100k. The ~10k is much quicker. `generate_sampling_input` warns
