@@ -45,9 +45,9 @@ profile `nlr-aws-resbldg-resbldg-user`, though no S3 download turned out to be n
 | 1 | Build `tsvs-v35.zip` = v33 + the ten hospital_v2 files | **done**, verified by hash |
 | 2 | Fix the retired-FIPS tract remap in `join_geospatial.py` | **done**, tested |
 | 3 | Stage the stock estimate and tract list as `2026-09-16_12-13_*` | **done** |
-| 4 | Regenerate the bucket definition files | **running** — apportionment done (18 cols, cached to `output/Stock Estimation 2026-09-16_12-13/`); in `generate_sampling_input`, adding 1,931 buckets beyond the 99% set, ~29 min at its stated 15 min/1,000 |
-| 5 | Sample the ~10k: `tsv_sampling.py v35 2018 <N> 1 autosize -p <bucket_N>` | pending step 4 |
-| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 <12N> 12 autosize -p <bucket_12N>` | pending step 4 |
+| 4 | Regenerate the bucket definition files | **done** — 8,634 buckets. `sample_input_20260919-1409_8634.csv` and `_103608.csv` (8,634 × 12). The two 2025-09-16 files are untouched. |
+| 5 | Sample the ~10k: `tsv_sampling.py v35 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **running** |
+| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | pending step 5 (run sequentially — the sampler saturates every core) |
 | 7 | `join_geospatial.py` on both | pending |
 | 8 | Cut the 100-row subset of the ~10k, with provenance | pending |
 | 9 | Commit bucket files; report | pending |
@@ -132,6 +132,33 @@ Downloads zip.
 A first guess that proved wrong, recorded so nobody re-runs it: this is *not* a missing-county failure.
 Both merges are inner joins, so a missing key drops rows rather than producing NaN.
 
+### 4.3 Two inherited apportionment defects — found, deliberately NOT fixed here
+
+The apportioned frame came out at **14,107,285** rows where bootstrap × estimate is
+4,685,550 × 3 = **14,056,650**. More rows than the bootstrap should produce, which is worth decomposing
+because it is not noise:
+
+| | rows |
+|---|---:|
+| expected, 3 × estimate | 14,056,650 |
+| added by duplicated TSV keys | +76,444 |
+| dropped by the production inner merge | −25,809 |
+| **actual** | **14,107,285** |
+
+* **`hvac_system_type_v4.tsv` has 52 duplicated dependency keys.** 152,888 building-rows carry one of
+  them and are therefore counted twice, e.g.
+  `full_service_restaurant / size_bin 0 / Propane / East North Central`. `heating_fuel_v2.tsv` is clean.
+  This is precisely what the CBECS branch's `validate_tsv` raises on, and `hvac_system_type_v5.tsv` has
+  **zero** duplicated keys.
+* **The production merge is an inner join**, so 25,809 rows whose key has no truth data are silently
+  dropped. This is the same class of defect as CBECS plan D46, and the branch's `probability_merge.py`
+  replaces it with a validated left join plus fallback.
+
+Both are pre-existing production behaviour, not caused by the hospital v2 estimate: the shipped
+`sample_input_20250916-1309_*` files carry the same properties. They are left alone because this task is
+explicitly kept off the CBECS rebuild. **Flagging them because the bucket file produced here inherits
+both** — roughly 0.5% of rows double-counted and 0.2% dropped.
+
 ---
 
 ## 5. Relationship to the CBECS fuel/HVAC rebuild — deliberately separate
@@ -168,7 +195,7 @@ From that plan, two items bear directly on what happens to these buildstocks dow
 |---|---|---|
 | ~~H1~~ | ~~Is `hospital_subtype` meant to drive anything downstream?~~ | **Closed 2026-09-19 — nothing consumes it, so dropping it costs nothing.** Verified: `git grep hospital_subtype` across ComStock returns only this document; `options_lookup.tsv` has zero references; there is no `hospital_subtype.tsv` in the TSV set. The existing subtype mechanism is `building_subtype.tsv` feeding `bldg_subtype_*` args of `create_bar_from_building_type_ratios`, and its hospital row is `NA = 1.0` with no hospital options defined at all. If subtype-aware hospitals are ever wanted, that is the path, and it needs a TSV, `options_lookup` rows, and a measure that registers the options (CBECS plan D35: `options_lookup` alone is not enough). |
 | **H2** | Should the exporter stop emitting sparse columns, or should the assertion exempt them? | Adding any column with nulls breaks production apportionment on that blanket check. This will recur. |
-| **H3** | Does the hospital v2 allocation actually differ from September's 9,530 buckets? | The bucket count from step 4 answers this. If it is unchanged, the regeneration mattered less than assumed. |
+| ~~H3~~ | ~~Does the hospital v2 allocation actually differ from September's 9,530 buckets?~~ | **Closed 2026-09-19 — 8,634 buckets.** Against the production baseline of **8,602** (`sample_input_20250916-1309_8602.csv`, same v4/v2 pins) that is **+32 buckets, +0.37%**: the hospital v2 estimate barely moves the bucket set. September's **9,530** is not the comparison — that came from the CBECS branch's v5/v3 fuel and HVAC TSVs, so the +928 there is the fuel/HVAC rebuild, not the stock estimate. Regenerating was still correct (the allocation is pinned per row and now reflects hospital v2), but the effect is small. |
 | **H4** | Is `v35`-based-on-`v33` the numbering you want? | The alternative is rebasing this set on the CBECS v34, which the instruction rules out for now. |
 
 ---
