@@ -9,12 +9,14 @@ deliberately untouched piece of work — see "Relationship to the CBECS rebuild"
 ## 0. In one paragraph
 
 A new set of ten TSVs built from a hospital v2 stock estimate (`hospital_v2_tsvs_2026-09-16.zip`) ships
-as `sampling/tsvs/tsvs-v35.zip`, and three buildstocks are being generated from it: a ~10k, a ~100k, and
-a 100-row sample that is a random subset of the ~10k. The bucket definition file is being regenerated
-first, because the shipped one encodes the *old* stock estimate's allocation and would otherwise pin the
-sample to the pre-hospital-v2 building mix. Two real defects were found and fixed on the way: a
-retired-FIPS tract remap that crashes `join_geospatial.py`, and a schema incompatibility between the new
-estimate and production apportionment.
+as `sampling/tsvs/tsvs-v35.zip`, and three buildstocks were generated from it: **8,634**, **103,608** and
+**100** rows, the last a verified subset of the first. The bucket definition file was regenerated first,
+because the shipped one encodes the *old* stock estimate's allocation and would otherwise have pinned the
+sample to the pre-hospital-v2 building mix — though it turned out to move the bucket count only from
+8,602 to 8,634. Two real defects were found and fixed on the way: a retired-FIPS tract remap that crashes
+`join_geospatial.py`, and a schema incompatibility between the new estimate and production apportionment.
+Two further defects were found in inherited production code and deliberately left alone (section 4.3).
+**All steps are complete.** The remaining open items are H2 and H4 in section 6.
 
 ---
 
@@ -47,30 +49,55 @@ profile `nlr-aws-resbldg-resbldg-user`, though no S3 download turned out to be n
 | 3 | Stage the stock estimate and tract list as `2026-09-16_12-13_*` | **done** |
 | 4 | Regenerate the bucket definition files | **done** — 8,634 buckets. `sample_input_20260919-1409_8634.csv` and `_103608.csv` (8,634 × 12). The two 2025-09-16 files are untouched. |
 | 5 | Sample the ~10k: `tsv_sampling.py v35 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **done** — 8,634 rows, 97 cols, 1.7 min |
-| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | **running** (sequential — the sampler saturates every core) |
-| 7 | `join_geospatial.py` on both | **10k done**, 119 cols, 1 tract resampled, no nulls; 100k pending step 6 |
+| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | **done** — 103,608 rows, ~3 h, no lookup-reduction warnings |
+| 7 | `join_geospatial.py` on both | **done** — 119 cols each; 1 tract resampled on the ~10k, 9 on the ~100k |
 | 8 | Cut the 100-row subset of the ~10k, with provenance | **done** — seed 20260919 |
 | 9 | Commit bucket files; report | bucket files committed in `23e2c737`; buildstocks are gitignored |
 
-### Outputs so far
+**All steps complete.**
+
+### Outputs
 
 All under `sampling/output-buildstocks/`, **gitignored — on disk only**:
 
 | file | rows | cols |
 |---|---:|---:|
-| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (intermediate) | 8,634 | 97 |
-| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (final) | 8,634 | 119 |
-| `buildstock_20260919-1409_v35_2018_ccaradon_100_hardsize.csv` (both) | 100 | 97 / 119 |
-| `..._100_hardsize.provenance.csv` (both) | 100 | 2 |
+| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (intermediate / final) | 8,634 | 97 / 119 |
+| `buildstock_20260919-1409_v35_2018_ccaradon_103608_hardsize.csv` (intermediate / final) | 103,608 | 97 / 119 |
+| `buildstock_20260919-1409_v35_2018_ccaradon_100_hardsize.csv` (intermediate / final) | 100 | 97 / 119 |
+| `..._100_hardsize.provenance.csv` (intermediate / final) | 100 | 2 |
 
-Checks that passed on the ~10k: `baseline_hvac_sizing` is uniformly `hardsize`, `year_of_simulation`
-uniformly `2018`, 15 building types, 209 hospitals, no blank tracts, `Building` contiguous 1..N after the
-join, no blank geospatial values, and no retired FIPS left in the `tract` column. The join reported
-"Resampling 1 tracts", and one row fell in a remapped county — so section 4.1's fix was exercised on live
-data and held.
+### Verification
+
+Both buildstocks: `baseline_hvac_sizing` uniformly `hardsize`, `year_of_simulation` uniformly `2018`, 15
+building types, no blank tracts, `Building` contiguous 1..N after the join, no blank geospatial values,
+and no retired FIPS left in the `tract` column. Hospitals are 209/8,634 and 2,508/103,608 — 2.42% in both.
+
+**Section 4.1's fix was exercised on live data**, not only on the synthetic test: 1 row of the ~10k and 7
+rows of the ~100k fell in remapped counties, and the joins reported 1 and 9 resampled tracts. The ~100k is
+the case the CBECS branch warned about — at 12 samples per bucket a bad tract recurs many times — and it
+completed with no assertion failure.
 
 The 100 is verified row-for-row identical to its parents in the ~10k, not an independent draw. Provenance
 is 1-based in `final` and 0-based in `intermediate`, matching each file's own `Building` convention.
+
+**Distribution agreement between the two independent runs.** `building_type`, `size_bin`, `heating_fuel`
+and `hvac_system_type` are identical to 0.00 pp — but that is *by construction*, not evidence of
+convergence: those columns come straight from the bucket file, and the 103,608 rows are 12 copies of each
+of the 8,634 buckets. The meaningful comparison is the attributes the sampler actually draws:
+
+| attribute | categories | max abs diff | sum abs diff |
+|---|---:|---:|---:|
+| `climate_zone` | 30 | 0.08 pp | 0.41 pp |
+| `state_name` | 51 | 0.22 pp | 2.47 pp |
+| `year_built` | 211 | 0.33 pp | 9.66 pp |
+| `wall_construction_type` | 4 | 0.43 pp | 0.86 pp |
+| `building_area` | 17 | 0.44 pp | 3.03 pp |
+| `number_stories` | 16 | 0.52 pp | 2.41 pp |
+| `weekday_start_time` | 36 | 0.56 pp | 5.95 pp |
+
+Census division shares agree within 0.22 pp. This is the right check given the sampler is not
+reproducible run to run — compare distributions, never diff two outputs.
 
 **Expected duration.** The 2026-09-06 set ran 22:04 → 03:25 for its 114,360-row sample, so budget
 roughly five hours for the ~100k. The ~10k is much quicker. `generate_sampling_input` warns
