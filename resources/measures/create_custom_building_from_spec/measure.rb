@@ -314,7 +314,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     num_stories_below_grade party_wall_fraction party_wall_stories_east
     party_wall_stories_north party_wall_stories_south party_wall_stories_west perim_mult
     single_floor_area space_type_sort_logic story_multiplier_method
-    top_story_exterior_exposed_roof total_bldg_floor_area wwr
+    top_story_exterior_exposed_roof total_bldg_floor_area wwr enforce_space_area_constraints
   ].freeze
 
   # create_bar arguments with no spec[:form] equivalent. Recorded so the measure can report
@@ -378,6 +378,18 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     lighting_generation.setDescription('Lighting technology generation used to compute typical interior lighting power, e.g. gen4_led.')
     args << lighting_generation
     seen['lighting_generation'] = true
+
+    # Space types that cannot exist at the sampled building size are dropped before the
+    # geometry is generated. A 5,500 ft2 hotel otherwise asks for a 38 ft2 laundry and a
+    # 46 ft2 storage room, narrower than the minimum slice, and the story fill fails its
+    # per-space-type area check trying to place them. On by default: the constraint table
+    # ships with the geometry module (geometry/data/space_area_constraints.json).
+    enforce_areas = OpenStudio::Measure::OSArgument.makeBoolArgument('enforce_space_area_constraints', false)
+    enforce_areas.setDisplayName('Enforce Space Area Constraints')
+    enforce_areas.setDescription('Drop space types whose share of the building falls below a realistic minimum floor area and give their area to the rest.')
+    enforce_areas.setDefaultValue(true)
+    args << enforce_areas
+    seen['enforce_space_area_constraints'] = true
 
     # Sampled base-to-peak ratios. Named per load because the two measures they replace
     # share argument names and would otherwise collide, see BPR_ARGUMENTS.
