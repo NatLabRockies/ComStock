@@ -18,7 +18,7 @@ gem 'openstudio-workflow', '= 2.5.0'
 # lib/openstudio-standards layout and the OpenstudioStandards namespace, so code written against
 # openstudio-standards needs no edits, but the measures require it by its own gem name:
 # `require 'comstock-typical'`. See the openstudio-geb note below for why that spelling matters.
-gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: 'd6c98cfa334291a467da3b5970e3d2df4cc5b236'
+gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: '6b5f913deec22bf6f376dd4664bc5297928e94d8'
 # gem 'comstock-typical', path: 'C:/Repos/NREL/ComStock-Typical' # local checkout, for testing changes without a push
 
 # geb's gemspec declares a runtime dependency on the gem NAMED openstudio-standards ~> 0.8.2.
