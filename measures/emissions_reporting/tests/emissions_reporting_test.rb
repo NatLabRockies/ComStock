@@ -7,7 +7,7 @@ require 'fileutils'
 require 'minitest/autorun'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
-require 'openstudio-standards'
+require 'comstock-typical'
 require_relative '../measure'
 
 class EmissionsReportingTest < Minitest::Test

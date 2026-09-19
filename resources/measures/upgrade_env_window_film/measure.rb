@@ -38,7 +38,7 @@
 # Measure distributed under NREL Copyright terms, see LICENSE.md file.
 
 # dependencies
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class EnvWindowFilm < OpenStudio::Measure::ModelMeasure

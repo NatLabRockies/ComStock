@@ -15,33 +15,27 @@ gem 'openstudio-workflow', '= 2.5.0'
 # comstock-typical replaces openstudio-standards. It is a fork of the openstudio-standards str2
 # branch that keeps the typical-building modules, the ASHRAE 90.1 and DEER template families and
 # the HVAC builders, and drops the prototype, PRM and NECB code. It keeps the
-# lib/openstudio-standards layout, so `require 'openstudio-standards'` in the measures is unchanged.
+# lib/openstudio-standards layout and the OpenstudioStandards namespace, so code written against
+# openstudio-standards needs no edits, but the measures require it by its own gem name:
+# `require 'comstock-typical'`. See the openstudio-geb note below for why that spelling matters.
 gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: 'd6c98cfa334291a467da3b5970e3d2df4cc5b236'
 # gem 'comstock-typical', path: 'C:/Repos/NREL/ComStock-Typical' # local checkout, for testing changes without a push
-# openstudio-geb MUST stay out while comstock-typical is in: putting it back breaks every model.
-# Its gemspec declares a runtime dependency on the gem named openstudio-standards ~> 0.8.2.
+
+# geb's gemspec declares a runtime dependency on the gem NAMED openstudio-standards ~> 0.8.2.
 # comstock-typical is a different gem name and cannot satisfy it, so Bundler installs
-# openstudio-standards 0.8.6 from rubygems as well and two gems then ship lib/openstudio-standards.rb.
-# `require 'openstudio-standards'` takes whichever lib directory sits first on the load path, which
-# is not something this repository controls, and whichever entry point loads first wins the whole
-# process: Ruby treats the feature as provided and the second require is a silent no-op.
-# Measured 2026-09-16 by resolving both gems together and probing under the OpenStudio 3.10.0 CLI
-# (openstudio --bundle ... execute_ruby_script). Upstream wins:
-#   resolved to .../gems/openstudio-standards-0.8.6/lib/openstudio-standards.rb
-#   OpenstudioStandards::VERSION = 0.8.6
-#   OpenstudioStandards::CreateTypical.respond_to?(:create_custom_building_from_spec) => false
-# That method is the one the create_custom_building_from_spec measure calls, so every datapoint
-# would fail on its first model. An earlier note here claimed the fork happened to win; that is
-# wrong, and it was load-path luck either way rather than anything to rely on.
-# Re-pointing geb's dependency at comstock-typical is the fix. Requiring the fork as
-# 'comstock-typical' instead is not: it loads the fork deterministically, but then geb's own
-# measures, which require 'openstudio-standards', get the fork too, silently and against the
-# ~> 0.8.2 they declare.
-# Until geb is re-pointed, the six options_lookup rows naming its measures
-# (AdjustThermostatSetpointsByDegreesForPeakHours, precooling, preheating,
-# reduce_epd_by_percentage_for_peak_hours, reduce_lpd_by_percentage_for_peak_hours) have no measure
-# behind them. No ComStock yml selects them.
-# gem 'openstudio-geb', git: 'https://github.com/LBNL-ETA/Openstudio-GEB-gem.git', ref: '87da5c2678327b73eef54d2364f46225154bb956'
+# openstudio-standards 0.8.6 from rubygems alongside the fork and two gems then ship
+# lib/openstudio-standards.rb. A bare `require 'openstudio-standards'` takes whichever lib
+# directory sits first on the load path. That is not something this repository controls: measured
+# 2026-09-16 under the OpenStudio 3.10.0 CLI, upstream sits at load path index 5 and the fork at
+# 19, Gemfile declaration order changes nothing, and the bare require lands on upstream 0.8.6
+# where OpenstudioStandards::CreateTypical.create_custom_building_from_spec does not exist.
+#
+# `require 'comstock-typical'` sidesteps the ambiguity: it names a file only the fork ships, and
+# the fork's entry point reaches the rest of the library through require_relative. Ruby then treats
+# the feature 'openstudio-standards' as already provided, so a later bare require from a geb
+# measure is a silent no-op that leaves the fork in place.
+
+gem 'openstudio-geb', git: 'https://github.com/LBNL-ETA/Openstudio-GEB-gem.git', ref: '87da5c2678327b73eef54d2364f46225154bb956'
 gem 'tbd', '= 3.4.4'
 
 group :test do

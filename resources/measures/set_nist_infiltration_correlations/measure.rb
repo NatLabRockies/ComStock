@@ -36,7 +36,7 @@
 # *******************************************************************************
 
 require 'csv'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class SetNISTInfiltrationCorrelations < OpenStudio::Measure::ModelMeasure

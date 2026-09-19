@@ -35,7 +35,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # *******************************************************************************
 
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure

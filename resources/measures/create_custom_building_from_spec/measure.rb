@@ -30,7 +30,7 @@
 # declare its own arguments, drop the ones ComStock never consumed, and the replaced
 # measures should be deleted rather than kept alive as argument definitions.
 
-require 'openstudio-standards'
+require 'comstock-typical'
 require 'json'
 
 class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure

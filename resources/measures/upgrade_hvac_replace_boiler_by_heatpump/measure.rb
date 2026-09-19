@@ -46,7 +46,7 @@
 
 # start the measure
 class ReplaceBoilerWithHeatPump < OpenStudio::Measure::ModelMeasure
-  require 'openstudio-standards'
+  require 'comstock-typical'
 
   # human readable name
   def name

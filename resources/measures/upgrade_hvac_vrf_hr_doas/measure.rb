@@ -37,7 +37,7 @@
 # *******************************************************************************
 
 # dependencies
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure

@@ -39,7 +39,7 @@
 
 # start the measure
 class CondensingBoilers < OpenStudio::Measure::ModelMeasure
-  require 'openstudio-standards'
+  require 'comstock-typical'
 
   # human readable name
   def name

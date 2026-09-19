@@ -40,7 +40,7 @@ Dir["#{File.dirname(__FILE__)}/resources/*.rb"].sort.each { |file| require file 
 
 require 'openstudio'
 require 'date'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class DFLoadShed < OpenStudio::Measure::ModelMeasure

@@ -41,7 +41,7 @@
 
 # start the measure
 class SetRoofTemplate < OpenStudio::Measure::ModelMeasure
-  require 'openstudio-standards'
+  require 'comstock-typical'
 
   # human readable name
   def name

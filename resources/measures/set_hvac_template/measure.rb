@@ -41,7 +41,7 @@
 
 # start the measure
 class SetHVACTemplate < OpenStudio::Measure::ModelMeasure
-  require 'openstudio-standards'
+  require 'comstock-typical'
   require_relative 'resources/deer_building_types'
   include DEERBuildingTypes
 

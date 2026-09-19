@@ -65,13 +65,11 @@ sampler:
     sample_file: C:/my_effort/samples/buildstock.csv
 ```
 
-Optional: modify `ComStock/resources/Gemfile` to customize gems. The building-generation library is `comstock-typical`, a fork of `openstudio-standards` that keeps the `lib/openstudio-standards` layout, so the measures still `require 'openstudio-standards'`. You can comment out the git source and point to a local checkout to enable quick testing.
+Optional: modify `ComStock/resources/Gemfile` to customize gems. The building-generation library is `comstock-typical`, a fork of `openstudio-standards` that keeps the `lib/openstudio-standards` layout, but measures should `require 'comstock-typical'` to avoid namespace collisions with other gems that have openstudio-standards dependencies (i.e. GEB gem). You can comment out the git source and point to a local checkout to enable quick testing.
 ```ruby
 # gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: '<sha>'
 gem 'comstock-typical', path: "C:/Repos/NREL/ComStock-Typical"
 ```
-
-Keep `openstudio-geb` out of the Gemfile while `comstock-typical` is in it: geb's gemspec pins `openstudio-standards ~> 0.8.2`, which makes Bundler install that gem as well, and two gems then provide the same `lib/openstudio-standards.rb`. See the comment in `resources/Gemfile`.
 
 Windows path lengths: Bundler clones git gems into `.custom_gems`, and a deep `buildstock_directory` can push those paths past the Windows limit. Runs here use a shallow checkout at `C:/csd` for that reason.
 

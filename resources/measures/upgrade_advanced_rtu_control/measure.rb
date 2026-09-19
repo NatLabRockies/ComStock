@@ -3,7 +3,7 @@
 
 class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
 
-require 'openstudio-standards'
+require 'comstock-typical'
   # human readable name
   def name
     # Measure name should be the title case of the class name.
