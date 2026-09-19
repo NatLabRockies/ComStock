@@ -45,7 +45,7 @@ profile `nlr-aws-resbldg-resbldg-user`, though no S3 download turned out to be n
 | 1 | Build `tsvs-v35.zip` = v33 + the ten hospital_v2 files | **done**, verified by hash |
 | 2 | Fix the retired-FIPS tract remap in `join_geospatial.py` | **done**, tested |
 | 3 | Stage the stock estimate and tract list as `2026-09-16_12-13_*` | **done** |
-| 4 | Regenerate the bucket definition files | **running** |
+| 4 | Regenerate the bucket definition files | **running** — apportionment done (18 cols, cached to `output/Stock Estimation 2026-09-16_12-13/`); in `generate_sampling_input`, adding 1,931 buckets beyond the 99% set, ~29 min at its stated 15 min/1,000 |
 | 5 | Sample the ~10k: `tsv_sampling.py v35 2018 <N> 1 autosize -p <bucket_N>` | pending step 4 |
 | 6 | Sample the ~100k: `tsv_sampling.py v35 2018 <12N> 12 autosize -p <bucket_12N>` | pending step 4 |
 | 7 | `join_geospatial.py` on both | pending |
@@ -166,7 +166,7 @@ From that plan, two items bear directly on what happens to these buildstocks dow
 
 | | question | notes |
 |---|---|---|
-| **H1** | Is `hospital_subtype` meant to drive anything downstream? | Nothing in the current code consumes it. If a hospital-subtype TSV or subtype-aware apportionment is intended, dropping the column is right only for *this* bucket run and the real work is teaching apportionment about it. |
+| ~~H1~~ | ~~Is `hospital_subtype` meant to drive anything downstream?~~ | **Closed 2026-09-19 — nothing consumes it, so dropping it costs nothing.** Verified: `git grep hospital_subtype` across ComStock returns only this document; `options_lookup.tsv` has zero references; there is no `hospital_subtype.tsv` in the TSV set. The existing subtype mechanism is `building_subtype.tsv` feeding `bldg_subtype_*` args of `create_bar_from_building_type_ratios`, and its hospital row is `NA = 1.0` with no hospital options defined at all. If subtype-aware hospitals are ever wanted, that is the path, and it needs a TSV, `options_lookup` rows, and a measure that registers the options (CBECS plan D35: `options_lookup` alone is not enough). |
 | **H2** | Should the exporter stop emitting sparse columns, or should the assertion exempt them? | Adding any column with nulls breaks production apportionment on that blanket check. This will recur. |
 | **H3** | Does the hospital v2 allocation actually differ from September's 9,530 buckets? | The bucket count from step 4 answers this. If it is unchanged, the regeneration mattered less than assumed. |
 | **H4** | Is `v35`-based-on-`v33` the numbering you want? | The alternative is rebasing this set on the CBECS v34, which the instruction rules out for now. |
