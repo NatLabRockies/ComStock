@@ -33,6 +33,17 @@ Two further defects were found in inherited production code and deliberately lef
 | buildstocks | `sampling/output-buildstocks/{intermediate,final}/` — **gitignored**, on disk only |
 | scratch scripts | session scratchpad: `run_apportion.py`, `build_v34.py`, `rezip_v35.py`, `rename_to_v34.py`, `make_100_subset.py`, `test_fips_patch.py` |
 
+**A trap if you branch off `main` while `calibration-qaqc` is in flight.** That branch's `.gitignore`
+adds rules for the dashboard and fan scratch drivers — `postprocessing/*_dbtest*.py`,
+`postprocessing/*_test_dashboard.py`, `postprocessing/results_dashboard_from_athena.py`,
+`postprocessing/output/**/results_dashboard/`. `main` has none of them, so on any branch cut from `main`
+those 17 files surface as untracked, and **GitHub Desktop pre-checks untracked files**, offering to commit
+all of them to whatever branch is open. They are not staged in git's index, but one click would put them
+here. Fixed locally by appending those patterns to `.git/info/exclude`, which affects no branch and leaves
+the files on disk. Do not commit them: the repo convention is that `*_dbtest*` drivers stay untracked with
+`.template` versions committed in their place, and the real dashboard work is already on
+`ccaradon/calibration-qaqc` (11 commits ahead of `main`, including the whole `results_dashboard/` package).
+
 **Environment.** conda env `comstockpostproc2` (py 3.12.12, pandas 2.3.3) for apportionment;
 `comstock-sampling` for the sampler and the geospatial join. The `comstockpostproc` env is broken —
 `ImportError: DLL load failed while importing _ctypes` — do not use it. AWS resbldg SSO is live under
