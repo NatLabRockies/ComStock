@@ -9,7 +9,7 @@ deliberately untouched piece of work — see "Relationship to the CBECS rebuild"
 ## 0. In one paragraph
 
 A new set of ten TSVs built from a hospital v2 stock estimate (`hospital_v2_tsvs_2026-09-16.zip`) ships
-as `sampling/tsvs/tsvs-v35.zip`, and three buildstocks were generated from it: **8,634**, **103,608** and
+as `sampling/tsvs/tsvs-v34.zip`, and three buildstocks were generated from it: **8,634**, **103,608** and
 **100** rows, the last a verified subset of the first. The bucket definition file was regenerated first,
 because the shipped one encodes the *old* stock estimate's allocation and would otherwise have pinned the
 sample to the pre-hospital-v2 building mix — though it turned out to move the bucket count only from
@@ -26,12 +26,12 @@ Two further defects were found in inherited production code and deliberately lef
 |---|---|
 | branch | ComStock `hospital_resampling`, branched from `main` at `f25ac375` |
 | source TSVs | `C:\Users\ccaradon\Downloads\hospital_v2_tsvs_2026-09-16.zip` (11 entries: 10 TSV/JSON + 1 parquet) |
-| shipped TSV set | `sampling/tsvs/tsvs-v35.zip` — committed, `c2e29bed` |
+| shipped TSV set | `sampling/tsvs/tsvs-v34.zip` — committed, `c2e29bed` |
 | stock estimate | `postprocessing/truth_data/v01/2026-09-16_12-13_building_estimate.parquet` — gitignored, staged locally |
 | tract list | `postprocessing/truth_data/v01/2026-09-16_12-13_tract_list.csv` — a copy of `2025R3_tract_list.csv` |
 | bucket files | `sampling/sample_input_20260919-*_{N,12N}.csv` — being generated |
 | buildstocks | `sampling/output-buildstocks/{intermediate,final}/` — **gitignored**, on disk only |
-| scratch scripts | session scratchpad: `run_apportion.py`, `build_v34.py`, `rezip_v35.py`, `make_100_subset.py`, `test_fips_patch.py` |
+| scratch scripts | session scratchpad: `run_apportion.py`, `build_v34.py`, `rezip_v35.py`, `rename_to_v34.py`, `make_100_subset.py`, `test_fips_patch.py` |
 
 **Environment.** conda env `comstockpostproc2` (py 3.12.12, pandas 2.3.3) for apportionment;
 `comstock-sampling` for the sampler and the geospatial join. The `comstockpostproc` env is broken —
@@ -44,12 +44,12 @@ profile `nlr-aws-resbldg-resbldg-user`, though no S3 download turned out to be n
 
 | # | step | state |
 |---|---|---|
-| 1 | Build `tsvs-v35.zip` = v33 + the ten hospital_v2 files | **done**, verified by hash |
+| 1 | Build `tsvs-v34.zip` = v33 + the ten hospital_v2 files | **done**, verified by hash |
 | 2 | Fix the retired-FIPS tract remap in `join_geospatial.py` | **done**, tested |
 | 3 | Stage the stock estimate and tract list as `2026-09-16_12-13_*` | **done** |
 | 4 | Regenerate the bucket definition files | **done** — 8,634 buckets. `sample_input_20260919-1409_8634.csv` and `_103608.csv` (8,634 × 12). The two 2025-09-16 files are untouched. |
-| 5 | Sample the ~10k: `tsv_sampling.py v35 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **done** — 8,634 rows, 97 cols, 1.7 min |
-| 6 | Sample the ~100k: `tsv_sampling.py v35 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | **done** — 103,608 rows, ~3 h, no lookup-reduction warnings |
+| 5 | Sample the ~10k: `tsv_sampling.py v34 2018 8634 1 hardsize -p sample_input_20260919-1409_8634.csv` | **done** — 8,634 rows, 97 cols, 1.7 min |
+| 6 | Sample the ~100k: `tsv_sampling.py v34 2018 103608 12 hardsize -p sample_input_20260919-1409_103608.csv` | **done** — 103,608 rows, ~3 h, no lookup-reduction warnings |
 | 7 | `join_geospatial.py` on both | **done** — 119 cols each; 1 tract resampled on the ~10k, 9 on the ~100k |
 | 8 | Cut the 100-row subset of the ~10k, with provenance | **done** — seed 20260919 |
 | 9 | Commit bucket files; report | bucket files committed in `23e2c737`; buildstocks are gitignored |
@@ -62,9 +62,9 @@ All under `sampling/output-buildstocks/`, **gitignored — on disk only**:
 
 | file | rows | cols |
 |---|---:|---:|
-| `buildstock_20260919-1409_v35_2018_ccaradon_8634_hardsize.csv` (intermediate / final) | 8,634 | 97 / 119 |
-| `buildstock_20260919-1409_v35_2018_ccaradon_103608_hardsize.csv` (intermediate / final) | 103,608 | 97 / 119 |
-| `buildstock_20260919-1409_v35_2018_ccaradon_100_hardsize.csv` (intermediate / final) | 100 | 97 / 119 |
+| `buildstock_20260919-1409_v34_2018_ccaradon_8634_hardsize.csv` (intermediate / final) | 8,634 | 97 / 119 |
+| `buildstock_20260919-1409_v34_2018_ccaradon_103608_hardsize.csv` (intermediate / final) | 103,608 | 97 / 119 |
+| `buildstock_20260919-1409_v34_2018_ccaradon_100_hardsize.csv` (intermediate / final) | 100 | 97 / 119 |
 | `..._100_hardsize.provenance.csv` (intermediate / final) | 100 | 2 |
 
 ### Verification
@@ -109,14 +109,14 @@ roughly five hours for the ~100k. The ~10k is much quicker. `generate_sampling_i
 
 ```
 hospital_v2 TSVs ──┐
-                   ├─→ tsvs-v35.zip ──→ tsv_sampling.py ──→ join_geospatial.py ──→ buildstock
+                   ├─→ tsvs-v34.zip ──→ tsv_sampling.py ──→ join_geospatial.py ──→ buildstock
 building_estimate ─┴─→ Apportion ──→ sample_input_*.csv ──┘                              │
                                                                           random 100 ────┘
 ```
 
 | parameter | value | why |
 |---|---|---|
-| `tsv_version` | `v35` | v34 is taken; see section 5 |
+| `tsv_version` | `v34` | reuses the CBECS number by instruction; see section 5 |
 | `sim_year` | `2018` | matches the 2026-09-06 set and `national.yml`'s 2018 weather |
 | `hvac_sizing` | `hardsize` | matches the 2026-09-06 set and `samples/bsb-integration-test.csv` |
 | `n_buckets` | 1 for the ~10k, 12 for the ~100k | samples per bucket; `n_samples % n_buckets` must be 0 |
@@ -218,9 +218,11 @@ work: rebuilt heating-fuel and HVAC-system-type distributions shipped as `hvac_s
 
 **This task does not use any of it, by instruction.** Consequences to keep straight:
 
-* `v34` is taken, so this set is **`v35`** — but v35 is based on **v33**, so numerically it is above v34
-  while containing none of v34's changes. If the two lineages ever need to combine, that is a deliberate
-  merge someone has to perform; it will not happen by version ordering.
+* **This set is also named `v34`**, by instruction, and is based on **v33**. Two different
+  `tsvs-v34.zip` files therefore exist: this one on `hospital_resampling`, and the CBECS one at
+  `48dbc0bd` on `ccaradon/cbecs-tsv-v34-apportionment-validation`. Same name and number, different
+  contents. Merging those branches is a hard binary conflict someone resolves by hand, and the
+  buildstocks are told apart only by their date stamp: `20260919-1409` here, `20260906-1909` there.
 * Apportionment here uses the production `v4`/`v2` pins, not the branch's `v5`/`v3`.
 * The CBECS branch also carries fixes to `tsv_sampling.py` (a `validate_tsv` structural check) and to
   `join_geospatial.py` that this branch does not have, beyond the equivalent resample fix in 4.1.
@@ -243,7 +245,7 @@ From that plan, two items bear directly on what happens to these buildstocks dow
 | ~~H1~~ | ~~Is `hospital_subtype` meant to drive anything downstream?~~ | **Closed 2026-09-19 — nothing consumes it, so dropping it costs nothing.** Verified: `git grep hospital_subtype` across ComStock returns only this document; `options_lookup.tsv` has zero references; there is no `hospital_subtype.tsv` in the TSV set. The existing subtype mechanism is `building_subtype.tsv` feeding `bldg_subtype_*` args of `create_bar_from_building_type_ratios`, and its hospital row is `NA = 1.0` with no hospital options defined at all. If subtype-aware hospitals are ever wanted, that is the path, and it needs a TSV, `options_lookup` rows, and a measure that registers the options (CBECS plan D35: `options_lookup` alone is not enough). |
 | **H2** | Should the exporter stop emitting sparse columns, or should the assertion exempt them? | Adding any column with nulls breaks production apportionment on that blanket check. This will recur. |
 | ~~H3~~ | ~~Does the hospital v2 allocation actually differ from September's 9,530 buckets?~~ | **Closed 2026-09-19 — 8,634 buckets.** Against the production baseline of **8,602** (`sample_input_20250916-1309_8602.csv`, same v4/v2 pins) that is **+32 buckets, +0.37%**: the hospital v2 estimate barely moves the bucket set. September's **9,530** is not the comparison — that came from the CBECS branch's v5/v3 fuel and HVAC TSVs, so the +928 there is the fuel/HVAC rebuild, not the stock estimate. Regenerating was still correct (the allocation is pinned per row and now reflects hospital v2), but the effect is small. |
-| **H4** | Is `v35`-based-on-`v33` the numbering you want? | The alternative is rebasing this set on the CBECS v34, which the instruction rules out for now. |
+| ~~H4~~ | ~~Is the numbering right?~~ | **Closed 2026-09-19 — named `v34` by instruction**, since the CBECS work is not being pursued right now. The collision with `48dbc0bd` is accepted and documented in section 5. Earlier commits in this branch's history (`c2e29bed` … `9eb8f69e`) say `v35`; that was the interim name and the history was not rewritten. |
 
 ---
 
