@@ -16,31 +16,32 @@ logging.basicConfig(level=logging.INFO)
 pd.set_option('mode.chained_assignment', None)
 
 
-def manual_fips_update(df_buildstock):
+# Counties whose FIPS was retired between Census vintages (2010 Census): Bedford City County, Shannon
+# County and Wrangell-Petersburg County. The spatial lookup table carries only the replacement code, so
+# the geospatial join has to be done against that. ComStock's own inputs are keyed the other way --
+# options_lookup.tsv has a county_id row for each retired code and not for its replacement, and that row
+# is what selects the weather file (e.g. county_id G4601130 -> weather_file_name=G4601150.epw). Rewriting
+# county_id therefore produces a value buildstockbatch rejects in validate_buildstock_csv and which has no
+# weather file behind it.
+RETIRED_COUNTY_FIPS = {
+    'G5105150': 'G5100190',         # Bedford City County changed to Bedford County
+    'G4601130': 'G4601020',         # Shannon County, SD changed to Oglala Lakota County
+    'G0202800': 'G0202750'          # Wrangell County, AK maps to Wrangell City and Borough
+}
+
+
+def retired_fips_gisjoin_update(df_buildstock):
+    """Point the geospatial join key at the replacement county for retired FIPS codes.
+
+    Only 'gisjoin' is touched. It is a scratch column dropped after the merge, so county_id and tract
+    reach the buildstock exactly as they were sampled. tract is a wildcard in options_lookup.tsv, and
+    tract already differs from the joined nhgis_tract_gisjoin for every resampled row, so leaving it
+    alone is consistent with how the resample below already behaves.
     """
-    Due to discrepancies between Census years, county FIPS in spatial_tract_lookup_published_v8.csv MAY not
-    exactly match the counties sampled in ComStock. This function is a manual FIPS update for these counties
-    to ensure every sample in ComStock receives the proper geospatial fields in the metadata. The introduction of
-    spatial_tract_lookup_published_v7.csv should have fixed these issues but this is yet to be confirmed.
-
-    These counties include (2010 Census): Bedford City County, Shannon County and Wrangell-Petersburg County
-    """
-    county_fips_map = {
-        'G5105150': 'G5100190',         # Bedford City County changed to Bedford County
-        'G4601130': 'G4601020',         # Shannon County, SD changed to Oglala Lakota County
-        'G0202800': 'G0202750'          # Wrangell County, AK maps to Wrangell City and Borough
-    }
-
-    df_buildstock.replace({'county_id': county_fips_map}, inplace=True)
-
-    # The tract column carries the same retired county FIPS prefix and is used as the gisjoin for the
-    # geospatial join, so it has to be remapped alongside county_id. Left unmapped, these tracts are absent
-    # from the lookup and the county-based resample below finds an empty pool, because county_id has already
-    # been rewritten to the new FIPS.
-    for old_fips, new_fips in county_fips_map.items():
-        is_retired_fips = df_buildstock.loc[:, 'tract'].str.startswith(old_fips)
-        df_buildstock.loc[is_retired_fips, 'tract'] = \
-            new_fips + df_buildstock.loc[is_retired_fips, 'tract'].str[len(old_fips):]
+    for old_fips, new_fips in RETIRED_COUNTY_FIPS.items():
+        is_retired_fips = df_buildstock.loc[:, 'gisjoin'].str.startswith(old_fips)
+        df_buildstock.loc[is_retired_fips, 'gisjoin'] = \
+            new_fips + df_buildstock.loc[is_retired_fips, 'gisjoin'].str[len(old_fips):]
 
     return df_buildstock
 
@@ -150,11 +151,11 @@ def main():
     # Import buildstock.csv
     df_buildstock = pd.read_csv(os.path.join('output-buildstocks', 'intermediate', args.buildstock_name), index_col='Building', na_filter=False)
 
-    # Manually update select FIPS codes due to Census year differences
-    df_buildstock = manual_fips_update(df_buildstock)
-
     # Specify the tract value as the gisjoin value for the spatial lookup
     df_buildstock.loc[:, 'gisjoin'] = df_buildstock.loc[:, 'tract']
+
+    # Point the join key at the replacement county where the sampled FIPS was retired
+    df_buildstock = retired_fips_gisjoin_update(df_buildstock)
     df_geospatial_lkup = pd.read_csv(os.path.join('resources', 'spatial_tract_lookup_table_publish_v10.csv'))
     to_resample = df_buildstock.loc[~df_buildstock.gisjoin.isin(df_geospatial_lkup.nhgis_tract_gisjoin), :]
     print(f'Resampling {to_resample.shape[0]} tracts that are not contained in the geospatial lookup file')
@@ -175,7 +176,7 @@ def main():
         if not samplefrom:
             raise RuntimeError(
                 f'Tract {tr} is not in the geospatial lookup and county {tr[:8]} has no tract in the lookup to '\
-                'resample from. A FIPS remap may be missing from manual_fips_update.'
+                'resample from. A FIPS remap may be missing from RETIRED_COUNTY_FIPS.'
             )
         resample_lkup[tr] = random.sample(samplefrom, 1)[0]
     df_buildstock.loc[

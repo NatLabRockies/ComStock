@@ -153,9 +153,13 @@ The new `county_id.tsv` adds three counties; two of them, `G4601130` (Shannon SD
 `spatial_tract_lookup_table_publish_v10.csv`. By the time the resample runs, `county_id` has already been
 rewritten, so the same-county pool is empty and `random.sample` raises `ValueError`.
 
-Remapping `tract` alongside `county_id` lands both directly in the lookup — `G4601020940500` and
-`G5100190050100` both exist there — so they never reach the resample path. The third new county,
-`G0202610`, is already in the lookup and needs nothing.
+The third new county, `G0202610`, is already in the lookup and needs nothing.
+
+**The first fix for this was wrong, and Kestrel caught it** — see 4.4. `manual_fips_update` is gone,
+replaced by `RETIRED_COUNTY_FIPS` plus `retired_fips_gisjoin_update`, which translates **only the
+`gisjoin` scratch column**. `county_id` and `tract` now reach the buildstock exactly as sampled, and the
+translated key lands directly in the lookup (`G4601020940500` and `G5100190050100` both exist there), so
+these rows never reach the resample path.
 
 **Also fixed, and pre-existing:** the resample pool is now restricted to tracts that are in the lookup.
 A replacement could previously be unjoinable itself, tripping the `assert` at the end of the join *after*
@@ -219,6 +223,40 @@ both** — roughly 0.5% of rows double-counted and 0.2% dropped.
 
 ---
 
+### 4.4 The county_id remap produced a value ComStock cannot use
+
+`buildstock_kestrel` rejected the ~100k on submission:
+
+```
+ValidationError: Option G4601020 in column county_id of buildstock_csv is not available in options_lookup.tsv
+```
+
+The remap direction was backwards for ComStock's own inputs. `options_lookup.tsv` carries a `county_id`
+row for the **retired** code and none for its replacement — `county_id G4601130 ->
+weather_file_name=G4601150.epw`, with no `G4601020` row at all. So rewriting `county_id` to the
+replacement both fails `validate_buildstock_csv` and, if it had passed, would have left those models with
+no weather file. The lookup table needs the replacement code; ComStock needs the retired one.
+
+That rewrite is pre-existing, not something this task introduced — it had simply never fired, because
+`G4601130` was not in the sampled county set until the new `county_id.tsv` added it.
+
+Fixed by translating only `gisjoin`, which is dropped after the merge. `tract` is safe either way
+(`options_lookup.tsv` has a single `tract *` wildcard row) and is now also left as sampled, which is
+consistent with the resample path, where `tract` already differs from the joined `nhgis_tract_gisjoin`.
+
+Result for the affected rows: `county_id=G4601130`, `tract=G4601130940500`, joined to
+`nhgis_tract_gisjoin=G4601020940500`, `nhgis_county_gisjoin=G4601020`, South Dakota.
+
+**All three buildstocks were re-joined and now pass a local replica of
+`BuildStockBatchBase.validate_buildstock_csv`** — every column present in `options_lookup.tsv`, every
+value valid, zero errors. The 100 was re-cut from the updated ~10k with the same seed, so it holds the
+same 100 buildings.
+
+**Durable lesson.** Validate against `options_lookup.tsv` locally before submitting to Kestrel; it is a
+few seconds of work and catches exactly this. The replica is in section 7.
+
+---
+
 ## 5. Relationship to the CBECS fuel/HVAC rebuild — deliberately separate
 
 `stock-estimation/docs/plans/2026-09-cbecs-fuel-hvac-rebuild/` covers a different, in-progress piece of
@@ -272,3 +310,24 @@ From that plan, two items bear directly on what happens to these buildstocks dow
 4. The 100-row cut is `make_100_subset.py <intermediate_10k.csv> 100 20260919`; it picks positions once
    and takes the same positions from both intermediate and final, so the 100 are literally rows of the
    10k, and writes a `Building,parent_Building` provenance file next to each output.
+5. **Validate before submitting to Kestrel.** This replicates
+   `BuildStockBatchBase.validate_buildstock_csv` and takes seconds; see 4.4 for what it catches.
+
+```python
+import csv, collections
+pod = collections.defaultdict(set)
+with open('resources/options_lookup.tsv') as f:
+    rd = csv.reader(f, delimiter='\t'); next(rd, None)
+    for row in rd:
+        if len(row) >= 2 and row[0]:
+            pod[row[0]].add(row[1])
+with open(path, newline='') as f:
+    rd = csv.DictReader(f); cols = rd.fieldnames
+    vals = {c: set() for c in cols}
+    for r in rd:
+        for c in cols:
+            vals[c].add(r[c])
+print([c for c in cols if c != 'Building' and c not in pod])                      # unknown columns
+print([(c, v) for c in cols if c != 'Building' and c in pod and '*' not in pod[c]
+       for v in vals[c] if v not in pod[c]])                                      # invalid options
+```
