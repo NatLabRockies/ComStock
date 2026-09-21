@@ -425,6 +425,13 @@ def compare_region(cs: pd.DataFrame, ami: pd.DataFrame, region_name: str
         "ami_missing_types": sorted(cs_types - ami_types - {"total"}),
         "comstock_missing_types": sorted(ami_types - cs_types),
         "ami_thin_sample_types_skipped": thin,
+        # Metered building count per compared type, the AMI-side counterpart to
+        # comstock_model_counts. bldg_count varies hour to hour as meters drop in
+        # and out, so the MINIMUM is reported: it is the count every hour of the
+        # comparison is backed by, which is the honest figure to put beside a
+        # profile. The mean would overstate the thinnest hours.
+        "ami_meter_counts": {bt: int(counts.loc[bt, "min"])
+                             for bt in both if bt in counts.index},
         "comstock_model_counts": cs_counts,
         "comstock_thin_sample_types": cs_thin,
         "comstock_min_models_threshold": MIN_COMSTOCK_MODELS,

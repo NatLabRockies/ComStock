@@ -1,7 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Compare runs that were sampled against DIFFERENT stock estimates.
+
+USE compare_runs.py.template INSTEAD unless you actually need this. Re-sampling a
+buildstock does NOT by itself put you here: as long as the S3 sampling resources
+behind it are unchanged, every run still belongs to the same stock estimate and one
+Apportion object is correct. You need this file only when the sampling RESOURCES
+changed -- a new building_estimate, new sampling TSVs -- so that different runs
+describe different underlying stocks.
+
+WHY IT MATTERS. Apportionment matches each model to real buildings BY TRACT. A run
+sampled against a newer estimate and apportioned to an older one is silently
+mis-weighted: its models land in tracts the older estimate does not contain. Scaling
+to CBECS afterwards forces national floor area to match ANYWAY, so the error does not
+appear as a floor-area mismatch. It appears as distorted within-type weights and as
+"scaling factor is high/low" warnings that are easy to dismiss as normal.
+
+HOW TO TELL WHICH ESTIMATE A RUN BELONGS TO. Compare the tracts its buildstock
+sampled against the tracts in each candidate estimate; the correct estimate contains
+all of them:
+
+    import polars as pl
+    bs = pl.read_csv('comstock_data/<run>/buildstock.csv', infer_schema_length=0)
+    est = pl.read_parquet('truth_data/v01/<version>_building_estimate.parquet',
+                          columns=['building_type', 'tract'])
+    sampled = set(bs.filter(pl.col('building_type') == 'hospital')['tract'])
+    known   = set(est.filter(pl.col('building_type') == 'hospital')['tract'])
+    print(len(sampled - known), 'sampled tracts missing from this estimate')
+
+A correct pairing gives 0. In the case this template was written for, the run had 78%
+of its hospital tracts missing from the estimate it was being apportioned to.
+
+TWO THINGS THAT WILL BITE YOU
+  1. The apportionment cache is PER VERSION. `reload_from_cache=True` on a version you
+     have not used before RAISES rather than building it. stock_estimate() below
+     detects the cache instead of asking you to remember.
+  2. REBUILD the Athena tables for any run whose apportionment changed.
+     prepare_athena_tables checks only whether the tables EXIST -- it cannot tell that
+     the weights behind them came from a different stock estimate, so with
+     rebuild=False it skips, and the dashboard reads stale data while every log line
+     looks healthy. REBUILD_ATHENA_RUNS below scopes the redo to the runs that need it,
+     since a full rebuild of an unaffected run is a wasted export and crawl.
+
+RESULTS FROM A MIXED COMPARISON are legitimate -- comparing stock estimates is a real
+question -- but for the building types the estimate reallocated, differences are
+estimate AND run, not run alone. Say so wherever the results are presented.
+"""
 
 import logging
+import os
 
 import comstockpostproc as cspp
 
@@ -13,14 +60,32 @@ logger = logging.getLogger(__name__)
 # Details in README, "Results dashboard".
 ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
                                    # the timeseries plots and the AMI comparison hard-code it
-REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
-                                   # True:  export and crawl again (what is up there is stale)
+REBUILD_ATHENA_RUNS    = ()        # comstock_run_name of every run whose Athena tables must be
+                                   # re-exported because its APPORTIONMENT changed. Rebuild is per
+                                   # run here, not global: re-exporting an unaffected run costs a
+                                   # full export and crawl for nothing. Leave empty once the tables
+                                   # match the weights behind them.
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
 #   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
 #         database='buildstock_sdr', color='#E69F00')]
+
+
+def stock_estimate(version, truth_data_version='v01'):
+    """Apportion for one stock estimation version, reloading its cache only if it exists.
+
+    The cache lives at output/Stock Estimation <version>/cached_ComStock_apportionment.parquet
+    and is per version. reload_from_cache=True on a version used for the first time
+    raises instead of falling back, so detect rather than remember.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    cache = os.path.join(here, 'output', f'Stock Estimation {version}',
+                         'cached_ComStock_apportionment.parquet')
+    return cspp.Apportion(stock_estimation_version=version,
+                          truth_data_version=truth_data_version,
+                          reload_from_cache=os.path.exists(cache))
 
 
 def main():
@@ -58,24 +123,18 @@ def main():
         include_upgrades=False  # False if not looking at upgrades
         )
 
-    # Stock Estimation for Apportionment:
-    stock_estimate = cspp.Apportion(
-        stock_estimation_version='2025R3',  # Only updated when a new stock estimate is published
-        truth_data_version='v01',  # Typically don't change this
-        # True reuses the cached apportionment so values stay consistent between runs.
-        # The cache is per stock_estimation_version, so set False the FIRST time you use
-        # a new one -- True raises rather than building it.
-        reload_from_cache=True
-    )
-
-    # If the runs were sampled against DIFFERENT stock estimates, this file is the wrong
-    # starting point -- use compare_runs_different_samples.py.template instead.
+    # ---- ONE STOCK ESTIMATE PER RUN ---------------------------------------
+    # Each run must use the estimate it was SAMPLED against. Verify with the tract
+    # check in the module docstring rather than assuming from the run name -- runs in
+    # the same project folder, even with near-identical names, can differ here.
+    stock_estimate_a = stock_estimate('2025R3')
+    stock_estimate_b = stock_estimate('2025R3')   # <-- change to the estimate run B used
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock_a.get_sim_outs_for_upgrade(0)
-    comstock_a.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock_a.create_allocated_weights(stock_estimate_a, base_sim_outs, reload_from_cache=False)
     base_sim_outs = comstock_b.get_sim_outs_for_upgrade(0)
-    comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock_b.create_allocated_weights(stock_estimate_b, base_sim_outs, reload_from_cache=False)
 
     # CBECS
     cbecs = cspp.CBECS(
@@ -117,13 +176,15 @@ def main():
     # ---- Results dashboard --------------------------------------
     # The assessment reads each run's Athena tables and creates none of its own,
     # so prepare_athena_tables makes sure they exist first: it checks Glue and
-    # builds only what is missing (REBUILD_ATHENA_TABLES at the top redoes it).
+    # builds only what is missing. Runs named in REBUILD_ATHENA_RUNS re-export even
+    # if their tables exist, because existence does not prove the weights behind them
+    # came from the right stock estimate.
     # Both log and skip rather than raising, so an AWS problem here cannot cost
     # you the plots above. See README for the full contract.
     if MAKE_RESULTS_DASHBOARD:
         for run in (comstock_a, comstock_b):
-            cspp.prepare_athena_tables(run, database=ATHENA_DATABASE,
-                                       ami=INCLUDE_AMI, rebuild=REBUILD_ATHENA_TABLES)
+            cspp.prepare_athena_tables(run, database=ATHENA_DATABASE, ami=INCLUDE_AMI,
+                                       rebuild=run.comstock_run_name in REBUILD_ATHENA_RUNS)
 
         dashboard = cspp.ResultsDashboard(
             comstock_a,                  # the run under review

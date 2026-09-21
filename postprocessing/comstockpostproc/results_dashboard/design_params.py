@@ -117,6 +117,7 @@ def _metrics() -> list[Metric]:
     h_max = q("out.params.average_heating_setpoint_max..c")
     h_min = q("out.params.average_heating_setpoint_min..c")
     c_min = q("out.params.average_cooling_setpoint_min..c")
+    c_max = q("out.params.average_cooling_setpoint_max..c")
     unmet_h = q("out.params.hours_heating_setpoint_not_met..hr")
     unmet_c = q("out.params.hours_cooling_setpoint_not_met..hr")
     sp = q("out.params.air_system_fan_static_pressure..inwc")
@@ -198,9 +199,23 @@ def _metrics() -> list[Metric]:
              weight_label="heated floor area"))
     a(Metric("clg_sp", "Cooling setpoint, occupied", "Ventilation & setpoints", "°F",
              f"({c_min} * 1.8 + 32)", cooled, f"{c_min} IS NOT NULL",
-             note="The schedule MIN is the occupied setpoint. The max is not "
-                  "reported: it reaches 50 C, encoding cooling disabled rather "
-                  "than a setback temperature.",
+             note="The schedule MIN is the occupied setpoint; the max is the "
+                  "unoccupied setup, reported separately as clg_setup.",
+             weight_label="cooled floor area"))
+    # Cooling setup was long omitted on the belief that the schedule max is always a
+    # 50 C sentinel meaning "cooling disabled unoccupied". That is not true of current
+    # runs -- measured maxima sit at 25-26 C, a real setup temperature, and 64-95% of
+    # cooled floor area carries one. The guard below still excludes a genuine disabled
+    # sentinel so the mean stays a setup depth rather than mixing in a 25 C artifact.
+    a(Metric("clg_setup", "Cooling setup depth", "Ventilation & setpoints", "°F",
+             f"(({c_max} - {c_min}) * 1.8)", cooled,
+             f"{c_max} IS NOT NULL AND {c_min} IS NOT NULL AND {c_max} < 45 "
+             f"AND {c_max} - {c_min} > 0.5",
+             note="A temperature DIFFERENCE, so 1.8 with no +32 offset. Buildings "
+                  "whose cooling is disabled when unoccupied (schedule max >= 45 C) "
+                  "are EXCLUDED, not counted as a large setup; so is a flat schedule "
+                  "(max - min <= 0.5 C), which is no setup at all. Coverage therefore "
+                  "reads as the share of cooled floor area that actually sets up.",
              weight_label="cooled floor area"))
     a(Metric("unmet_htg", "Unmet heating hours", "Comfort", "hr/yr",
              unmet_h, W, f"{unmet_h} IS NOT NULL",

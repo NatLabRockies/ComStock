@@ -761,6 +761,13 @@ def _assess(args) -> None:
                   "md_county_table": r.md_county_table, "ts_table": r.ts_table,
                   "color": r.color} for r in runs],
         "primary_run": primary.key,
+        # The run the delta annotations compare against -- the arrows, the
+        # "moved toward CBECS" line and the heating-fuel gap column. With one
+        # comparison run this is simply that run. With several it USED to be
+        # whichever happened to be first, which is invisible to a reader; it is
+        # now stated here so the dashboard can name it.
+        "delta_ref": (getattr(args, "delta_ref", None)
+                      or (runs[1].key if len(runs) > 1 else None)),
         # Runs the caller ASKED for that could not be reached. Recorded so the
         # manifest says what the assessment was meant to cover, not just what it
         # managed to cover -- otherwise a dropped comparison run is
@@ -880,7 +887,7 @@ class ResultsDashboard:
 
     def __init__(self, comstock, cbecs=None, ami=None, comparison_runs=(),
                  comparison=None, enabled: bool = True, database: str = "enduse",
-                 output_dir=None, region: str = "all",
+                 output_dir=None, region: str = "all", delta_ref: str | None = None,
                  measure_states=None, include_measures=None,
                  skip_distributions: bool = False,
                  skip_design_params: bool = False,
@@ -893,6 +900,9 @@ class ResultsDashboard:
             cbecs: a cspp.CBECS. Without it the annual comparison is
                 ComStock-only and the distribution and heating-fuel legs skip.
             ami: a cspp.AMI. Without it the AMI leg skips.
+            delta_ref: key of the comparison run the delta annotations compare
+                against (arrows, "moved toward CBECS", heating-fuel gap column).
+                Defaults to the first comparison run.
             comparison_runs: AthenaRunRef values for releases to compare
                 against. These need no local results and no apportionment.
             comparison: the driver's comparison object, if there is one --
@@ -916,6 +926,10 @@ class ResultsDashboard:
         self.cbecs = cbecs
         self.ami = ami
         self.comparison_runs = list(comparison_runs)
+        # Which comparison run the delta annotations reference. None means the
+        # first one, which is the only sensible default but is worth naming
+        # rather than leaving to list order once there are several.
+        self.delta_ref = delta_ref
         self.comparison = comparison
         self.enabled = enabled
         self.database = database
@@ -1167,6 +1181,7 @@ class ResultsDashboard:
             runs=[self.primary] + self.comparison_runs,
             refs=refs,
             region=self.region,
+            delta_ref=self.delta_ref,
             skip_ami=ami_csv is None,
             measures=",".join(measure_ids),
             measure_states=self.measure_states,

@@ -205,6 +205,10 @@ def build_payload(assess: Path) -> dict:
     return {
         "runs": runs,
         "primaryRun": primary,
+        # The comparison run the delta annotations reference. Stated explicitly
+        # so a multi-run dashboard does not leave the reader guessing which of
+        # several comparison runs the arrows are measured against.
+        "deltaRef": manifest.get("delta_ref"),
         "created": manifest.get("created"),
         "toolVersion": __version__,
         "sources": {r["key"]: r["md_table"] for r in runs},

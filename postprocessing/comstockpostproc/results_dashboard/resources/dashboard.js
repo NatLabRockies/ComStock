@@ -73,11 +73,20 @@ const ALL_RUNS = D.runs, PRIMARY = D.primaryRun;
 // on. The manifest order (primary first) is kept only for lookups.
 const displayOrder = rs => rs.filter(r=>r.key!==PRIMARY).concat(rs.filter(r=>r.key===PRIMARY));
 let RUNS = displayOrder(ALL_RUNS);
-let SECONDARY = RUNS.length>1 ? RUNS.find(r=>r.key!==PRIMARY) : null;
+/* The delta annotations -- the closer/further arrows, the "moved toward CBECS"
+   line, the heating-fuel gap column -- are measured against ONE comparison run.
+   That reference is named in the payload as deltaRef rather than being whichever
+   run happens to sort first, which with three or more runs is invisible to the
+   reader. Fall back to the first non-primary run when the payload predates it. */
+const pickSecondary = rs => rs.length > 1
+  ? (rs.find(r => r.key === D.deltaRef) || rs.find(r => r.key !== PRIMARY) || null)
+  : null;
+let SECONDARY = pickSecondary(RUNS);
 let MULTI = RUNS.length > 1;
 function applyRunToggle(){
-  RUNS = displayOrder(state.showCompare ? ALL_RUNS : ALL_RUNS.filter(r=>r.key===PRIMARY));
-  SECONDARY = RUNS.length>1 ? RUNS.find(r=>r.key!==PRIMARY) : null;
+  RUNS = displayOrder(ALL_RUNS.filter(
+    r => r.key === PRIMARY || !state.runsHidden.includes(r.key)));
+  SECONDARY = pickSecondary(RUNS);
   MULTI = RUNS.length > 1;
 }
 const runLabel = k => (ALL_RUNS.find(r=>r.key===k)||{}).label || k;
@@ -110,7 +119,7 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               measDistGroup: "end_use", measMenuOpen: false, measBasis: "stock",
               measPop: "app",
               measCatGroup: "building_type", euHidden: [], feHidden: [], measHidden: [],
-              showCompare: true,
+              runsHidden: [],
               annualMetric: "electricity.total", annualDim: "vintage",
               /* Which breakdown to show. These tabs carried EVERY breakdown
                  stacked one after another - by vintage, census division, floor
@@ -806,11 +815,6 @@ function profileChart(host, pts, opts={}){
       transform:`rotate(-90 11 ${padT+plotH/2})`});
     ylb.textContent=opts.yLabel; svg.appendChild(ylb);
   }
-  // overnight band (hours 0-5) — screen only; the export strips it (class
-  // "band"), since without the caption it reads as an artifact in a report.
-  svg.appendChild(el("rect",{x:x(0),y:padT,width:x(5)-x(0),height:plotH,
-    fill:"var(--ink-3)",opacity:.055,class:"band"}));
-
   if(stack){
     // Stack layers are clipped to the plot area: under min-max normalization the
     // stack's baseline sits below zero (the daily minimum has been subtracted),
@@ -970,9 +974,6 @@ async function copyCharts(charts, cols, title, legendItems){
     clone.setAttribute("x",x); clone.setAttribute("y",y+labelH);
     clone.setAttribute("width",cw); clone.setAttribute("height",ch);
     clone.removeAttribute("style");
-    // Screen-only decorations (overnight shading) come out of report exports —
-    // without the caption they read as artifacts.
-    clone.querySelectorAll(".band").forEach(b=>b.remove());
     out.appendChild(clone);
   });
   legendItems.forEach((it,i)=>{
@@ -2333,6 +2334,24 @@ function renderAmi(){
      grey them out in place (a key that vanishes gives you nothing to click to
      bring the layer back). Exports and the expanded view take the default,
      visible-only list, so a static figure never keys a layer it does not draw. */
+  /* Sample sizes in the legend. A mean profile says nothing about how many
+     buildings stand behind it, and the counts here are small enough to matter:
+     a metered shape backed by 6 meters is a different object from one backed by
+     200. AMI uses the MINIMUM hourly meter count for the type (meters drop in and
+     out across the year, and the minimum is the count every hour is backed by);
+     ComStock uses the model count the AMI leg recorded for this region. Both are
+     omitted silently when the payload predates them, so older assessments still
+     render. */
+  const covRegion = () => ((D.coverage||{}).regions||{})[region] || {};
+  function nMeters(){
+    const n=(covRegion().ami_meter_counts||{})[sn];
+    return n===undefined ? "" : ` · ${fmt(n,0)} meter${n===1?"":"s"}`;
+  }
+  function nModels(runKey){
+    // Model counts are recorded for the run the AMI leg ran against this region.
+    const n=(covRegion().comstock_model_counts||{})[sn];
+    return n===undefined ? "" : ` · ${fmt(n,0)} model${n===1?"":"s"}`;
+  }
   function amiLegendItems(all){
     const keys=all?(D.enduseOrder||[]):euOrderVisible();
     const items=keys.slice().reverse().map(k=>({color:D.enduseColors[k]||"#888",
@@ -2344,10 +2363,11 @@ function renderAmi(){
        drawn, and only when it is drawn. */
     if(euAnyHidden())
       items.push({color:runColor(PRIMARY),
-        label:`${runShort(PRIMARY)} total, all end uses`, line:true});
-    items.push({color:"#1a1d1f", label:"AMI metered", line:true});
+        label:`${runShort(PRIMARY)} total, all end uses${nModels(PRIMARY)}`, line:true});
+    items.push({color:"#1a1d1f", label:`AMI metered${nMeters()}`, line:true});
     if(secRows.length)
-      items.push({color:SECONDARY.color, label:`${runShort(SECONDARY.key)} total`, line:true, dash:true});
+      items.push({color:SECONDARY.color,
+        label:`${runShort(SECONDARY.key)} total${nModels(SECONDARY.key)}`, line:true, dash:true});
     return items;
   }
   function amiLegendHTML(){
@@ -2399,7 +2419,6 @@ function renderAmi(){
       ${secRows.length?`The dashed <b style="color:${SECONDARY.color}">${runShort(SECONDARY.key)}</b> line is
       the comparison run's total on the same basis, so whether this run moved toward or away from
       the meters reads directly.`:""}
-      Shaded column is hours 0–5, where a setback or overnight-load difference shows up most clearly.
       Each subplot's Copy button puts a report-ready PNG on the clipboard — white background, title
       and legend included.</p>
     <div class="ami-wrap">
@@ -5225,7 +5244,7 @@ function renderCoverage(){
 const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim",
                  "dpGroup","dpDim","hfView",
                  "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
-                 "measDistGroup","measMulti","showCompare","measBasis","measPop",
+                 "measDistGroup","measMulti","runsHidden","measBasis","measPop",
                  "measCatGroup","euHidden","feHidden","measHidden"];
 function syncHash(){
   const p=new URLSearchParams();
@@ -5240,7 +5259,10 @@ function parseHash(){
   HASH_KEYS.forEach(k=>{
     if(!p.has(k)) return;
     const v=p.get(k);
-    state[k]=(k==="dimSig"||k==="rankSig"||k==="showCompare") ? v==="true"
+    state[k]=(k==="dimSig"||k==="rankSig") ? v==="true"
+      // validated against the real run list so a stale link cannot hide a
+      // run that is not in this dashboard
+      : k==="runsHidden" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="measMulti" ? v.split(",").filter(u=>MEAS_LIST.some(m=>m.up===u))
       : k==="euHidden" ? v.split(",").filter(x=>(D.enduseOrder||[]).includes(x))
       // "enduse|fuel"; validated against both halves so a stale link cannot
@@ -5286,15 +5308,20 @@ function runToggleReason(){
   return "";
 }
 function syncRunToggle(){
-  const box=$("#cmpChk"); if(!box) return;
+  // Now one checkbox per comparison run, so disable them all together: the
+  // reason a view cannot show comparisons is never specific to one run.
+  const boxes=document.querySelectorAll('.controls input[data-run]');
+  if(!boxes.length) return;
   const why=runToggleReason();
-  box.disabled=!!why;
-  const lab=box.closest("label");
-  if(lab){
-    lab.style.opacity=why?"0.45":"";
-    lab.style.cursor=why?"default":"pointer";
-    lab.title=why||"Show or hide the comparison run on every view";
-  }
+  boxes.forEach(box=>{
+    box.disabled=!!why;
+    const lab=box.closest("label");
+    if(lab){
+      lab.style.opacity=why?"0.45":"";
+      lab.style.cursor=why?"default":"pointer";
+      lab.title=why||`Show or hide ${runLabel(box.dataset.run)} on every view`;
+    }
+  });
 }
 
 function setTab(t){
@@ -5348,18 +5375,33 @@ function init(){
   // comparison-run toggle: view every tab either with the run comparison or
   // as the standard single-run version
   if(ALL_RUNS.length>1){
-    const cmp=ALL_RUNS.find(r=>r.key!==PRIMARY);
-    const w=document.createElement("label");
-    w.style.cssText="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;"+
-      "color:var(--ink-2);cursor:pointer;margin-right:10px";
-    w.title="Show or hide the comparison run on every view";
-    w.innerHTML=`<input type="checkbox" id="cmpChk"${state.showCompare?" checked":""}>`+
-      `<span class="sw" style="background:${cmp.color}"></span>compare: ${cmp.key}`;
-    document.querySelector(".controls").insertBefore(w, $("#theme"));
-    $("#cmpChk").addEventListener("change",e=>{
-      state.showCompare=e.target.checked;
-      applyRunToggle(); setTab(state.tab);
+    // One checkbox PER comparison run, not one for all of them. With three or more
+    // runs a single toggle could only mean "comparisons on/off", which makes the
+    // pairwise views the reader usually wants -- this run against that one --
+    // unreachable. The primary has no checkbox: it is the subject of the findings
+    // and the only run carrying an AMI end-use stack, so hiding it would empty
+    // views rather than simplify them.
+    const cmps=ALL_RUNS.filter(r=>r.key!==PRIMARY);
+    const wrap=document.createElement("span");
+    wrap.style.cssText="display:inline-flex;align-items:center;gap:10px;margin-right:10px";
+    cmps.forEach(r=>{
+      const w=document.createElement("label");
+      w.style.cssText="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;"+
+        "color:var(--ink-2);cursor:pointer";
+      w.title=`Show or hide ${r.label} on every view`;
+      const on=!state.runsHidden.includes(r.key);
+      w.innerHTML=`<input type="checkbox" data-run="${r.key}"${on?" checked":""}>`+
+        `<span class="sw" style="background:${r.color}"></span>${runShort(r.key)}`;
+      w.querySelector("input").addEventListener("change",e=>{
+        const k=e.target.dataset.run;
+        state.runsHidden = e.target.checked
+          ? state.runsHidden.filter(x=>x!==k)
+          : state.runsHidden.concat([k]);
+        applyRunToggle(); setTab(state.tab); syncHash();
+      });
+      wrap.appendChild(w);
     });
+    document.querySelector(".controls").insertBefore(wrap, $("#theme"));
   }
   applyRunToggle();
   const tabs=["overview","annual","dist","ami"];
