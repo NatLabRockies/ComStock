@@ -75,6 +75,23 @@ class HardsizeModel < OpenStudio::Measure::ModelMeasure
         vav_max_rht_fracs[term] = term.maximumFlowFractionDuringReheat.get
       end
     end
+    # EnergyPlus sizes a hot water reheat coil at the terminal's maximum reheat air flow but
+    # loads it with the zone's heating design flow, so a reheat fraction below the zone's
+    # heating-to-maximum flow ratio makes the coil UA impossible to size and the sizing run
+    # fatal (NREL/EnergyPlus#11078). openstudio-standards sets the fraction from the first
+    # sizing run's flows, but the template measures between that run and this one change the
+    # loads: in the 2026-09 100k run two small offices and a warehouse tripled a zone's
+    # heating load through envelope replacements and died here. Let EnergyPlus size the
+    # fraction in this run, then set the final value from this run's flows below, never lower
+    # than the dual-maximum value the terminal came in with.
+    reverse_limit_terms = model.getAirTerminalSingleDuctVAVReheats.select do |term|
+      term.damperHeatingAction == 'ReverseWithLimits' && term.reheatCoil.to_CoilHeatingWater.is_initialized
+    end
+    reverse_limit_terms.each do |term|
+      term.autosizeMaximumFlowFractionDuringReheat
+      term.autosizeMaximumFlowPerZoneFloorAreaDuringReheat
+    end
+
     vav_max_htg_flows = {}
     vav_min_oas = {}
     model.getSizingSystems.each do |sizing_system|
@@ -166,6 +183,23 @@ class HardsizeModel < OpenStudio::Measure::ModelMeasure
       if vav_max_rht_fracs.key?(term)
         term.setMaximumFlowFractionDuringReheat(vav_max_rht_fracs[term])
       end
+    end
+
+    # Reheat fraction of the reverse-with-limits terminals from this sizing run's flows: the
+    # larger of the value the terminal came in with (0.5 for a dual-maximum control) and the
+    # zone heating design flow over the terminal maximum flow, so the coil the run just sized
+    # can carry the zone's heating flow.
+    zone_by_terminal = {}
+    model.getThermalZones.each do |zone|
+      next unless zone.airLoopHVACTerminal.is_initialized
+
+      zone_by_terminal[zone.airLoopHVACTerminal.get.handle.to_s] = zone
+    end
+    reverse_limit_terms.each do |term|
+      zone = zone_by_terminal[term.handle.to_s]
+      next if zone.nil?
+
+      standard.air_terminal_single_duct_vav_reheat_apply_dual_maximum_reheat_fraction(term, zone, vav_max_rht_fracs.fetch(term, 0.5))
     end
 
     return true
