@@ -220,13 +220,32 @@ class SetRoofTemplate < OpenStudio::Measure::ModelMeasure
       return false
     end
     old_construction = ext_surf_consts.roofCeilingConstruction.get
-    standards_info = old_construction.standardsInformation
 
-    # Get the old roof construction type
+    # Read the roof construction type from the roofs actually in the model, not only from the
+    # default construction set. For a building type whose prototype has an attic (small hotels,
+    # restaurants) built without one, the construction set's roof is an attic floor, and
+    # create_typical hard-assigns an IEAD roof to the outdoor-facing surfaces instead while
+    # leaving the set alone. The attic floor's standards type is WoodFramed, which no
+    # template's roof table has: 16 small hotels in the 2026-09 100k run failed here on
+    # "ExteriorRoof-WoodFramed-Residential". Those hard-assigned roofs are re-assigned below as
+    # well, or the new template never reaches them.
+    exterior_roofs = model.getSurfaces.select { |s| s.surfaceType == 'RoofCeiling' && s.outsideBoundaryCondition == 'Outdoors' }
+    hard_assigned_roofs = exterior_roofs.reject(&:isConstructionDefaulted).select { |s| s.construction.is_initialized }
+    by_area = Hash.new(0.0)
+    hard_assigned_roofs.each { |s| by_area[s.construction.get] += s.grossArea }
+    type_source = by_area.empty? ? old_construction : by_area.max_by { |_c, a| a }[0]
+    standards_info = type_source.standardsInformation
+
+    # Get the old roof construction type; anything that is not an exterior roof type (an attic
+    # floor) is replaced with the IEAD roof create_typical uses for the same case
     if standards_info.standardsConstructionType.empty?
       old_roof_construction_type = 'Not defined'
     else
       old_roof_construction_type = standards_info.standardsConstructionType.get
+    end
+    if standards_info.intendedSurfaceType.is_initialized && standards_info.intendedSurfaceType.get != 'ExteriorRoof'
+      runner.registerInfo("The roof construction #{type_source.name} is a #{standards_info.intendedSurfaceType.get} (#{old_roof_construction_type}); using an IEAD exterior roof instead.")
+      old_roof_construction_type = 'IEAD'
     end
 
     # Get the building occupancy type
@@ -241,12 +260,23 @@ class SetRoofTemplate < OpenStudio::Measure::ModelMeasure
       occ_type = 'Nonresidential'
     end
     climate_zone_set = standard.model_find_climate_zone_set(model, climate_zone)
+
+    # a construction type the template's roof table does not carry falls back to IEAD rather
+    # than failing the model
+    search = { 'template' => standard.template, 'climate_zone_set' => climate_zone_set, 'intended_surface_type' => 'ExteriorRoof',
+               'standards_construction_type' => old_roof_construction_type, 'building_category' => occ_type }
+    if old_roof_construction_type != 'IEAD' && !standard.model_find_object(standard.standards_data['construction_properties'], search)
+      runner.registerWarning("#{template} has no #{occ_type} #{old_roof_construction_type} exterior roof for #{climate_zone_set}; using IEAD.")
+      old_roof_construction_type = 'IEAD'
+    end
     new_construction = standard.model_find_and_add_construction(model,
                                                                 climate_zone_set,
                                                                 'ExteriorRoof',
                                                                 old_roof_construction_type,
                                                                 occ_type)
     ext_surf_consts.setRoofCeilingConstruction(new_construction)
+    hard_assigned_roofs.each { |s| s.setConstruction(new_construction) }
+    runner.registerInfo("Set the default exterior roof construction and #{hard_assigned_roofs.size} hard-assigned exterior roof surfaces to #{new_construction.name}.")
 
     log_messages_to_runner(runner, debug = false)
     reset_log
