@@ -19,6 +19,64 @@ from comstockpostproc.lazyframeplotter import LazyFramePlotter
 logger = logging.getLogger(__name__)
 
 class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
+
+    # Windows MAX_PATH. Paths at or past this fail on open(), so the generated
+    # directory name has to be budgeted against it rather than merely kept
+    # "short". Not applied on other platforms.
+    WINDOWS_MAX_PATH = 260
+
+    # Room reserved under the comparison directory for the deepest file the
+    # plots write: a per-building-type subdirectory plus the longest figure
+    # name. Measured, not guessed --
+    # "FullServiceRestaurant/end_use_energy_consumption__for_fullservicerestaurant_by_census_division_name.jpg"
+    # is 104 characters, and it is what overflowed at exactly 261. The slack
+    # above that covers longer building-type and metric names.
+    SUBPATH_RESERVE = 120
+
+    def _name_budget(self):
+        """Characters available for the directory name on this machine.
+
+        Derived from where the repo actually sits rather than hardcoded: the
+        same comparison fits or does not depending on how deep the checkout is,
+        and a fixed budget silently breaks for anyone whose path is longer than
+        the author's. Unlimited off Windows.
+        """
+        if os.name != 'nt':
+            return 10_000
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'output'))
+        # +2 for the separators either side of the directory name.
+        return max(40, self.WINDOWS_MAX_PATH - len(root) - self.SUBPATH_RESERVE - 2)
+
+    def _bounded_name(self, dataset_names):
+        """Name every dataset if it fits, else say plainly that it does not.
+
+        Three attempts, most informative first:
+        1. Every name in full.
+        2. Every name with the shared " - <upgrade>" suffix factored out once.
+           Comparing runs at one upgrade repeats that suffix per dataset, so
+           lifting it to the end is pure saving.
+        3. Two names plus "+N more". Abbreviated, and it SAYS so -- the old code
+           dropped the extra datasets with no indication at all, which is the
+           part that made the folder untrustworthy.
+        """
+        budget = self._name_budget()
+        full = ' vs '.join(sorted(dataset_names))
+        if len(full) <= budget:
+            return full
+
+        suffixes = {n.split(' - ', 1)[1] for n in dataset_names if ' - ' in n}
+        if len(suffixes) == 1:
+            suffix = suffixes.pop()
+            tail = f' - {suffix}'
+            stripped = sorted(n[: -len(tail)] if n.endswith(tail) else n
+                              for n in dataset_names)
+            factored = ' vs '.join(stripped) + tail
+            if len(factored) <= budget:
+                return factored
+
+        kept = sorted(dataset_names, key=len)[:2]
+        return ' vs '.join(kept) + f' +{len(dataset_names) - len(kept)} more'
+
     def __init__(self, comstock_list: List[ComStock], cbecs_list: List[CBECS], upgrade_id=0, image_type='jpg', name=None, make_comparison_plots=True, make_hvac_plots = False, building_type: str | None = None):
         """
         Creates the ComStock to CBECS comaprison plots.
@@ -54,9 +112,14 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
         comstock_dfs_to_concat = []
         dataset_names = []
         comstock_color_map = {}
+        # Names contributed per ComStock dataset. A run compared across its own
+        # upgrades contributes many; several runs compared at baseline contribute
+        # one each. The folder name below needs to tell those apart.
+        names_per_comstock_dataset = []
         for dataset in (cbecs_list + comstock_list):
             # remove measure data from ComStock
             if isinstance(dataset, ComStock): #dataset is ComStock
+                names_before_this_dataset = len(dataset_names)
                 assert isinstance(dataset.data, pl.LazyFrame)
                 # Instantiate the plotting data lazyframe if it doesn't yet exist:
                 if not isinstance(dataset.plotting_data, pl.LazyFrame):
@@ -99,6 +162,8 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
                     comstock_color_map[dataset_name] = dataset.color
                     self.color_map[dataset_name] = dataset.color
                     dataset_names.append(dataset_name)
+                names_per_comstock_dataset.append(
+                    len(dataset_names) - names_before_this_dataset)
             else: #dataset is CBECS
                 assert isinstance(dataset.data, pl.LazyFrame)
                 df_data = dataset.data
@@ -106,12 +171,34 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
                 self.color_map[dataset.dataset_name] = dataset.color
                 dataset_names.append(dataset.dataset_name)
 
-        # Name the comparison
+        # Name the comparison.
+        #
+        # This used to branch on `len(dataset_names) > 2`, a plain count with no
+        # reference to upgrades, so CBECS plus two BASELINE runs produced
+        # "CBECS 2018 vs ComStock <run> - Baseline and Upgrades": upgrades that
+        # were not in it, and only the two shortest names kept, silently
+        # dropping the third dataset. The folder was not a reliable record of
+        # what had been compared.
+        #
+        # Naming every dataset instead is correct but cannot be unbounded. The
+        # name becomes a DIRECTORY, and on Windows the whole path must stay
+        # under MAX_PATH (260). Spelling out three datasets gave a 168-character
+        # directory, and the plot filenames underneath it run to ~90 more, so
+        # savefig started raising FileNotFoundError partway through the figures.
+        # The old truncation had been hiding that.
+        #
+        # So: prefer the full name, fall back to a bounded one that SAYS it is
+        # abbreviated. "+N more" is the difference between a short name and a
+        # misleading one.
         if self.name is None:
-            if len(dataset_names) > 2:
-                self.name = ' vs '.join(sorted(dataset_names, key=len)[:2]) + ' and Upgrades'
+            has_upgrades = any(n > 1 for n in names_per_comstock_dataset)
+            ordered = sorted(dataset_names, key=len)
+            if has_upgrades:
+                # One run across its own upgrades: listing every upgrade would
+                # be both enormous and redundant with the run name.
+                self.name = ' vs '.join(ordered[:2]) + ' and Upgrades'
             else:
-                self.name = ' vs '.join(sorted(dataset_names))
+                self.name = self._bounded_name(dataset_names)
 
         # Combine into a single dataframe for convenience
         # self.data = pd.concat(dfs_to_concat, join='inner', ignore_index=True)

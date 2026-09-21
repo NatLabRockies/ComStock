@@ -36,7 +36,13 @@ postprocessing/compare_comstock_to_cbecs.py
 postprocessing/compare_comstock_to_eia.py
 postprocessing/compare_runs.py
 postprocessing/compare_upgrades.py
+postprocessing/results_dashboard_from_athena.py
+# Dashboard test drivers: runnable copies of the templates, one per run type.
+postprocessing/*_dbtest*.py
+postprocessing/*_test_dashboard.py
 postprocessing/extract_models_and_errors.py
+# setuptools metadata from a local install
+postprocessing/*.egg-info/
 
 # Rubocop output
 /.rubocop
@@ -44,3 +50,7 @@ postprocessing/extract_models_and_errors.py
 
 # test results
 test/reports
+# Results dashboard output (generated; large self-contained dashboards).
+# Written to a results_dashboard/ subfolder of whichever output folder the run's other
+# results already go to.
+postprocessing/output/**/results_dashboard/
