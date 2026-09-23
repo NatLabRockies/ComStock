@@ -719,9 +719,7 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
                 air_loop_hvac.name.get.include?(word)
               end
       # skip kitchens
-      next if ['Kitchen', 'KITCHEN', 'Kitchen'].any? do |word|
-        air_loop_hvac.name.get.include?(word)
-      end
+      next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
       next if ['VAV', 'PVAV'].any? { |word| air_loop_hvac.name.get.include?(word) }
       # skip if residential system
@@ -1793,11 +1791,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # add energy recovery if specified by user and if the building type is applicable
       next unless (hr == true) && (btype_erv_applicable == true)
 
-      # check for space type applicability
-      thermal_zone_names_to_exclude = ['Kitchen', 'kitchen', 'KITCHEN', 'Dining', 'dining',
-                                       'DINING']
-      # skip air loops that serve non-applicable space types and warn user
-      if thermal_zone_names_to_exclude.any? { |word| thermal_zone.name.to_s.include?(word) }
+      # check for space type applicability: no energy recovery on kitchens and dining
+      if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, ['food preparation', 'dining'])
         runner.registerWarning('The user selected to add energy recovery to the HP-RTUs,'\
         " but thermal zone #{
           thermal_zone.name

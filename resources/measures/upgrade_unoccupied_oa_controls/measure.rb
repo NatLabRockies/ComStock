@@ -42,55 +42,42 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
 
   def no_change_zones?(air_loop_hvac)
     selected_air_loops = []
+    # Space types this measure leaves alone, in the typical (all-level) space type vocabulary:
+    # kitchens, laboratories and patient care spaces. Prototype space type names resolve to these
+    # through the prototype space type crosswalk.
     space_types_no_change = [
-      'Kitchen',
-      'kitchen',
-      'PatRm',
-      'PatRoom',
-      'Lab',
-      'Exam',
-      'PatCorridor',
-      'BioHazard',
-      'Exam',
-      'OR',
-      'PreOp',
-      'Soil Work',
-      'Trauma',
-      'Triage',
-      'PhysTherapy',
-      'outpatient',
-      'Outpatient',
-      'Hospital',
-      'hospital',
-      'epr',
-      'EPR',
-      'EPr',
-      'HOSPITAL',
-      'OUTPATIENT',
-      'school',
-      'SCHOOL',
-      'School',
-      'k12',
-      'K12',
-      'education',
-      'EDUCATION',
-      'Education',
-      'DOAS',
-      'doas',
-      'Hotel',
-      'hotel',
-      'HOTEL'
-
+      'food preparation',
+      'patient room',
+      'laboratory',
+      'exam/treatment',
+      'corridor - hospital',
+      'operating room',
+      'emergency room',
+      'physical therapy'
     ]
+    # Building types this measure leaves alone: healthcare, schools and hotels, by their ASHRAE and
+    # DEER standards building type names. The prototype list matched these words in space type
+    # names, which carry the building type on the prototype path only.
+    building_types_no_change = /hospital|outpatient|school|hotel|\A(epr|ese|eun|ecc|hsp|nrs|htl|mtl)\z/i
+    legacy_space_type_names_no_change = /outpatient|hospital|epr|school|k12|education|hotel|doas/i
+
+    # skip DOAS loops, and buildings this measure does not apply to
+    return true if air_loop_hvac.name.to_s =~ /doas/i
+    building = air_loop_hvac.model.getBuilding
+    if building.standardsBuildingType.is_initialized && building.standardsBuildingType.get.to_s =~ building_types_no_change
+      return true
+    end
 
     # check to see if airloop has applicable space types
     # exclude these space types: kitchens, laboratories, patient care rooms
     space_types_no_change_count = 0
     air_loop_hvac.thermalZones.sort.each do |zone|
       zone.spaces.each do |space|
-        if space_types_no_change.any? { |i| space.spaceType.get.name.to_s.include? i }
+        next if space.spaceType.empty?
+
+        space_type = space.spaceType.get
+        if OpenstudioStandards::SpaceType.space_type_matches?(space_type, space_types_no_change) || space_type.name.to_s =~ legacy_space_type_names_no_change
           space_types_no_change_count += 1
-        else
         end
       end
     end

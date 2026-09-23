@@ -1,11 +1,12 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/create_custom_building_from_spec/measure.rb'</error>
   <name>create_custom_building_from_spec</name>
   <uid>7f3c1a92-4d6b-4a0e-9c21-8b5f2d0e4c77</uid>
-  <version_id>2a9e6b41-5c73-4f18-b0d9-1e6a3c8f5b22</version_id>
-  <version_modified>2026-08-04T00:00:00Z</version_modified>
-  <xml_checksum>00000000</xml_checksum>
+  <version_id>15a08a18-455c-4e94-becc-f3f08ce939ed</version_id>
+  <version_modified>2026-09-21T19:38:36Z</version_modified>
+  <xml_checksum>2C38F48B</xml_checksum>
   <class_name>CreateCustomBuildingFromSpec</class_name>
   <display_name>Create Custom Building From Spec</display_name>
   <description>Builds the baseline model through OpenstudioStandards::CreateTypical.create_custom_building_from_spec, replacing create_bar_from_building_type_ratios and create_typical_building_from_model.</description>
@@ -33,7 +34,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>00000000</checksum>
+      <checksum>EC506301</checksum>
+    </file>
+    <file>
+      <filename>create_custom_building_from_spec_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>7ACB8E4A</checksum>
     </file>
   </files>
 </measure>

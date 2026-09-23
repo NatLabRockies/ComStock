@@ -86,34 +86,28 @@ class HVACDCV < OpenStudio::Measure::ModelMeasure
     std = Standard.build(orig_hvac_code_comstock.to_s)
 
     # list of space types where DCV will not be applied
+    # Space types this measure leaves alone, in the typical (all-level) space type vocabulary.
+    # These are ventilation-driven or use no per-person ventilation rate. A level-1 name covers every
+    # qualified variant ('food preparation' includes the school kitchens). Prototype space type names
+    # ('Kitchen', 'PatRoom', 'IT_Room') resolve to the same names through the prototype space type
+    # crosswalk, so this list reads both model vintages. The prototype list's 'Entry' (now 'lobby') and
+    # 'BioHazard' (now 'storage') are not carried over: the typical names cover far more than they did.
     space_types_no_dcv = [
-      'Kitchen',
-      'kitchen',
-      'PatRm',
-      'PatRoom',
-      'Lab',
-      'Exam',
-      'PatCorridor',
-      'BioHazard',
-      'Exam',
-      'OR',
-      'PreOp',
-      'Soil Work',
-      'Trauma',
-      'Triage',
-      'PhysTherapy',
-      'Data Center',
-      'CorridorStairway',
-      'Corridor',
-      'Mechanical',
-      'Restroom',
-      'Entry',
-      'Dining',
-      'IT_Room',
-      'LockerRoom',
-      'Stair',
-      'Toilet',
-      'MechElecRoom'
+      'food preparation',
+      'patient room',
+      'laboratory',
+      'exam/treatment',
+      'operating room',
+      'emergency room',
+      'physical therapy',
+      'datacenter/high ite',
+      'datacenter/low ite',
+      'corridor',
+      'electrical/mechanical',
+      'restroom',
+      'dining',
+      'locker room',
+      'stairwell'
     ]
 
     no_outdoor_air_loops = 0
@@ -178,7 +172,7 @@ class HVACDCV < OpenStudio::Measure::ModelMeasure
       space_dcv = 0
       air_loop_hvac.thermalZones.sort.each do |zone|
         zone.spaces.each do |space|
-          if space_types_no_dcv.any? { |i| space.spaceType.get.name.to_s.include? i }
+          if OpenstudioStandards::SpaceType.space_matches?(space, space_types_no_dcv)
             space_no_dcv += 1
           else
             space_dcv += 1

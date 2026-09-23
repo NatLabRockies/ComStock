@@ -123,6 +123,39 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
     return args
   end
 
+  # Is this name a commercial kitchen?
+  #
+  # Matches the prototype 'Kitchen' spelling and the all-level 'food preparation' spelling,
+  # including building-type-qualified variants ('food preparation - primary school').
+  # The grocery service areas 'food preparation - deli', '- bakery' and '- deli/bakery' are
+  # sub-types of food preparation that hold no primary cooking appliances, so they are excluded.
+  #
+  # @param name [String] a space, space type, or standards space type name
+  # @return [Boolean] true if the name identifies a commercial kitchen
+  def kitchen_name?(name)
+    name = name.to_s
+    return true if name =~ /kitchen/i
+    return false unless name =~ /food preparation/i
+
+    name !~ /deli|bakery/i
+  end
+
+  # Is this space a commercial kitchen?
+  #
+  # Checks the space name, its space type name, and its standards space type.
+  #
+  # @param space [OpenStudio::Model::Space] the space
+  # @return [Boolean] true if the space is a commercial kitchen
+  def kitchen_space?(space)
+    names = [space.name.to_s]
+    if space.spaceType.is_initialized
+      space_type = space.spaceType.get
+      names << space_type.name.to_s
+      names << space_type.standardsSpaceType.get if space_type.standardsSpaceType.is_initialized
+    end
+    names.any? { |n| kitchen_name?(n) }
+  end
+
   # define what happens when the measure is run
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
@@ -147,22 +180,36 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
     cook_fuel_steamer = runner.getStringArgumentValue('cook_fuel_steamer', user_arguments)
     cook_steamers_counts = runner.getDoubleArgumentValue('cook_steamers_counts', user_arguments)
 
-    # search for kitchen spaces and space types in model by string match
-    # this will provide list of kitchen spaces, space types, and number of kitchen spaces
+    # search for kitchen spaces and space types in the model
+    # this will provide list of kitchen spaces, space types, and number of kitchen spaces.
+    # Prototype-derived models name the kitchen space type and its spaces 'Kitchen'. Models built
+    # from a ComStock building spec use the all-level space type 'food preparation', or a
+    # building-type-qualified variant such as 'food preparation - primary school', and the spaces
+    # inherit that name ('food preparation A - Story 1'). Both spellings are commercial kitchens.
     li_spaces_with_kitchens = []
     li_space_types_with_kitchens = []
     num_kitchens = 0
+    # sum of the thermal zone multipliers of the kitchen spaces. A kitchen in a zone with a
+    # multiplier of 5 stands for five kitchens, so the per-building appliance counts are spread
+    # over this total rather than over the number of space objects.
+    total_kitchen_multiplier = 0
     model.getSpaces.sort.each do |space|
-      if ['kitchen', 'KITCHEN', 'Kitchen'].any? { |word| space.name.get.include?(word) }
-        # append kitchen to list
-        li_spaces_with_kitchens << space
-        num_kitchens += 1
-        # get space type of kitchen and add to list if not already
-        kitchen_space_type = space.spaceType.get
-        next if li_space_types_with_kitchens.include? kitchen_space_type
+      next unless kitchen_space?(space)
 
-        li_space_types_with_kitchens << kitchen_space_type
+      if space.spaceType.empty?
+        runner.registerWarning("Kitchen space #{space.name} has no space type and will be ignored.")
+        next
       end
+
+      # append kitchen to list
+      li_spaces_with_kitchens << space
+      num_kitchens += 1
+      total_kitchen_multiplier += space.multiplier
+      # get space type of kitchen and add to list if not already
+      kitchen_space_type = space.spaceType.get
+      next if li_space_types_with_kitchens.include? kitchen_space_type
+
+      li_space_types_with_kitchens << kitchen_space_type
     end
 
     # skip if there are no kitchen spaces in model, or if there is more than 1 kitchen space type.
@@ -170,7 +217,7 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
       runner.registerAsNotApplicable('Model does not contain a kitchen spaces and will not be affected by this measure.')
       return false
     elsif li_space_types_with_kitchens.length > 1
-      runner.registerAsNotApplicable("Model contains #{li_space_types_with_kitchens.length} kitchen space types. This measure only supports 1 kitchen space type, and therefore is not applicable.")
+      runner.registerAsNotApplicable("Model contains #{li_space_types_with_kitchens.length} kitchen space types (#{li_space_types_with_kitchens.map { |st| st.name.to_s }.join(', ')}). This measure only supports 1 kitchen space type, and therefore is not applicable.")
       return false
     end
 
@@ -213,37 +260,42 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
     elec_fraction_lost_hash = li_appliance_types.zip(li_elec_frac_lost).to_h
 
     # make list of equipment to delete
+    # A space type may carry several gas or electric equipment objects (a building spec can name
+    # more than one pre-defined load object for a space type), so every original instance is
+    # handled: all gas equipment is removed and replaced by the sampled appliances, and all
+    # electric equipment is reduced to a miscellaneous load. The first instance by name lends its
+    # schedule and definition to the new appliances.
     li_euip_to_remove = []
-    orig_gas_equip_count = 0
+    orig_gas_equip = kitchen_stype.gasEquipment.sort_by { |g| g.name.to_s }
+    orig_gas_equip_count = orig_gas_equip.size
     # get base gas equipment, if any
-    if !kitchen_stype.gasEquipment.empty?
+    if orig_gas_equip_count > 0
       # get existing kitchen gas equipment in model
-      gas_equip_orig = kitchen_stype.gasEquipment[0]
+      gas_equip_orig = orig_gas_equip[0]
       # get existing gas equipment definition schedule
       gas_equip_sched_orig = gas_equip_orig.schedule.get.to_ScheduleRuleset.get
       # get existing gas equipment definition
       gas_equip_def_orig = gas_equip_orig.gasEquipmentDefinition
       # add equipment to list
-      li_euip_to_remove << gas_equip_orig
-      li_euip_to_remove << gas_equip_def_orig
-      orig_gas_equip_count += 1
+      orig_gas_equip.each do |g|
+        li_euip_to_remove << g
+        li_euip_to_remove << g.gasEquipmentDefinition
+      end
     end
 
-    orig_electric_equip_count = 0
+    orig_electric_equip = kitchen_stype.electricEquipment.sort_by { |e| e.name.to_s }
+    orig_electric_equip_count = orig_electric_equip.size
     # get base electric equipment, if any
-    if !kitchen_stype.electricEquipment.empty?
+    if orig_electric_equip_count > 0
       # get existing kitchen electric equipment in model
-      electric_equip_orig = kitchen_stype.electricEquipment[0]
-      # get existing electric equipment definition schedule
-      electric_equip_sched_orig = electric_equip_orig.schedule.get.to_ScheduleRuleset.get
+      electric_equip_orig = orig_electric_equip[0]
       # get existing electric equipment definition
       electric_equip_def_orig = electric_equip_orig.electricEquipmentDefinition
-      # add equipment to list - we will not remove electric equipment, but will reduce it
-      orig_electric_equip_count += 1
+      # we will not remove electric equipment, but will reduce it
     end
 
     # register initial model conditions
-    runner.registerInitialCondition("The building contains #{num_kitchens} applicable kitchen space(s).The original kitchen space type, #{kitchen_stype.name}, uses #{kitchen_stype.gasEquipmentPowerPerFloorArea} W/m^2 of gas equipment and #{kitchen_stype.electricEquipmentPowerPerFloorArea} W/m^2 of electric equipment. 60% of electric equipment, if any, will remain in model to account for misc. loads.")
+    runner.registerInitialCondition("The building contains #{num_kitchens} applicable kitchen space(s) with a total zone multiplier of #{total_kitchen_multiplier}. The original kitchen space type, #{kitchen_stype.name}, uses #{kitchen_stype.gasEquipmentPowerPerFloorArea} W/m^2 of gas equipment and #{kitchen_stype.electricEquipmentPowerPerFloorArea} W/m^2 of electric equipment. 10% of electric equipment, if any, will remain in model to account for misc. loads.")
 
     # loop through equipment types and add to model
     li_appliance_types.each do |app|
@@ -272,8 +324,8 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
         equip_new.setGasEquipmentDefinition(equip_def_new)
         # use original gas equipment schedule
         equip_new.setSchedule(gas_equip_sched_orig)
-        # use multiplier to spread equipment across multiple kitchens
-        equip_new.setMultiplier(1.0 / num_kitchens)
+        # use multiplier to spread equipment across multiple kitchens, counting zone multipliers
+        equip_new.setMultiplier(1.0 / total_kitchen_multiplier)
         # register message for adding gas equipment to model
         runner.registerInfo("(#{appliance_quantity_hash[app]}) #{appliance_gas_power_hash[app]}kW gas #{app}(s) were added to model kitchen space(s).")
       elsif appliance_fuel_hash[app] == 'Electric'
@@ -298,8 +350,8 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
         # use original gas equipment schedule; consider using gas schedules for schools
         equip_new.setSchedule(gas_equip_sched_orig)
         # equip_new.setSchedule(gas_equip_sched_orig)
-        # use multiplier to spread equipment across multiple kitchens
-        equip_new.setMultiplier(1.0 / num_kitchens)
+        # use multiplier to spread equipment across multiple kitchens, counting zone multipliers
+        equip_new.setMultiplier(1.0 / total_kitchen_multiplier)
         # register message for adding gas equipment to model
         runner.registerInfo("(#{appliance_quantity_hash[app]}) #{appliance_electric_power_hash[app]}kW electric #{app}(s) were added to model kitchen space(s).")
       else
@@ -307,21 +359,22 @@ class SetPrimaryKitchenEquipment < OpenStudio::Measure::ModelMeasure
       end
     end
 
-    # remove original gas equipment
-    li_euip_to_remove.each(&:remove)
+    # remove original gas equipment (definitions after the instances that use them)
+    li_euip_to_remove.uniq.each(&:remove)
 
-    # set electric equipment to 60% of original value to account for misc.
-    if !kitchen_stype.electricEquipment.empty?
+    # set original electric equipment to 10% of original value to account for misc.
+    orig_electric_equip.each_with_index do |electric_equip, i|
+      suffix = i.zero? ? '' : " #{i + 1}"
       # change name to misc. equipment
-      electric_equip_orig.setName('misc_electric_kitchen_equipment')
-      # change name to misc. equipment
-      electric_equip_def_orig.setName('misc_electric_kitchen_equipment_definition')
+      electric_equip.setName("misc_electric_kitchen_equipment#{suffix}")
+      electric_equip_def = electric_equip.electricEquipmentDefinition
+      electric_equip_def.setName("misc_electric_kitchen_equipment_definition#{suffix}")
       # get original power
-      original_power_per_area = electric_equip_orig.powerPerFloorArea.to_f
+      original_power_per_area = electric_equip.powerPerFloorArea.to_f
       # change power per sf to 10% of original
       new_power = original_power_per_area * 0.1
-      electric_equip_def_orig.setWattsperSpaceFloorArea(new_power)
-      runner.registerInfo("The original kitchen electric load has been reduced to 10% of the original value from #{original_power_per_area.round}W/m^2 to #{new_power.round}W/m^2 to remove energy associated with major cooking appliances while retaining miscellaneous electric loads.")
+      electric_equip_def.setWattsperSpaceFloorArea(new_power)
+      runner.registerInfo("The original kitchen electric load #{electric_equip.name} has been reduced to 10% of the original value from #{original_power_per_area.round}W/m^2 to #{new_power.round}W/m^2 to remove energy associated with major cooking appliances while retaining miscellaneous electric loads.")
     end
 
     return true

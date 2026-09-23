@@ -846,6 +846,18 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
       runner.registerInfo("Applying #{occupancy_overrides.size} occupancy override(s): #{named}.")
     end
 
+    # Internal loads where a building type wants something other than the space type's default.
+    # The equipment sections take either a density or the name(s) of pre-defined load objects
+    # from the typical equipment data (electric_equipment_space_type_name,
+    # natural_gas_equipment_space_type_name), so a building type can pick 'kitchen - primary
+    # school' or a density tier for its kitchen without stating a number here.
+    load_overrides = merged_overrides(runner, 'load_overrides')
+    unless load_overrides.empty?
+      spec['load_overrides'] = load_overrides
+      named = load_overrides.map { |o| "#{o['space_type']} (#{(o.keys - ['space_type']).join(', ')})" }.join(', ')
+      runner.registerInfo("Applying #{load_overrides.size} load override(s): #{named}.")
+    end
+
     # Envelope constructions, named rather than looked up from the primary building type row.
     # ComStock owns this data the same way it owns space type ratios, and the spec names every
     # surface, so the construction set no longer depends on the standards construction_sets

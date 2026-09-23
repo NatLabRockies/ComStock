@@ -1037,7 +1037,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
                 air_loop_hvac.name.get.include?(word)
               end
       # skip kitchens
-      next if %w[Kitchen KITCHEN Kitchen].any? { |word| air_loop_hvac.name.get.include?(word) }
+      next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
       next if %w[VAV PVAV].any? { |word| air_loop_hvac.name.get.include?(word) }
       # skip if residential system
@@ -1569,35 +1569,22 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
       equip_to_delete = []
 
+      # Space types that keep their thermostats, in the typical (all-level) space type vocabulary:
+      # patient care, laboratories, data centers, unoccupied support spaces and guest rooms. A level-1
+      # name covers every qualified variant; 'corridor - hospital' is the patient corridor alone.
+      # Prototype space type names resolve to these through the prototype space type crosswalk. The
+      # prototype list's 'Entry' (now 'lobby'), 'Toilet' (now every 'restroom') and 'BioHazard' (now
+      # 'storage') are not carried over: the typical names cover far more than they did.
       space_types_no_setback = [
-        # 'Kitchen',
-        # 'kitchen',
-        'PatRm',
-        'PatRoom',
-        'Lab',
-        'Exam',
-        'PatCorridor',
-        'BioHazard',
-        'Exam',
-        'OR',
-        'PreOp',
-        'Soil Work',
-        'Trauma',
-        'Triage',
-        # 'PhysTherapy',
-        'Data Center',
-        # 'CorridorStairway',
-        # 'Corridor',
-        'Mechanical',
-        # 'Restroom',
-        'Entry',
-        # 'Dining',
-        'IT_Room',
-        # 'LockerRoom',
-        # 'Stair',
-        'Toilet',
-        'MechElecRoom',
-        'Guest Room',
+        'patient room',
+        'laboratory',
+        'exam/treatment',
+        'corridor - hospital',
+        'operating room',
+        'emergency room',
+        'datacenter/high ite',
+        'datacenter/low ite',
+        'electrical/mechanical',
         'guest room'
       ]
 
@@ -1612,11 +1599,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
             zone_space_types << space.spaceType.get.name.to_s
           end
 
-          skip_space_types = space_types_no_setback.any? do |substring|
-            zone_space_types.any? do |str|
-              str.include?(substring)
-            end
-          end
+          skip_space_types = OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, space_types_no_setback)
 
           no_people_obj = true if thermal_zone.numberOfPeople.zero?
 
@@ -2507,10 +2490,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # add energy recovery if specified by user and if the building type is applicable
       next unless (hr == true) && (btype_erv_applicable == true)
 
-      # check for space type applicability
-      thermal_zone_names_to_exclude = %w[Kitchen kitchen KITCHEN Dining dining DINING]
-      # skip air loops that serve non-applicable space types and warn user
-      if thermal_zone_names_to_exclude.any? { |word| thermal_zone.name.to_s.include?(word) }
+      # check for space type applicability: no energy recovery on kitchens and dining
+      if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, ['food preparation', 'dining'])
         runner.registerWarning("The user selected to add energy recovery to the HP-RTUs, but thermal zone #{thermal_zone.name} is a non-applicable space type for energy recovery. Any existing energy recovery will remain for consistancy, but no new energy recovery will be added.")
       else
         # remove existing ERV; these will be replaced with new ERV equipment

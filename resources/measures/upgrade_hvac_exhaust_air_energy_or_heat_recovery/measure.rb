@@ -88,14 +88,8 @@ class HVACExhaustAirEnergyOrHeatRecovery < OpenStudio::Measure::ModelMeasure
       'QuickServiceRestaurant',
       'FullServiceRestaurant'
     ]
-    thermal_zone_names_to_exclude = [
-      'Kitchen',
-      'kitchen',
-      'KITCHEN',
-      'Dining',
-      'dining',
-      'DINING'
-    ]
+    # space types, in the typical (all-level) vocabulary, whose zones get no energy recovery
+    space_types_to_exclude = ['food preparation', 'dining']
 
     # check building-type applicability
     building_types_to_exclude = building_types_to_exclude.map(&:downcase)
@@ -129,7 +123,7 @@ class HVACExhaustAirEnergyOrHeatRecovery < OpenStudio::Measure::ModelMeasure
       # check to see if airloop includes only non applicable thermal zones
       airloop_applicable_thermal_zones = []
       air_loop_hvac.thermalZones.each do |thermal_zone|
-        if thermal_zone_names_to_exclude.none? { |word| thermal_zone.name.to_s.include?(word) }
+        unless OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, space_types_to_exclude)
           airloop_applicable_thermal_zones << thermal_zone
         end
       end

@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_advanced_rtu_control/measure.rb'</error>
   <name>advanced_rtu_control</name>
   <uid>b3e18436-f7da-4b62-bbce-c21e2f9d5ad4</uid>
-  <version_id>bf82f615-0b8f-43d1-9f32-009c0f8678f6</version_id>
-  <version_modified>2026-02-27T00:43:56Z</version_modified>
+  <version_id>cc5fe75d-1508-4f2f-9fbc-5a4c4260c382</version_id>
+  <version_modified>2026-09-23T03:38:28Z</version_modified>
   <xml_checksum>B3180F38</xml_checksum>
   <class_name>AdvancedRTUControl</class_name>
   <display_name>Advanced RTU Control</display_name>
@@ -90,7 +91,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>42F48706</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -113,7 +114,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>63FF8C3E</checksum>
+      <checksum>499D130A</checksum>
     </file>
     <file>
       <filename>advanced_rtu_control_test.rb</filename>

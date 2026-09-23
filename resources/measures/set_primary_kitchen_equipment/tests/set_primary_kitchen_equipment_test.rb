@@ -225,4 +225,195 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
       model = load_model(model_output_path(instance_test_name))
     end
   end
+
+  # names the measure must and must not treat as a commercial kitchen
+  def test_kitchen_name_matching
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    measure = SetPrimaryKitchenEquipment.new
+
+    # prototype spellings
+    assert(measure.kitchen_name?('Kitchen'))
+    assert(measure.kitchen_name?('PrimarySchool Kitchen - 90.1-2004'))
+    assert(measure.kitchen_name?('Hospital Kitchen - ComStock DOE Ref Pre-1980'))
+    # all-level spellings from a ComStock building spec
+    assert(measure.kitchen_name?('food preparation'))
+    assert(measure.kitchen_name?('food preparation - primary school'))
+    assert(measure.kitchen_name?('food preparation - secondary school'))
+    assert(measure.kitchen_name?('food preparation A - Story mid'))
+    assert(measure.kitchen_name?('SuperMarket food preparation'))
+    # grocery service areas and everything else
+    assert(!measure.kitchen_name?('food preparation - bakery'))
+    assert(!measure.kitchen_name?('food preparation - deli'))
+    assert(!measure.kitchen_name?('food preparation - deli/bakery'))
+    assert(!measure.kitchen_name?('dining - cafeteria/fast food'))
+    assert(!measure.kitchen_name?('dining'))
+    assert(!measure.kitchen_name?('Office'))
+  end
+
+  # Build a model the way create_custom_building_from_spec does: the kitchen space type is the
+  # all-level 'food preparation' with no standards building type, its loads sit on the space type
+  # with schedules inherited from a default schedule set, and the spaces are named after the space
+  # type. The kitchen spaces sit in zones with a multiplier, as a mid-story kitchen does.
+  def spec_style_model(kitchen_space_type_name:, num_kitchens:, zone_multiplier:)
+    model = OpenStudio::Model::Model.new
+
+    ruleset = OpenStudio::Model::ScheduleRuleset.new(model, 0.5)
+    ruleset.setName("#{kitchen_space_type_name} gas equipment")
+    schedule_set = OpenStudio::Model::DefaultScheduleSet.new(model)
+    schedule_set.setName("#{kitchen_space_type_name} Schedule Set")
+    schedule_set.setGasEquipmentSchedule(ruleset)
+    schedule_set.setElectricEquipmentSchedule(ruleset)
+
+    kitchen_type = OpenStudio::Model::SpaceType.new(model)
+    kitchen_type.setName(kitchen_space_type_name)
+    kitchen_type.setStandardsSpaceType(kitchen_space_type_name)
+    kitchen_type.setDefaultScheduleSet(schedule_set)
+
+    gas_def = OpenStudio::Model::GasEquipmentDefinition.new(model)
+    gas_def.setName("#{kitchen_space_type_name} Gas Equip Definition")
+    gas_def.setWattsperSpaceFloorArea(649.25) # 205.81 Btu/hr-ft2, the cross-building median
+    gas = OpenStudio::Model::GasEquipment.new(gas_def)
+    gas.setName("#{kitchen_space_type_name} Gas Equip")
+    gas.setSpaceType(kitchen_type)
+
+    elec_def = OpenStudio::Model::ElectricEquipmentDefinition.new(model)
+    elec_def.setName("#{kitchen_space_type_name} Elec Equip Definition")
+    elec_def.setWattsperSpaceFloorArea(240.8)
+    elec = OpenStudio::Model::ElectricEquipment.new(elec_def)
+    elec.setName("#{kitchen_space_type_name} Elec Equip")
+    elec.setSpaceType(kitchen_type)
+
+    dining_type = OpenStudio::Model::SpaceType.new(model)
+    dining_type.setName('dining - cafeteria/fast food')
+    dining_type.setStandardsSpaceType('dining - cafeteria/fast food')
+
+    # 10 m x 10 m floor plates
+    polygon = OpenStudio::Point3dVector.new
+    polygon << OpenStudio::Point3d.new(0, 0, 0)
+    polygon << OpenStudio::Point3d.new(0, 10, 0)
+    polygon << OpenStudio::Point3d.new(10, 10, 0)
+    polygon << OpenStudio::Point3d.new(10, 0, 0)
+
+    ('A'..'Z').first(num_kitchens).each do |letter|
+      space = OpenStudio::Model::Space.fromFloorPrint(polygon, 3.0, model).get
+      space.setName("#{kitchen_space_type_name} #{letter} - Story mid")
+      space.setSpaceType(kitchen_type)
+      zone = OpenStudio::Model::ThermalZone.new(model)
+      zone.setName("Zone #{space.name}")
+      zone.setMultiplier(zone_multiplier)
+      space.setThermalZone(zone)
+    end
+
+    dining = OpenStudio::Model::Space.fromFloorPrint(polygon, 3.0, model).get
+    dining.setName('dining - cafeteria/fast food A - Story mid')
+    dining.setSpaceType(dining_type)
+    dining.setThermalZone(OpenStudio::Model::ThermalZone.new(model))
+
+    return model
+  end
+
+  def run_measure_on(model, arg_hash)
+    measure = SetPrimaryKitchenEquipment.new
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    arguments = measure.arguments(model)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    arguments.each do |arg|
+      temp_arg_var = arg.clone
+      assert(temp_arg_var.setValue(arg_hash[arg.name])) if arg_hash.key?(arg.name)
+      argument_map[arg.name] = temp_arg_var
+    end
+    measure.run(model, runner, argument_map)
+    result = runner.result
+    show_output(result)
+    return result
+  end
+
+  # building-level appliance power, summing zone multipliers, in W
+  def building_gas_equipment_w(model)
+    total = 0.0
+    model.getSpaces.each do |space|
+      space.gasEquipment.each { |g| total += g.getDesignLevel(space.floorArea, space.numberOfPeople) * space.multiplier }
+      next if space.spaceType.empty?
+
+      space.spaceType.get.gasEquipment.each { |g| total += g.getDesignLevel(space.floorArea, space.numberOfPeople) * space.multiplier }
+    end
+    return total
+  end
+
+  def test_spec_style_food_preparation_kitchen
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    model = spec_style_model(kitchen_space_type_name: 'food preparation', num_kitchens: 3, zone_multiplier: 5)
+    # three 100 m2 kitchens in zones of multiplier 5, at 649.25 W/m2
+    assert_in_delta(3 * 5 * 100.0 * 649.25, building_gas_equipment_w(model), 1.0)
+
+    result = run_measure_on(model, {
+      'cook_dining_type' => 'Restaurant A',
+      'cook_fuel_fryer' => 'Gas', 'cook_fryers_counts' => 2,
+      'cook_fuel_range' => 'Gas', 'cook_ranges_counts' => 1,
+      'cook_fuel_oven' => 'Electric', 'cook_ovens_counts' => 1
+    })
+    assert_equal('Success', result.value.valueName)
+
+    kitchen_type = model.getSpaceTypeByName('food preparation').get
+    # the per-area gas load is gone, replaced by one instance per gas appliance type
+    assert(kitchen_type.gasEquipment.none? { |g| g.name.to_s == 'food preparation Gas Equip' })
+    assert_equal(2, kitchen_type.gasEquipment.size)
+    # the building holds 2 fryers and 1 range regardless of how many kitchen spaces or zone multipliers
+    assert_in_delta((2 * 23.447 + 1 * 42.497) * 1000.0, building_gas_equipment_w(model), 1.0)
+    kitchen_type.gasEquipment.each do |g|
+      assert_in_delta(1.0 / 15, g.multiplier, 1e-9)
+      assert_equal('food preparation gas equipment', g.schedule.get.name.to_s)
+    end
+    # the electric oven was added and the misc electric load cut to 10%
+    elec_names = kitchen_type.electricEquipment.map { |e| e.name.to_s }
+    assert(elec_names.include?('electric_oven_equipment_bldg_quantity=1.0'), elec_names.inspect)
+    misc = kitchen_type.electricEquipment.find { |e| e.name.to_s == 'misc_electric_kitchen_equipment' }
+    assert(!misc.nil?, elec_names.inspect)
+    assert_in_delta(24.08, misc.electricEquipmentDefinition.wattsperSpaceFloorArea.get, 0.01)
+    # the dining space type is untouched
+    dining_type = model.getSpaceTypeByName('dining - cafeteria/fast food').get
+    assert(dining_type.gasEquipment.empty?)
+  end
+
+  def test_spec_style_school_kitchen_with_no_appliances
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    model = spec_style_model(kitchen_space_type_name: 'food preparation - primary school', num_kitchens: 1, zone_multiplier: 1)
+    result = run_measure_on(model, { 'cook_dining_type' => 'None' })
+    assert_equal('Success', result.value.valueName)
+    # no sampled appliances: the prototype gas load is removed and nothing replaces it
+    assert_in_delta(0.0, building_gas_equipment_w(model), 1e-6)
+  end
+
+  def test_grocery_bakery_is_not_a_kitchen
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    model = spec_style_model(kitchen_space_type_name: 'food preparation - bakery', num_kitchens: 1, zone_multiplier: 1)
+    before = building_gas_equipment_w(model)
+    result = run_measure_on(model, { 'cook_dining_type' => 'None' })
+    assert_equal('NA', result.value.valueName)
+    assert_in_delta(before, building_gas_equipment_w(model), 1e-6)
+  end
+
+  # a building spec can name several gas equipment objects for one space type; all are replaced
+  def test_spec_style_kitchen_with_several_gas_objects
+    puts "
+######
+TEST:#{__method__}
+######
+"
+    model = spec_style_model(kitchen_space_type_name: 'food preparation', num_kitchens: 2, zone_multiplier: 1)
+    kitchen_type = model.getSpaceTypeByName('food preparation').get
+    second_def = OpenStudio::Model::GasEquipmentDefinition.new(model)
+    second_def.setName('food preparation bakery Gas Equip Definition')
+    second_def.setWattsperSpaceFloorArea(26.9)
+    second = OpenStudio::Model::GasEquipment.new(second_def)
+    second.setName('food preparation bakery Gas Equip')
+    second.setSpaceType(kitchen_type)
+    assert_equal(2, kitchen_type.gasEquipment.size)
+
+    result = run_measure_on(model, { 'cook_dining_type' => 'Cafe', 'cook_fuel_oven' => 'Gas', 'cook_ovens_counts' => 1 })
+    assert_equal('Success', result.value.valueName)
+    assert_equal(['gas_oven_equipment_bldg_quantity=1.0'], kitchen_type.gasEquipment.map { |g| g.name.to_s })
+    assert_in_delta(12.896 * 1000.0, building_gas_equipment_w(model), 1.0)
+    assert_equal(0, model.getGasEquipmentDefinitions.count { |d| d.name.to_s.include?('bakery') })
+  end
 end

@@ -1403,8 +1403,8 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
         airloop_na_tz = []
         # air loops with non applicable thermal zones
         air_loop_hvac.thermalZones.sort.each do |tz|
-          # skip food service air loops
-          if ['kitchen', 'KITCHEN', 'Kitchen', 'Dining', 'dining'].any? { |word| tz.name.get.include?(word) }
+          # skip food service zones
+          if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(tz, ['food preparation', 'dining'])
             airloop_na_tz << tz
           # skip non-conditioned thermal zones
           elsif !OpenstudioStandards::ThermalZone.thermal_zone_heated?(tz) && !OpenstudioStandards::ThermalZone.thermal_zone_cooled?(tz)

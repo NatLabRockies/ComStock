@@ -224,7 +224,7 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
       # skip data centers
       next if ['Data Center', 'DataCenter', 'data center', 'datacenter', 'DATACENTER', 'DATA CENTER'].any? { |word| (air_loop_hvac.name.get).include?(word) }
       # skip kitchens
-      next if ['Kitchen', 'KITCHEN', 'Kitchen'].any? { |word| (air_loop_hvac.name.get).include?(word) }
+      next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
       next if ['VAV', 'PVAV'].any? { |word| (air_loop_hvac.name.get).include?(word) }
       # skip if residential system
