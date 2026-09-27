@@ -1375,10 +1375,15 @@ function completionPanel(){
       .reduce((t,[,n])=>t+n,0);
     const applicable=r.total-invalid;
     const pctF=applicable?failed/applicable*100:0, base=r.upgrade==="0";
+    // A published aggregate never recorded baseline failures (a failed model got
+    // no weight), so its baseline row cannot honestly show "0 failed".
+    const unrecorded = base && /published aggregate/.test(notes[r.run]||"");
+    const failCell = unrecorded ? `<span class="absent" title="the published aggregate holds successes only">not recorded</span>` : fmt(failed,0);
+    const pctCell = unrecorded ? `<span class="absent">—</span>` : `${pctF.toFixed(pctF>0&&pctF<0.01?3:2)}%`;
     h+=`<tr${base?' style="font-weight:650"':""}><td>${runShort(r.run)}</td>
       <td>${base?"0 · baseline":r.upgrade+measName(r.upgrade)}</td>
       <td>${fmt(r.total,0)}</td><td>${invalid?fmt(invalid,0):"—"}</td><td>${fmt(applicable,0)}</td>
-      <td>${fmt(failed,0)}</td><td>${pctF.toFixed(pctF>0&&pctF<0.01?3:2)}%</td>
+      <td>${failCell}</td><td>${pctCell}</td>
       <td style="text-align:left">${Object.entries(r.statuses).sort((a,b)=>b[1]-a[1])
         .map(([s,n])=>`${s} ${fmt(n,0)}`).join(" · ")}</td></tr>`;
   });
