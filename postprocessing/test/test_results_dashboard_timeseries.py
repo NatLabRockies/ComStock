@@ -49,6 +49,22 @@ def test_est_to_local_offsets_are_standard_time_offsets():
     assert set(ts.EST_TO_LOCAL_HOURS.values()) == {-1, -2, -3, -4, -5}
 
 
+def test_duplicate_hour_probe_looks_inside_the_baseline_partition_only():
+    # A run with measures has one row per (building, hour) PER UPGRADE. Counting
+    # across partitions reported 1 + measures-per-building as "duplication" and
+    # declined every timeseries leg of every compare_upgrades dashboard.
+    sql = ts.duplicate_hours_sql("run_timeseries_vu", CRAWLED)
+    assert "t.upgrade = 0" in sql                       # bigint column: bare literal
+    assert "from_iso8601_timestamp('2018-01-02T00:00:00')" in sql
+
+
+def test_duplicate_hour_probe_types_the_upgrade_literal():
+    sql = ts.duplicate_hours_sql("rel_ts_by_state", {**ts.PUBLISHED, "up_type": "varchar(2)"})
+    assert "t.upgrade = '0'" in sql
+    # No upgrade column at all (single-scenario table): no filter, no bad SQL.
+    assert "upgrade" not in ts.duplicate_hours_sql("x", {**CRAWLED, "up_type": ""})
+
+
 def test_measure_seasons_match_measure_postprocessing_plots():
     # plotting_mixin.map_to_season: 3-5 and 9-11 shoulder, 6-8 summer, else winter
     def map_to_season(month):

@@ -212,6 +212,33 @@ def hour_trunc(dialect: dict | None, alias: str = "t") -> str:
     return f"date_trunc('hour', date_add('minute', -15, {time_expr(dialect, alias)}))"
 
 
+def duplicate_hours_sql(ts_table: str, dialect: dict | None = None) -> str:
+    """The one-day duplicate probe, restricted to the BASELINE partition.
+
+    The timeseries table of a run with measures holds one row per (building,
+    hour) PER UPGRADE -- the baseline plus every measure applied to that
+    building -- so a count across partitions reports "1 + measures per
+    building" as duplication. That declined both timeseries tabs of every
+    compare_upgrades dashboard (5.13 rows per building-hour on a run with eleven
+    measures; exactly 1.00 inside each partition). Real duplication, a profile
+    copied once per state, shows up inside the baseline partition just the same,
+    which is where this now looks. Returns "" when the dialect lacks the columns.
+    """
+    d = _d(dialect)
+    if not d["bldg"] or not d["time"]:
+        return ""
+    day = ("from_unixtime(t.\"%s\" / 1000000000)" % d["time"] if d["epoch_ns"]
+           else 't."%s"' % d["time"])
+    up_type = d.get("up_type") or ""
+    base = f" AND t.upgrade = {athena.upgrade_literal(0, up_type)}" if up_type else ""
+    return (
+        f'SELECT COUNT(*) AS rows_all,\n'
+        f'    COUNT(DISTINCT (t."{d["bldg"]}", {day})) AS distinct_bldg_hour\n'
+        f"FROM {ts_table} t\n"
+        f"WHERE {day} < from_iso8601_timestamp('2018-01-02T00:00:00'){base}"
+    )
+
+
 def check_no_duplicate_hours(ts_table: str, dialect: dict | None = None,
                              no_cache: bool = False) -> str:
     """Return "" if each (building, hour) appears once, else a description of the problem.
@@ -233,17 +260,9 @@ def check_no_duplicate_hours(ts_table: str, dialect: dict | None = None,
     is enough to detect it, and scanning 8,760 hours to prove a data-shape
     property is not worth the money.
     """
-    d = _d(dialect)
-    if not d["bldg"] or not d["time"]:
+    sql = duplicate_hours_sql(ts_table, dialect)
+    if not sql:
         return ""
-    day = ("from_unixtime(t.\"%s\" / 1000000000)" % d["time"] if d["epoch_ns"]
-           else 't."%s"' % d["time"])
-    sql = (
-        f'SELECT COUNT(*) AS rows_all,\n'
-        f'    COUNT(DISTINCT (t."{d["bldg"]}", {day})) AS distinct_bldg_hour\n'
-        f"FROM {ts_table} t\n"
-        f"WHERE {day} < from_iso8601_timestamp('2018-01-02T00:00:00')"
-    )
     try:
         df = athena.query(sql, no_cache=no_cache,
                           label=f"duplicate-hour check on {ts_table}")
