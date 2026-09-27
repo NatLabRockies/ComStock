@@ -106,6 +106,16 @@ def _client():
             "BuildStockQuery reflects on construction.")
     logger.info("connecting to Athena: db=%s workgroup=%s (reflecting %s)",
                 cfg["database"], cfg["workgroup"], table)
+    # athena_query_reuse=False: BuildStockQuery defaults to Athena's server-side
+    # result reuse with a SEVEN-DAY window, keyed on the query text (comments and
+    # whitespace ignored). Athena never checks whether the table's S3 data changed,
+    # so after prepare_athena_tables re-exports a run, every unchanged query keeps
+    # returning the results of its first execution for a week -- and `no_cache=True`
+    # here cannot bypass it, because it only skips the local parquet cache. That is
+    # how the 2026-09-21 hospital dashboards published pre-2026R1 numbers for
+    # str_100k_fixes_ts_new_sample after its tables had been rebuilt. The local
+    # cache above already makes repeat queries free, so server-side reuse buys
+    # nothing here and can only serve stale data.
     _STATE["client"] = BuildStockQuery(
         workgroup=cfg["workgroup"],
         db_name=cfg["database"],
@@ -113,6 +123,7 @@ def _client():
         db_schema=cfg["db_schema"],
         buildstock_type="comstock",
         skip_reports=True,
+        athena_query_reuse=False,
     )
     return _STATE["client"]
 
