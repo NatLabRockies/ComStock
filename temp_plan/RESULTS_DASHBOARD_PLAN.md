@@ -146,3 +146,27 @@ Housekeeping the repo owner should drive:
 - Fan motor-efficiency regression that this dashboard surfaced:
   `output/fan_motor_efficiency_regression_r2_to_r3.md`, and the fix plan in
   **ComStock-Typical**, branch `ccaradon/fix_psz_fan_eff_bug`.
+
+## 8. PR #463 review follow-up (2026-09-27)
+
+Reviewer requests (mpraprost), the open Copilot thread, and two additions asked for on
+2026-09-27. Status as of this edit; each item names the file it lives in.
+
+| # | item | root cause / decision | status |
+|---|---|---|---|
+| 1 | Timeseries tabs "having issues" (compare_upgrades) | `timeseries.check_no_duplicate_hours` counted rows per (building, hour) across ALL upgrade partitions, so any run with measures read as duplicated (5.13 rows/hour with eleven measures, 1.00 inside each partition) and both timeseries tabs were declined. Probe now restricted to `upgrade = 0` via `duplicate_hours_sql`; two unit tests. | done; verified end to end: `compare_upgrades_dbtest_5measures.py` (2026-09-27, EXIT=0) wrote Arizona, Minnesota and Ohio measure profiles and the tab renders them |
+| 2 | Axis values look random | every axis split the data maximum into four equal parts. `niceStep`/`niceTicks` place gridlines on a 1-2-5 step; scale unchanged, only labels move. Applied to `yAxis` and the six hand-rolled tick loops. | done, verified in browser |
+| 3 | Violins tiny with long tails | `boxPlot` scaled to the last outlier. New `opts.scale`: "whiskers" (default, axis just past the highest p95, outliers beyond counted in the figure corner) or "full"; Distributions tab toggle "Axis to p95 / Full range", persisted in the hash as `distScale`. | done, verified in browser |
+| 4 | Baseline (and CBECS) in measure plots | No change. Upgrade 0 already drives every baseline-vs-CBECS tab; the measure figures already pair baseline against measure (end-use pairs, multi-measure bars, release table). Reply on the PR pointing at the Annual tab's closer/further arrows for run-vs-run. | reply pending |
+| 5 | Copilot: cache key ignores table version | Local cache was already invalidated on export/crawl; the real hole was Athena's server-side result reuse (7-day, `buildstock_query` default), which served the re-exported new_sample tables stale on 09-21. `athena_query_reuse=False` in `results_dashboard/athena.py`. The clients in `comstock.py` and `gap/` still default to reuse. | done (uncommitted until this batch) |
+| 6 | Remove "Percent difference vs CBECS by building type and metric" and "Share of floor area with no natural gas" | Both panels removed from the JS (`fuelMixPanel` deleted, `sec-gasmix` jump link dropped). The SQL still computes `sqft_zero_gas`; nothing reads it now. | done |
+| 7 | Model failures per run, total and % | New leg `results_dashboard/failures.py` reads buildstockbatch's `<run>_baseline` / `<run>_upgrades` (the aggregates hold only successes, `drop_failed_runs`). `metrics/failures.csv`; "Model completion by run" panel on the Overview after the verdict strip. `Invalid` is shown as not-applicable, not failure, and the failed share is over applicable models. A published release has neither table, so the leg falls back to its aggregate, which records Fail/Invalid on measure rows but only successes on the baseline (stated in the panel). Rows are limited to the baseline plus the measures the dashboard compares; the CSV keeps all. | done; four-run dashboard shows plugfix 3/103,608, new_sample 26, fixes_ts 26, baseline_10k 2,685/103,224 (2.6%) |
+| 8 | Custom-building-spec alias shim (`comstock.py`) | required by every ComStock Typical run; was uncommitted since 09-21 | committed in this batch |
+
+Also verified while doing this: the four-run hospital dashboard reproduces from fresh
+reuse-off queries for all four runs (`verify_run_linkage.py` in the buildstock-dev-ai skill).
+
+PR housekeeping still open: tick the change-type and author checkboxes, add the
+`postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
+re-request the Copilot review. Optional: license headers on the `*.py.template` files
+(absent on main too).
