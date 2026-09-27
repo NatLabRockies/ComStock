@@ -255,6 +255,7 @@ def build_payload(assess: Path) -> dict:
         "amiShape": {p.stem.replace("ami_shape_metrics_", ""): _records(pd.read_csv(p))
                      for p in sorted(m.glob("ami_shape_metrics_*.csv"))},
         "amiAgreement": _read(m / "ami_cross_region_agreement.csv"),
+        "failures": _read(m / "failures.csv"),
         "amiLdc": {p.stem.replace("ami_ldc_", ""): _records(pd.read_csv(p))
                    for p in sorted(m.glob("ami_ldc_*.csv"))},
         # The season month lists travel with the payload so the chart caption is

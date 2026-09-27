@@ -39,7 +39,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from . import (ami_shapes, annual, athena, cbecs_ref, dashboard, design_params,
-               distributions, heating_fuel, measures, timeseries)
+               distributions, failures, heating_fuel, measures, timeseries)
 from .metrics_def import DIMENSIONS, ORDERED_CATEGORIES
 from ._version import __version__
 from .run_ref import AthenaRunRef
@@ -755,6 +755,21 @@ def _assess(args) -> None:
             } for _, r0 in headline.iterrows()},
         "ami_region": coverage.get("region"),
     }, indent=2), encoding="utf-8")
+    # Model completion per run. buildstockbatch's <run>_baseline / <run>_upgrades
+    # keep every sampled model with its completed_status; the aggregates cannot,
+    # because drop_failed_runs removes failures before the export. Fail-soft like
+    # every other leg: a run without those tables is a stated gap.
+    try:
+        fails, fail_notes = failures.assess_failures(runs, no_cache=args.no_cache)
+        fails.to_csv(out / "metrics" / "failures.csv", index=False)
+        if fail_notes:
+            coverage["failures_notes"] = fail_notes
+        logger.info("model completion: %d row(s) over %d run(s)", len(fails),
+                    fails["run"].nunique() if len(fails) else 0)
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("model completion leg skipped: %s", exc)
+        coverage["failures_skipped_reason"] = str(exc)
+
     (out / "coverage.json").write_text(json.dumps(coverage, indent=2), encoding="utf-8")
     (out / "manifest.json").write_text(json.dumps({
         "runs": [{"key": r.key, "label": r.label, "md_table": r.md_table,

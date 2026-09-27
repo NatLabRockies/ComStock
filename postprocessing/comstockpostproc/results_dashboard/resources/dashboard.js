@@ -129,7 +129,8 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
                  choice because the full grid was asked for deliberately. */
               xDim: "vintage", distDim: "building_type",
               dpGroup: "Loads", dpDim: "building_type", hfView: "diff",
-              euiMetric: "site_energy", euiBasis: "count", euiDim: "vintage" };
+              euiMetric: "site_energy", euiBasis: "count", euiDim: "vintage",
+              distScale: "whiskers" };
 
 const FUEL_SHORT = {electricity:"elec", natural_gas:"gas", fuel_oil:"oil", propane:"propane",
   district_heating:"dist heat", district_cooling:"dist cool", site_energy:"site", all_fuel:"all fuel"};
@@ -178,13 +179,34 @@ function minmax(vals){
 }
 
 /* ---------- axis helper ---------- */
+/* ---------- nice axis ticks ----------
+   Ticks used to be the data maximum split into four equal parts, so an axis read
+   0, 566, 1,132, 1,699, 2,265 -- exact, and no help to a reader looking for where
+   1,000 falls. niceTicks places them on multiples of a 1-2-5 step chosen for about
+   n intervals across [lo, hi]. The SCALE is unchanged: nothing in a figure moves,
+   only the gridlines and their labels, and the top gridline may sit below the
+   frame when the maximum is not itself a multiple of the step. */
+function niceStep(span, n){
+  if(!(span>0)) return {step:1, dec:0};
+  const raw=span/Math.max(1,n), k=Math.floor(Math.log10(raw)), mag=Math.pow(10,k), r=raw/mag;
+  const m = r<=1?1 : r<=2?2 : r<=2.5?2.5 : r<=5?5 : 10;
+  const step=m*mag;
+  const dec=Math.min(6, Math.max(0, -k + (m===2.5?1:0) - (m===10?1:0)));
+  return {step, dec};
+}
+function niceTicks(lo, hi, n=4){
+  const {step, dec}=niceStep(hi-lo, n), ticks=[];
+  for(let v=Math.ceil(lo/step-1e-9)*step; v<=hi+step*1e-9; v+=step) ticks.push(+v.toFixed(dec+2));
+  return {ticks: ticks.length>1?ticks:[lo,hi], dec};
+}
 function yAxis(svg, max, padL, padT, plotH, width, padR, dec, ticks=4){
-  for(let i=0;i<=ticks;i++){
-    const v = max*i/ticks, yy = padT+plotH-(v/max)*plotH;
+  const ntk=niceTicks(0, max, ticks);
+  ntk.ticks.forEach(v=>{
+    const yy = padT+plotH-(v/max)*plotH;
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
     const t = el("text",{x:padL-10,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent = fmt(v, dec); svg.appendChild(t);
-  }
+    t.textContent = fmt(v, Math.max(dec, ntk.dec)); svg.appendChild(t);
+  });
 }
 
 /* ---------- grouped bars, N series, optional CI on one of them ---------- */
@@ -614,11 +636,19 @@ function boxPlot(host, cats, series, opts={}){
   /* The scale must clear whatever is actually drawn: the violin tail and any
      outlier dot reach past p95, and clipping them would misrepresent the
      spread rather than merely look wrong. */
+  /* opts.scale: "whiskers" (default) ends the axis just past the highest p95, so
+     the boxes keep their size when a few buildings sit far out in the tail; the
+     density and outliers beyond it are cut at the frame and counted in the
+     corner. "full" restores the old behaviour, clearing every outlier dot and
+     KDE tail -- honest about the spread, and unreadable for a 15-type row. */
+  const clipTails = (opts.scale||"whiskers")!=="full";
   const vals = cats.flatMap(c=>series.map(s=>c.stats[s.key]).filter(Boolean).flatMap(v=>{
+    if(clipTails) return [v.p95];
     const kd=parseKde(v.kde);
     return [v.p95].concat(kd?[kd.x1]:[]).concat(parseOutliers(v.outliers));
   }));
-  const max = Math.max(...vals.filter(v=>Number.isFinite(v)), 1e-9)*1.05;
+  const max = Math.max(...vals.filter(v=>Number.isFinite(v)), 1e-9)*(clipTails?1.08:1.05);
+  let hiddenPts=0;
   const y = v => padT+plotH-(v/max)*plotH;
   // Compact charts scale DOWN to their container so side-by-side panels need no
   // scroll bars; they never scale up past natural size. Full-width charts keep a
@@ -668,7 +698,9 @@ function boxPlot(host, cats, series, opts={}){
       if(Number.isFinite(st.mean))
         g.appendChild(el("line",{x1:x,y1:y(st.mean),x2:x+bw,y2:y(st.mean),
           stroke:"#111","stroke-width":1.4,"stroke-dasharray":"2.5 2"}));
-      parseOutliers(st.outliers).filter(v=>v>=0&&v<=max).forEach(v=>g.appendChild(el("circle",
+      const outs=parseOutliers(st.outliers);
+      hiddenPts+=outs.filter(v=>v>max).length;
+      outs.filter(v=>v>=0&&v<=max).forEach(v=>g.appendChild(el("circle",
         {cx, cy:y(v), r:1.15, fill:"var(--ink-2)","pointer-events":"none"})));
       g.addEventListener("mousemove", ev=>showTip(
         `<b>${c.label} · ${s.label}</b>`+
@@ -685,6 +717,13 @@ function boxPlot(host, cats, series, opts={}){
     const lx=x0+slot/2+6, ly=H-padB+18;
     tickLabel(svg, lx, ly, c.label, plan);
   });
+  if(clipTails && hiddenPts){
+    // Left-anchored: a 15-type chart scrolls sideways, and a note at the far
+    // right edge would sit off-screen until the reader scrolled to it.
+    const n=el("text",{x:padL+6,y:padT+11,class:"ax","text-anchor":"start"});
+    n.textContent=`axis ends past p95 · ${fmt(hiddenPts,0)} outlier${hiddenPts===1?"":"s"} above`;
+    svg.appendChild(n);
+  }
   svg.appendChild(el("line",{x1:padL-6,y1:y(0),x2:width-padR,y2:y(0),class:"zero"}));
   plotFrame(svg, padL, padT, width-padR-padL, H-padT-padB);
   host.innerHTML=""; attachChart(host, svg, opts.copy);
@@ -704,17 +743,18 @@ function histChart(host, bins, series, opts={}){
   // No style at all meant the global `svg{width:100%}` rule stretched this one
   // to the full panel — a 680-unit figure at 1098px, magnifying its text to 18px.
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  for(let i=0;i<=4;i++){
-    const v=yMax*i/4, yy=y(v);
+  const nty=niceTicks(0, yMax, 4);
+  nty.ticks.forEach(v=>{
+    const yy=y(v);
     svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent=(v*100).toFixed(0)+"%"; svg.appendChild(t);
-  }
-  for(let i=0;i<=5;i++){
-    const v=xMin+(xMax-xMin)*i/5;
+    t.textContent=(v*100).toFixed(Math.max(0,nty.dec-2))+"%"; svg.appendChild(t);
+  });
+  const ntx=niceTicks(xMin, xMax, 5);
+  ntx.ticks.forEach(v=>{
     const t=el("text",{x:x(v),y:H-padB+16,class:"ax","text-anchor":"middle"});
-    t.textContent=fmt(v,0); svg.appendChild(t);
-  }
+    t.textContent=fmt(v,ntx.dec); svg.appendChild(t);
+  });
   const xl=el("text",{x:padL+plotW/2,y:H-6,class:"axl","text-anchor":"middle"});
   xl.textContent=opts.xLabel||"kBtu/ft²·yr"; svg.appendChild(xl);
   const ylb=el("text",{x:12,y:padT+plotH/2,class:"axl","text-anchor":"middle",
@@ -787,7 +827,8 @@ function profileChart(host, pts, opts={}){
   const dec = Math.min(6, Math.max(0, 1-Math.floor(Math.log10(max))));
   const tickFmt = v => v.toFixed(dec);
   // padL after the tick format is known, so it fits the labels it must clear
-  const padL = axisPadL([0,1,2,3].map(i=>tickFmt(max*i/3)), true);
+  const ntk=niceTicks(0, max, 3), tickDec=Math.max(dec, ntk.dec);
+  const padL = axisPadL(ntk.ticks.map(v=>v.toFixed(tickDec)), true);
   const plotW = W-padL-padR;
   const x=h=>padL+(h/23)*plotW, y=v=>padT+plotH-(v/max)*plotH;
   // Needs figStyle like every other figure: without it the global
@@ -795,12 +836,12 @@ function profileChart(host, pts, opts={}){
   // nothing capped it when the row-fill pass widened it — in a grid with fixed
   // 310px tracks the seasonal panels then drew over each other.
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  for(let i=0;i<=3;i++){
-    const v=max*i/3, yy=y(v);
+  ntk.ticks.forEach(v=>{
+    const yy=y(v);
     svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-7,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent=tickFmt(v); svg.appendChild(t);
-  }
+    t.textContent=v.toFixed(tickDec); svg.appendChild(t);
+  });
   [0,6,12,18,23].forEach(h=>{
     const t=el("text",{x:x(h),y:H-padB+15,class:"ax","text-anchor":"middle"});
     t.textContent=h; svg.appendChild(t);
@@ -1101,12 +1142,13 @@ function waterfall(host, items, opts={}){
   const hi=Math.max(0,...steps.map(s=>Math.max(s.start,s.end)));
   const plotH=H-padT-padB, y=v=>padT+plotH-((v-lo)/(hi-lo||1))*plotH;
   const svg=el("svg",{viewBox:`0 0 ${width} ${H}`, style:figStyle(width)});
-  for(let i=0;i<=4;i++){
-    const v=lo+(hi-lo)*i/4, yy=y(v);
+  const ntk=niceTicks(lo, hi, 4);
+  ntk.ticks.forEach(v=>{
+    const yy=y(v);
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-10,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent=fmt(v,0); svg.appendChild(t);
-  }
+    t.textContent=fmt(v,ntk.dec); svg.appendChild(t);
+  });
   const yl=el("text",{x:12,y:padT+plotH/2,class:"axl","text-anchor":"middle",
     transform:`rotate(-90 12 ${padT+plotH/2})`});
   yl.textContent="TBtu"; svg.appendChild(yl);
@@ -1230,38 +1272,6 @@ function wireFeLegend(rerender){
   }));
 }
 
-/* Zero-gas floor-area share: a fuel-ASSIGNMENT check rather than a headline
-   number, so it belongs with the detailed CBECS comparisons rather than on the
-   Overview. Percent shares on both sides, so the difference is in points. */
-function fuelMixPanel(){
-  let t=`<div class="panel" id="sec-gasmix"><h2>Share of floor area with no natural gas by
-      building type — %
-      <span class="badge">CBECS 2018 vs ${RUNS.map(r=>runShort(r.key)).join(" vs ")}</span>
-      <span class="badge">difference in pp</span></h2>
-    <p class="note">A heating-fuel gap shows up here rather than in an end-use total. Where the
-    columns disagree, a gas difference is a fuel-assignment question, not a thermostat one.</p>
-    <div class="scroll"><table><thead><tr><th>Building type</th><th>CBECS</th>
-    ${RUNS.map(r=>`<th>${runShort(r.key)}</th>`).join("")}
-    <th>${runShort(PRIMARY)} − CBECS (pp)</th>
-    </tr></thead><tbody>`;
-  ["All",...D.buildingTypes].forEach(bt=>{
-    const cb=(fuelMixBy[PRIMARY]||{})[bt];
-    if(!cb) return;
-    const cbv=cb.cbecs_zero_gas_share*100;
-    t+=`<tr${bt==="All"?' style="font-weight:650;background:var(--grid)"':""}><td>${bt}</td>
-      <td>${fmt(cbv)}%</td>`;
-    RUNS.forEach(r=>{
-      const f=(fuelMixBy[r.key]||{})[bt];
-      t+=`<td>${f?fmt(f.comstock_zero_gas_share*100)+"%":absentTag("noValue")}</td>`;
-    });
-    // A difference of two percent shares is percentage POINTS, not a percent.
-    const dpp=cb.comstock_zero_gas_share*100-cbv;
-    t+=`<td><span class="cell" style="background:${diffColor(dpp)}">${
-      (dpp>0?"+":"")+dpp.toFixed(1)+" pp"}</span></td></tr>`;
-  });
-  return t+`</tbody></table></div></div>`;
-}
-
 /* ---------- the verdict strip ----------
    The answer to "is this run any good" used to be the All row of the second
    panel, below the fold and under ~320 words of notes. This puts the national
@@ -1321,6 +1331,62 @@ function verdictStrip(){
 }
 
 /* ---------- views ---------- */
+/* ---------- model completion per run ----------
+   From buildstockbatch's own <run>_baseline / <run>_upgrades tables, which keep
+   every sampled model with its completed_status. The aggregates cannot answer
+   this: drop_failed_runs removes failures before the export, so every row they
+   hold is a success. Absent tables are reported, not invented. */
+function completionPanel(){
+  const rows=D.failures||[];
+  const notes=(D.coverage||{}).failures_notes||{};
+  const reason=(D.coverage||{}).failures_skipped_reason;
+  let h=`<div class="panel"><h2>Model completion by run
+      <span class="badge">Fail = simulation failed · Invalid = measure not applicable</span></h2>
+    <p class="note">Every sampled model, from buildstockbatch's own results tables. On a measure row,
+    <b>Invalid</b> is the buildings the measure does not apply to, not a failure, so the failed share
+    is taken over the applicable models only.</p>`;
+  const noteLine=Object.entries(notes).map(([k,v])=>`<b>${k}</b> — ${v}`).join("; ");
+  if(!rows.length)
+    return h+`<p class="note">Not computed${reason?": "+reason:""}.${noteLine?" "+noteLine:""}</p></div>`;
+  const by={};
+  rows.forEach(r=>{
+    const k=`${r.run}|${r.upgrade}`;
+    const e=(by[k]=by[k]||{run:r.run,upgrade:String(r.upgrade),total:+r.total||0,statuses:{}});
+    e.statuses[r.completed_status]=(e.statuses[r.completed_status]||0)+(+r.n||0);
+  });
+  const runOrder=RUNS.map(r=>r.key);
+  // The baseline row always, plus the measures this dashboard compares: a
+  // published release carries every measure it ever ran, and sixty rows of
+  // applicability for measures nobody asked about would bury the one number
+  // this table exists for. The CSV keeps every row.
+  const compared=new Set((typeof MEAS_LIST!=="undefined"?MEAS_LIST:[]).map(m=>String(m.up)));
+  const keys=Object.keys(by).filter(k=>by[k].upgrade==="0"||compared.has(by[k].upgrade))
+    .sort((a,b)=>{ const A=by[a],B=by[b];
+    const ra=runOrder.indexOf(A.run), rb=runOrder.indexOf(B.run);
+    return ra!==rb ? ra-rb : (+A.upgrade)-(+B.upgrade); });
+  const measName=u=>{ const m=(typeof MEAS_LIST!=="undefined"?MEAS_LIST:[]).find(m=>String(m.up)===String(u));
+    return m&&m.name ? " · "+m.name : ""; };
+  h+=`<div class="scroll"><table><thead><tr><th>Run</th><th>Upgrade</th><th>Models</th>
+      <th>Not applicable</th><th>Applicable</th><th>Failed</th><th>Failed % of applicable</th>
+      <th>By status</th></tr></thead><tbody>`;
+  keys.forEach(k=>{ const r=by[k];
+    const invalid=r.statuses["Invalid"]||0;
+    const failed=Object.entries(r.statuses).filter(([s])=>s!=="Success"&&s!=="Invalid")
+      .reduce((t,[,n])=>t+n,0);
+    const applicable=r.total-invalid;
+    const pctF=applicable?failed/applicable*100:0, base=r.upgrade==="0";
+    h+=`<tr${base?' style="font-weight:650"':""}><td>${runShort(r.run)}</td>
+      <td>${base?"0 · baseline":r.upgrade+measName(r.upgrade)}</td>
+      <td>${fmt(r.total,0)}</td><td>${invalid?fmt(invalid,0):"—"}</td><td>${fmt(applicable,0)}</td>
+      <td>${fmt(failed,0)}</td><td>${pctF.toFixed(pctF>0&&pctF<0.01?3:2)}%</td>
+      <td style="text-align:left">${Object.entries(r.statuses).sort((a,b)=>b[1]-a[1])
+        .map(([s,n])=>`${s} ${fmt(n,0)}`).join(" · ")}</td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  if(noteLine) h+=`<p class="note">${noteLine}</p>`;
+  return h+`</div>`;
+}
+
 function renderOverview(){
   const cols = D.headline;
   /* Electricity and gas by building type lead the tab: they are the comparison
@@ -1337,67 +1403,7 @@ function renderOverview(){
       <div style="margin-top:10px"><h3>Natural gas — TBtu</h3><div id="rvr-gas"></div></div></div>`;
   }
   h += verdictStrip();
-  h += `<div class="panel"><h2>Percent difference vs CBECS by building type and metric — % of CBECS
-      <span class="badge">${runShort(PRIMARY)} − CBECS 2018</span>
-      <span class="badge">AMI columns in pts and pp</span></h2>
-    <p class="note"><b>Cell value:</b> (${runLabel(PRIMARY)} − CBECS) ÷ CBECS. Blue = under CBECS,
-    orange = over.<br>
-    <b>Bold:</b> outside the CBECS 95% confidence interval. <b>†:</b> CBECS has no interval for
-    this metric, so the difference is untested — not passed. Cross-fuel metrics are always
-    daggered because the jackknife interval is not additive across fuels.
-    ${MULTI&&SECONDARY?`<br><b>Arrow</b> (vs ${runShort(SECONDARY.key)}): ▼ gap narrowed, ▲ gap widened,
-    · within 0.5 pp. It tracks the gap's <i>magnitude</i>.`:""}<br>
-    <b>AMI columns:</b> ${runLabel(PRIMARY)} vs metered, region <b>${state.amiRegion}</b> only,
-    on day-sum-normalized profiles (not kWh/ft², whose floor-area denominator is uncertain).
-    Shape RMSE in points, overnight share Δ in percentage points.<br>
-    Click a row to open that building type.</p>
-    <div class="scroll"><table><thead><tr><th>Building type</th>`;
-  cols.forEach(([,l])=>h+=`<th>${l}</th>`);
-  // The AMI columns are one region's numbers, picked by a selector on another
-  // tab, so the region is named in the header rather than left to the note.
-  h += `<th>AMI shape RMSE, mean over season × day type · ${state.amiRegion}</th>
-        <th>AMI overnight share Δ, mean over season × day type · ${state.amiRegion}</th>
-        </tr></thead><tbody>`;
-  const shapeBy={};
-  (D.amiShape[state.amiRegion]||[]).forEach(r=>{ (shapeBy[r.building_type] ||= []).push(r); });
-  const mean=(a,k)=>{const v=a.map(r=>r[k]).filter(x=>x!==null&&x!==undefined);
-    return v.length?v.reduce((s,x)=>s+x,0)/v.length:null;};
-  const prim = annualBy[PRIMARY]||{};
-  ["All",...D.buildingTypes].forEach(bt=>{
-    const row=prim[bt]||{}, isAll=bt==="All";
-    h+=`<tr class="${isAll?"":"clickable"}" ${isAll?"":`data-type="${bt}"`}
-        style="${isAll?"font-weight:650;background:var(--grid)":""}"><td>${bt}</td>`;
-    cols.forEach(([k])=>{
-      const r=row[k], p=r?r.pct_diff:null, out=r&&r.within_cbecs_ci95===false;
-      // Three states, not two: tested-and-outside (bold), tested-and-inside
-      // (plain), and NOT TESTABLE (dagger). Derived cross-fuel metrics have no
-      // CBECS interval, so treating null as "inside" made a +102% heating miss
-      // read as consistent with the survey.
-      const untested = r && (r.within_cbecs_ci95===null||r.within_cbecs_ci95===undefined)
-        && p!==null && p!==undefined;
-      let arrow="";
-      if(MULTI&&SECONDARY&&p!==null&&p!==undefined){
-        const o=((annualBy[SECONDARY.key]||{})[bt]||{})[k];
-        const po=o?o.pct_diff:null;
-        if(po!==null&&po!==undefined){
-          const d=Math.abs(p)-Math.abs(po);
-          arrow = d<-0.5 ? ` <span style="color:var(--good)" title="gap shrank vs ${runShort(SECONDARY.key)}">▼</span>`
-                : d>0.5  ? ` <span style="color:var(--bad)" title="gap grew vs ${runShort(SECONDARY.key)}">▲</span>`
-                : ` <span style="color:var(--ink-3)" title="unchanged vs ${runShort(SECONDARY.key)}">·</span>`;
-        }
-      }
-      h+=`<td><span class="cell ${out?"ci-out":""}" style="background:${diffColor(p)}"
-        ${untested?'title="CBECS carries no confidence interval for this metric — untested, not passed"':""}
-        >${pct(p)}${untested?'<span class="ci-na">†</span>':""}</span>${arrow}</td>`;
-    });
-    const sh=shapeBy[snake(bt)]||[];
-    const csS=mean(sh,"overnight_share_comstock"), amS=mean(sh,"overnight_share_ami");
-    const dS=(csS===null||amS===null)?null:100*(csS-amS);
-    h+=`<td>${fmt(mean(sh,"daytype_shape_rmse_pts"),2)}</td>`;
-    h+=`<td><span class="cell" style="background:${diffColor(dS===null?null:dS*4)}">${
-      dS===null?absentTag("noValue"):(dS>0?"+":"")+dS.toFixed(1)+" pp"}</span></td></tr>`;
-  });
-  h+=`</tbody></table></div></div>`;
+  h += completionPanel();
 
   // ----- ranked "where to look" -----
   const rankDims={building_type:"Building type", vintage:"Building type × vintage",
@@ -1768,7 +1774,7 @@ function renderCross(){
   const SECTIONS=[["sec-fuels","By fuel"],["sec-enduse","By end use"]]
     .concat(shownDims.map(d=>
       ["sec-"+d,(D.dimensions[d]||{label:d}).label.replace(/,.*$/,"")]))
-    .concat([["sec-gasmix","Gas prevalence"],["sec-gap","End-use gap waterfalls"]]);
+    .concat([["sec-gap","End-use gap waterfalls"]]);
   h+=`<div class="panel" style="position:sticky;top:64px;z-index:20;padding:9px 14px">
     <div class="legend" style="gap:6px 10px;margin:0"><span class="legend-title"
       style="margin:0 4px 0 0">Jump to</span>${SECTIONS.map(([id,lab])=>
@@ -1823,7 +1829,6 @@ function renderCross(){
       anchor="";
     });
   });
-  h+=fuelMixPanel();
   h+=enduseWaterfallPanel("All", ' id="sec-gap"');
   $("#view").innerHTML=h;
   renderEnduseWaterfalls("All");
@@ -2008,7 +2013,7 @@ function distBoxCats(dim, metric, basis, datasets){
 }
 
 function renderDistributions(){
-  const basis=state.euiBasis;
+  const basis=state.euiBasis, scale=state.distScale||"whiskers";
   const datasets=[{key:"CBECS 2018",label:"CBECS 2018",color:D.cbecsColor}]
     .concat(RUNS.map(r=>({key:r.key,label:r.label,color:r.color})));
 
@@ -2022,12 +2027,19 @@ function renderDistributions(){
       <div class="tabs" role="group" aria-label="Weighting">
         <button class="tab" data-basis="count" aria-selected="${basis==="count"}">By buildings</button>
         <button class="tab" data-basis="area" aria-selected="${basis==="area"}">By floor area</button>
+      </div>
+      <div class="tabs" role="group" aria-label="Axis" style="margin-left:8px">
+        <button class="tab" data-scale="whiskers" aria-selected="${scale==="whiskers"}">Axis to p95</button>
+        <button class="tab" data-scale="full" aria-selected="${scale==="full"}">Full range</button>
       </div></div>
     <div class="legend">${datasets.map(d=>swatch(d.color,d.label)).join("")}</div>
     <p class="note">Every part of these is <b>weighted on the basis in the badge above</b>:
     <b>box</b> = interquartile range (p25–p75), <b>solid line</b> = median, <b>dashed line</b> =
     mean, <b>whiskers</b> = 5th and 95th percentiles, <b>dots</b> = points beyond 1.5×IQR, and the
     shaded outline is a kernel density. Hover for the full statistics and sample size.
+    <b>Axis to p95</b> ends each axis just past the highest 95th-percentile whisker so the boxes
+    stay readable; the density and any outliers beyond it are cut at the frame and counted in the
+    figure's corner. <b>Full range</b> extends the axis to the last outlier.
     ${basis==="count"
       ? "Weighted by building count — the distribution of a typical <i>building</i>."
       : "Weighted by floor area — where the <i>square footage</i>, and so most of the energy, sits."}
@@ -2091,7 +2103,7 @@ function renderDistributions(){
     EUI_METRICS.forEach(([m,ml])=>{
       boxPlot($(`#dist-${dim}-${m.replace(/[^a-z_]/g,"")}`),
               distBoxCats(dim,m,basis,datasets), datasets,
-              {height:compact?260:290, compact,
+              {height:compact?260:290, compact, scale:state.distScale||"whiskers",
                copy:{title:`${ml} EUI by ${lab} (kBtu/ft²·yr, ${basis==="count"?"building":"floor-area"}-weighted)`,
                      legend:datasetLegendItems()}});
     });
@@ -2123,6 +2135,8 @@ function renderDistributions(){
   $("#histMetric").addEventListener("change", e=>{ state.euiMetric=e.target.value; renderDistributions(); syncHash(); });
   document.querySelectorAll("[data-basis]").forEach(b=>
     b.addEventListener("click",()=>{ state.euiBasis=b.dataset.basis; renderDistributions(); syncHash(); }));
+  document.querySelectorAll("[data-scale]").forEach(b=>
+    b.addEventListener("click",()=>{ state.distScale=b.dataset.scale; renderDistributions(); syncHash(); }));
   wireDimToggle("distDimCtl", "distDim", renderDistributions);
 }
 
@@ -2154,12 +2168,13 @@ function ldcChart(host, pts, opts={}){
   const x=h=>padL+(h/xMax)*plotW, y=v=>padT+plotH-(v/yMax)*plotH;
   const dec=Math.min(6,Math.max(0,1-Math.floor(Math.log10(yMax))));
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  for(let i=0;i<=4;i++){
-    const v=yMax*i/4, yy=y(v);
+  const ntk=niceTicks(0, yMax, 4);
+  ntk.ticks.forEach(v=>{
+    const yy=y(v);
     svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent=v.toFixed(dec); svg.appendChild(t);
-  }
+    t.textContent=v.toFixed(Math.max(dec, ntk.dec)); svg.appendChild(t);
+  });
   [0,.25,.5,.75,1].forEach(f=>{
     const t=el("text",{x:x(xMax*f),y:H-padB+16,class:"ax","text-anchor":"middle"});
     t.textContent=Math.round(xMax*f).toLocaleString(); svg.appendChild(t);
@@ -3046,7 +3061,8 @@ function stackedBarChart(host, bars, opts={}){
   const f0 = bars.some(b=>b.topLabel) ? Math.min(0.4, room0/Math.max(1,plotH0)) : 0;
   const posMax0 = f0 ? (rawMax0-f0*negMin0)/(1-f0) : rawMax0;
   const vdec0 = Math.abs(posMax0-negMin0)<10 ? 1 : 0;
-  const padL = axisPadL([0,1,2,3,4].map(i=>fmt(negMin0+(posMax0-negMin0)*i/4, vdec0)), true);
+  const ntk0=niceTicks(negMin0, posMax0, 4);
+  const padL = axisPadL(ntk0.ticks.map(v=>fmt(v, Math.max(vdec0, ntk0.dec))), true);
   const availW = fillW ? Math.max(120, fillW-padL-padR)
                        : (opts.wide?760:560);
   // grow to fit the bars, but never past the column the caller gave us
@@ -3105,12 +3121,13 @@ function stackedBarChart(host, bars, opts={}){
      unreadable numbers on more. The 1.35x factor is the label's line box. */
   const SEG_FONT=11.5;
   const labelMin=Math.max(SEG_FONT*1.35, plotH*0.045);
-  for(let i=0;i<=4;i++){
-    const v=negMin+(posMax-negMin)*i/4, yy=y(v);
+  const ntk=niceTicks(negMin, posMax, 4);
+  ntk.ticks.forEach(v=>{
+    const yy=y(v);
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-10,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent=fmt(v,vdec); svg.appendChild(t);
-  }
+    t.textContent=fmt(v, Math.max(vdec, ntk.dec)); svg.appendChild(t);
+  });
   const yl=el("text",{x:12,y:padT+plotH/2,class:"axl","text-anchor":"middle",
     transform:`rotate(-90 12 ${padT+plotH/2})`});
   yl.textContent=opts.yLabel||"TBtu"; svg.appendChild(yl);
@@ -5241,7 +5258,7 @@ function renderCoverage(){
 /* ---------- shell ---------- */
 /* deep-linkable view state: #tab=annual&type=LargeOffice&ami=pepco... so a
    specific view can be shared by sending the URL */
-const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim",
+const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim","distScale",
                  "dpGroup","dpDim","hfView",
                  "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
                  "measDistGroup","measMulti","runsHidden","measBasis","measPop",
