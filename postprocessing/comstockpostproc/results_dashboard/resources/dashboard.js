@@ -103,8 +103,11 @@ const runLabel = k => esc((ALL_RUNS.find(r=>r.key===k)||{}).label || k);
 /* Short form for figure titles: "2025 R3" rather than
    "2025 R3 (OEDI comstock_amy2018_release_3)". The full label stays in the page
    subtitle and the Coverage tab, where the source table matters. */
-const runShort = k => String(runLabel(k)).replace(/\s*\(.*$/,"").trim() || k;
+const runShort = k => String(runLabel(k)).replace(/\s*\(.*$/,"").trim() || esc(k);
 const runColor = k => (ALL_RUNS.find(r=>r.key===k)||{}).color || "#0072B2";
+// Colors come from the driver as hex; anything else would land in a style
+// attribute as-is, so it falls back to a neutral token instead.
+const safeColor = c => /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? c : "var(--ink-3)";
 const CROSS = "__cross__";
 
 const CROSS_METRICS = [
@@ -289,8 +292,8 @@ function groupedBar(host, rows, series, opts={}){
       const rect = el("rect",{x, y:y(v), width:bw, height:Math.max(y(0)-y(v),0),
         fill, stroke:"var(--panel)","stroke-width":0.8, opacity:dimmed?.22:1});
       rect.addEventListener("mousemove", ev => showTip(
-        `<b>${r.label}</b>` +
-        series.map(s2=>`<div class="row"><span>${s2.label}</span><span>${fmt(r.values[s2.key],2)}</span></div>`).join("") +
+        `<b>${esc(r.label)}</b>` +
+        series.map(s2=>`<div class="row"><span>${esc(s2.label)}</span><span>${fmt(r.values[s2.key],2)}</span></div>`).join("") +
         (r.ciLow!==null&&r.ciLow!==undefined
           ? `<div class="row"><span>CBECS 95% CI</span><span>${fmt(r.ciLow,2)}–${fmt(r.ciHigh,2)}</span></div>`:"") +
         (r.note?`<div class="row"><span>${r.note}</span><span></span></div>`:""), ev));
@@ -1190,9 +1193,7 @@ function waterfall(host, items, opts={}){
 
 /* ---------- legends ---------- */
 function swatch(color,label){
-  // color is a hex from the driver; anything else would become a style value.
-  const c=/^#[0-9a-fA-F]{3,8}$/.test(String(color)) ? color : "var(--ink-3)";
-  return `<span class="key"><span class="sw" style="background:${c}"></span>${esc(label)}</span>`;
+  return `<span class="key"><span class="sw" style="background:${safeColor(color)}"></span>${esc(label)}</span>`;
 }
 // The hatch key only belongs on charts that actually break CBECS into end uses;
 // showing it elsewhere legends a pattern that never appears (and disagreed with
@@ -1357,9 +1358,11 @@ function completionPanel(){
     <p class="note">Every sampled model, from buildstockbatch's own results tables. On a measure row,
     <b>Invalid</b> is the buildings the measure does not apply to, not a failure, so the failed share
     is taken over the applicable models only.</p>`;
-  const noteLine=Object.entries(notes).map(([k,v])=>`<b>${k}</b> — ${v}`).join("; ");
+  // Notes and the skip reason are Athena exception text and table names:
+  // data, escaped like every other string that reaches innerHTML.
+  const noteLine=Object.entries(notes).map(([k,v])=>`<b>${esc(k)}</b> — ${esc(v)}`).join("; ");
   if(!rows.length)
-    return h+`<p class="note">Not computed${reason?": "+reason:""}.${noteLine?" "+noteLine:""}</p></div>`;
+    return h+`<p class="note">Not computed${reason?": "+esc(reason):""}.${noteLine?" "+noteLine:""}</p></div>`;
   const by={};
   rows.forEach(r=>{
     const k=`${r.run}|${r.upgrade}`;
@@ -1377,7 +1380,7 @@ function completionPanel(){
     const ra=runOrder.indexOf(A.run), rb=runOrder.indexOf(B.run);
     return ra!==rb ? ra-rb : (+A.upgrade)-(+B.upgrade); });
   const measName=u=>{ const m=(typeof MEAS_LIST!=="undefined"?MEAS_LIST:[]).find(m=>String(m.up)===String(u));
-    return m&&m.name ? " · "+m.name : ""; };
+    return m&&m.name ? " · "+esc(m.name) : ""; };
   h+=`<div class="scroll"><table><thead><tr><th>Run</th><th>Upgrade</th><th>Models</th>
       <th>Not applicable</th><th>Applicable</th><th>Failed</th><th>Failed % of applicable</th>
       <th>By status</th></tr></thead><tbody>`;
@@ -1393,11 +1396,11 @@ function completionPanel(){
     const failCell = unrecorded ? `<span class="absent" title="the published aggregate holds successes only">not recorded</span>` : fmt(failed,0);
     const pctCell = unrecorded ? `<span class="absent">—</span>` : `${pctF.toFixed(pctF>0&&pctF<0.01?3:2)}%`;
     h+=`<tr${base?' style="font-weight:650"':""}><td>${runShort(r.run)}</td>
-      <td>${base?"0 · baseline":r.upgrade+measName(r.upgrade)}</td>
+      <td>${base?"0 · baseline":esc(r.upgrade)+measName(r.upgrade)}</td>
       <td>${fmt(r.total,0)}</td><td>${invalid?fmt(invalid,0):"—"}</td><td>${fmt(applicable,0)}</td>
       <td>${failCell}</td><td>${pctCell}</td>
       <td style="text-align:left">${Object.entries(r.statuses).sort((a,b)=>b[1]-a[1])
-        .map(([s,n])=>`${s} ${fmt(n,0)}`).join(" · ")}</td></tr>`;
+        .map(([s,n])=>`${esc(s)} ${fmt(n,0)}`).join(" · ")}</td></tr>`;
   });
   h+=`</tbody></table></div>`;
   if(noteLine) h+=`<p class="note">${noteLine}</p>`;
@@ -1546,7 +1549,7 @@ function renderRankTable(){
   top.forEach((r,i)=>{
     const share=natGap?100*r.delta/natGap:null;
     t+=`<tr class="clickable" data-type="${r.bt}"><td>${i+1}</td>
-      <td style="text-align:left">${r.label}${r.within?' <span class="badge">inside CI</span>':""}</td>
+      <td style="text-align:left">${esc(r.label)}${r.within?' <span class="badge">inside CI</span>':""}</td>
       <td>${fmt(r.cbecs,1)}</td><td>${fmt(r.comstock,1)}</td>
       <td><span class="cell" style="background:${diffColor(r.delta>0?30:-30)}">${(r.delta>0?"+":"")+fmt(r.delta,1)}</span></td>
       <td>${share===null?absentTag("noValue"):fmt(share,0)+"%"}</td>
@@ -3660,7 +3663,7 @@ function renderMeasuresAnnual(){
   // for it. Logged-only skips are invisible to whoever opens the file.
   if(D.coverage && D.coverage.measures_ts_skipped_reason){
     h+=`<div class="panel"><p class="note"><b>Measure load shapes not computed.</b>
-      ${D.coverage.measures_ts_skipped_reason}</p></div>`;
+      ${esc(D.coverage.measures_ts_skipped_reason)}</p></div>`;
   }
   h+=measReleasePanel();
 
@@ -4126,7 +4129,7 @@ function renderMeasuresTs(){
     // re-run with.
     const why=(D.coverage||{}).measures_ts_skipped_reason;
     $("#view").innerHTML=`<div class="panel"><h2>Measure load shapes — not computed</h2>
-      <p class="note">${why||`No measure timeseries in this assessment. This leg needs the run's
+      <p class="note">${why?esc(why):`No measure timeseries in this assessment. This leg needs the run's
       by-state-and-county metadata aggregate plus a queryable timeseries table, and at least one
       state to profile (taken from the run's <code>timeseries_locations_to_plot</code>).`}</p>
       <p class="note">The measure <b>annual</b> savings on the previous tab do not depend on any of
@@ -5103,16 +5106,16 @@ function renderStateTiles(met){
 function renderCoverage(){
   const c=D.coverage, man=D.manifest;
   let h=`<div class="panel"><h2>Runs compared — source tables and colors</h2><table class="wrap-cells"><tbody>
-    ${(man.runs||[]).map(r=>`<tr><td><span class="sw" style="background:${r.color}"></span>
-      ${r.label}${r.key===D.primaryRun?" <b>(primary)</b>":""}</td>
-      <td style="font-size:12px">${r.md_table}${r.ts_table?"<br>"+r.ts_table:""}</td></tr>`).join("")}
+    ${(man.runs||[]).map(r=>`<tr><td><span class="sw" style="background:${safeColor(r.color)}"></span>
+      ${esc(r.label)}${r.key===D.primaryRun?" <b>(primary)</b>":""}</td>
+      <td style="font-size:12px">${esc(r.md_table)}${r.ts_table?"<br>"+esc(r.ts_table):""}</td></tr>`).join("")}
     </tbody></table>
     ${Object.keys(man.dropped_runs||{}).length?`<p class="note"><b>Requested but not
       included:</b> ${Object.entries(man.dropped_runs).map(([k,why])=>
-      `<b>${k}</b> — ${why}`).join("; ")}. This panel lists what the assessment COVERED;
+      `<b>${esc(k)}</b> — ${esc(why)}`).join("; ")}. This panel lists what the assessment COVERED;
       without this line a run that was asked for and could not be reached is
       indistinguishable from one that was never requested.</p>`:""}
-    ${c.ami_skipped_reason?`<p class="note"><b>AMI skipped:</b> ${c.ami_skipped_reason}.</p>`:""}</div>`;
+    ${c.ami_skipped_reason?`<p class="note"><b>AMI skipped:</b> ${esc(c.ami_skipped_reason)}.</p>`:""}</div>`;
 
   /* AMI coverage is PER REGION. Flattening one region's slice into a single
      table made this tab understate the assessment: a building type with meters
@@ -5204,9 +5207,9 @@ function renderCoverage(){
        dropped. The upstream plotting code passes those lists to seaborn's <code>order=</code>,
        which silently discards anything unlisted — so a spelling drift reads as "this group has no
        buildings" instead of as an error.</p>
-       <table class="wrap-cells"><tbody>${keys.map(k=>`<tr><td>${k}</td><td>${
-         (a[k].unexpected_values||[]).length?"unexpected: "+a[k].unexpected_values.join(", ")+". ":""}${
-         (a[k].absent_values||[]).length?"absent from this run: "+a[k].absent_values.join(", "):""
+       <table class="wrap-cells"><tbody>${keys.map(k=>`<tr><td>${esc(k)}</td><td>${
+         (a[k].unexpected_values||[]).length?"unexpected: "+a[k].unexpected_values.map(esc).join(", ")+". ":""}${
+         (a[k].absent_values||[]).length?"absent from this run: "+a[k].absent_values.map(esc).join(", "):""
        }</td></tr>`).join("")}</tbody></table>`
     : `<p class="note">Every category in every dataset matched the canonical lists.</p>`;
   h+=`</div>`;
@@ -5263,10 +5266,10 @@ function renderCoverage(){
   </ul></div>`;
 
   h+=`<div class="panel"><h2>Sources and tool version</h2><table class="wrap-cells"><tbody>
-    ${Object.entries(D.sources).map(([k,v])=>`<tr><td>${k}</td><td style="font-size:12px">${v}</td></tr>`).join("")}
-    ${Object.entries(man.references||{}).map(([k,v])=>`<tr><td>${k}</td><td style="font-size:12px">${
-      refName(v)}</td></tr>`).join("")}
-    <tr><td>tool version</td><td>${D.toolVersion}</td></tr></tbody></table>
+    ${Object.entries(D.sources).map(([k,v])=>`<tr><td>${esc(k)}</td><td style="font-size:12px">${esc(v)}</td></tr>`).join("")}
+    ${Object.entries(man.references||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td style="font-size:12px">${
+      esc(refName(v))}</td></tr>`).join("")}
+    <tr><td>tool version</td><td>${esc(D.toolVersion)}</td></tr></tbody></table>
     <p class="note">Every number here comes from the CSVs in <code>metrics/</code>; the exact SQL is
     in <code>queries/</code>.</p></div>`;
   $("#view").innerHTML=h;
@@ -5424,8 +5427,8 @@ function init(){
         "color:var(--ink-2);cursor:pointer";
       w.title=`Show or hide ${r.label} on every view`;
       const on=!state.runsHidden.includes(r.key);
-      w.innerHTML=`<input type="checkbox" data-run="${r.key}"${on?" checked":""}>`+
-        `<span class="sw" style="background:${r.color}"></span>${runShort(r.key)}`;
+      w.innerHTML=`<input type="checkbox" data-run="${esc(r.key)}"${on?" checked":""}>`+
+        `<span class="sw" style="background:${safeColor(r.color)}"></span>${runShort(r.key)}`;
       w.querySelector("input").addEventListener("change",e=>{
         const k=e.target.dataset.run;
         state.runsHidden = e.target.checked

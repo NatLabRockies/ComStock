@@ -104,12 +104,18 @@ def fetch_comstock_annual(md_table: str, no_cache: bool = False) -> pd.DataFrame
 
 
 def roll_up(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
-    """Sum the fine-grained frame to one dimension, plus an 'All' row."""
+    """Sum the fine-grained frame to one dimension, plus an 'All' row.
+
+    min_count=1: a metric the release lacks arrives as an all-NULL column
+    (build_annual_sql emits `sqft_zero_gas` that way when the gas total is
+    absent) and must leave here as NULL, not as a 0 that reads as "no
+    building has this".
+    """
     dim_cols = set(GROUP_COLS) | set(GROUP_EXPRS)
     value_cols = [c for c in fine.columns if c not in dim_cols]
-    agg = fine.groupby(dim, as_index=False)[value_cols].sum()
+    agg = fine.groupby(dim, as_index=False)[value_cols].sum(min_count=1)
     agg = agg.rename(columns={dim: "category"})
-    all_row = fine[value_cols].sum().to_frame().T
+    all_row = fine[value_cols].sum(min_count=1).to_frame().T
     all_row.insert(0, "category", "All")
     return pd.concat([agg, all_row], ignore_index=True)
 
@@ -220,7 +226,8 @@ def roll_up_pair(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
     """Sum the fine-grained frame to (building_type x dim)."""
     dim_cols = set(GROUP_COLS) | set(GROUP_EXPRS)
     value_cols = [c for c in fine.columns if c not in dim_cols]
-    agg = fine.groupby(["building_type", dim], as_index=False, dropna=True)[value_cols].sum()
+    agg = (fine.groupby(["building_type", dim], as_index=False, dropna=True)[value_cols]
+           .sum(min_count=1))          # all-NULL stays NULL; see roll_up
     return agg.rename(columns={dim: "category"})
 
 

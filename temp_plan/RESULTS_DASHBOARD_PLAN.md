@@ -190,6 +190,23 @@ Tests: `test/test_results_dashboard_grain.py`.
 Also verified while doing this: the four-run hospital dashboard reproduces from fresh
 reuse-off queries for all four runs (`verify_run_linkage.py` in the buildstock-dev-ai skill).
 
+### Copilot review 3 (2026-09-28): 7 open threads, 3 new
+
+| thread | verdict | change |
+|---|---|---|
+| savings distributions: the model-level `drop_duplicates('bldg_id')` runs before the by-dimension loop, so a model whose rows fall in two categories of a dimension is counted in only the first | real for any geographic dimension; a no-op for today's three (building type, as-simulated climate zone, HVAC system are model attributes) | block lifted out of `assess_measures` into `measures.savings_distribution_rows`: pooled figures dedupe on the model, by-dimension figures on (model, dimension value); a log line reports how many models straddle a dimension; grain test added. Numbers unchanged for every existing dashboard. |
+| failure notes and skip reasons (Athena exception text, table names) interpolated into innerHTML unescaped, in `completionPanel` and five other sites | valid, low (same trust level as the run labels) | `esc()` on notes, reasons, statuses, measure names, run labels/tables on the Coverage tab, the sources/references table, audit values, ranked-gap labels and bar tooltips; `safeColor()` validates every colour that lands in a style attribute (also used by `swatch`); `runShort` escapes its raw-key fallback; the run-toggle `data-run` attribute is escaped |
+| `roll_up` / `roll_up_pair` turn an all-NULL metric into 0 (the `CAST(NULL AS double) AS sqft_zero_gas` case) | real | `sum(min_count=1)` in both, so a column the release lacks leaves the rollup as NULL and the page shows it as absent, not zero; test added |
+| dashboard.py unescaped labels (carried from review 2) | fixed in `bf456be6` (`html.escape`) | reply and resolve |
+| JS bundle read at import time / packaging (carried) | fixed in `bf456be6` (`_js()` at build time); `setup.py` ships `resources/*.js` via `package_data` | reply and resolve |
+| cache key ignores table version (carried) | answered by `2e1e263` (Athena result reuse off; local cache invalidated on export/crawl) | reply and resolve |
+| committed egg-info (carried) | not tracked on the branch; `.gitignore` covers `*.egg-info/` | reply and resolve |
+
+Verification: `node --check` on the bundle; 21 dashboard tests pass (8 grain, 8 timeseries,
+3 athena, plus 2 new); both local dashboards rebuilt from their existing metrics with the
+new bundle (five-measure 17.5 MB, four-run 56.6 MB) and opened in the browser without
+console errors.
+
 PR housekeeping still open: tick the change-type and author checkboxes, add the
 `postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
 re-request the Copilot review. Optional: license headers on the `*.py.template` files

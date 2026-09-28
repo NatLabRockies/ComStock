@@ -88,3 +88,33 @@ def test_annual_sql_survives_a_table_without_the_gas_total():
     with_gas = annual.build_annual_sql("run_md", {"building_type": annual.BLDG_TYPE_COL},
                                        have=have | {annual.GAS_TOTAL_COL})
     assert f'COALESCE("{annual.GAS_TOTAL_COL}", 0) = 0' in with_gas
+
+
+def test_savings_distribution_counts_a_straddling_model_in_each_dimension_category():
+    # model 1 has two geography rows in different climate zones; model 2 has one
+    dist = pd.DataFrame({
+        "bldg_id": [1, 1, 2],
+        "pct_site|fuel|site energy": [10.0, 10.0, 20.0],
+        "T|pct_site": [10.0, 10.0, 20.0],
+        "D|climate_zone": ["5A", "6A", "5A"],
+    })
+    rows = pd.DataFrame(measures.savings_distribution_rows(dist, "3", "Measure"))
+    pooled = rows[rows.group == "fuel"].set_index("category")
+    assert pooled.loc["site energy", "n_models"] == 2                      # once per model
+    by_cz = rows[rows.group == "climate_zone"].set_index("category")["n_models"].to_dict()
+    assert by_cz == {"5A": 2, "6A": 1}                                      # model 1 in BOTH zones
+
+
+def test_roll_up_keeps_an_all_null_metric_null():
+    fine = pd.DataFrame({
+        "building_type": ["Hospital", "Hospital", "Office"],
+        "sqft": [1.0, 2.0, 3.0],
+        "sqft_zero_gas": [np.nan, np.nan, np.nan],      # column the release lacks
+        "site_energy": [5.0, np.nan, 7.0],              # a real gap in one row
+    })
+    out = annual.roll_up(fine, "building_type").set_index("category")
+    assert out["sqft_zero_gas"].isna().all()                              # never 0
+    assert out.loc["All", "sqft"] == 6.0 and out.loc["Hospital", "site_energy"] == 5.0
+    pair = annual.roll_up_pair(fine.assign(vintage="1990s"), "vintage")
+    assert pair["sqft_zero_gas"].isna().all() and pair["sqft"].sum() == 6.0
+

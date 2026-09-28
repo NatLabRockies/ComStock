@@ -553,6 +553,89 @@ def build_dist_sql(md_table: str, upgrade: str, have: set[str],
     )
 
 
+def savings_distribution_rows(dist: pd.DataFrame, up: str, name: str) -> list[dict]:
+    """Unweighted per-model savings distributions for one measure.
+
+    `dist` is the build_dist_sql frame: on an apportioned aggregate, one row
+    per (model, geography). Every statistic here is unweighted -- quantiles,
+    KDE, outliers, one point per model -- so a model must enter a distribution
+    exactly once. The distribution columns are model-level (percent savings
+    and intensities are identical across a model's geography rows), so the
+    collapse is a de-replication, not an aggregation choice.
+
+    The pooled figures collapse on the model. The by-dimension figures
+    collapse on (model, dimension value): a model whose rows fall in two
+    categories of a dimension belongs in BOTH categories' distributions, and
+    a model-level dedupe before the split would keep whichever row came first
+    and silently drop the model from the other category. Today's dimensions
+    are model attributes, where the two collapses agree; a geographic
+    dimension would not be, and this keeps that from going wrong unnoticed.
+    """
+    rows: list[dict] = []
+
+    def _stat(v, kind, group, label):
+        v = pd.to_numeric(v, errors="coerce").to_numpy(float)
+        v = v[np.isfinite(v)]
+        n_nonzero = int((v != 0).sum())
+        v = v[v != 0]
+        if not len(v):
+            return
+        neg = float((v < 0).sum() / len(v) * 100)
+        trimmed = 0.0
+        if kind.startswith("pct"):
+            trimmed = float((np.abs(v) > PCT_TRIM).sum() / len(v) * 100)
+            v = v[np.abs(v) <= PCT_TRIM]
+            if not len(v):
+                return
+        elif kind == "eui_site":
+            v = v * KWH_PER_FT2_TO_KBTU
+        qs = np.percentile(v, [0, 5, 25, 50, 75, 95, 100])
+        rows.append({
+            "upgrade": up, "upgrade_name": name, "kind": kind, "group": group,
+            "category": label,
+            "vmin": qs[0], "p05": qs[1], "p25": qs[2], "p50": qs[3],
+            "p75": qs[4], "p95": qs[5], "vmax": qs[6],
+            "mean": float(v.mean()),
+            "share_negative_pct": neg, "share_trimmed_pct": trimmed,
+            "n_models": n_nonzero,
+            # Density for the violin outline, and the far-tail points drawn
+            # as outliers. Both must be computed HERE, from the raw
+            # per-model values: seven quantiles cannot be turned back into a
+            # distribution shape, and a violin drawn from them would be an
+            # invention rather than a measurement.
+            "kde": kde_json(v),          # unweighted: one row per model
+            "outliers": outlier_json(v, qs[2], qs[4]),
+        })
+
+    has_id = "bldg_id" in dist.columns
+    models = dist.drop_duplicates(subset="bldg_id") if has_id else dist
+    if len(models) != len(dist):
+        logger.info("distributions: %d apportionment rows -> %d models",
+                    len(dist), len(models))
+    for col in models.columns:
+        if col == "bldg_id" or col.startswith("T|") or col.startswith("D|"):
+            continue
+        kind, group, label = col.split("|")
+        _stat(models[col], kind, group, label)
+    # by-dimension figures: the site/total metric split by building attribute
+    for dim in DIST_DIMS:
+        dcol = f"D|{dim}"
+        if dcol not in dist.columns:
+            continue
+        per_dim = dist.drop_duplicates(subset=["bldg_id", dcol]) if has_id else dist
+        if len(per_dim) != len(models):
+            logger.info("distributions: %d models sit in more than one %s category "
+                        "(%d model-category pairs); each is counted once per category",
+                        len(per_dim) - len(models), dim, len(per_dim))
+        for kind in DIM_KIND_COLS:
+            tcol = f"T|{kind}"
+            if tcol not in per_dim.columns:
+                continue
+            for cat, g in per_dim.groupby(dcol, dropna=True):
+                _stat(g[tcol], kind, dim, str(cat))
+    return rows
+
+
 # Season months for the measure timeseries: the same national convention as
 # plot_measure_timeseries_season_average_by_state (map_to_season in
 # plotting_mixin: 6-8 summer, 3-5 and 9-11 shoulder, else winter), so the
@@ -888,67 +971,7 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
 
         dist = athena.query(build_dist_sql(md_table, up, have, up_type),
                             no_cache=no_cache, label=f"measure {up} savings dist")
-
-        def _stat(v, kind, group, label):
-            v = pd.to_numeric(v, errors="coerce").to_numpy(float)
-            v = v[np.isfinite(v)]
-            n_nonzero = int((v != 0).sum())
-            v = v[v != 0]
-            if not len(v):
-                return
-            neg = float((v < 0).sum() / len(v) * 100)
-            trimmed = 0.0
-            if kind.startswith("pct"):
-                trimmed = float((np.abs(v) > PCT_TRIM).sum() / len(v) * 100)
-                v = v[np.abs(v) <= PCT_TRIM]
-                if not len(v):
-                    return
-            elif kind == "eui_site":
-                v = v * KWH_PER_FT2_TO_KBTU
-            qs = np.percentile(v, [0, 5, 25, 50, 75, 95, 100])
-            dist_rows.append({
-                "upgrade": up, "upgrade_name": name, "kind": kind, "group": group,
-                "category": label,
-                "vmin": qs[0], "p05": qs[1], "p25": qs[2], "p50": qs[3],
-                "p75": qs[4], "p95": qs[5], "vmax": qs[6],
-                "mean": float(v.mean()),
-                "share_negative_pct": neg, "share_trimmed_pct": trimmed,
-                "n_models": n_nonzero,
-                # Density for the violin outline, and the far-tail points drawn
-                # as outliers. Both must be computed HERE, from the raw
-                # per-model values: seven quantiles cannot be turned back into a
-                # distribution shape, and a violin drawn from them would be an
-                # invention rather than a measurement.
-                "kde": kde_json(v),          # unweighted: one row per model
-                "outliers": outlier_json(v, qs[2], qs[4]),
-            })
-
-        # One row per model. The distribution columns are model-level
-        # (percent savings and intensities are identical across a model's
-        # geography rows), so dropping the duplicates is a de-replication, not
-        # an aggregation choice.
-        if "bldg_id" in dist.columns:
-            before = len(dist)
-            dist = dist.drop_duplicates(subset="bldg_id")
-            if len(dist) != before:
-                logger.info("distributions: %d apportionment rows -> %d models",
-                            before, len(dist))
-        for col in dist.columns:
-            if col in ("bldg_id",) or col.startswith("T|") or col.startswith("D|"):
-                continue
-            kind, group, label = col.split("|")
-            _stat(dist[col], kind, group, label)
-        # by-dimension figures: the site/total metric split by building attribute
-        for dim in DIST_DIMS:
-            dcol = f"D|{dim}"
-            if dcol not in dist.columns:
-                continue
-            for kind in DIM_KIND_COLS:
-                tcol = f"T|{kind}"
-                if tcol not in dist.columns:
-                    continue
-                for cat, g in dist.groupby(dcol, dropna=True):
-                    _stat(g[tcol], kind, dim, str(cat))
+        dist_rows.extend(savings_distribution_rows(dist, up, name))
     summary = pd.DataFrame(summaries)
     enduse_pairs = pd.concat(pairs, ignore_index=True) if pairs else pd.DataFrame()
     enduse_savings = pd.concat(savings_rows, ignore_index=True) if savings_rows else pd.DataFrame()
