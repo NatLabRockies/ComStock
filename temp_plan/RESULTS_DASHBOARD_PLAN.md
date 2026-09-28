@@ -202,8 +202,8 @@ reuse-off queries for all four runs (`verify_run_linkage.py` in the buildstock-d
 | cache key ignores table version (carried) | answered by `2e1e263` (Athena result reuse off; local cache invalidated on export/crawl) | reply and resolve |
 | committed egg-info (carried) | not tracked on the branch; `.gitignore` covers `*.egg-info/` | reply and resolve |
 
-Verification: `node --check` on the bundle; 21 dashboard tests pass (8 grain, 8 timeseries,
-3 athena, plus 2 new); both local dashboards rebuilt from their existing metrics with the
+Verification: `node --check` on the bundle; 19 dashboard tests pass (8 grain, of which 2 new;
+8 timeseries; 3 athena); both local dashboards rebuilt from their existing metrics with the
 new bundle (five-measure 17.5 MB, four-run 56.6 MB) and opened in the browser without
 console errors.
 
