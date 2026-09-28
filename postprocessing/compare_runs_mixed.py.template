@@ -21,10 +21,13 @@ against DELTA_REF. With no 'process' entries this is the Athena-only case
 SAMPLES. Each 'process' entry names the stock estimate its sample was drawn against. Runs
 on one sample share one Apportion; a run on another sample gets its own. Comparing runs
 on different estimates is legitimate, and the log says which run sits on which.
-CHECK_SAMPLE_PAIRING re-checks every pairing from the run's buildstock.csv before
-anything expensive starts, because a wrong pairing is silent otherwise: floor areas still
-match CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the
-weights they were exported with.
+CHECK_SAMPLE_PAIRING re-checks every pairing before anything expensive starts: every
+(building type, tract) pair in the run's buildstock.csv must exist in the estimate, since
+that pair is what apportionment matches models to real buildings on. A correct pairing
+has zero missing pairs; a wrong one is off by hundreds to thousands, spread across
+building types. Without the check a wrong pairing is silent: floor areas still match
+CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the weights
+they were exported with.
 
 Launch it in the background and read the log:
     ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
@@ -54,14 +57,13 @@ MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'pro
                                    # only their wide CSVs and the dashboard, which is faster
 INCLUDE_AMI            = False     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
-CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first
+CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
+                                   # every sampled (building type, tract) pair must exist in it
 COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
                                             # Keep it short on Windows: the deepest plot path beneath
                                             # it must stay under 260 characters
 DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrows, the "moved toward
                                             # CBECS" line and the heating-fuel gap column measure against
-CANDIDATE_ESTIMATES    = ('2025R3', '2026R1')  # named in the pairing error; add new versions here
-GUARD_BUILDING_TYPE    = 'hospital'         # the type whose tracts differ between the candidates
 
 # ---- Runs -------------------------------------------------------------------
 # One entry per run. The FIRST is the run under review; the order is the bar order.
@@ -223,9 +225,9 @@ def check_declaration():
         if r['kind'] == 'process' and not r.get('s3_base_dir'):
             raise SystemExit(f"{r['run']}: a process entry needs s3_base_dir (bucket/prefix the run "
                              'was uploaded to)')
-        if r['kind'] == 'process' and r.get('estimate') not in CANDIDATE_ESTIMATES:
-            raise SystemExit(f"{r['run']}: estimate {r.get('estimate')!r} is not one of "
-                             f'{CANDIDATE_ESTIMATES}')
+        if r['kind'] == 'process' and not r.get('estimate'):
+            raise SystemExit(f"{r['run']}: a process entry needs estimate (the stock estimation "
+                             'version its sample was drawn against)')
         if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
             raise SystemExit(f'release entries need key and md_table: {r}')
     if DELTA_REF not in names[1:]:
@@ -273,43 +275,61 @@ def buildstock_path(entry):
     return path
 
 
-def assert_sample_matches_estimate(run_name, bs_path, version, building_type=GUARD_BUILDING_TYPE):
-    """Stop unless every <building_type> tract the run sampled exists in the estimate.
+def estimate_path(version, truth_data_version='v01'):
+    """truth_data/<tdv>/<version>_building_estimate.parquet, fetched from S3 the same way
+    Apportion fetches it when absent. An estimate that is not on S3 yet must be copied
+    into that folder by hand; the error says so."""
+    path = os.path.join(HERE, 'truth_data', truth_data_version, f'{version}_building_estimate.parquet')
+    if not os.path.exists(path):
+        import boto3
+        from botocore.exceptions import ClientError
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        key = f'truth_data/{truth_data_version}/StockE/{version}_building_estimate.parquet'
+        try:
+            logger.info('downloading s3://eulp/%s', key)
+            boto3.resource('s3').Object('eulp', key).download_file(path)
+        except ClientError as exc:
+            raise FileNotFoundError(
+                f'{os.path.basename(path)} is neither in {os.path.dirname(path)} nor at '
+                f's3://eulp/{key} ({exc}). Copy the estimate into that folder.') from exc
+    return path
 
-    Apportionment matches models to real buildings BY TRACT, so a run drawn against one
-    estimate and apportioned to another lands in tracts the other does not have. Hospital
-    is the type the candidates differ on, and the check discriminates both ways: a run on
-    the 2026R1 sample is missing 1,261 hospital tracts from 2025R3 and 0 from 2026R1; a run
-    on the 2025R3 sample is missing 638 from 2026R1 and 0 from 2025R3. Correct = 0.
+
+def assert_sample_matches_estimate(run_name, bs_path, version):
+    """Stop unless every (building type, tract) pair the run sampled exists in the estimate.
+
+    Apportionment matches models to real buildings on building type and tract, so a
+    sample drawn against one estimate and apportioned to another lands in pairs the
+    other does not have. The correct pairing has zero missing pairs; the wrong one is off
+    by hundreds to thousands, spread across several building types (measured 2026-09-28:
+    a 2026R1 sample is missing 2,170 pairs from 2025R3, a 2025R3 sample 1,763 from
+    2026R1, both 0 from their own). Every other estimate on this machine is reported
+    alongside, so the message says which one the sample does match.
     """
     import polars as pl
 
-    bs = pl.read_csv(bs_path, columns=['building_type', 'tract'], infer_schema_length=0)
-    sampled = set(bs.filter(pl.col('building_type') == building_type)['tract'].to_list())
-    if not sampled:
-        raise RuntimeError(f'{run_name}: no {building_type} rows in {bs_path}; '
-                           'cannot verify the stock estimate')
+    bs = pl.read_csv(bs_path, columns=['building_type', 'tract'], infer_schema_length=0).unique()
+    if not bs.height:
+        raise RuntimeError(f'{run_name}: {bs_path} has no building_type / tract rows')
 
     def missing_from(v):
-        path = os.path.join(TRUTH_DIR, f'{v}_building_estimate.parquet')
-        if not os.path.exists(path):
-            return None
-        est = pl.read_parquet(path, columns=['building_type', 'tract'])
-        known = set(est.filter(pl.col('building_type') == building_type)['tract'].to_list())
-        return len(sampled - known)
+        est = pl.read_parquet(estimate_path(v), columns=['building_type', 'tract']).unique()
+        return bs.join(est, on=['building_type', 'tract'], how='anti')
 
-    n_missing = missing_from(version)
-    if n_missing is None:
-        raise FileNotFoundError(f'{version}_building_estimate.parquet not in {TRUTH_DIR}')
-    if n_missing:
-        others = {v: missing_from(v) for v in CANDIDATE_ESTIMATES if v != version}
+    missing = missing_from(version)
+    if missing.height:
+        by_type = dict(missing.group_by('building_type').len()
+                       .sort('len', descending=True).iter_rows())
+        local = sorted(os.path.basename(p).split('_building_estimate')[0]
+                       for p in glob.glob(os.path.join(TRUTH_DIR, '*_building_estimate.parquet')))
+        others = {v: missing_from(v).height for v in local if v != version}
         raise RuntimeError(
-            f'{run_name}: {n_missing:,} of {len(sampled):,} sampled {building_type} tracts are '
-            f'ABSENT from the {version} estimate, so apportioning to it would mis-weight the '
-            f'run. Missing against the other candidates: {others}. Set this entry\'s estimate '
-            'to the one its sample was drawn against.')
-    logger.info('%s: all %s sampled %s tracts exist in the %s estimate -- pairing OK',
-                run_name, f'{len(sampled):,}', building_type, version)
+            f'{run_name}: {missing.height:,} of {bs.height:,} sampled (building type, tract) pairs '
+            f'are ABSENT from the {version} estimate ({by_type}), so apportioning to it would '
+            f'mis-weight the run. Missing pairs against the other estimates on this machine: '
+            f'{others}. Set this entry\'s estimate to the one its sample was drawn against.')
+    logger.info('%s: all %s sampled (building type, tract) pairs exist in the %s estimate '
+                '-- pairing OK', run_name, f'{bs.height:,}', version)
 
 
 def reference(entry):
