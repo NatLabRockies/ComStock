@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Any mix of runs, in one dashboard: already in Athena, or postprocessed here, on one
+sample or several, against CBECS 2018 (and AMI).
+
+Declare the runs in RUNS below, one entry each. The file does only the work each kind
+needs, in the same order as compare_runs.py:
+
+    kind='process'   Postprocessed here: download, cache, apportion to the entry's own
+                     `estimate`, scale to CBECS, export, crawl. About 35 minutes per 100k
+                     baseline-only run on the first pass; minutes on a rerun, because the
+                     caches and Athena tables are reused. Runs with measures take hours.
+    kind='athena'    Already crawled into ATHENA_DATABASE by an earlier driver. Its tables
+                     are read; nothing is downloaded, apportioned, exported or crawled.
+    kind='release'   A published OEDI release in buildstock_sdr. Read-only, like 'athena'.
+
+The FIRST entry is the run under review: drawn last in every grouped bar and measured
+against DELTA_REF. With no 'process' entries this is the Athena-only case
+(results_dashboard_from_athena.py) and finishes in minutes.
+
+SAMPLES. Each 'process' entry names the stock estimate its sample was drawn against. Runs
+on one sample share one Apportion; a run on another sample gets its own. Comparing runs
+on different estimates is legitimate, and the log says which run sits on which.
+CHECK_SAMPLE_PAIRING re-checks every pairing from the run's buildstock.csv before
+anything expensive starts, because a wrong pairing is silent otherwise: floor areas still
+match CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the
+weights they were exported with.
+
+Launch it in the background and read the log:
+    ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
+Success: EXIT=0, one "athena tables: <run> ..." line per 'process' run, and
+"results dashboard: <path>". Runs on the same sample and estimate print identical
+"post-apportionment scaling factors to CBECS floor area" for every building type.
+"""
+import glob
+import logging
+import os
+
+import comstockpostproc as cspp
+
+# force=True: comstockpostproc.ami calls basicConfig at import, which would otherwise
+# leave this call a no-op and the log without timestamps.
+logging.basicConfig(level='INFO', format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+                    force=True)
+logger = logging.getLogger(__name__)
+
+# ---- Settings ---------------------------------------------------------------
+# Details in README, "Results dashboard".
+ATHENA_DATABASE        = 'enduse'  # database the crawled runs are read from. Keep 'enduse':
+                                   # the timeseries plots and the AMI comparison hard-code it
+MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'process' runs; False writes
+                                   # only their wide CSVs and the dashboard, which is faster
+INCLUDE_AMI            = False     # metered load-shape tab; needs each run's <run>_timeseries table
+                                   # (from buildstockbatch's crawl) plus the county export
+CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first
+COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
+                                            # Keep it short on Windows: the deepest plot path beneath
+                                            # it must stay under 260 characters
+DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrows, the "moved toward
+                                            # CBECS" line and the heating-fuel gap column measure against
+S3_BASE_DIR            = 'eulp/euss_com'    # where the 'process' runs were uploaded (from their
+                                            # buildstockbatch yml); an entry may override it
+CANDIDATE_ESTIMATES    = ('2025R3', '2026R1')  # named in the pairing error; add new versions here
+GUARD_BUILDING_TYPE    = 'hospital'         # the type whose tracts differ between the candidates
+
+# ---- Runs -------------------------------------------------------------------
+# One entry per run. The FIRST is the run under review; the order is the bar order.
+#
+#   kind='process'  run       comstock_run_name on S3; also the Athena table prefix and, unless
+#                             `version` is given, the cache folder (comstock_data/<run>,
+#                             output/ComStock <run>). Never rename a cache folder once it exists.
+#                   estimate  stock estimate the run's sample was drawn against
+#                   color     hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
+#                   optional  label (display name), version (cache folder), s3_base_dir,
+#                             rebuild=True (re-export and re-crawl: table existence is not weight
+#                             freshness, so set it when the apportionment changed),
+#                             acceptable_failure_percentage (default 0.25)
+#   kind='athena'   run       the crawled table prefix in ATHENA_DATABASE
+#                   color; optional label (default 'ComStock <run>'), database
+#   kind='release'  key, label, md_table, color; optional database (default buildstock_sdr),
+#                   md_county_table, ts_table
+RUNS = [
+    dict(kind='process', run='<s3_run_name_a>', estimate='2025R3', color='#D55E00'),
+    dict(kind='process', run='<s3_run_name_b>', estimate='2025R3', color='#8C510A'),
+    dict(kind='athena',  run='<existing_run_a>', color='#E69F00'),
+    # dict(kind='athena',  run='<existing_run_b>', label='ComStock existing_run_b', color='#56B4E9'),
+    # dict(kind='release', key='r3_2025', label='2025 R3', color='#999999',
+    #      md_table='comstock_amy2018_r3_2025_md_agg_national_parquet'),
+]
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TRUTH_DIR = os.path.join(HERE, 'truth_data', 'v01')
+
+
+def main():
+    check_declaration()
+    processed = [r for r in RUNS if r['kind'] == 'process']
+
+    # 1. Sample-to-estimate guard first: seconds per run, needs only buildstock.csv.
+    if CHECK_SAMPLE_PAIRING:
+        for r in processed:
+            assert_sample_matches_estimate(r['run'], buildstock_path(r), r['estimate'])
+
+    # 2. A ComStock object for every run postprocessed here.
+    objects = {}
+    for r in processed:
+        cached = sim_cache_exists(cache_version(r))
+        logger.info('%s: simulation-output cache %s', r['run'],
+                    'found, reloading it' if cached else 'not found, first pass, building it')
+        objects[r['run']] = cspp.ComStock(
+            s3_base_dir=r.get('s3_base_dir', S3_BASE_DIR),
+            comstock_run_name=r['run'],
+            comstock_run_version=cache_version(r),
+            comstock_year=2018,
+            athena_table_name=None,
+            truth_data_version='v01',
+            buildstock_csv_name='buildstock.csv',
+            acceptable_failure_percentage=r.get('acceptable_failure_percentage', 0.25),
+            drop_failed_runs=True,
+            color_hex=r['color'],
+            skip_missing_columns=True,     # build_existing_model columns may differ between runs
+            reload_from_cache=cached,
+            include_upgrades=False,        # baseline only
+            )
+        if r.get('label'):
+            objects[r['run']].dataset_name = r['label']
+
+    # 3. One Apportion per distinct estimate; every run apportioned to its own. Recomputed
+    #    on every pass (minutes): a reloaded apportionment is the kind of cache that goes
+    #    stale silently.
+    estimates = {v: stock_estimate(v) for v in sorted({r['estimate'] for r in processed})}
+    if len(estimates) > 1:
+        logger.warning('mixed stock estimates in this comparison: %s',
+                       {r['run']: r['estimate'] for r in processed})
+    for r in processed:
+        obj = objects[r['run']]
+        obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0),
+                                     reload_from_cache=False)
+
+    # 4. CBECS, then scale every processed run to CBECS floor area and add utility bills.
+    #    load_cbecs reads 'CBECS wide.csv' when it exists and builds it otherwise.
+    cbecs = cspp.load_cbecs()
+    for obj in objects.values():
+        obj.create_allocated_weights_scaled_to_cbecs(
+            cbecs, obj.get_sim_outs_for_upgrade(0), obj.get_allocated_weights(),
+            remove_non_comstock_bldg_types_from_cbecs=True)
+        # No reload flag: short-circuits whenever output/ComStock <v>/
+        # cached_allocated_weights_plus_bills/ exists, and the S3 export reads from it.
+        # Delete that folder when the apportionment changes.
+        obj.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    cbecs.export_to_csv_wide()             # the dashboard reads 'CBECS wide.csv'
+
+    # 5. The processed runs against each other and CBECS: figures (optional) and wide CSVs.
+    #    COMPARISON_NAME is the output folder; the dashboard is written inside it.
+    comparison = None
+    if objects:
+        comparison = cspp.ComStockToCBECSComparison(
+            cbecs_list=[cbecs],
+            comstock_list=list(objects.values()),
+            name=COMPARISON_NAME,
+            make_comparison_plots=MAKE_COMPARISON_PLOTS)
+        comparison.export_to_csv_wide()
+
+    if not MAKE_RESULTS_DASHBOARD:
+        return
+
+    # 6. Athena tables for the processed runs. Checks Glue first and builds only what is
+    #    missing; a rerun logs "already has every table it needs". It logs and returns
+    #    False rather than raising; the dashboard then says what it could not read.
+    for r in processed:
+        ok = cspp.prepare_athena_tables(objects[r['run']], database=ATHENA_DATABASE,
+                                        ami=INCLUDE_AMI, rebuild=bool(r.get('rebuild')))
+        if not ok:
+            logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
+                           'dashboard will state what it could not read', r['run'])
+
+    # 7. The dashboard. The first entry is the primary; every other entry is a comparison,
+    #    processed runs through their freshly crawled tables.
+    primary = objects[RUNS[0]['run']] if RUNS[0]['kind'] == 'process' else reference(RUNS[0])
+    comparisons = [
+        cspp.AthenaRunRef.from_comstock(objects[r['run']], database=ATHENA_DATABASE)
+        if r['kind'] == 'process' else reference(r)
+        for r in RUNS[1:]]
+    dashboard = cspp.ResultsDashboard(
+        primary,
+        cbecs=cbecs,
+        ami=cspp.load_ami() if INCLUDE_AMI else None,
+        comparison_runs=comparisons,
+        comparison=comparison,             # -> output/<COMPARISON_NAME>/results_dashboard/
+        output_dir=None if comparison else os.path.join(HERE, 'output', COMPARISON_NAME,
+                                                         'results_dashboard'),
+        database=ATHENA_DATABASE,
+        delta_ref=DELTA_REF,
+        )
+    if dashboard.skipped_reason:
+        logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
+    else:
+        if dashboard.dropped_runs:
+            logger.warning('comparison runs DROPPED (missing tables): %s', dashboard.dropped_runs)
+        logger.info('results dashboard: %s', dashboard.dashboard_path)
+
+
+# ---- Helpers ----------------------------------------------------------------
+def check_declaration():
+    """Refuse a half-filled RUNS list now, not an hour in."""
+    kinds = {'process', 'athena', 'release'}
+    bad = [r for r in RUNS if r.get('kind') not in kinds]
+    if bad or not RUNS:
+        raise SystemExit(f'every RUNS entry needs kind in {sorted(kinds)}: {bad or "RUNS is empty"}')
+    names = [r.get('run') or r.get('key') for r in RUNS]
+    if any(not n or '<' in n for n in names) or '<' in DELTA_REF:
+        raise SystemExit(f'RUNS or DELTA_REF still has placeholder names: {names}, {DELTA_REF!r}')
+    if len(set(names)) != len(names):
+        raise SystemExit(f'RUNS lists a run twice: {names}')
+    for r in RUNS:
+        if r['kind'] == 'process' and r.get('estimate') not in CANDIDATE_ESTIMATES:
+            raise SystemExit(f"{r['run']}: estimate {r.get('estimate')!r} is not one of "
+                             f'{CANDIDATE_ESTIMATES}')
+        if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
+            raise SystemExit(f'release entries need key and md_table: {r}')
+    if DELTA_REF not in names[1:]:
+        raise SystemExit(f'DELTA_REF {DELTA_REF!r} must be one of the comparison runs {names[1:]}')
+
+
+def cache_version(entry):
+    """The cache folder name for a 'process' run: comstock_data/<v>, output/ComStock <v>."""
+    return entry.get('version', entry['run'])
+
+
+def sim_cache_exists(run_version):
+    """True when ComStock(reload_from_cache=True) would find this run's cached simulation
+    outputs. True with no cache RAISES, and False with a cache rebuilds it from the parquet
+    for nothing, so detect on disk. Delete output/ComStock <v>/cached_simulation_outputs/
+    to force a rebuild."""
+    pattern = os.path.join(HERE, 'output', f'ComStock {run_version}', 'cached_simulation_outputs',
+                           '**', 'cached_simulation_outputs_upgrade*.parquet')
+    return bool(glob.glob(pattern, recursive=True))
+
+
+def stock_estimate(version, truth_data_version='v01'):
+    """Apportion for one stock estimation version, reloading its cache only if it exists.
+    The cache is per version (output/Stock Estimation <version>/
+    cached_ComStock_apportionment.parquet); reload_from_cache=True without one raises."""
+    cache = os.path.join(HERE, 'output', f'Stock Estimation {version}',
+                         'cached_ComStock_apportionment.parquet')
+    return cspp.Apportion(stock_estimation_version=version,
+                          truth_data_version=truth_data_version,
+                          reload_from_cache=os.path.exists(cache))
+
+
+def buildstock_path(entry):
+    """comstock_data/<v>/buildstock.csv, fetched from the run's S3 prefix if absent. Same
+    key and destination ComStock.download_data uses, so the ComStock built afterwards finds
+    the file in place and does not fetch it twice."""
+    path = os.path.join(HERE, 'comstock_data', cache_version(entry), 'buildstock.csv')
+    if not os.path.exists(path):
+        import boto3
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        bucket, _, prefix = entry.get('s3_base_dir', S3_BASE_DIR).strip('/').partition('/')
+        key = f"{prefix}/{entry['run']}/{entry['run']}/buildstock_csv/buildstock.csv"
+        logger.info('downloading s3://%s/%s', bucket, key)
+        boto3.resource('s3').Object(bucket, key).download_file(path)
+    return path
+
+
+def assert_sample_matches_estimate(run_name, bs_path, version, building_type=GUARD_BUILDING_TYPE):
+    """Stop unless every <building_type> tract the run sampled exists in the estimate.
+
+    Apportionment matches models to real buildings BY TRACT, so a run drawn against one
+    estimate and apportioned to another lands in tracts the other does not have. Hospital
+    is the type the candidates differ on, and the check discriminates both ways: a run on
+    the 2026R1 sample is missing 1,261 hospital tracts from 2025R3 and 0 from 2026R1; a run
+    on the 2025R3 sample is missing 638 from 2026R1 and 0 from 2025R3. Correct = 0.
+    """
+    import polars as pl
+
+    bs = pl.read_csv(bs_path, columns=['building_type', 'tract'], infer_schema_length=0)
+    sampled = set(bs.filter(pl.col('building_type') == building_type)['tract'].to_list())
+    if not sampled:
+        raise RuntimeError(f'{run_name}: no {building_type} rows in {bs_path}; '
+                           'cannot verify the stock estimate')
+
+    def missing_from(v):
+        path = os.path.join(TRUTH_DIR, f'{v}_building_estimate.parquet')
+        if not os.path.exists(path):
+            return None
+        est = pl.read_parquet(path, columns=['building_type', 'tract'])
+        known = set(est.filter(pl.col('building_type') == building_type)['tract'].to_list())
+        return len(sampled - known)
+
+    n_missing = missing_from(version)
+    if n_missing is None:
+        raise FileNotFoundError(f'{version}_building_estimate.parquet not in {TRUTH_DIR}')
+    if n_missing:
+        others = {v: missing_from(v) for v in CANDIDATE_ESTIMATES if v != version}
+        raise RuntimeError(
+            f'{run_name}: {n_missing:,} of {len(sampled):,} sampled {building_type} tracts are '
+            f'ABSENT from the {version} estimate, so apportioning to it would mis-weight the '
+            f'run. Missing against the other candidates: {others}. Set this entry\'s estimate '
+            'to the one its sample was drawn against.')
+    logger.info('%s: all %s sampled %s tracts exist in the %s estimate -- pairing OK',
+                run_name, f'{len(sampled):,}', building_type, version)
+
+
+def reference(entry):
+    """An AthenaRunRef for an 'athena' or 'release' entry.
+
+    'athena' runs are addressed by the crawler's table names for their prefix; the
+    assessment discovers the timeseries view itself, as it does for from_comstock.
+    'release' entries pass their fields through.
+    """
+    if entry['kind'] == 'release':
+        fields = {k: v for k, v in entry.items() if k != 'kind'}
+        return cspp.AthenaRunRef(**fields)
+    run = entry['run']
+    return cspp.AthenaRunRef(
+        key=run, label=entry.get('label', f'ComStock {run}'),
+        database=entry.get('database', ATHENA_DATABASE), color=entry['color'],
+        md_table=f'{run}_md_agg_national_by_state_parquet',
+        md_county_table=f'{run}_md_agg_by_state_and_county_parquet',
+        ts_table=f'{run}_timeseries')
+
+
+if __name__ == '__main__':
+    main()

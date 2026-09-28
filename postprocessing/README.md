@@ -117,6 +117,22 @@ $ pip install -e .[dev,gap]
     ```
 4. Look in the `/output` directory for results
 
+### Any mix of runs: already in Athena, postprocessed here, on one sample or several
+
+`compare_runs_mixed.py.template` is the general form of the two-run driver. Instead of one
+code block per run it takes a single `RUNS` list, one entry per run, each entry saying what
+kind it is: `process` (postprocessed here: download, apportion to the entry's own stock
+estimate, scale to CBECS, export, crawl), `athena` (already crawled by an earlier driver:
+its tables are read, nothing is recomputed) or `release` (a published OEDI release). The
+first entry is the run under review. Runs on one sample share one apportionment and a run
+on another sample gets its own, so the samples may differ, and a guard checks every
+`process` run's sample against its stated estimate before anything expensive starts.
+With no `process` entries it is the Athena-only case below and finishes in minutes.
+
+1. Copy `compare_runs_mixed.py.template` to `compare_runs_mixed.py`
+2. Fill in `RUNS`, `COMPARISON_NAME` and `DELTA_REF` at the top
+3. Run it as above; everything lands in `output/<COMPARISON_NAME>/`
+
 ### Comparing upgrades in a single ComStock run
 
 1. Copy the `compare_upgrades.py.template` file to `compare_upgrades.py`
@@ -286,6 +302,8 @@ be stated explicitly for the same reason. This file only READS -- if the run has
 not been crawled yet, run it through one of the four drivers with
 `MAKE_RESULTS_DASHBOARD = True` first; their `prepare_athena_tables` call exports
 and crawls the tables.
+`compare_runs_mixed.py.template` with only `athena` and `release` entries does the same
+job from one run list, and can take the not-yet-crawled runs as `process` entries.
 
 ### NREL Staff - Extracting simulations and summarizing EnergyPlus warnings and errors on HPC
 

@@ -35,6 +35,7 @@ postprocessing/compare_comstock_to_ami.py
 postprocessing/compare_comstock_to_cbecs.py
 postprocessing/compare_comstock_to_eia.py
 postprocessing/compare_runs.py
+postprocessing/compare_runs_mixed.py
 postprocessing/compare_upgrades.py
 postprocessing/results_dashboard_from_athena.py
 # Dashboard test drivers: runnable copies of the templates, one per run type.

@@ -46,6 +46,7 @@ Each is a runnable example. Measure drivers are capped at 5 measures so a test r
 | `compare_comstock_to_ami.py`, `compare_comstock_to_ami_dbtest_1run.py` | ComStock vs AMI |
 | `compare_runs.py`, `compare_runs_dbtest_2runs.py` | run vs run |
 | `compare_upgrades.py`, `compare_upgrades_dbtest_5measures.py` | baseline + upgrades |
+| `compare_runs_mixed.py.template`, `compare_runs_mixed_dbtest.py` | any mix in one RUNS list: `process` (postprocessed here, per-entry stock estimate), `athena` (already crawled), `release`; added 2026-09-28, exercised end to end on plugfix (process) vs new_sample and baseline_10k (athena) |
 
 All five were run by the user and confirmed working (2026-09-11/12).
 
