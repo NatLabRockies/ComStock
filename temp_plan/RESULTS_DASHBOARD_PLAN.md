@@ -251,6 +251,16 @@ division from the CSV or the literal "National") into innerHTML unescaped, in `h
 and `hfSharesTable`. Valid, low; `esc()` at both sites. The other two open threads are
 the round-1 cache-key and egg-info threads, still awaiting Resolve.
 
+### Copilot review 7 (2026-09-28): 3 open threads, 1 new
+
+One new thread: the local cache key lowercased the SQL, so two queries differing only in
+the case of a string literal (`'CO'` vs `'co'`) shared a cache entry. Valid in principle,
+never hit in practice (every query is generated with fixed literal case). The key now
+keeps the SQL's case; test added. Consequence: every existing entry under
+`~/.cache/comstock_results_dashboard` (1,059 files, 616 MB on this machine) has a new key,
+so the next build of any dashboard re-runs its queries once. The other two open threads are
+still the round-1 cache-key and egg-info threads, awaiting Resolve.
+
 PR housekeeping still open: tick the change-type and author checkboxes, add the
 `postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
 re-request the Copilot review. Optional: license headers on the `*.py.template` files

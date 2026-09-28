@@ -130,8 +130,10 @@ def _client():
 
 def _cache_path(sql: str) -> Path:
     cfg = _cfg()
-    # Connection in the key -- see note 1 in the module docstring.
-    stamp = f"{cfg['database']}|{cfg['workgroup']}|{cfg['db_schema']}|{sql.strip().lower()}"
+    # Connection in the key -- see note 1 in the module docstring. The SQL
+    # keeps its case: 'CO' and 'co' are different predicates to Athena, so
+    # lowercasing the text would let one query answer the other.
+    stamp = f"{cfg['database']}|{cfg['workgroup']}|{cfg['db_schema']}|{sql.strip()}"
     return CACHE_DIR / f"{hashlib.md5(stamp.encode()).hexdigest()[:16]}.parquet"
 
 

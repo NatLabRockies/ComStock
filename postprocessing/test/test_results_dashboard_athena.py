@@ -28,3 +28,10 @@ def test_invalidate_cache_drops_only_entries_that_read_the_run(tmp_path, monkeyp
 def test_invalidate_cache_without_a_cache_dir_is_a_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(athena, "CACHE_DIR", tmp_path / "absent")
     assert athena.invalidate_cache("myrun") == 0
+
+
+def test_cache_key_keeps_the_case_of_sql_literals():
+    same = athena._cache_path("SELECT 1 FROM t WHERE state = 'CO'")
+    assert same == athena._cache_path("  SELECT 1 FROM t WHERE state = 'CO'  ")   # whitespace only
+    assert same != athena._cache_path("SELECT 1 FROM t WHERE state = 'co'")         # a different predicate
+
