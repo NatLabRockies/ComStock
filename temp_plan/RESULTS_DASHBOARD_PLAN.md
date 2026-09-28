@@ -163,6 +163,30 @@ Reviewer requests (mpraprost), the open Copilot thread, and two additions asked 
 | 7 | Model failures per run, total and % | New leg `results_dashboard/failures.py` reads buildstockbatch's `<run>_baseline` / `<run>_upgrades` (the aggregates hold only successes, `drop_failed_runs`). `metrics/failures.csv`; "Model completion by run" panel on the Overview after the verdict strip. `Invalid` is shown as not-applicable, not failure, and the failed share is over applicable models. A published release has neither table, so the leg falls back to its aggregate, which records Fail/Invalid on measure rows but only successes on the baseline (stated in the panel). Rows are limited to the baseline plus the measures the dashboard compares; the CSV keeps all. | done; four-run dashboard shows plugfix 3/103,608, new_sample 26, fixes_ts 26, baseline_10k 2,685/103,224 (2.6%) |
 | 8 | Custom-building-spec alias shim (`comstock.py`) | required by every ComStock Typical run; was uncommitted since 09-21 | committed in this batch |
 
+### Copilot review 2 (2026-09-28): 12 open threads
+
+| thread | verdict | change |
+|---|---|---|
+| distributions collapse assigns a straddling model's whole weight to its first census division | real, critical | `collapse_to_models` groups by (model, geography); cells count models with `nunique(bldg_id)`; `_prepare` carries `bldg_id` |
+| design-params `_rn = 1` de-dupe does the same | real, critical | window partitions by (bldg_id, grouping column); pooled/by-type unchanged |
+| county applicability CTE joined a county id as a state | real | CTE at the timeseries grain: (building, state) for published tables, building only for crawled; the metadata fan-out in the main join is intentional (partial weights) |
+| `sqft_zero_gas` emitted without checking the gas column | real | guarded; `CAST(NULL AS double)` when absent |
+| `df.get(GAS_TOTAL_COL)` -> None crashes CBECS aggregation | real | NaN share when the column is absent |
+| run labels unescaped in `<title>`/subtitle and in `swatch` innerHTML | valid, low (driver-supplied) | `html.escape` in `dashboard.build`; idempotent `esc()` in JS, applied in `runLabel` (so `runShort` too) and `swatch`; swatch validates the colour |
+| JS bundle read at import time | valid, low | `_js()` read at build time |
+| upgrade shorthand drops runs in mixed comparisons | valid, low | shorthand only with exactly one ComStock dataset, else `_bounded_name` |
+| AMI/CBECS loaders touch S3 despite a cached export | valid | `download_truth_data=False` when the export exists (new constructor flag on `AMI` and `CBECS`, default True) |
+| cache key ignores table version (round 1) | answered | Athena result reuse disabled (commit `2e1e263`); local cache invalidated on export/crawl |
+| committed `x.egg-info` (round 1) | answered | no longer tracked; `.gitignore` covers `*.egg-info/` |
+
+Grain rules these fixes rest on, stated once: an apportioned aggregate has one row per
+(building, state x climate zone) with a PARTIAL weight, so weighted sums may fan out across
+those rows but unweighted counts and any "first row" collapse must key on the geography
+too; a run with measures repeats every scenario per `upgrade`, so every query filters its
+partition; a published timeseries table keeps one copy of a building per state folder, so
+timeseries joins carry the state (crawled tables hold one copy and join on the building).
+Tests: `test/test_results_dashboard_grain.py`.
+
 Also verified while doing this: the four-run hospital dashboard reproduces from fresh
 reuse-off queries for all four runs (`verify_run_linkage.py` in the buildstock-dev-ai skill).
 
