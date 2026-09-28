@@ -72,7 +72,7 @@ Commits on the branch, newest first:
 | `29fa1e06` | keep output under one parent folder |
 | `207c2bfc` | driver template and README entry |
 | `cce5bd7b` | assessment as a toggleable step |
-| `1f93d77f` | name multi-run comparisons honestly, within Windows MAX_PATH |
+| `1f93d77f` | name multi-run comparisons honestly, within Windows MAX_PATH -- **reverted 2026-09-28**: the class is back to main's version and the multi-run templates pass `name=COMPARISON_NAME` instead |
 | `12a41b65` | document the Athena workgroup in the README |
 | `1b5d9312` | one Athena workgroup constant instead of eight literals |
 
@@ -174,7 +174,7 @@ Reviewer requests (mpraprost), the open Copilot thread, and two additions asked 
 | `df.get(GAS_TOTAL_COL)` -> None crashes CBECS aggregation | real | NaN share when the column is absent |
 | run labels unescaped in `<title>`/subtitle and in `swatch` innerHTML | valid, low (driver-supplied) | `html.escape` in `dashboard.build`; idempotent `esc()` in JS, applied in `runLabel` (so `runShort` too) and `swatch`; swatch validates the colour |
 | JS bundle read at import time | valid, low | `_js()` read at build time |
-| upgrade shorthand drops runs in mixed comparisons | valid, low | shorthand only with exactly one ComStock dataset, else `_bounded_name` |
+| upgrade shorthand drops runs in mixed comparisons | valid, low | superseded 2026-09-28: the naming change was reverted altogether (`comstock_to_cbecs_comparison.py` matches main); `compare_runs.py.template` and `compare_runs_different_samples.py.template` pass `name=COMPARISON_NAME`, so the folder is the driver's choice |
 | AMI/CBECS loaders touch S3 despite a cached export | valid | `download_truth_data=False` when the export exists (new constructor flag on `AMI` and `CBECS`, default True) |
 | cache key ignores table version (round 1) | answered | Athena result reuse disabled (commit `2e1e263`); local cache invalidated on export/crawl |
 | committed `x.egg-info` (round 1) | answered | no longer tracked; `.gitignore` covers `*.egg-info/` |
@@ -201,6 +201,12 @@ reuse-off queries for all four runs (`verify_run_linkage.py` in the buildstock-d
 | JS bundle read at import time / packaging (carried) | fixed in `bf456be6` (`_js()` at build time); `setup.py` ships `resources/*.js` via `package_data` | reply and resolve |
 | cache key ignores table version (carried) | answered by `2e1e263` (Athena result reuse off; local cache invalidated on export/crawl) | reply and resolve |
 | committed egg-info (carried) | not tracked on the branch; `.gitignore` covers `*.egg-info/` | reply and resolve |
+
+Naming decision (2026-09-28): the CBECS comparison class stays exactly as on main. Its default
+folder name assumes one run compared across its upgrades (more than two dataset names ->
+"<two shortest> and Upgrades"), which misnames a multi-run baseline comparison, so the two
+multi-run templates now pass `name=COMPARISON_NAME` and the README's settings excerpt lists
+it. Whoever writes the driver names the folder; the templates say to keep it short on Windows.
 
 Verification: `node --check` on the bundle; 19 dashboard tests pass (8 grain, of which 2 new;
 8 timeseries; 3 athena); both local dashboards rebuilt from their existing metrics with the

@@ -151,7 +151,8 @@ pandas, and a hand-written JS bundle.
 already use -- `compare_runs.py`, `compare_upgrades.py`,
 `compare_comstock_to_cbecs.py` or `compare_comstock_to_ami.py` -- each of which
 carries these settings near the top (`compare_runs.py` has no local
-metadata export and omits `EXPORT_LOCAL_METADATA`):
+metadata export and omits `EXPORT_LOCAL_METADATA`; only the multi-run
+drivers carry `COMPARISON_NAME`):
 
 ```python
 # ---- Settings ---------------------------------------------------------------
@@ -161,6 +162,9 @@ ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into 
 EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
+COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # multi-run drivers: the comparison folder under
+                                   # output/ (plots, CSVs, results_dashboard/). Name it yourself; the class's
+                                   # default is built for one run and its upgrades. Keep it short on Windows
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)

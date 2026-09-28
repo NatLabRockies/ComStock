@@ -65,6 +65,11 @@ REBUILD_ATHENA_RUNS    = ()        # comstock_run_name of every run whose Athena
                                    # run here, not global: re-exporting an unaffected run costs a
                                    # full export and crawl for nothing. Leave empty once the tables
                                    # match the weights behind them.
+COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # the comparison folder under postprocessing/output/:
+                                   # plots, CSVs and results_dashboard/ all land in it. Name it here; the class's
+                                   # own default is built for ONE run and its upgrades and misnames anything else.
+                                   # On Windows keep it short: the deepest plot path beneath it must stay under
+                                   # 260 characters, and the plot filenames alone take about 100 of those
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
@@ -163,10 +168,12 @@ def main():
     # comstock_a.export_to_csv_long()  # Long format useful for stacking end uses and fuels
     # comstock_b.export_to_csv_long()  # Long format useful for stacking end uses and fuels
 
-    # Compare multiple ComStock runs to one another and to CBECS
+    # Compare multiple ComStock runs to one another and to CBECS. COMPARISON_NAME
+    # is the output folder; the results dashboard is written inside it.
     comparison = cspp.ComStockToCBECSComparison(
         cbecs_list=[cbecs],
         comstock_list = [comstock_a, comstock_b],
+        name=COMPARISON_NAME,
         make_comparison_plots=True
     )
 
