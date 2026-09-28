@@ -72,12 +72,14 @@ GUARD_BUILDING_TYPE    = 'hospital'         # the type whose tracts differ betwe
 #                             output/ComStock <run>). Never rename a cache folder once it exists.
 #                   estimate  stock estimate the run's sample was drawn against
 #                   color     hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
-#                   optional  label (display name), version (cache folder), s3_base_dir,
-#                             rebuild=True (re-export and re-crawl: table existence is not weight
-#                             freshness, so set it when the apportionment changed),
-#                             acceptable_failure_percentage (default 0.25)
-#   kind='athena'   run       the crawled table prefix in ATHENA_DATABASE
-#                   color; optional label (default 'ComStock <run>'), database
+#                   optional  label (display name), version (cache folder), s3_base_dir (this
+#                             run's bucket/prefix when it differs from S3_BASE_DIR), database
+#                             (where its tables are crawled to and read from, default
+#                             ATHENA_DATABASE), rebuild=True (re-export and re-crawl: table
+#                             existence is not weight freshness, so set it when the
+#                             apportionment changed), acceptable_failure_percentage (default 0.25)
+#   kind='athena'   run       the crawled table prefix
+#                   color; optional label (default 'ComStock <run>'), database (default ATHENA_DATABASE)
 #   kind='release'  key, label, md_table, color; optional database (default buildstock_sdr),
 #                   md_county_table, ts_table
 RUNS = [
@@ -169,17 +171,19 @@ def main():
     #    missing; a rerun logs "already has every table it needs". It logs and returns
     #    False rather than raising; the dashboard then says what it could not read.
     for r in processed:
-        ok = cspp.prepare_athena_tables(objects[r['run']], database=ATHENA_DATABASE,
+        ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
                                         ami=INCLUDE_AMI, rebuild=bool(r.get('rebuild')))
         if not ok:
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
 
     # 7. The dashboard. The first entry is the primary; every other entry is a comparison,
-    #    processed runs through their freshly crawled tables.
+    #    processed runs through their freshly crawled tables. Every run carries its own
+    #    database, so the entries may live in different ones.
     primary = objects[RUNS[0]['run']] if RUNS[0]['kind'] == 'process' else reference(RUNS[0])
     comparisons = [
-        cspp.AthenaRunRef.from_comstock(objects[r['run']], database=ATHENA_DATABASE)
+        cspp.AthenaRunRef.from_comstock(objects[r['run']],
+                                        database=r.get('database', ATHENA_DATABASE))
         if r['kind'] == 'process' else reference(r)
         for r in RUNS[1:]]
     dashboard = cspp.ResultsDashboard(
@@ -190,7 +194,7 @@ def main():
         comparison=comparison,             # -> output/<COMPARISON_NAME>/results_dashboard/
         output_dir=None if comparison else os.path.join(HERE, 'output', COMPARISON_NAME,
                                                          'results_dashboard'),
-        database=ATHENA_DATABASE,
+        database=RUNS[0].get('database', ATHENA_DATABASE),   # the primary's; refs carry their own
         delta_ref=DELTA_REF,
         )
     if dashboard.skipped_reason:
