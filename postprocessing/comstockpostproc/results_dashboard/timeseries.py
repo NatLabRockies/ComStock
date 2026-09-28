@@ -220,9 +220,14 @@ def duplicate_hours_sql(ts_table: str, dialect: dict | None = None) -> str:
     building -- so a count across partitions reports "1 + measures per
     building" as duplication. That declined both timeseries tabs of every
     compare_upgrades dashboard (5.13 rows per building-hour on a run with eleven
-    measures; exactly 1.00 inside each partition). Real duplication, a profile
-    copied once per state, shows up inside the baseline partition just the same,
-    which is where this now looks. Returns "" when the dialect lacks the columns.
+    measures; exactly 1.00 inside each partition), which is where this looks.
+
+    The key is (building, hour) on a crawled table and (building, state, hour)
+    on a published one: a published *_ts_by_state table keeps one copy of a
+    building per STATE folder by design, and every query joins on the state to
+    select one copy, so those copies are not duplication. What is left after
+    keying on the state -- the same building twice within one state folder --
+    is. Returns "" when the dialect lacks the columns.
     """
     d = _d(dialect)
     if not d["bldg"] or not d["time"]:
@@ -231,9 +236,10 @@ def duplicate_hours_sql(ts_table: str, dialect: dict | None = None) -> str:
            else 't."%s"' % d["time"])
     up_type = d.get("up_type") or ""
     base = f" AND t.upgrade = {athena.upgrade_literal(0, up_type)}" if up_type else ""
+    key = f't."{d["bldg"]}", ' + (f't."{d["state"]}", ' if d["state"] else "") + day
     return (
         f'SELECT COUNT(*) AS rows_all,\n'
-        f'    COUNT(DISTINCT (t."{d["bldg"]}", {day})) AS distinct_bldg_hour\n'
+        f'    COUNT(DISTINCT ({key})) AS distinct_bldg_hour\n'
         f"FROM {ts_table} t\n"
         f"WHERE {day} < from_iso8601_timestamp('2018-01-02T00:00:00'){base}"
     )
@@ -250,16 +256,18 @@ def check_no_duplicate_hours(ts_table: str, dialect: dict | None = None,
     (building, hour) row is counted once per copy -- silently, and by a factor
     nothing else in the assessment would reveal.
 
-    A state-partitioned PUBLISHED table is safe because the queries join
-    `t.state = m.state`, which selects one copy. A crawled table has no state
-    column, so there is nothing to disambiguate on: if it carries duplicates,
-    the only honest options are to say so or to stop. This reports; the caller
-    decides.
+    A state-partitioned PUBLISHED table keeps one copy per state folder by
+    design and the queries join `t.state = m.state`, which selects one copy, so
+    the probe keys on the state there and only a second copy WITHIN a state
+    counts. A crawled table has no state column, so there is nothing to
+    disambiguate on: if it carries duplicates, the only honest options are to
+    say so or to stop. This reports; the caller decides.
 
     Checks one day rather than the year -- duplication is structural, so a day
     is enough to detect it, and scanning 8,760 hours to prove a data-shape
     property is not worth the money.
     """
+    d = _d(dialect)
     sql = duplicate_hours_sql(ts_table, dialect)
     if not sql:
         return ""
@@ -275,13 +283,14 @@ def check_no_duplicate_hours(ts_table: str, dialect: dict | None = None,
     uniq = float(df.iloc[0]["distinct_bldg_hour"])
     if not uniq or rows <= uniq * 1.0001:
         return ""
-    return (f"{ts_table} carries {rows / uniq:.2f} rows per (building, hour) — the "
-            "profile is duplicated, most likely once per state the building is "
-            "apportioned into. Every weighted timeseries sum would count it once "
-            "per copy. A published state-partitioned table is disambiguated by "
-            f"the state join, but {ts_table} has "
-            f"{'a state column that is not being used' if d['state'] else 'no state column'}"
-            ", so the copies cannot be told apart.")
+    key = "(building, state, hour)" if d["state"] else "(building, hour)"
+    return (f"{ts_table} carries {rows / uniq:.2f} rows per {key} inside the baseline "
+            "partition — the profile is duplicated, and every weighted timeseries sum "
+            "would count it once per copy. "
+            + ("The copies a published table keeps per state folder are already keyed "
+               "out, so this is a second copy within a single state."
+               if d["state"] else
+               "The table has no state column, so the copies cannot be told apart."))
 
 
 def bldg_col(dialect: dict | None, alias: str = "t") -> str:

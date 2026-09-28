@@ -196,6 +196,14 @@ def build_membership_sql(ts_table: str, md_county_table: str, region: dict,
                 f"{time_expr(d, 't')} < from_iso8601_timestamp('2018-01-02T00:00:00')"]
     if d["state"]:
         ts_where.append(f't."{d["state"]}" IN ({states})')
+    # Membership at the timeseries grain. A published table keeps one copy of a
+    # building per STATE folder, so a model with metadata rows in two target
+    # states is covered only where its copy exists; finding it in either state
+    # would mark every row covered and hide a missing folder. A crawled table
+    # holds one copy, keyed by the building alone. Same shape as the
+    # applicability join of the measure profiles.
+    ts_cols = f't."{d["bldg"]}" AS b' + (f', t."{d["state"]}" AS s' if d["state"] else "")
+    on = "t.b = m.bldg_id" + (" AND t.s = m.state" if d["state"] else "")
     return (
         "SELECT COUNT(DISTINCT m.bldg_id) AS md_bldgs,\n"
         "    COUNT(DISTINCT CASE WHEN t.b IS NOT NULL THEN m.bldg_id END) AS ts_bldgs,\n"
@@ -203,8 +211,8 @@ def build_membership_sql(ts_table: str, md_county_table: str, region: dict,
         "    SUM(CASE WHEN t.b IS NOT NULL THEN m.weight * "
         f'm."{SQFT_COL}" END) AS sqft_with_ts\n'
         f"FROM {md_county_table} m\n"
-        f'LEFT JOIN (SELECT DISTINCT t."{d["bldg"]}" AS b FROM {ts_table} t\n'
-        f"           WHERE {' AND '.join(ts_where)}) t ON t.b = m.bldg_id\n"
+        f"LEFT JOIN (SELECT DISTINCT {ts_cols} FROM {ts_table} t\n"
+        f"           WHERE {' AND '.join(ts_where)}) t ON {on}\n"
         f"WHERE m.state IN ({states}) AND CAST(m.upgrade AS varchar) = '0'\n"
         "  AND m.completed_status = 'Success'\n"
         f'  AND m."in.nhgis_county_gisjoin" IN ({counties})'

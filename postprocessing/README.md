@@ -198,10 +198,11 @@ or crawled again, so a rebuild is never answered from the old tables.
 
 Open `dashboard.html` in the `results_dashboard/` subfolder of the comparison's
 own output folder: `output/CBECS 2018 vs ComStock <version> - Baseline/` for
-`compare_comstock_to_cbecs.py` (`compare_runs.py` appends ` +1 more`, keeping the
-shortest names when the path would get long), `output/ComStock
-<version>/measure_runs/` for `compare_upgrades.py`, and `output/ComStock <version>
-vs AMI v01/` for `compare_comstock_to_ami.py`. The log line `results dashboard:
+`compare_comstock_to_cbecs.py`, `output/<COMPARISON_NAME>/` for `compare_runs.py`
+and `compare_runs_different_samples.py` (the name set at the top of the driver;
+keep it short on Windows), `output/ComStock <version>/measure_runs/` for
+`compare_upgrades.py`, and `output/ComStock <version> vs AMI v01/` for
+`compare_comstock_to_ami.py`. The log line `results dashboard:
 ...` states the exact path. Without a comparison object it is `output/ComStock
 <version>/results_dashboard/`; it never creates a top-level folder of its own.
 Metric CSVs, `findings.md` and the exact SQL are in that same subfolder.

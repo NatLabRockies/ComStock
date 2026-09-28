@@ -12,7 +12,8 @@ of the measure profiles, and the schema-drift guards around the gas column.
 import numpy as np
 import pandas as pd
 
-from comstockpostproc.results_dashboard import annual, distributions as dist, measures, timeseries as ts
+from comstockpostproc.results_dashboard import (ami_shapes, annual, distributions as dist, measures,
+                                                timeseries as ts)
 from comstockpostproc.results_dashboard.design_params import METRICS, build_params_sql
 
 CRAWLED = {**ts.PUBLISHED, "bldg": "building_id", "time": "time", "state": "",
@@ -117,4 +118,16 @@ def test_roll_up_keeps_an_all_null_metric_null():
     assert out.loc["All", "sqft"] == 6.0 and out.loc["Hospital", "site_energy"] == 5.0
     pair = annual.roll_up_pair(fine.assign(vintage="1990s"), "vintage")
     assert pair["sqft_zero_gas"].isna().all() and pair["sqft"].sum() == 6.0
+
+
+def test_ami_membership_probe_joins_at_the_timeseries_grain():
+    region = {"counties": ["G0800690"], "states": ["CO"]}
+    published = ami_shapes.build_membership_sql("rel_ts_by_state", "run_md_county", region, ts.PUBLISHED)
+    # published: a model is covered only where its state folder has a copy
+    assert 't."bldg_id" AS b, t."state" AS s' in published
+    assert "ON t.b = m.bldg_id AND t.s = m.state" in published
+    crawled = ami_shapes.build_membership_sql("run_timeseries_vu", "run_md_county", region, CRAWLED)
+    assert 't."building_id" AS b FROM' in crawled          # building only, no state alias
+    assert '" AS s' not in crawled and "t.s = m.state" not in crawled
+    assert "ON t.b = m.bldg_id\n" in crawled
 

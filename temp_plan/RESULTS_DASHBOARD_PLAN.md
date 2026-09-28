@@ -228,6 +228,22 @@ a day of being raised, and GitHub marks them outdated, but no reply was ever pos
 nobody clicked Resolve, so each new review summary carries them again. Posting the reply
 and resolving is a manual step on the PR page.
 
+### Copilot review 5 (2026-09-28): 8 open threads, 6 new, plus 1 previously missed
+
+| thread | verdict | change |
+|---|---|---|
+| duplicate-hour probe keys on (building, hour) and omits the state, so a published `*_ts_by_state` table with one copy per state folder reads as duplicated and both timeseries legs are declined | real for published tables | key is (building, state, hour) when the dialect has a state column, (building, hour) otherwise; message reworded; `check_no_duplicate_hours` now defines `d` before its failure message (a latent NameError on that path); test added |
+| AMI membership probe keeps only `bldg_id` for a published table, so a model with rows in two target states counts as covered wherever one copy exists | real for published tables | membership CTE at the timeseries grain: (building, state) and a join on both for published tables, building only for crawled; test added |
+| previously missed: `queries/ami_<region>_timeseries.sql` written with the published default dialect while the executed query used the detected one | real (audit trail) | sidecar built with `ts_dial` |
+| previously missed: README still described the `+N more` folder | real | README paragraph rewritten for `COMPARISON_NAME` |
+| escape annual category labels in tooltips; upgrade names in the measure selector; run labels in the heating-fuel headers; Athena coverage values | valid, low | `esc()` at every remaining data-derived insertion: tooltips, verdict cards, ranked-gap row keys, AMI region and measure location options, measure selector, legend keys, badges, measure tables, heating-fuel headers, `absentTag` titles, and every Coverage-tab list from Athena |
+| cache key, egg-info (round 1) | fixed long ago; unresolved on GitHub | reply and Resolve |
+
+Why new findings keep appearing beside the old ones: Copilot's pass is not exhaustive and
+reports a bounded number of findings against the code as it stands; each fix changes the
+surrounding lines and the next pass reads them afresh. "Previously missed" is GitHub's own
+label for a finding in code that did not change since the last review.
+
 PR housekeeping still open: tick the change-type and author checkboxes, add the
 `postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
 re-request the Copilot review. Optional: license headers on the `*.py.template` files

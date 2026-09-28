@@ -439,8 +439,11 @@ def _assess(args) -> None:
             ami_clock = {}   # run key -> 'est' | 'local' (timeseries clock)
             for rg in regions:
                 region = ami_shapes.REGIONS[rg]
+                # The same dialect the query below runs with, so the sidecar is
+                # the SQL that executed and not the published-table default.
                 (out / "queries" / f"ami_{rg}_timeseries.sql").write_text(
-                    ami_shapes.build_ts_sql(primary.ts_table, primary.md_county_table, region),
+                    ami_shapes.build_ts_sql(primary.ts_table, primary.md_county_table, region,
+                                            ts_dial),
                     encoding="utf-8")
                 (out / "queries" / f"ami_{rg}_sqft.sql").write_text(
                     ami_shapes.build_sqft_sql(primary.md_county_table, region), encoding="utf-8")

@@ -17,7 +17,7 @@ const ABSENT = {
   noRecords:     "no records",      // zero usable rows for this selection
 };
 const absentTag = (kind, tip) => `<span class="absent"${
-  tip?` title="${String(tip).replace(/"/g,"&quot;")}"`:""}>${ABSENT[kind]}</span>`;
+  tip?` title="${esc(tip)}"`:""}>${ABSENT[kind]}</span>`;
 
 const fmt = (v, n=1) => (v===null||v===undefined||Number.isNaN(v)) ? ABSENT.noValue
   : v.toLocaleString(undefined,{minimumFractionDigits:n,maximumFractionDigits:n});
@@ -298,7 +298,7 @@ function groupedBar(host, rows, series, opts={}){
         series.map(s2=>`<div class="row"><span>${esc(s2.label)}</span><span>${fmt(r.values[s2.key],2)}</span></div>`).join("") +
         (r.ciLow!==null&&r.ciLow!==undefined
           ? `<div class="row"><span>CBECS 95% CI</span><span>${fmt(r.ciLow,2)}–${fmt(r.ciHigh,2)}</span></div>`:"") +
-        (r.note?`<div class="row"><span>${r.note}</span><span></span></div>`:""), ev));
+        (r.note?`<div class="row"><span>${esc(r.note)}</span><span></span></div>`:""), ev));
       rect.addEventListener("mouseleave", hideTip);
       svg.appendChild(rect);
     });
@@ -958,7 +958,7 @@ function profileChart(host, pts, opts={}){
       html += `<div class="row"><span>${opts.comstock2Label||"comparison run"}</span><span>${fmt(p.comstock2,opts.normalized?4:4)}</span></div>`;
     (opts.extraLines||[]).forEach(l=>{
       if(p[l.key]!==null&&p[l.key]!==undefined)
-        html += `<div class="row"><span>${l.label}</span><span>${fmt(p[l.key],4)}</span></div>`;
+        html += `<div class="row"><span>${esc(l.label)}</span><span>${fmt(p[l.key],4)}</span></div>`;
     });
     if(rel_!==null) html += `<div class="row"><span>level difference</span><span>${pct(rel_)}</span></div>`;
     showTip(html, ev);
@@ -1174,7 +1174,7 @@ function waterfall(host, items, opts={}){
       width:bw, height:Math.max(Math.abs(y(s.start)-y(s.end)),1.5), rx:3,
       fill:s.color||(s.delta>=0?"#D55E00":"#0072B2"), opacity:.85});
     rect.addEventListener("mousemove",ev=>showTip(
-      `<b>${s.label}</b><div class="row"><span>contribution</span><span>${pct(null)===pct(null)&&""}${(s.delta>0?"+":"")+fmt(s.delta,1)} TBtu</span></div>`+
+      `<b>${esc(s.label)}</b><div class="row"><span>contribution</span><span>${pct(null)===pct(null)&&""}${(s.delta>0?"+":"")+fmt(s.delta,1)} TBtu</span></div>`+
       `<div class="row"><span>running total</span><span>${fmt(s.end,1)} TBtu</span></div>`,ev));
     rect.addEventListener("mouseleave",hideTip);
     svg.appendChild(rect);
@@ -1331,13 +1331,13 @@ function verdictStrip(){
   return `<div class="panel"><h2>Where ${runShort(PRIMARY)} stands against CBECS 2018
       <span class="badge">national totals, whole stock</span>
       <span class="badge">% of CBECS</span></h2>
-    <p class="note" style="margin-top:6px">Largest difference: <b>${worst.label}</b>,
+    <p class="note" style="margin-top:6px">Largest difference: <b>${esc(worst.label)}</b>,
     <b>${pct(worst.p)}</b> of CBECS. ${nOut} of ${cards.length} metrics fall outside the CBECS 95%
     confidence interval${nUntested?`; ${nUntested} has no interval to test against (†)`:""}.
     ${MULTI&&SECONDARY?`Relative to <b>${runShort(SECONDARY.key)}</b>, ${nBetter} moved toward CBECS and
       ${nWorse} moved away.`:""}</p>
     <div class="verdict">${cards.map(c=>`<div class="vcard">
-      <div class="vlabel">${c.label}</div>
+      <div class="vlabel">${esc(c.label)}</div>
       <div class="vval" style="color:${Math.abs(c.p)>=25?"var(--bad)":"var(--ink)"}">${pct(c.p)}${
         c.tested?"":'<span class="ci-na" title="CBECS carries no confidence interval for this metric">†</span>'}</div>
       <div class="vsub">${c.outside?"outside CBECS 95% CI"
@@ -1551,7 +1551,7 @@ function renderRankTable(){
     <th>attribution</th></tr></thead><tbody>`;
   top.forEach((r,i)=>{
     const share=natGap?100*r.delta/natGap:null;
-    t+=`<tr class="clickable" data-type="${r.bt}"><td>${i+1}</td>
+    t+=`<tr class="clickable" data-type="${esc(r.bt)}"><td>${i+1}</td>
       <td style="text-align:left">${esc(r.label)}${r.within?' <span class="badge">inside CI</span>':""}</td>
       <td>${fmt(r.cbecs,1)}</td><td>${fmt(r.comstock,1)}</td>
       <td><span class="cell" style="background:${diffColor(r.delta>0?30:-30)}">${(r.delta>0?"+":"")+fmt(r.delta,1)}</span></td>
@@ -2174,8 +2174,8 @@ function amiRegionSelect(sn){
   const noKey = sn === undefined;
   return `<select id="amiRegion" aria-label="AMI region">${AMI_REGIONS.map(r=>{
     const has=!noKey&&(sn===null||(D.amiProfiles[r]||[]).some(p=>p.building_type===sn));
-    return `<option value="${r}" ${r===state.amiRegion?"selected":""} ${has?"":"disabled"}>${
-      r}${has?"":" — no data"}</option>`;}).join("")}</select>`;
+    return `<option value="${esc(r)}" ${r===state.amiRegion?"selected":""} ${has?"":"disabled"}>${
+      esc(r)}${has?"":" — no data"}</option>`;}).join("")}</select>`;
 }
 
 /* load duration curve: full-year hourly load sorted descending, both sides */
@@ -2788,7 +2788,7 @@ function feComboLegend(items){
     const k=feKey(i.eu,i.fuel);
     return `<span class="key" data-fe="${k}" role="button"
       aria-pressed="${!hid.has(k)}" title="click to hide or show this series"
-      >${hatchChip(i.color,i.pattern)}<span>${i.label}</span></span>`;}).join("")}
+      >${hatchChip(safeColor(i.color),i.pattern)}<span>${esc(i.label)}</span></span>`;}).join("")}
     ${hid.size?`<span class="key" data-fe="__all__" role="button"
       aria-pressed="true" style="font-weight:600">show all</span>`:""}
   </div>`;
@@ -3164,7 +3164,7 @@ function stackedBarChart(host, bars, opts={}){
       const rect=el("rect",{x,y:yTop,width:bw,height:Math.max(hh,.8),
         fill:s.color,stroke:"var(--panel)","stroke-width":1});
       rect.addEventListener("mousemove",ev=>showTip(
-        `<b>${b.label}</b><div class="row"><span>${s.name}</span><span>${(s.value>0?"+":"")+fmt(s.value,2)}</span></div>`+
+        `<b>${esc(b.label)}</b><div class="row"><span>${esc(s.name)}</span><span>${(s.value>0?"+":"")+fmt(s.value,2)}</span></div>`+
         `<div class="row"><span>bar total</span><span>${fmt(b.segs.reduce((t,x2)=>t+x2.value,0),2)}</span></div>`,ev));
       rect.addEventListener("mouseleave",hideTip);
       svg.appendChild(rect);
@@ -3289,7 +3289,7 @@ function hBoxChart(host, entries, opts={}){
         {cx:x(v),cy:cy-(e.series?perSub*0.52:rh(e)*0.44),r:1.15,
          fill:"var(--ink-2)","pointer-events":"none"})));
       g.addEventListener("mousemove",ev=>showTip(
-        `<b>${e.label}${s.name?` · ${s.name}`:""}</b>`+
+        `<b>${esc(e.label)}${s.name?` · ${esc(s.name)}`:""}</b>`+
         `<div class="row"><span>min–max</span><span>${fmt(st.vmin)} – ${fmt(st.vmax)}</span></div>`+
         `<div class="row"><span>p25 / median / p75</span><span>${fmt(st.p25)} / ${fmt(st.p50)} / ${fmt(st.p75)}</span></div>`+
         `<div class="row"><span>mean (dashed)</span><span>${fmt(st.mean)}</span></div>`+
@@ -3319,7 +3319,7 @@ function measControls(){
     </div>
     ${single
       ? `<select id="measSel">${MEAS_LIST.map(mm=>
-          `<option value="${mm.up}" ${mm.up===state.measSel?"selected":""}>${mm.up} · ${mm.name}</option>`).join("")}</select>`
+          `<option value="${esc(mm.up)}" ${mm.up===state.measSel?"selected":""}>${esc(mm.up)} · ${esc(mm.name)}</option>`).join("")}</select>`
       : `<div class="mmulti" id="mmulti">
           <button class="tab" id="mmultiBtn" aria-expanded="${!!state.measMenuOpen}"
             aria-haspopup="true">Measures: ${state.measMulti.length} of ${MEAS_LIST.length} ▾</button>
@@ -3410,7 +3410,7 @@ function measKeyLegend(list, dashed){
     aria-pressed="${!hid.has(mm.up)}" title="click to hide or show this measure"
     style="cursor:pointer${hid.has(mm.up)?";opacity:.4;text-decoration:line-through":""}">
     <span style="width:14px;height:0;border-top:${dashed?"2.5px dashed":"2.5px solid"} ${
-      mm.color};display:inline-block;flex:none"></span>${mm.short}</span>`).join("");
+      safeColor(mm.color)};display:inline-block;flex:none"></span>${esc(mm.short)}</span>`).join("");
 }
 
 /* APPLICABILITY IS REPORTED ON BOTH DENOMINATORS. Weighted buildings and
@@ -3487,7 +3487,7 @@ function measDistPanels(list){
   const gLab=(groups.find(g=>g[0]===state.measDistGroup)||groups[0])[1].toLowerCase();
   return `<div class="panel"><div class="head"><h2 style="margin-top:0">Per-building savings
       distributions by ${gLab} — %, kBtu/ft², $/ft²
-      <span class="badge">${multi?`${list.length} measures`:`${list[0].up} · ${list[0].name}`}</span>
+      <span class="badge">${multi?`${list.length} measures`:`${esc(list[0].up)} · ${esc(list[0].name)}`}</span>
       <span class="badge">each measure's own applicable buildings</span>
       <span class="badge">zeros dropped; % trimmed at ±150%</span></h2>
       <span class="spacer"></span>
@@ -3602,7 +3602,7 @@ function measReleasePanel(){
       const ok=v=>v!==null&&v===v;                       // not absent, not NaN
       const d=(ok(vals[iP])&&ok(vals[iO]))?vals[iP]-vals[iO]:null;
       t+=`<tr>${mi===0?`<td rowspan="${METRICS.length}" style="vertical-align:top">
-            <b>${up}</b> · ${nm}</td>`:""}
+            <b>${esc(up)}</b> · ${esc(nm)}</td>`:""}
         <td>${lab} <span style="color:var(--ink-3)">${unit}</span></td>
         ${vals.map(v=>`<td>${
           v===null ? absentTag("measureAbsent","this release does not contain this measure")
@@ -3685,7 +3685,7 @@ function renderMeasuresAnnual(){
     // Legend in a rail to the right: a full end-use x fuel key wraps badly
     // across the top of a chart this tall.
     h+=`<div class="panel"><h2 style="margin-top:0">Annual site energy by fuel and end use — TBtu
-        <span class="badge">${mm.up} · ${mm.name}</span>
+        <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
         <span class="badge">baseline vs measure</span>
         <span class="badge">color = end use, hatch = fuel</span>${feFilterBadge()}</h2>
       <p class="note">Applicable only compares the measure against the baseline rows of its own
@@ -3720,7 +3720,7 @@ function renderMeasuresAnnual(){
         `<option value="${slug}"${state.measPop===slug?" selected":""}>${lab}</option>`)
         .join("")}</select></label>`;
     h+=`<div class="panel"><div class="head"><h2 style="margin-top:0">Annual GHG emissions by fuel
-        — MMT CO₂e <span class="badge">${mm.up} · ${mm.name}</span>
+        — MMT CO₂e <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
         <span class="badge">baseline vs measure</span></h2>
         <span class="spacer"></span>${popSel("mghgPop")}</div>
       <p class="note">Stacked by fuel; the three panels differ only in the electricity
@@ -3732,7 +3732,7 @@ function renderMeasuresAnnual(){
       <div class="grid3fit">${GHG_PANELS.map(([f,lab])=>
         `<div><h3>${lab}</h3><div id="mghg-${f}"></div></div>`).join("")}</div></div>`;
     h+=`<div class="panel"><div class="head"><h2 style="margin-top:0">Annual utility bills by fuel
-        — billion $/yr <span class="badge">${mm.up} · ${mm.name}</span>
+        — billion $/yr <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
         <span class="badge">baseline vs measure</span></h2>
         <span class="spacer"></span>${popSel("mbillPop")}</div>
       <p class="note">Stacked by fuel; the three panels use the maximum, mean, and minimum
@@ -4100,8 +4100,8 @@ function renderMeasuresAnnual(){
     MEAS.dist.filter(r=>r.kind==="pct_site"&&r.group==="fuel"
         &&sel.some(mm=>mm.up===String(r.upgrade))).forEach(r=>{
       const warnNeg=r.share_negative_pct>10, warnTail=r.share_trimmed_pct>1;
-      fl+=`<tr><td style="text-align:left">${measShort(r.upgrade)}</td>
-        <td style="text-align:left">${r.category}</td><td>${fmt(r.p50)}</td>
+      fl+=`<tr><td style="text-align:left">${esc(measShort(r.upgrade))}</td>
+        <td style="text-align:left">${esc(r.category)}</td><td>${fmt(r.p50)}</td>
         <td${warnNeg?' style="color:var(--bad);font-weight:600"':''}>${fmt(r.share_negative_pct)}%</td>
         <td${warnTail?' style="color:var(--bad);font-weight:600"':''}>${fmt(r.share_trimmed_pct,2)}%</td></tr>`;
     });
@@ -4122,7 +4122,7 @@ function renderMeasuresTs(){
   const shown=states.filter(st=>st===state.measLoc);
   const locSelect=states.length>1?`<label class="note" style="margin:0 8px 0 0">location
       <select id="measLoc" aria-label="measure timeseries location">${states.map(st=>
-        `<option value="${st}" ${st===state.measLoc?"selected":""}>${st.replace(/_/g," ")}</option>`
+        `<option value="${esc(st)}" ${st===state.measLoc?"selected":""}>${esc(st.replace(/_/g," "))}</option>`
       ).join("")}</select></label>`:"";
   if(!states.length){
     // The assessment records WHY this leg did not run. Show that, rather than a
@@ -4276,7 +4276,7 @@ function renderMeasuresTs(){
     if(state.measView==="single"&&sel.length){
       const mm=sel[0];
       h+=`<div class="panel"><h2>Average hourly electricity demand by end use — ${st} — MW
-          <span class="badge">${mm.up} · ${mm.name}</span>
+          <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
           <span class="badge">applicable buildings</span>
           <span class="badge">measure vs its own baseline</span>
           ${euAnyHidden()?`<span class="badge" style="color:var(--bad)">end uses hidden — the
@@ -4293,7 +4293,7 @@ function renderMeasuresTs(){
           </div>
         </div></div>
         <div class="panel"><h2>Average hourly natural gas demand — ${st} — MW thermal
-          <span class="badge">${mm.up} · ${mm.name}</span>
+          <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
           <span class="badge">applicable buildings</span>
           ${groupControls(`gts-gas-${st}`)}</h2>
         <p class="note">Gas is shown as thermal megawatts, the same energy-rate unit as the
@@ -4802,7 +4802,7 @@ function hfMatrix(btype){
 
   const head = fuels.map(f=>`<th colspan="${runs.length}" style="text-align:center">
       <span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</th>`).join("");
-  const sub = fuels.map(()=>runs.map(s=>`<th>${s.label}</th>`).join("")).join("");
+  const sub = fuels.map(()=>runs.map(s=>`<th>${esc(s.label)}</th>`).join("")).join("");
   const line = (cat, src, bold) => {
     const n = hfCellN(src, cat);
     const thin = n!==null && n<HF_THIN_N;
@@ -4890,8 +4890,8 @@ function renderHeatingFuel(host){
     <div class="grid2">
       <div><h3>Fuel mix — % of heated floor area</h3><div id="hf-national"></div></div>
       <div><h3>Shares and difference from CBECS</h3><table><thead><tr><th>Fuel</th>
-        ${series.map(s=>`<th>${s.label}</th>`).join("")}
-        ${runs.map(s=>`<th>${s.label} − CBECS</th>`).join("")}</tr></thead><tbody>
+        ${series.map(s=>`<th>${esc(s.label)}</th>`).join("")}
+        ${runs.map(s=>`<th>${esc(s.label)} − CBECS</th>`).join("")}</tr></thead><tbody>
         ${fuels.map(f=>{
           const cb = hfShare(nat,"National",HF_CBECS,f);
           return `<tr><td><span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</td>
@@ -5127,14 +5127,14 @@ function renderCoverage(){
   const regs=c.regions||{};
   const regKeys=Object.keys(regs).sort();
   const amiAll=(c.ami_regions_compared||regKeys);
-  const rowFor=(o,k)=>((o||{})[k]||[]).join(", ")||"—";
+  const rowFor=(o,k)=>((o||{})[k]||[]).map(esc).join(", ")||"—";
   // Thin ComStock cells, each with its own model count. The count is the point:
   // "retail" tells a reader nothing, "retail (2)" tells them not to trust that
   // shape. These are DRAWN in the charts, not dropped, so naming them here is
   // the only thing separating a real profile from two buildings' worth of noise.
   const thinCs=(o)=>{
     const t=(o||{}).comstock_thin_sample_types||[], n=(o||{}).comstock_model_counts||{};
-    return t.length ? t.map(bt=>`${bt}${n[bt]!==undefined?` (${n[bt]})`:""}`).join(", ") : "—";
+    return t.length ? t.map(bt=>`${esc(bt)}${n[bt]!==undefined?` (${n[bt]})`:""}`).join(", ") : "—";
   };
   h+=`<div class="panel"><h2>AMI coverage by region — which building types each region can test
       <span class="badge">${amiAll.length} region${amiAll.length===1?"":"s"} in this
@@ -5160,21 +5160,21 @@ function renderCoverage(){
          </tbody></table></div>`
       : `<table class="wrap-cells"><tbody>
           <tr><td>AMI region</td><td>${c.region||absentTag("noValue")}</td></tr>
-          <tr><td>Types compared against AMI</td><td>${(c.compared_types||[]).join(", ")||"none"}</td></tr>
-          <tr><td>No AMI truth data</td><td>${(c.ami_missing_types||[]).join(", ")||"none"}</td></tr>
+          <tr><td>Types compared against AMI</td><td>${(c.compared_types||[]).map(esc).join(", ")||"none"}</td></tr>
+          <tr><td>No AMI truth data</td><td>${(c.ami_missing_types||[]).map(esc).join(", ")||"none"}</td></tr>
           <tr><td>Skipped — thin AMI sample (&lt;3 buildings)</td>
-              <td>${(c.ami_thin_sample_types_skipped||[]).join(", ")||"none"}</td></tr>
+              <td>${(c.ami_thin_sample_types_skipped||[]).map(esc).join(", ")||"none"}</td></tr>
           <tr><td>Thin ComStock sample (&lt;${c.comstock_min_models_threshold||10} models)</td>
               <td>${thinCs(c)}</td></tr>
           <tr><td>In AMI but absent from ComStock</td>
-              <td>${(c.comstock_missing_types||[]).join(", ")||"none"}</td></tr>
+              <td>${(c.comstock_missing_types||[]).map(esc).join(", ")||"none"}</td></tr>
         </tbody></table>`}
     ${c.ami_headline_region_note?`<p class="note"><b>Headline AMI numbers are one region, not a
       national result.</b> ${c.ami_headline_region_note}</p>`:""}
     ${c.ami_runs_skipped?`<p class="note">Runs without an AMI leg: ${
       JSON.stringify(c.ami_runs_skipped)}.</p>`:""}
     ${Object.values(c.ami_timeseries_clock||{}).includes("est")?`<p class="note"><b>Clock:</b> ${
-      Object.entries(c.ami_timeseries_clock).filter(([,v])=>v==="est").map(([k])=>k).join(", ")
+      Object.entries(c.ami_timeseries_clock).filter(([,v])=>v==="est").map(([k])=>esc(k)).join(", ")
       } read a published-release table, which stores every building's timestamps in Eastern
       Standard Time; they were converted back to local standard time by state before comparison
       (split-zone states use their majority zone). AMI meters and crawled runs are already local.</p>`:""}</div>`;

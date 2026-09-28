@@ -75,3 +75,14 @@ def test_measure_seasons_match_measure_postprocessing_plots():
         return "Winter"
     ours = {m: s for s, months in MEASURE_SEASONS.items() for m in months}
     assert ours == {m: map_to_season(m) for m in range(1, 13)}
+
+
+def test_duplicate_hour_probe_keys_on_the_state_of_a_published_table():
+    # a published table keeps one copy per state folder by design; only a second
+    # copy WITHIN a state is duplication
+    published = ts.duplicate_hours_sql("rel_ts_by_state", {**ts.PUBLISHED, "up_type": "bigint"})
+    assert 'COUNT(DISTINCT (t."bldg_id", t."state", ' in published
+    crawled = ts.duplicate_hours_sql("run_timeseries_vu", {**ts.PUBLISHED, "bldg": "building_id",
+                                                           "time": "time", "state": "", "up_type": "bigint"})
+    assert 'COUNT(DISTINCT (t."building_id", ' in crawled and '"state"' not in crawled
+
