@@ -99,26 +99,40 @@ def build_dist_sql(md_table: str, have: set[str] | None = None,
     )
 
 
+# Dimension columns that can DIFFER between one model's apportionment rows. A
+# model is apportioned to tracts; when those tracts straddle a census-division
+# (or state) line, the model has rows in each, with the partial weight that
+# lands there. Everything else in the frame -- building type, vintage, floor
+# area, every EUI -- is a property of the model and identical on all its rows.
+GEO_COLS = ("census_division", "state", "county")
+
+
 def collapse_to_models(df: pd.DataFrame, label: str = "") -> pd.DataFrame:
-    """One row per MODEL, with its apportioned weights SUMMED.
+    """One row per (model, geography) with the partial weights of that geography SUMMED.
 
     An apportioned metadata aggregate has one row per (building, geography),
-    each carrying a partial weight. The EUI values are model-level -- identical
-    across a model's geography rows -- so keeping one value and summing the
-    weight is an exact de-replication, not an aggregation choice: every WEIGHTED
-    statistic is unchanged, while every unweighted one starts counting models
-    instead of rows.
+    each carrying a partial weight. Collapsing straight to one row per model
+    -- which this used to do, keeping the FIRST census division -- moved a
+    model's whole weight into whichever division its first row happened to
+    name, so the division-specific distributions were wrong for every model
+    apportioned across a division line. Grouping by the model AND the
+    geography columns that vary within it keeps each division's share where it
+    belongs; for model-level columns nothing changes, and rows of one model in
+    the same division (several states of one division, several counties) still
+    merge. Model counts downstream use nunique(bldg_id), not row counts.
     """
     if "bldg_id" not in df.columns or df.empty:
         return df
     n0 = len(df)
-    agg = {c: "first" for c in df.columns if c not in ("bldg_id", "weight")}
+    keys = ["bldg_id"] + [c for c in GEO_COLS if c in df.columns]
+    agg = {c: "first" for c in df.columns if c not in keys and c != "weight"}
     if "weight" in df.columns:
         agg["weight"] = "sum"
-    out = df.groupby("bldg_id", as_index=False).agg(agg)
+    out = df.groupby(keys, as_index=False, dropna=False).agg(agg)
     if len(out) != n0:
-        logger.info("distributions%s: %d apportionment rows -> %d models",
-                    f" ({label})" if label else "", n0, len(out))
+        logger.info("distributions%s: %d apportionment rows -> %d (model, geography) rows "
+                    "over %d models", f" ({label})" if label else "", n0, len(out),
+                    out["bldg_id"].nunique())
     return out
 
 
@@ -243,6 +257,8 @@ def _prepare(df: pd.DataFrame, cols: dict[str, str], is_cbecs: bool) -> pd.DataF
     sqft = pd.to_numeric(df[sqft_src], errors="coerce").to_numpy(float)
     out["w_count"] = w
     out["w_area"] = w * sqft
+    if "bldg_id" in df.columns:
+        out["bldg_id"] = df["bldg_id"].values   # so cells can count MODELS
     out["size_bin"] = pd.cut(sqft, bins=SIZE_BIN_EDGES, labels=SIZE_BIN_LABELS,
                              right=True, include_lowest=True).astype(object)
     for metric, col in cols.items():
@@ -272,7 +288,11 @@ def _quantile_cell(g: pd.DataFrame, dataset: str, dimension: str, category: str,
     v = g[metric].to_numpy(float)
     w = g["w_count" if basis == "count" else "w_area"].to_numpy(float)
     qs = weighted_quantile(v, w, QUANTILES)
-    n = int(np.isfinite(v).sum())
+    # Models, not rows: a model apportioned across a division line has a row
+    # per division (collapse_to_models), and both may sit in this cell when the
+    # cell is not a geography.
+    ok = np.isfinite(v)
+    n = int(g.loc[ok, "bldg_id"].nunique()) if "bldg_id" in g.columns else int(ok.sum())
     return {
         "dataset": dataset, "dimension": dimension, "category": category,
         "btype": btype, "metric": metric, "basis": basis,

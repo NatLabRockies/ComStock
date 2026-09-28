@@ -675,12 +675,21 @@ def build_ts_base_sql(ts_table: str, md_table: str, loc: dict,
     # can re-base a measure's profile onto the whole stock
     # (stock + measure - applicable baseline) end use by end use.
     enduses = enduse_sums(dialect)
+    # The applicable set at the TIMESERIES grain, so joining it can never multiply
+    # a profile. A published table keeps one copy of each building per state
+    # folder and is joined on (building, state); a crawled table holds a single
+    # copy and is joined on the building alone. This CTE used to carry the
+    # location column itself -- a county id for a county location -- which
+    # join_on then compared with the timeseries STATE (no rows on a published
+    # table), and which, having one row per county of the building, fanned a
+    # crawled profile out once per county. The metadata join in the main query
+    # is a different matter: its fan-out across a building's geography rows is
+    # intended, because each row carries the PARTIAL weight the sum needs.
+    ts_has_state = bool((dialect or {"state": "state"}).get("state"))
+    app_cols = "bldg_id" + (f', "{md_state}" AS st' if ts_has_state else "")
     return (
         "WITH app AS (\n"
-        # DISTINCT is load-bearing: the county table carries one row per
-        # building PER COUNTY (apportionment), so without it the join fans out
-        # k-fold and inflates the baseline.
-        f'  SELECT DISTINCT bldg_id, "{location_col(loc, md_state)}" AS loc'
+        f"  SELECT DISTINCT {app_cols}"
         f" FROM {md_table}\n"
         f"  WHERE {location_pred(loc, md_state)}"
         f" AND {up_eq('upgrade', upgrade, up_type)}\n"
@@ -696,7 +705,7 @@ def build_ts_base_sql(ts_table: str, md_table: str, loc: dict,
         f"JOIN {md_table} m\n"
         f"  ON {join_on(dialect, md_state=md_state)}\n"
         f"    AND {up_join}\n"
-        f"JOIN app ON {join_on(dialect, md='app', md_state='loc')}\n"
+        f"JOIN app ON {join_on(dialect, md='app', md_state='st')}\n"
         f"WHERE {location_pred(loc, md_state, 'm')}\n"
         f"{_ts_state_line(dialect, loc)}"
         f"  AND {up_eq('t.upgrade', '0', up_type)} AND {up_eq('m.upgrade', '0', up_type)}\n"

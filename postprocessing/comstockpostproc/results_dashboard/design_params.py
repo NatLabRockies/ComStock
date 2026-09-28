@@ -393,16 +393,25 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
         keys.append((q(dim), "category"))
     grp = "".join(f"  {col} AS {alias},\n" for col, alias in keys)
     tail = ("GROUP BY " + ", ".join(c for c, _ in keys) + "\n") if keys else ""
-    # One row per MODEL, carrying the model's total weight. Without this the
-    # APPROX_PERCENTILEs below run over apportionment rows, so a model spread
-    # across k geographies counts k times and the "unweighted across models"
-    # percentiles are really weighted by geographic spread.
+    # One row per MODEL PER CATEGORY, carrying the weight the model has IN THAT
+    # CATEGORY. Without the de-duplication the APPROX_PERCENTILEs below run over
+    # apportionment rows, so a model spread across k geographies counts k times
+    # and the "unweighted across models" percentiles are really weighted by
+    # geographic spread. But de-duplicating per model alone (the previous form)
+    # kept an arbitrary first row, so a model apportioned across a census-
+    # division or state line put its WHOLE weight into that first geography and
+    # every dimension-specific mean, percentile and coverage was misallocated.
+    # Partitioning by the grouping column as well makes it exact both ways: for
+    # a model-level dimension (vintage, HVAC system, as-simulated climate zone)
+    # the partition is the model, for a geographic one it is the model's share
+    # in that category. Building type is model-level, so by_btype needs nothing.
     #
     # SELECT * is deliberate: the metric guards and expressions are arbitrary
     # SQL over columns this function never enumerates, so they must all survive.
+    part = "bldg_id" + (f", {q(dim)}" if dim else "")
     per_model = (f"(SELECT *,\n"
-                 f"        SUM({W}) OVER (PARTITION BY bldg_id) AS weight_model,\n"
-                 f"        ROW_NUMBER() OVER (PARTITION BY bldg_id"
+                 f"        SUM({W}) OVER (PARTITION BY {part}) AS weight_model,\n"
+                 f"        ROW_NUMBER() OVER (PARTITION BY {part}"
                  f" ORDER BY bldg_id) AS _rn\n"
                  f" FROM {md_table}\n WHERE {base_where or athena.baseline_where(md_table)}) t")
     return (f"SELECT\n{grp}"
