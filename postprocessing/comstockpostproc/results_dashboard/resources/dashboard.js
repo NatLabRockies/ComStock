@@ -4806,7 +4806,7 @@ function hfMatrix(btype){
   const line = (cat, src, bold) => {
     const n = hfCellN(src, cat);
     const thin = n!==null && n<HF_THIN_N;
-    return `<tr>${bold?`<td><b>${cat}</b></td>`:`<td>${cat}${thin
+    return `<tr>${bold?`<td><b>${esc(cat)}</b></td>`:`<td>${esc(cat)}${thin
       ? ` <span class="badge" title="Only ${fmt(n,0)} CBECS records behind this whole row">n=${fmt(n,0)}</span>`
       : ""}</td>`}${fuels.map(f=>runs.map(s=>hfDiffCell(src,cat,s.run,f)).join("")).join("")}</tr>`;
   };
@@ -4829,7 +4829,7 @@ function hfSharesTable(btype){
   const fuels = HF_FUELS.filter(f=>HF.some(r=>r.fuel===f));
   const block = (cat, src) => series.map((s,i)=>
     `<tr>${i===0?`<td rowspan="${series.length}" style="vertical-align:middle">${
-      cat}</td>`:""}
+      esc(cat)}</td>`:""}
       <td><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
       ${fuels.map(f=>{
         const v = hfShare(src, cat, s.run, f);

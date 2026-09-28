@@ -244,6 +244,13 @@ reports a bounded number of findings against the code as it stands; each fix cha
 surrounding lines and the next pass reads them afresh. "Previously missed" is GitHub's own
 label for a finding in code that did not change since the last review.
 
+### Copilot review 6 (2026-09-28): 3 open threads, 1 new
+
+One new thread: the heating-fuel tables interpolate the region name (`cat`, a census
+division from the CSV or the literal "National") into innerHTML unescaped, in `hfMatrix`
+and `hfSharesTable`. Valid, low; `esc()` at both sites. The other two open threads are
+the round-1 cache-key and egg-info threads, still awaiting Resolve.
+
 PR housekeeping still open: tick the change-type and author checkboxes, add the
 `postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
 re-request the Copilot review. Optional: license headers on the `*.py.template` files
