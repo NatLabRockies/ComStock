@@ -10,7 +10,7 @@ needs, in the same order as compare_runs.py:
                      `estimate`, scale to CBECS, export, crawl. About 35 minutes per 100k
                      baseline-only run on the first pass; minutes on a rerun, because the
                      caches and Athena tables are reused. Runs with measures take hours.
-    kind='athena'    Already crawled into ATHENA_DATABASE by an earlier driver. Its tables
+    kind='athena'    Already crawled into its `database` by an earlier driver. Its tables
                      are read; nothing is downloaded, apportioned, exported or crawled.
     kind='release'   A published OEDI release in buildstock_sdr. Read-only, like 'athena'.
 
@@ -46,8 +46,9 @@ logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
 # Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # database the crawled runs are read from. Keep 'enduse':
-                                   # the timeseries plots and the AMI comparison hard-code it
+ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `database`. Keep 'enduse'
+                                   # for processed runs: the timeseries plots and the AMI comparison
+                                   # elsewhere in the package hard-code it
 MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
 MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'process' runs; False writes
                                    # only their wide CSVs and the dashboard, which is faster
@@ -59,35 +60,36 @@ COMPARISON_NAME        = 'my comparison'    # the folder under output/ for every
                                             # it must stay under 260 characters
 DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrows, the "moved toward
                                             # CBECS" line and the heating-fuel gap column measure against
-S3_BASE_DIR            = 'eulp/euss_com'    # where the 'process' runs were uploaded (from their
-                                            # buildstockbatch yml); an entry may override it
 CANDIDATE_ESTIMATES    = ('2025R3', '2026R1')  # named in the pairing error; add new versions here
 GUARD_BUILDING_TYPE    = 'hospital'         # the type whose tracts differ between the candidates
 
 # ---- Runs -------------------------------------------------------------------
 # One entry per run. The FIRST is the run under review; the order is the bar order.
 #
-#   kind='process'  run       comstock_run_name on S3; also the Athena table prefix and, unless
-#                             `version` is given, the cache folder (comstock_data/<run>,
-#                             output/ComStock <run>). Never rename a cache folder once it exists.
-#                   estimate  stock estimate the run's sample was drawn against
-#                   color     hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
-#                   optional  label (display name), version (cache folder), s3_base_dir (this
-#                             run's bucket/prefix when it differs from S3_BASE_DIR), database
-#                             (where its tables are crawled to and read from, default
-#                             ATHENA_DATABASE), rebuild=True (re-export and re-crawl: table
-#                             existence is not weight freshness, so set it when the
-#                             apportionment changed), acceptable_failure_percentage (default 0.25)
-#   kind='athena'   run       the crawled table prefix
-#                   color; optional label (default 'ComStock <run>'), database (default ATHENA_DATABASE)
-#   kind='release'  key, label, md_table, color; optional database (default buildstock_sdr),
-#                   md_county_table, ts_table
+#   kind='process'  run          comstock_run_name on S3; also the Athena table prefix and, unless
+#                                `version` is given, the cache folder (comstock_data/<run>,
+#                                output/ComStock <run>). Never rename a cache folder once it exists.
+#                   s3_base_dir  bucket/prefix the run was uploaded to (from its buildstockbatch
+#                                yml); the run's data is at s3://<s3_base_dir>/<run>/<run>/
+#                   estimate     stock estimate the run's sample was drawn against
+#                   database     where its tables are crawled to and read from
+#                   color        hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
+#                   optional     label (display name), version (cache folder), rebuild=True
+#                                (re-export and re-crawl: table existence is not weight freshness,
+#                                so set it when the apportionment changed),
+#                                acceptable_failure_percentage (default 0.25)
+#   kind='athena'   run          the crawled table prefix;  database  where the tables are
+#                   color; optional label (default 'ComStock <run>')
+#   kind='release'  key, label, md_table, database, color; optional md_county_table, ts_table
 RUNS = [
-    dict(kind='process', run='<s3_run_name_a>', estimate='2025R3', color='#D55E00'),
-    dict(kind='process', run='<s3_run_name_b>', estimate='2025R3', color='#8C510A'),
-    dict(kind='athena',  run='<existing_run_a>', color='#E69F00'),
-    # dict(kind='athena',  run='<existing_run_b>', label='ComStock existing_run_b', color='#56B4E9'),
-    # dict(kind='release', key='r3_2025', label='2025 R3', color='#999999',
+    dict(kind='process', run='<s3_run_name_a>', s3_base_dir='eulp/euss_com', estimate='2025R3',
+         database='enduse', color='#D55E00'),
+    dict(kind='process', run='<s3_run_name_b>', s3_base_dir='eulp/euss_com', estimate='2025R3',
+         database='enduse', color='#8C510A'),
+    dict(kind='athena',  run='<existing_run_a>', database='enduse', color='#E69F00'),
+    # dict(kind='athena',  run='<existing_run_b>', database='enduse', color='#56B4E9',
+    #      label='ComStock existing_run_b'),
+    # dict(kind='release', key='r3_2025', database='buildstock_sdr', label='2025 R3', color='#999999',
     #      md_table='comstock_amy2018_r3_2025_md_agg_national_parquet'),
 ]
 
@@ -111,7 +113,7 @@ def main():
         logger.info('%s: simulation-output cache %s', r['run'],
                     'found, reloading it' if cached else 'not found, first pass, building it')
         objects[r['run']] = cspp.ComStock(
-            s3_base_dir=r.get('s3_base_dir', S3_BASE_DIR),
+            s3_base_dir=r['s3_base_dir'],
             comstock_run_name=r['run'],
             comstock_run_version=cache_version(r),
             comstock_year=2018,
@@ -218,6 +220,9 @@ def check_declaration():
     if len(set(names)) != len(names):
         raise SystemExit(f'RUNS lists a run twice: {names}')
     for r in RUNS:
+        if r['kind'] == 'process' and not r.get('s3_base_dir'):
+            raise SystemExit(f"{r['run']}: a process entry needs s3_base_dir (bucket/prefix the run "
+                             'was uploaded to)')
         if r['kind'] == 'process' and r.get('estimate') not in CANDIDATE_ESTIMATES:
             raise SystemExit(f"{r['run']}: estimate {r.get('estimate')!r} is not one of "
                              f'{CANDIDATE_ESTIMATES}')
@@ -261,7 +266,7 @@ def buildstock_path(entry):
     if not os.path.exists(path):
         import boto3
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        bucket, _, prefix = entry.get('s3_base_dir', S3_BASE_DIR).strip('/').partition('/')
+        bucket, _, prefix = entry['s3_base_dir'].strip('/').partition('/')
         key = f"{prefix}/{entry['run']}/{entry['run']}/buildstock_csv/buildstock.csv"
         logger.info('downloading s3://%s/%s', bucket, key)
         boto3.resource('s3').Object(bucket, key).download_file(path)
