@@ -213,6 +213,21 @@ Verification: `node --check` on the bundle; 19 dashboard tests pass (8 grain, of
 new bundle (five-measure 17.5 MB, four-run 56.6 MB) and opened in the browser without
 console errors.
 
+### Copilot review 4 (2026-09-28): 4 open threads, 1 new
+
+| thread | verdict | change |
+|---|---|---|
+| legend colours (`i.color`, `SECONDARY.color`, measure and series colours, payload end-use colours) written into style attributes without `safeColor` | valid, low (driver/payload-supplied) | `safeColor()` on every colour that reaches a style attribute, including the fullscreen/side-rail legend, the AMI legend, the measure menu and tables, the heating-fuel table and the end-use keys; it now also admits `var(--token)` and numeric `rgb/rgba`, which the page itself assigns; the labels next to those swatches are escaped |
+| JS bundle at import time / packaging (round 1) | fixed in `c7b9b5fa` (package data) and `bf456be6` (lazy read) | GitHub shows it outdated; needs a reply and Resolve |
+| cache key (round 1) | fixed in `2e1e263` and `athena_tables.py` (`invalidate_cache` after every export/crawl) | outdated; needs a reply and Resolve |
+| committed `x.egg-info` (round 1) | removed in `c7b9b5fa`; nothing tracked, ignored by both `.gitignore`s | outdated; needs a reply and Resolve |
+
+Why the round-1 threads keep reappearing: Copilot re-lists every thread that is still
+unresolved on GitHub, and it never resolves its own. All three were fixed in code within
+a day of being raised, and GitHub marks them outdated, but no reply was ever posted and
+nobody clicked Resolve, so each new review summary carries them again. Posting the reply
+and resolving is a manual step on the PR page.
+
 PR housekeeping still open: tick the change-type and author checkboxes, add the
 `postprocessing` label, reply to the two reviewer comments and the Copilot cache thread,
 re-request the Copilot review. Optional: license headers on the `*.py.template` files

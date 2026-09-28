@@ -105,9 +105,11 @@ const runLabel = k => esc((ALL_RUNS.find(r=>r.key===k)||{}).label || k);
    subtitle and the Coverage tab, where the source table matters. */
 const runShort = k => String(runLabel(k)).replace(/\s*\(.*$/,"").trim() || esc(k);
 const runColor = k => (ALL_RUNS.find(r=>r.key===k)||{}).color || "#0072B2";
-// Colors come from the driver as hex; anything else would land in a style
-// attribute as-is, so it falls back to a neutral token instead.
-const safeColor = c => /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? c : "var(--ink-3)";
+// Every colour that lands in a style attribute passes through here: hex from
+// the driver or the payload, a var(--token) the page itself assigns, or an
+// rgb/rgba with numeric arguments. Anything else becomes a neutral token
+// rather than a style value.
+const safeColor = c => /^(#[0-9a-fA-F]{3,8}|var\(--[a-zA-Z0-9-]+\)|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/.test(String(c)) ? c : "var(--ink-3)";
 const CROSS = "__cross__";
 
 const CROSS_METRICS = [
@@ -370,15 +372,16 @@ function legendHTML(items, opts={}){
   const row=i=>{
     // `chip` items carry the real fuel hatch, so the expanded legend shows the
     // same texture as the plot rather than a generic 45-degree stand-in.
+    const col=safeColor(i.color);   // run colours arrive from the driver
     const sw = i.line
       ? `<span style="width:16px;height:0;border-top:${i.dash?"3px dashed":"3px solid"} ${
-          i.color};display:inline-block;flex:none"></span>`
+          col};display:inline-block;flex:none"></span>`
       : i.chip
-      ? hatchChip(i.color,i.pattern)
-      : `<span class="sw" style="background:${i.color}${i.hatch
+      ? hatchChip(col,i.pattern)
+      : `<span class="sw" style="background:${col}${i.hatch
           ?`;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.75),rgba(255,255,255,.75) 2px,transparent 2px,transparent 4px)`
           :""}"></span>`;
-    return `<span class="key" style="white-space:nowrap">${sw}${i.label}</span>`;
+    return `<span class="key" style="white-space:nowrap">${sw}${esc(i.label)}</span>`;
   };
   return `<div class="legend" style="${opts.column
     ? "flex-direction:column;align-items:flex-start;gap:5px 0;flex-wrap:nowrap"
@@ -716,7 +719,7 @@ function boxPlot(host, cats, series, opts={}){
       outs.filter(v=>v>=0&&v<=max).forEach(v=>g.appendChild(el("circle",
         {cx, cy:y(v), r:1.15, fill:"var(--ink-2)","pointer-events":"none"})));
       g.addEventListener("mousemove", ev=>showTip(
-        `<b>${c.label} · ${s.label}</b>`+
+        `<b>${esc(c.label)} · ${esc(s.label)}</b>`+
         `<div class="row"><span>p95</span><span>${fmt(st.p95,0)}</span></div>`+
         `<div class="row"><span>p75</span><span>${fmt(st.p75,0)}</span></div>`+
         `<div class="row"><span>median</span><span>${fmt(st.p50,0)}</span></div>`+
@@ -790,7 +793,7 @@ function histChart(host, bins, series, opts={}){
     const vx=xMin+((ev.clientX-bb.left)/bb.width*W-padL)/plotW*(xMax-xMin);
     const b=bins.find(b0=>vx>=b0.left&&vx<b0.right); if(!b) return;
     showTip(`<b>${fmt(b.left,0)}–${fmt(b.right,0)} kBtu/ft²</b>`+
-      series.map(s=>`<div class="row"><span>${s.label}</span><span>${
+      series.map(s=>`<div class="row"><span>${esc(s.label)}</span><span>${
         b.shares[s.key]===undefined?ABSENT.noValue:(b.shares[s.key]*100).toFixed(1)+"%"}</span></div>`).join(""), ev);
   });
   hit.addEventListener("mouseleave", hideTip);
@@ -890,7 +893,7 @@ function profileChart(host, pts, opts={}){
         stroke:"var(--panel)","stroke-width":.4});
       path.addEventListener("mousemove", ev=>showTip(
         `<b>${k.replace(/_/g," ")}</b><div class="row"><span>OpenStudio end use</span>`+
-        `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${D.enduseColors[k]}"></span></div>`, ev));
+        `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${safeColor(D.enduseColors[k])}"></span></div>`, ev));
       path.addEventListener("mouseleave", hideTip);
       layer.appendChild(path);
       base = top;
@@ -1047,13 +1050,13 @@ async function copyCharts(charts, cols, title, legendItems){
         r.setAttribute("height",11); r.setAttribute("fill",fill);
         if(op!==undefined) r.setAttribute("opacity",op);
         out.appendChild(r); return r; };
-      box(it.color);
+      box(safeColor(it.color));
       if(it.pattern) box(`url(#pat-${it.pattern}-${YIQ(it.color)<128?"d":"l"})`);
       const b=box("none"); b.setAttribute("stroke","rgba(0,0,0,.3)");
     } else {
       const r=document.createElementNS(NS,"rect");
       r.setAttribute("x",x); r.setAttribute("y",y); r.setAttribute("width",11);
-      r.setAttribute("height",11); r.setAttribute("rx",2); r.setAttribute("fill",it.color);
+      r.setAttribute("height",11); r.setAttribute("rx",2); r.setAttribute("fill",safeColor(it.color));
       if(it.band) r.setAttribute("opacity",.25);
       if(it.hatch) r.setAttribute("opacity",.35);
       out.appendChild(r);
@@ -1238,7 +1241,7 @@ function enduseLegendToggle(opts={}){
   return `<div class="legend"${opts.column?' style="flex-direction:column;align-items:flex-start;gap:5px 0;flex-wrap:nowrap"':''}>
     ${keys.map(k=>`<span class="key" data-eu="${k}" role="button"
       aria-pressed="${!hid.has(k)}" title="click to hide or show this end use">
-      <span class="sw" style="background:${D.enduseColors[k]}"></span>${k.replace(/_/g," ")}</span>`).join("")}
+      <span class="sw" style="background:${safeColor(D.enduseColors[k])}"></span>${k.replace(/_/g," ")}</span>`).join("")}
     ${opts.extra||""}
     ${anyHidden?`<span class="key" data-eu="__all__" role="button" aria-pressed="true"
       style="cursor:pointer;font-weight:600">show all</span>`:""}</div>`;
@@ -2410,14 +2413,14 @@ function renderAmi(){
     // since hiding a reference line would just hide the comparison.
     const hid=euHidden();
     return amiLegendItems(true).map(i=>{
-      const c=i.color==="#1a1d1f"?"var(--ink)":i.color;
+      const c=safeColor(i.color==="#1a1d1f"?"var(--ink)":i.color);
       const attrs=(i.euKey&&!i.line&&!i.band)
         ? ` data-eu="${i.euKey}" role="button" aria-pressed="${!hid.has(i.euKey)}"
             title="click to hide or show this end use"` : "";
       return `<span class="key"${attrs}>${
         i.band?`<span class="sw" style="background:var(--ink);opacity:.18"></span>`
         :i.line?`<span style="width:14px;height:0;border-top:2.5px ${i.dash?"dashed":"solid"} ${c};display:inline-block;flex:none"></span>`
-        :`<span class="sw" style="background:${i.color}"></span>`}${i.label}</span>`;}).join("")
+        :`<span class="sw" style="background:${safeColor(i.color)}"></span>`}${esc(i.label)}</span>`;}).join("")
       + ((D.enduseOrder||[]).some(k=>hid.has(k))
         ? `<span class="key" data-eu="__all__" role="button" aria-pressed="true"
            style="cursor:pointer;font-weight:600">show all</span>` : "");
@@ -2451,7 +2454,7 @@ function renderAmi(){
          total. This view depends on the AMI floor-area estimate — where that is uncertain, use a
          normalized view.`}
       The solid dark line is metered AMI; the dashed dark lines are its 80% confidence interval.
-      ${secRows.length?`The dashed <b style="color:${SECONDARY.color}">${runShort(SECONDARY.key)}</b> line is
+      ${secRows.length?`The dashed <b style="color:${safeColor(SECONDARY.color)}">${runShort(SECONDARY.key)}</b> line is
       the comparison run's total on the same basis, so whether this run moved toward or away from
       the meters reads directly.`:""}
       Each subplot's Copy button puts a report-ready PNG on the clipboard — white background, title
@@ -3329,8 +3332,8 @@ function measControls(){
             ${MEAS_LIST.map(mm=>`<label class="mmenu-item">
               <input type="checkbox" data-mcheck="${mm.up}"
                 ${state.measMulti.includes(mm.up)?"checked":""}>
-              <span class="sw" style="background:${mm.color}"></span>
-              ${mm.up} · ${mm.name}</label>`).join("")}
+              <span class="sw" style="background:${safeColor(mm.color)}"></span>
+              ${esc(mm.up)} · ${esc(mm.name)}</label>`).join("")}
           </div>
         </div>`}`;
 }
@@ -3442,8 +3445,8 @@ function measSummaryTable(list){
       <th>$/bldg·yr</th><th>$M/yr</th>
       <th>MMT CO₂e</th><th>%</th></tr></thead><tbody>`;
   MEAS.summary.filter(r=>list.some(mm=>mm.up===String(r.upgrade))).forEach(r=>{
-    h+=`<tr><td style="text-align:left"><span class="sw" style="background:${measColor(r.upgrade)}"></span>
-      ${r.upgrade} · ${r.upgrade_name}</td>
+    h+=`<tr><td style="text-align:left"><span class="sw" style="background:${safeColor(measColor(r.upgrade))}"></span>
+      ${esc(r.upgrade)} · ${esc(r.upgrade_name)}</td>
       ${area?`<td>${share(r.pct_of_stock_sqft)}</td>`:""}
       <td>${share(r.pct_of_stock)} <span class="note">(${fmt(r.weighted_bldgs/1e3,0)}k)</span></td>
       <td>${fmt(r.site_savings_tbtu)}</td><td>${fmt(r.elec_savings_tbtu)}</td>
@@ -4527,7 +4530,7 @@ function amiStackLegendHTML(){
   return D.enduseOrder.slice().reverse().map(k=>
     `<span class="key" data-eu="${k}" role="button" aria-pressed="${!hid.has(k)}"
       title="click to hide or show this end use"><span class="sw"
-      style="background:${D.enduseColors[k]}"></span>${k.replace(/_/g," ")}</span>`).join("")
+      style="background:${safeColor(D.enduseColors[k])}"></span>${k.replace(/_/g," ")}</span>`).join("")
     + (D.enduseOrder.some(k=>hid.has(k))
       ? `<span class="key" data-eu="__all__" role="button" aria-pressed="true"
          style="cursor:pointer;font-weight:600">show all</span>` : "");
@@ -4827,7 +4830,7 @@ function hfSharesTable(btype){
   const block = (cat, src) => series.map((s,i)=>
     `<tr>${i===0?`<td rowspan="${series.length}" style="vertical-align:middle">${
       cat}</td>`:""}
-      <td><span class="sw" style="background:${s.color}"></span>${s.label}</td>
+      <td><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
       ${fuels.map(f=>{
         const v = hfShare(src, cat, s.run, f);
         return `<td>${v===null
@@ -5189,9 +5192,9 @@ function renderCoverage(){
       <div class="scroll"><table><thead><tr><th>Upgrade</th><th>Name (in.upgrade_name)</th>
         <th>Applicable stock</th><th>Models</th><th>Site savings (TBtu)</th>
         </tr></thead><tbody>
-      ${MEAS.summary.map(r=>`<tr><td>${r.upgrade}</td>
+      ${MEAS.summary.map(r=>`<tr><td>${esc(r.upgrade)}</td>
         <td style="text-align:left"><span class="sw" style="background:${
-          measColor(r.upgrade)}"></span>${r.upgrade_name}</td>
+          safeColor(measColor(r.upgrade))}"></span>${esc(r.upgrade_name)}</td>
         <td>${fmt(r.pct_of_stock)}% (${fmt(r.weighted_bldgs/1e3,0)}k bldgs)</td>
         <td>${fmt(r.n_models,0)}</td><td>${fmt(r.site_savings_tbtu)}</td></tr>`).join("")}
       </tbody></table></div></div>`;
