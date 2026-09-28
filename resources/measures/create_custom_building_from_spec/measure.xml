@@ -4,8 +4,8 @@
   <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/create_custom_building_from_spec/measure.rb'</error>
   <name>create_custom_building_from_spec</name>
   <uid>7f3c1a92-4d6b-4a0e-9c21-8b5f2d0e4c77</uid>
-  <version_id>15a08a18-455c-4e94-becc-f3f08ce939ed</version_id>
-  <version_modified>2026-09-21T19:38:36Z</version_modified>
+  <version_id>bd29a4c0-62b3-4b06-9153-0f224b7c9089</version_id>
+  <version_modified>2026-09-28T17:43:53Z</version_modified>
   <xml_checksum>2C38F48B</xml_checksum>
   <class_name>CreateCustomBuildingFromSpec</class_name>
   <display_name>Create Custom Building From Spec</display_name>
@@ -34,13 +34,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>EC506301</checksum>
+      <checksum>ECEABDB8</checksum>
     </file>
     <file>
       <filename>create_custom_building_from_spec_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>7ACB8E4A</checksum>
+      <checksum>2F0EF7B8</checksum>
     </file>
   </files>
 </measure>

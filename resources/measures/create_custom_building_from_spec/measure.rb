@@ -91,6 +91,17 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
   ].freeze
   BPR_NO_CHANGE = 999.0
 
+  # Schedule peak overrides that are not sampled characteristics but run-level sensitivity
+  # inputs: a constant column stamped onto a precomputed sample (see samples/stamp_parameter.py)
+  # reaches this measure through options_lookup.tsv like any other parameter. Each entry names
+  # the argument, the schedule section it sets the peak of, and the space types it applies to.
+  # The peak lands in the spec's schedule_overrides, so the parametric schedules are built with
+  # it and every downstream step, sizing included, sees it.
+  PEAK_ARGUMENTS = [
+    ['food_preparation_gas_equipment_peak', 'gas_equipment',
+     ['food preparation', 'food preparation - primary school', 'food preparation - secondary school']]
+  ].freeze
+
   # Undisturbed ground temperature by climate zone, in degrees C. Lifted from
   # ChangeBuildingLocation so that measure can be retired; ComStock owns the table.
   # Used for ground source heat pump modelling.
@@ -402,6 +413,16 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
       seen[name] = true
     end
 
+    # Run-level schedule peak overrides, see PEAK_ARGUMENTS.
+    PEAK_ARGUMENTS.each do |name, section, space_types|
+      argument = OpenStudio::Measure::OSArgument.makeDoubleArgument(name, false)
+      argument.setDefaultValue(BPR_NO_CHANGE)
+      argument.setDisplayName("#{section.tr('_', ' ')} schedule peak for #{space_types.first}")
+      argument.setDescription("Schedule fraction at peak for the #{section.tr('_', ' ')} of #{space_types.join(', ')}, between 0 and 1. Enter #{BPR_NO_CHANGE.to_i} for no change.")
+      args << argument
+      seen[name] = true
+    end
+
     source_measures.each do |measure|
       measure.arguments(model).each do |argument|
         next if seen[argument.name]
@@ -561,6 +582,73 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     sections.each_value { |fields| fields['cap_wknd_base_at_wkdy'] = true }
     runner.registerInfo("Base-to-peak ratios #{sampled.join(', ')} applied to #{sections.keys.join(' and ')}.")
     [{ 'space_type' => '*' }.merge(sections)]
+  end
+
+  # The base-to-peak ratio the typical schedule data authors for a space type's load schedule.
+  #
+  # Follows the same chain the schedule builder does: the all-level space type record names a
+  # schedule set, the set names the load's schedule, and the schedule record carries its base
+  # and peak. A peak override paired with this ratio scales the whole schedule, base included,
+  # instead of flattening it toward the authored base.
+  #
+  # @param section [String] a schedule override section, e.g. 'gas_equipment'
+  # @param space_type_name [String] an all-level space type name
+  # @return [Float, nil] base divided by peak, or nil when the chain does not resolve
+  def authored_base_peak_ratio(section, space_type_name)
+    records = ->(path) { data = JSON.parse(File.read(path), symbolize_names: true); data.is_a?(Hash) ? data.values.first : data }
+    space_type = records.call(OpenstudioStandards::SpaceType::ALL_LEVEL_SPACE_TYPES_PATH).find { |r| r[:space_type_name] == space_type_name }
+    return nil if space_type.nil? || space_type[:schedule_set_name].nil?
+
+    set = records.call(File.join(OpenstudioStandards::Schedules::SCHEDULE_DATA_DIR, 'default_parametric_schedule_set.json'))
+                 .find { |r| r[:schedule_set_name] == space_type[:schedule_set_name] }
+    schedule_name = set.nil? ? nil : set[:"#{section}_schedule"]
+    return nil if schedule_name.nil?
+
+    schedule = OpenstudioStandards::Schedules.schedule_data(section.to_sym).find { |r| r[:name] == schedule_name }
+    return nil if schedule.nil? || schedule[:base].nil? || schedule[:peak].nil? || schedule[:peak].to_f <= 0.0
+
+    schedule[:base].to_f / schedule[:peak].to_f
+  end
+
+  # Build the schedule_overrides entries for the run-level schedule peak arguments.
+  #
+  # One entry per space type the argument covers, keyed by the all-level space type name so it
+  # matches that space type alone. Entries are specific, so they merge over the wildcard
+  # base-to-peak entry field by field.
+  #
+  # Each entry carries the peak and the schedule's authored base-to-peak ratio, so the base
+  # moves with the peak and the whole schedule shifts down as the peak falls: with a linear
+  # derivation every value scales by the ratio of the new peak to the authored one. Without the
+  # ratio the schedule builder would keep the authored base and only lower the top.
+  #
+  # @param runner [OpenStudio::Measure::OSRunner] the measure runner
+  # @param args [Hash] typed measure arguments
+  # @return [Array<Hash>, nil] schedule_overrides entries, empty when no peak was given, nil on error
+  def schedule_peak_overrides(runner, args)
+    entries = []
+    PEAK_ARGUMENTS.each do |name, section, space_types|
+      value = args[name]
+      next if value.nil? || value.to_f == BPR_NO_CHANGE
+
+      peak = value.to_f
+      unless peak.between?(0.0, 1.0)
+        runner.registerError("#{name} of #{peak} is not a schedule peak fraction between 0 and 1.")
+        return nil
+      end
+
+      space_types.each do |space_type|
+        fields = { 'peak' => peak }
+        ratio = authored_base_peak_ratio(section, space_type)
+        if ratio.nil?
+          runner.registerWarning("No authored #{section.tr('_', ' ')} schedule found for '#{space_type}'; #{name} lowers its peak but leaves its base at the authored value.")
+        else
+          fields['base_peak_ratio'] = ratio.round(6)
+        end
+        entries << { 'space_type' => space_type, section => fields }
+      end
+      runner.registerInfo("#{name}=#{peak} applied to the #{section.tr('_', ' ')} schedule of #{space_types.join(', ')}, base scaled with it.")
+    end
+    entries
   end
 
   # Expand the building type mix into space type ratio entries covering the whole
@@ -793,6 +881,10 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     schedule_overrides = base_peak_ratio_overrides(runner, typed)
     return false if schedule_overrides.nil?
 
+    peak_overrides = schedule_peak_overrides(runner, typed)
+    return false if peak_overrides.nil?
+
+    schedule_overrides += peak_overrides
     spec['schedule_overrides'] = schedule_overrides unless schedule_overrides.empty?
 
     variability = thermostat_variability_overrides(runner, typed, ratios.map { |r| r['space_type'] })

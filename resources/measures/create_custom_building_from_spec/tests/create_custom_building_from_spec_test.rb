@@ -250,4 +250,41 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
     assert(errors.any? { |e| e.include?('ltg_wkdy_bpr') })
     assert_empty(@measure.base_peak_ratio_overrides(@runner, {}))
   end
+
+  # --- run-level schedule peak overrides ------------------------------------------------
+
+  def test_food_preparation_gas_peak_targets_each_kitchen_space_type
+    overrides = @measure.schedule_peak_overrides(@runner, { 'food_preparation_gas_equipment_peak' => 0.6 })
+    assert_equal(['food preparation', 'food preparation - primary school', 'food preparation - secondary school'],
+                 overrides.map { |o| o['space_type'] })
+    overrides.each do |entry|
+      assert_equal(0.6, entry['gas_equipment']['peak'])
+      # the authored food preparation gas schedules are base 0.3, peak 0.9, so the base follows the peak at a third
+      assert_in_delta(0.3 / 0.9, entry['gas_equipment']['base_peak_ratio'], 1e-6)
+      assert_equal(%w[peak base_peak_ratio], entry['gas_equipment'].keys)
+      assert_equal(%w[space_type gas_equipment], entry.keys, 'the entry sets the gas schedule and nothing else')
+    end
+  end
+
+  def test_authored_base_peak_ratio_follows_the_schedule_data
+    assert_in_delta(0.3 / 0.9, @measure.authored_base_peak_ratio('gas_equipment', 'food preparation - secondary school'), 1e-6)
+    assert_nil(@measure.authored_base_peak_ratio('gas_equipment', 'not a space type'))
+    assert_nil(@measure.authored_base_peak_ratio('gas_equipment', 'office'), 'an office has no gas schedule to take a ratio from')
+  end
+
+  def test_schedule_peak_sentinel_and_absence_are_no_ops
+    assert_empty(@measure.schedule_peak_overrides(@runner, { 'food_preparation_gas_equipment_peak' => 999.0 }))
+    assert_empty(@measure.schedule_peak_overrides(@runner, {}))
+  end
+
+  def test_schedule_peak_out_of_range_is_an_error
+    assert_nil(@measure.schedule_peak_overrides(@runner, { 'food_preparation_gas_equipment_peak' => 1.2 }))
+    assert(errors.any? { |e| e.include?('food_preparation_gas_equipment_peak') })
+  end
+
+  def test_schedule_peak_argument_is_exposed_with_the_no_change_default
+    argument = @measure.arguments(OpenStudio::Model::Model.new).find { |a| a.name == 'food_preparation_gas_equipment_peak' }
+    refute_nil(argument)
+    assert_equal(999.0, argument.defaultValueAsDouble)
+  end
 end
