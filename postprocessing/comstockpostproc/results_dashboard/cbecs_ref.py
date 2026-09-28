@@ -90,13 +90,21 @@ def aggregate_cbecs(df: pd.DataFrame, dim: str) -> tuple[pd.DataFrame, pd.DataFr
 
     w = pd.to_numeric(df["weight"], errors="coerce").fillna(0.0)
     sqft = pd.to_numeric(df[SQFT_COL], errors="coerce").fillna(0.0)
-    gas = pd.to_numeric(df.get(GAS_TOTAL_COL), errors="coerce").fillna(0.0)
+    # df.get() on a missing column returns None, and pd.to_numeric(None) is not
+    # a Series, so an export without the gas total aborted every annual
+    # aggregation. Without the column the zero-gas share is unknown (NaN).
+    if GAS_TOTAL_COL in df.columns:
+        gas = pd.to_numeric(df[GAS_TOTAL_COL], errors="coerce").fillna(0.0)
+        zero_gas = np.where(gas.values == 0.0, (w * sqft).values, 0.0)
+    else:
+        zero_gas = np.full(len(df), np.nan)
     diag = pd.DataFrame({
         "category": df[col].values,
         "sqft_weighted": (w * sqft).values,
-        "sqft_zero_gas_weighted": np.where(gas.values == 0.0, (w * sqft).values, 0.0),
+        "sqft_zero_gas_weighted": zero_gas,
     })
-    diag = pd.concat([diag, diag.assign(category="All")]).groupby("category", as_index=False).sum()
+    diag = (pd.concat([diag, diag.assign(category="All")])
+            .groupby("category", as_index=False).sum(min_count=1))
     diag["zero_gas_share"] = diag["sqft_zero_gas_weighted"] / diag["sqft_weighted"]
     return totals, diag
 

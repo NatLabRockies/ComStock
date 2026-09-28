@@ -11,6 +11,7 @@ server needed.
 
 from __future__ import annotations
 
+import html
 import json
 import math
 from pathlib import Path, PurePath
@@ -479,7 +480,14 @@ ul.caveats li{margin-bottom:5px}
 # The page's behaviour lives in resources/dashboard.js rather than an inline
 # string. It is ~5,000 lines; as a Python literal it made this module
 # unreviewable and hid JS syntax errors from every editor and linter.
-JS = (Path(__file__).parent / "resources" / "dashboard.js").read_text(encoding="utf-8")
+_JS_PATH = Path(__file__).parent / "resources" / "dashboard.js"
+
+
+def _js() -> str:
+    """The bundle, read when a page is BUILT rather than when the package is
+    imported, so a packaging miss fails the dashboard and not
+    `import comstockpostproc`."""
+    return _JS_PATH.read_text(encoding="utf-8")
 
 HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -520,16 +528,19 @@ def _script_safe(text: str) -> str:
 
 def build(assess: Path, out: Path) -> Path:
     payload = build_payload(assess)
-    runs = " vs ".join(r["label"] for r in payload["runs"]) or "ComStock"
-    html = HTML.format(
+    # Labels are driver-supplied, not user input, but they land in HTML: a run
+    # name with '<' in it must read as a name, not as markup. The JS side
+    # escapes the same labels where it builds innerHTML (esc(), runLabel).
+    runs = html.escape(" vs ".join(r["label"] for r in payload["runs"]) or "ComStock")
+    page = HTML.format(
         title=f"ComStock results dashboard — {runs}",
-        css=CSS, js=JS,
+        css=CSS, js=_js(),
         payload=_script_safe(json.dumps(payload, allow_nan=False)),
         runs=runs,
-        created=(payload["created"] or "")[:10],
+        created=html.escape((payload["created"] or "")[:10]),
         # region="all" used to print literally as "AMI all"; name the count of
         # regions actually compared instead of the argument.
-        references=_references_label(payload),
+        references=html.escape(_references_label(payload)),
     )
-    out.write_text(html, encoding="utf-8")
+    out.write_text(page, encoding="utf-8")
     return out

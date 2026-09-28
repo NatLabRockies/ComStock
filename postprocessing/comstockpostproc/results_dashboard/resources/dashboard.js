@@ -89,7 +89,17 @@ function applyRunToggle(){
   SECONDARY = pickSecondary(RUNS);
   MULTI = RUNS.length > 1;
 }
-const runLabel = k => (ALL_RUNS.find(r=>r.key===k)||{}).label || k;
+/* Text bound for innerHTML. Run labels, measure names and category names come
+   from the driver and the run's own tables -- not from a page visitor -- but a
+   name containing '<' or '&' must read as a name, not as markup. Idempotent:
+   already-escaped text passes through unchanged, so a label may travel through
+   runLabel AND swatch without doubling its entities. */
+function esc(s){
+  return String(s)
+    .replace(/&(amp|lt|gt|quot|#39);/g, (m,e)=>({amp:"&",lt:"<",gt:">",quot:'"',"#39":"'"}[e]))
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+const runLabel = k => esc((ALL_RUNS.find(r=>r.key===k)||{}).label || k);
 /* Short form for figure titles: "2025 R3" rather than
    "2025 R3 (OEDI comstock_amy2018_release_3)". The full label stays in the page
    subtitle and the Coverage tab, where the source table matters. */
@@ -1180,7 +1190,9 @@ function waterfall(host, items, opts={}){
 
 /* ---------- legends ---------- */
 function swatch(color,label){
-  return `<span class="key"><span class="sw" style="background:${color}"></span>${label}</span>`;
+  // color is a hex from the driver; anything else would become a style value.
+  const c=/^#[0-9a-fA-F]{3,8}$/.test(String(color)) ? color : "var(--ink-3)";
+  return `<span class="key"><span class="sw" style="background:${c}"></span>${esc(label)}</span>`;
 }
 // The hatch key only belongs on charts that actually break CBECS into end uses;
 // showing it elsewhere legends a pattern that never appears (and disagreed with

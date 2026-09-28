@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 
 class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
-    def __init__(self, cbecs_year, truth_data_version, color_hex=NamingMixin.COLOR_CBECS_2012, weighted_energy_units='tbtu', weighted_utility_units='billion_usd', reload_from_csv=False):
+    def __init__(self, cbecs_year, truth_data_version, color_hex=NamingMixin.COLOR_CBECS_2012, weighted_energy_units='tbtu', weighted_utility_units='billion_usd', reload_from_csv=False,
+                 download_truth_data=True):
         """
         A class to load and transform CBECS data for export, analysis, and comparison.
         Args:
@@ -52,8 +53,11 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             if not os.path.exists(p):
                 os.makedirs(p)
 
-        # Load and transform data, preserving all columns
-        self.download_data()
+        # Load and transform data, preserving all columns. The microdata is only
+        # read by load_data(); reloading 'CBECS wide.csv' needs none of it, and
+        # download_truth_data=False keeps that path off S3 (exports.load_cbecs).
+        if download_truth_data:
+            self.download_data()
         if reload_from_csv:
             file_name = f'CBECS wide.csv'
             file_path = os.path.abspath(os.path.join(self.output_dir, file_name))

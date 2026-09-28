@@ -41,8 +41,11 @@ def load_ami(truth_data_version: str = "v01", **kwargs):
                        f"AMI {truth_data_version}", "AMI long.csv")
     have = os.path.exists(csv)
     logger.info("AMI: %s 'AMI long.csv'", "reloading" if have else "building")
+    # A present export is sufficient on its own: with it, the constructor is
+    # kept off S3 entirely (no truth-data check), so the reuse this loader
+    # promises does not depend on credentials or on the raw files being here.
     return AMI(truth_data_version=truth_data_version, reload_from_csv=have,
-               **kwargs)
+               download_truth_data=not have, **kwargs)
 
 
 def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
@@ -65,7 +68,8 @@ def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
     have = os.path.exists(csv)
     logger.info("CBECS: %s 'CBECS wide.csv'", "reloading" if have else "building")
     cbecs = CBECS(cbecs_year=cbecs_year, truth_data_version=truth_data_version,
-                  color_hex=color_hex, reload_from_csv=have, **kwargs)
+                  color_hex=color_hex, reload_from_csv=have,
+                  download_truth_data=not have, **kwargs)
     if not have:
         cbecs.export_to_csv_wide()
     return cbecs

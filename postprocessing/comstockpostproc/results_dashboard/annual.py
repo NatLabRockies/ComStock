@@ -67,10 +67,15 @@ def build_annual_sql(md_table: str, group_cols: dict[str, str] | None = None,
             sel.append(f"    {expr} AS {alias}")
     sel.append('    SUM(weight) AS "bldg_count_weighted"')
     sel.append(f'    SUM(weight * "{SQFT_COL}") AS "sqft"')
-    sel.append(
-        f'    SUM(CASE WHEN COALESCE("{GAS_TOTAL_COL}", 0) = 0 '
-        f'THEN weight * "{SQFT_COL}" ELSE 0 END) AS "sqft_zero_gas"'
-    )
+    if have is None or GAS_TOTAL_COL in have:
+        sel.append(
+            f'    SUM(CASE WHEN COALESCE("{GAS_TOTAL_COL}", 0) = 0 '
+            f'THEN weight * "{SQFT_COL}" ELSE 0 END) AS "sqft_zero_gas"'
+        )
+    else:
+        # No gas total on this table: the zero-gas share is UNKNOWN, not zero,
+        # and the query must still run for every metric the table does have.
+        sel.append('    CAST(NULL AS double) AS "sqft_zero_gas"')
     for key, col in metrics.items():
         sel.append(f'    SUM(weight * "{col}") AS "{key}"')
     n_dims = len(group_cols) + sum(

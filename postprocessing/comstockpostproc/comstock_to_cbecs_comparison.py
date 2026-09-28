@@ -193,11 +193,15 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
         if self.name is None:
             has_upgrades = any(n > 1 for n in names_per_comstock_dataset)
             ordered = sorted(dataset_names, key=len)
-            if has_upgrades:
-                # One run across its own upgrades: listing every upgrade would
-                # be both enormous and redundant with the run name.
+            if has_upgrades and len(names_per_comstock_dataset) == 1:
+                # ONE run across its own upgrades: listing every upgrade would
+                # be both enormous and redundant with the run name, so CBECS and
+                # the run stand for the set.
                 self.name = ' vs '.join(ordered[:2]) + ' and Upgrades'
             else:
+                # Several runs, with or without upgrades: every run has to be in
+                # the name or the folder misrepresents what it holds. Bounded,
+                # and it says so when it abbreviates.
                 self.name = self._bounded_name(dataset_names)
 
         # Combine into a single dataframe for convenience
