@@ -55,7 +55,7 @@ ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `data
 MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
 MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'process' runs; False writes
                                    # only their wide CSVs and the dashboard, which is faster
-INCLUDE_AMI            = False     # metered load-shape tab; needs each run's <run>_timeseries table
+INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
 CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
                                    # every sampled (building type, tract) pair must exist in it
