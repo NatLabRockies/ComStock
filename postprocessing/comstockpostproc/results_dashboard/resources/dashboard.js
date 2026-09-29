@@ -110,6 +110,19 @@ const runColor = k => (ALL_RUNS.find(r=>r.key===k)||{}).color || "#0072B2";
 // rgb/rgba with numeric arguments. Anything else becomes a neutral token
 // rather than a style value.
 const safeColor = c => /^(#[0-9a-fA-F]{3,8}|var\(--[a-zA-Z0-9-]+\)|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/.test(String(c)) ? c : "var(--ink-3)";
+/* Run names in table heads. A name like str_100k_new_sample_plugfix is one
+   unbreakable word to the browser and was set in capitals, so a table with a
+   column per run was as wide as the sum of its names: 5,600 px for the
+   heating-fuel regions with four runs. In a head the name drops the
+   "ComStock " every run shares, keeps its own case, may break after each
+   underscore, and carries the run's colour so a wrapped name still reads at a
+   glance. Titles, legends and tooltips keep the full label. */
+// s is already escaped. A short name stays whole: splitting "baseline_10k" buys
+// nothing but a ragged head.
+const brk = s => String(s).length > 14 ? String(s).replace(/_/g, "_<wbr>") : String(s);
+const headChip = (color, name) =>
+  `<span class="rh"><span class="sw" style="background:${safeColor(color)}"></span>${brk(name)}</span>`;
+const runHead = k => headChip(runColor(k), runShort(k).replace(/^ComStock\s+/, ""));
 const CROSS = "__cross__";
 
 const CROSS_METRICS = [
@@ -1978,8 +1991,8 @@ function renderAnnual(){
     CBECS</b>.${MULTI&&SECONDARY?` "Δ gap vs ${runShort(SECONDARY.key)}" is the change in the
     absolute gap against that run; negative means closer to CBECS.`:""}</p>
     <table><thead><tr><th>Metric</th><th>CBECS</th><th>CBECS 95% CI</th>
-    <th>${runLabel(PRIMARY)}</th><th>% vs CBECS</th>
-    ${MULTI&&SECONDARY?`<th>Δ gap vs ${runShort(SECONDARY.key)} (pp)</th>`:""}
+    <th>${runHead(PRIMARY)}</th><th>% vs CBECS</th>
+    ${MULTI&&SECONDARY?`<th>Δ gap vs ${runHead(SECONDARY.key)} (pp)</th>`:""}
     <th>within CI</th><th>CBECS basis</th></tr></thead><tbody>`;
   const rows=src.filter(r=>r.run===PRIMARY&&r.category===bt);
   rows.sort((a,b)=>a.metric.localeCompare(b.metric)).forEach(r=>{
@@ -3585,8 +3598,8 @@ function measReleasePanel(){
     listed so a shift in coverage can be separated from a shift in savings.
     ${absent.length?`<b>Measures not present in every release:</b> ${absent.join("; ")}.`:""}</p>
     <div class="scroll"><table><thead><tr><th>Measure</th><th>Metric</th>
-    ${mRuns.map(k=>`<th>${runShort(k)}</th>`).join("")}
-    <th>${runShort(PRIMARY)} − ${runShort(mRuns.find(k=>k!==PRIMARY))}</th>
+    ${mRuns.map(k=>`<th>${runHead(k)}</th>`).join("")}
+    <th>${runHead(PRIMARY)} − ${runHead(mRuns.find(k=>k!==PRIMARY))}</th>
     </tr></thead><tbody>`;
   ups.forEach(up=>{
     const nm=(MEAS_ALL.summary.find(r=>String(r.upgrade)===up)||{}).upgrade_name||"";
@@ -4640,18 +4653,21 @@ const dpNational = (metric, run) => DP.find(r=>r.dimension==="none"
 function dpTable(group){
   const runs=dpRuns(), mets=dpMetricsIn(group);
   if(!mets.length) return '<p class="note">No parameters in this group.</p>';
-  const other=runs.find(k=>k!==PRIMARY);
+  // The difference column measures against the delta reference, like every
+  // other delta on the page; the first other run is only the fallback when
+  // that reference is hidden or has no parameter rows.
+  const other=(SECONDARY&&runs.includes(SECONDARY.key))?SECONDARY.key:runs.find(k=>k!==PRIMARY);
   const bt=dpBtype();
   const nMean=runs.length+(other?1:0);
   let t=`<div class="scroll"><table><thead>
     <tr><th rowspan="2">Parameter</th><th rowspan="2">Unit</th>
       <th colspan="${nMean}" style="text-align:center">weighted mean</th>
-      <th colspan="2" style="text-align:center">${runShort(PRIMARY)} across models
+      <th colspan="2" style="text-align:center">${runHead(PRIMARY)} across models
         <span style="font-weight:400;color:var(--ink-3)">(unweighted)</span></th>
       <th rowspan="2">applies to</th></tr>
     <tr>
-    ${runs.map(k=>`<th>${runShort(k)}</th>`).join("")}
-    ${other?`<th>${runShort(PRIMARY)} − ${runShort(other)}</th>`:""}
+    ${runs.map(k=>`<th>${runHead(k)}</th>`).join("")}
+    ${other?`<th>Δ vs ${runHead(other)}</th>`:""}
     <th>median (p50)</th><th>p10–p90</th></tr></thead><tbody>`;
   mets.forEach(m=>{
     const byRun={};
@@ -4662,7 +4678,7 @@ function dpTable(group){
     const d=(vP!==null&&vO!==null)?vP-vO:null;
     const cov=dpNum(p.coverage_pct);
     const low=cov!==null&&cov<90;
-    t+=`<tr><td>${m.name}${m.note?` <span class="badge" title="${
+    t+=`<tr><td class="list">${m.name}${m.note?` <span class="badge" title="${
         String(m.note).replace(/"/g,"&quot;")}">i</span>`:""}</td>
       <td style="color:var(--ink-3)">${m.unit}</td>
       ${runs.map(k=>{ const r=byRun[k]; const v=r?dpNum(r.wmean):null;
@@ -4681,7 +4697,7 @@ function dpTable(group){
         ? (bt==="All" ? absentTag("noValue")
             : absentTag("stockWideOnly","The decile spread is computed across the whole stock, not within one building type"))
         :`${fmt(dpNum(p.p10),dpDec(dpNum(p.p10)))} – ${fmt(dpNum(p.p90),dpDec(dpNum(p.p90)))}`}</td>
-      <td${low?' style="color:var(--bad)"':""}>${cov===null?absentTag("noValue")
+      <td class="list"${low?' style="color:var(--bad)"':""}>${cov===null?absentTag("noValue")
         :`${fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
   });
   return t+"</tbody></table></div>";
@@ -4802,7 +4818,7 @@ function hfMatrix(btype){
 
   const head = fuels.map(f=>`<th colspan="${runs.length}" style="text-align:center">
       <span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</th>`).join("");
-  const sub = fuels.map(()=>runs.map(s=>`<th>${esc(s.label)}</th>`).join("")).join("");
+  const sub = fuels.map(()=>runs.map(s=>`<th>${runHead(s.run)}</th>`).join("")).join("");
   const line = (cat, src, bold) => {
     const n = hfCellN(src, cat);
     const thin = n!==null && n<HF_THIN_N;
@@ -4889,9 +4905,9 @@ function renderHeatingFuel(host){
         <span class="badge">${scope}</span></h2></div>
     <div class="grid2">
       <div><h3>Fuel mix — % of heated floor area</h3><div id="hf-national"></div></div>
-      <div><h3>Shares and difference from CBECS</h3><table><thead><tr><th>Fuel</th>
-        ${series.map(s=>`<th>${esc(s.label)}</th>`).join("")}
-        ${runs.map(s=>`<th>${esc(s.label)} − CBECS</th>`).join("")}</tr></thead><tbody>
+      <div><h3>Shares and difference from CBECS</h3><div class="scroll"><table><thead><tr><th>Fuel</th>
+        ${series.map(s=>`<th>${s.run===HF_CBECS?headChip(s.color,esc(s.label)):runHead(s.run)}</th>`).join("")}
+        ${runs.map(s=>`<th>${runHead(s.run)} − CBECS</th>`).join("")}</tr></thead><tbody>
         ${fuels.map(f=>{
           const cb = hfShare(nat,"National",HF_CBECS,f);
           return `<tr><td><span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</td>
@@ -4906,7 +4922,7 @@ function renderHeatingFuel(host){
               const d=v-cb;
               return `<td><span class="cell" style="background:${diffColor(d)}">${
                 (d>0?"+":"")+fmt(d,1)}</span></td>`;}).join("")}</tr>`;}).join("")}
-      </tbody></table></div></div></div>`;
+      </tbody></table></div></div></div></div>`;
 
   h += `<div class="panel"><div class="head" style="margin:0">
       <h2 style="margin:0">By census division <span class="badge">${scope}</span>
@@ -5151,11 +5167,11 @@ function renderCoverage(){
             const o=regs[rk]||{};
             return `<tr><td style="text-align:left"><b>${rk}</b>${
               rk===c.region?' <span class="badge">AMI tab default</span>':""}</td>
-              <td style="text-align:left;font-size:12px">${rowFor(o,"compared_types")}</td>
-              <td style="text-align:left;font-size:12px">${rowFor(o,"ami_missing_types")}</td>
-              <td style="text-align:left;font-size:12px">${rowFor(o,"ami_thin_sample_types_skipped")}</td>
-              <td style="text-align:left;font-size:12px">${thinCs(o)}</td>
-              <td style="text-align:left;font-size:12px">${rowFor(o,"comstock_missing_types")}</td>
+              <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"compared_types")}</td>
+              <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"ami_missing_types")}</td>
+              <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"ami_thin_sample_types_skipped")}</td>
+              <td class="list" style="text-align:left;font-size:12px">${thinCs(o)}</td>
+              <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"comstock_missing_types")}</td>
               </tr>`;}).join("")}
          </tbody></table></div>`
       : `<table class="wrap-cells"><tbody>

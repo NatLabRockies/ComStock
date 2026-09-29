@@ -345,7 +345,13 @@ th,td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--grid);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
 thead th{color:var(--ink-3);font-weight:600;font-size:11.5px;text-transform:uppercase;
-  letter-spacing:.04em;border-bottom:1px solid var(--line)}
+  letter-spacing:.04em;border-bottom:1px solid var(--line);
+  white-space:normal;vertical-align:bottom}
+/* Heads wrap, cells do not. A table narrows by wrapping its titles before it
+   scrolls, and only when it has to: one that fits keeps one-line heads. */
+thead .rh{text-transform:none;letter-spacing:0;color:var(--ink-2)}
+thead .rh .sw{margin-right:4px;vertical-align:-1px}
+td.list{white-space:normal;min-width:16ch;line-height:1.45}
 table.wrap-cells td{white-space:normal;word-break:break-word;line-height:1.45}
 table.wrap-cells td:last-child{text-align:left;padding-left:22px}
 table.wrap-cells td:first-child{width:34%;color:var(--ink-2)}
