@@ -351,6 +351,7 @@ thead th{color:var(--ink-3);font-weight:600;font-size:11.5px;text-transform:uppe
    scrolls, and only when it has to: one that fits keeps one-line heads. */
 thead .rh{text-transform:none;letter-spacing:0;color:var(--ink-2)}
 thead .rh .sw{margin-right:4px;vertical-align:-1px}
+thead .rh1{white-space:nowrap}
 td.list{white-space:normal;min-width:16ch;line-height:1.45}
 table.wrap-cells td{white-space:normal;word-break:break-word;line-height:1.45}
 table.wrap-cells td:last-child{text-align:left;padding-left:22px}

@@ -120,8 +120,14 @@ const safeColor = c => /^(#[0-9a-fA-F]{3,8}|var\(--[a-zA-Z0-9-]+\)|rgba?\(\s*[\d
 // s is already escaped. A short name stays whole: splitting "baseline_10k" buys
 // nothing but a ragged head.
 const brk = s => String(s).length > 14 ? String(s).replace(/_/g, "_<wbr>") : String(s);
-const headChip = (color, name) =>
-  `<span class="rh"><span class="sw" style="background:${safeColor(color)}"></span>${brk(name)}</span>`;
+// The chip and the first unbreakable piece of the name share a nowrap span, so a
+// wrapped head never leaves the chip alone on a line above the name.
+const headChip = (color, name) => {
+  const s = brk(name), i = s.search(/<wbr>|\s/);
+  const first = i < 0 ? s : s.slice(0, i), rest = i < 0 ? "" : s.slice(i);
+  return `<span class="rh"><span class="rh1"><span class="sw" style="background:${
+    safeColor(color)}"></span>${first}</span>${rest}</span>`;
+};
 const runHead = k => headChip(runColor(k), runShort(k).replace(/^ComStock\s+/, ""));
 const CROSS = "__cross__";
 
@@ -3597,7 +3603,7 @@ function measReleasePanel(){
     measure's modeled effect, not in the stock it was applied to — the applicable share is
     listed so a shift in coverage can be separated from a shift in savings.
     ${absent.length?`<b>Measures not present in every release:</b> ${absent.join("; ")}.`:""}</p>
-    <div class="scroll"><table><thead><tr><th>Measure</th><th>Metric</th>
+    <div class="scroll"><table><thead><tr><th>Measure</th><th style="text-align:left">Metric</th>
     ${mRuns.map(k=>`<th>${runHead(k)}</th>`).join("")}
     <th>${runHead(PRIMARY)} − ${runHead(mRuns.find(k=>k!==PRIMARY))}</th>
     </tr></thead><tbody>`;
@@ -3616,7 +3622,7 @@ function measReleasePanel(){
       const d=(ok(vals[iP])&&ok(vals[iO]))?vals[iP]-vals[iO]:null;
       t+=`<tr>${mi===0?`<td rowspan="${METRICS.length}" style="vertical-align:top">
             <b>${esc(up)}</b> · ${esc(nm)}</td>`:""}
-        <td>${lab} <span style="color:var(--ink-3)">${unit}</span></td>
+        <td style="text-align:left">${lab} <span style="color:var(--ink-3)">${unit}</span></td>
         ${vals.map(v=>`<td>${
           v===null ? absentTag("measureAbsent","this release does not contain this measure")
           : (v!==v ? absentTag("notPublished","this release does not publish the columns this metric needs")
@@ -4650,13 +4656,16 @@ const dpMetricsIn = group => (D.designParamsMeta||[]).filter(m=>m.group===group)
 const dpNational = (metric, run) => DP.find(r=>r.dimension==="none"
   && (r.btype||"All")===dpBtype() && r.metric===metric && r.run===run);
 
+/* The run the design-parameter difference column measures against: the delta
+   reference, like every other delta on the page, unless it is hidden or has no
+   parameter rows. One helper, so the column and the note describing it agree. */
+const dpOther = runs =>
+  (SECONDARY&&runs.includes(SECONDARY.key)) ? SECONDARY.key : runs.find(k=>k!==PRIMARY);
+
 function dpTable(group){
   const runs=dpRuns(), mets=dpMetricsIn(group);
   if(!mets.length) return '<p class="note">No parameters in this group.</p>';
-  // The difference column measures against the delta reference, like every
-  // other delta on the page; the first other run is only the fallback when
-  // that reference is hidden or has no parameter rows.
-  const other=(SECONDARY&&runs.includes(SECONDARY.key))?SECONDARY.key:runs.find(k=>k!==PRIMARY);
+  const other=dpOther(runs);
   const bt=dpBtype();
   const nMean=runs.length+(other?1:0);
   let t=`<div class="scroll"><table><thead>
@@ -4846,14 +4855,14 @@ function hfSharesTable(btype){
   const block = (cat, src) => series.map((s,i)=>
     `<tr>${i===0?`<td rowspan="${series.length}" style="vertical-align:middle">${
       esc(cat)}</td>`:""}
-      <td><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
+      <td style="text-align:left"><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
       ${fuels.map(f=>{
         const v = hfShare(src, cat, s.run, f);
         return `<td>${v===null
           ? absentTag("notApplicable", `${s.label} has no ${f.toLowerCase()} category`)
           : fmt(v,1)}</td>`;}).join("")}</tr>`).join("");
   return `<div class="scroll"><table><thead><tr>
-      <th>Region</th><th>Dataset</th>
+      <th>Region</th><th style="text-align:left">Dataset</th>
       ${fuels.map(f=>`<th><span class="sw" style="background:${
         HF_COLORS[f]}"></span>${f}</th>`).join("")}</tr></thead><tbody>
       ${block("National", natRows)}
@@ -4971,7 +4980,7 @@ function renderDesignParams(){
   const dimLab=(DIMS.find(d=>d[0]===dim)||[dim,dim])[1].toLowerCase();
   const mets=dpMetricsIn(group);
   const runs=dpRuns();
-  const other=runs.find(k=>k!==PRIMARY);   // null in single-run mode
+  const other=dpOther(runs);   // undefined in single-run mode
   const bt=dpBtype();
   const scope=bt==="All"?"all building types":bt;
 
