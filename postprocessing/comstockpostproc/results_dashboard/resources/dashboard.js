@@ -4815,7 +4815,12 @@ function hfDiffCell(src, cat, run, fuel){
 /* THE regional view: every division against CBECS, all fuels, one screen. This
    replaced nine stacked-bar small multiples -- the bars showed each mix but made
    the comparison a memory exercise, and a 3 pp difference is invisible inside a
-   100%-tall bar while being a large amount of building. */
+   100%-tall bar while being a large amount of building.
+   Region blocks of one row per run, a column per fuel -- the shares table's
+   layout. A column per fuel PER RUN was 24 numeric columns with four runs and 36
+   with six, 2-3x the panel however the heads wrapped; this stays at one column
+   per fuel for any number of runs, and reading down a fuel column inside a block
+   compares the runs directly. */
 function hfMatrix(btype){
   const divRows = hfRows(btype,"census_division");
   const natRows = hfRows(btype,"none");
@@ -4825,20 +4830,24 @@ function hfMatrix(btype){
   const divs = hfDivisions(btype);
   const fuels = HF_FUELS.filter(f=>HF.some(r=>r.fuel===f));
 
-  const head = fuels.map(f=>`<th colspan="${runs.length}" style="text-align:center">
-      <span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</th>`).join("");
-  const sub = fuels.map(()=>runs.map(s=>`<th>${runHead(s.run)}</th>`).join("")).join("");
-  const line = (cat, src, bold) => {
+  const head = fuels.map(f=>`<th><span class="sw" style="background:${
+      safeColor(HF_COLORS[f])}"></span>${esc(f)}</th>`).join("");
+  const block = (cat, src, bold) => {
     const n = hfCellN(src, cat);
     const thin = n!==null && n<HF_THIN_N;
-    return `<tr>${bold?`<td><b>${esc(cat)}</b></td>`:`<td>${esc(cat)}${thin
-      ? ` <span class="badge" title="Only ${fmt(n,0)} CBECS records behind this whole row">n=${fmt(n,0)}</span>`
-      : ""}</td>`}${fuels.map(f=>runs.map(s=>hfDiffCell(src,cat,s.run,f)).join("")).join("")}</tr>`;
+    const region = bold ? `<b>${esc(cat)}</b>` : `${esc(cat)}${thin
+      ? ` <span class="badge" title="Only ${fmt(n,0)} CBECS records behind this region">n=${fmt(n,0)}</span>`
+      : ""}`;
+    return runs.map((s,i)=>`<tr>${i===0?`<td rowspan="${runs.length}" style="vertical-align:middle">${
+        region}</td>`:""}
+      <td style="text-align:left"><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
+      ${fuels.map(f=>hfDiffCell(src,cat,s.run,f)).join("")}</tr>`).join("");
   };
-  return `<div class="scroll"><table><thead>
-      <tr><th rowspan="2">Region</th>${head}</tr><tr>${sub}</tr></thead><tbody>
-      ${line("National", natRows, true)}
-      ${divs.map(d=>line(d, divRows, false)).join("")}
+  // The Run cell is a second child in each block's first row and a first child
+  // below it, so its alignment is stated rather than left to position.
+  return `<div class="scroll"><table><thead><tr><th>Region</th><th style="text-align:left">Run</th>${head}</tr></thead><tbody>
+      ${block("National", natRows, true)}
+      ${divs.map(d=>block(d, divRows, false)).join("")}
     </tbody></table></div>`;
 }
 
@@ -4942,7 +4951,8 @@ function renderHeatingFuel(host){
         <button class="tab" data-hfv="shares" aria-selected="${view==="shares"}">Shares by dataset</button>
       </div></div>
     <p class="note">${view==="diff"
-      ? `Each cell is <b>release − CBECS 2018</b> in percentage points of heated floor area;
+      ? `One row per run within each region. Each cell is <b>run − CBECS 2018</b> in
+         percentage points of heated floor area;
          orange = the release heats more area with that fuel than CBECS does, blue = less. Hover
          any cell for both shares and the CBECS record count. A greyed <b>asterisk</b> value, or an
          <b>n=</b> badge on the region, means the reference is too thin there to judge — not that
