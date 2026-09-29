@@ -3104,7 +3104,7 @@
             "ComStock DOE Ref Pre-1980"
           ],
           "space_types": {
-            "food preparation - bakery": {
+            "food preparation - deli/bakery": {
               "ratio": 0.05,
               "space_type_gen": true,
               "default": false
