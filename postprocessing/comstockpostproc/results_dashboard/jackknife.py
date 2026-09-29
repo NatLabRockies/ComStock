@@ -38,32 +38,47 @@ def grouped_totals_with_ci(
     """Weighted totals of each value column per group, with jackknife 95% CIs.
 
     Returns tidy rows: [by, metric, estimate, se, rse_pct, ci95_low, ci95_high].
-    NaN values contribute zero to totals (CBECS NaN = not surveyed); a group
-    where a metric is entirely NaN yields estimate NaN.
+
+    CBECS leaves consumption BLANK for a building that does not use the fuel or
+    end use, so a blank in a published column counts as zero, and a group with
+    no users totals zero with zero variance. Measured on CBECS 2018 wide: every
+    blank natural-gas total falls on "Natural gas used = No" (1,102 of 1,102),
+    every blank electricity total on "Electricity used = No" (42 of 42). A column
+    CBECS does not publish at all -- blank in EVERY record of the frame, e.g.
+    propane -- is NaN in every group, never zero. "Published" is decided over
+    the whole frame rather than per group: deciding it per group turned a group
+    with no users of a fuel into "no value" instead of 0.
     """
     reps = replicate_cols(df)
     kappa = (len(reps) - 1) / len(reps)
+    published = df[value_cols].apply(pd.to_numeric, errors="coerce").notna().any(axis=0).to_numpy()
     rows = []
     for key, g in df.groupby(by, dropna=False, observed=True):
         w = pd.to_numeric(g[weight_col], errors="coerce").to_numpy(float)
         rep_w = g[reps].apply(pd.to_numeric, errors="coerce").to_numpy(float)  # n x R
         vals = g[value_cols].apply(pd.to_numeric, errors="coerce").to_numpy(float)  # n x m
-        all_nan = np.isnan(vals).all(axis=0)
-        x = np.nan_to_num(vals, nan=0.0)
+        x = np.nan_to_num(vals, nan=0.0)                   # blank = not used = 0
         theta = x.T @ np.nan_to_num(w)                     # m
         rep_theta = x.T @ np.nan_to_num(rep_w)             # m x R
         var = kappa * ((rep_theta - theta[:, None]) ** 2).sum(axis=1)
         se = np.sqrt(var)
         for i, m in enumerate(value_cols):
-            est = np.nan if all_nan[i] else float(theta[i])
-            s = np.nan if all_nan[i] else float(se[i])
+            est = float(theta[i]) if published[i] else np.nan
+            s = float(se[i]) if published[i] else np.nan
+            # A zero total means no surveyed record in the group uses it, so every
+            # replicate is zero too and the SE is 0 by construction, not by
+            # precision. Report no interval: a [0, 0] "CI" made any ComStock value
+            # a significant gap on the strength of as little as one building.
+            if est == 0.0:
+                s = np.nan
+            has_ci = est == est and s == s
             rows.append({
                 by: key,
                 "metric_col": m,
                 "estimate": est,
                 "se": s,
-                "rse_pct": (100.0 * s / est) if est else np.nan,
-                "ci95_low": max(est - 1.96 * s, 0.0) if est == est else np.nan,
-                "ci95_high": est + 1.96 * s if est == est else np.nan,
+                "rse_pct": (100.0 * s / est) if has_ci and est else np.nan,
+                "ci95_low": max(est - 1.96 * s, 0.0) if has_ci else np.nan,
+                "ci95_high": est + 1.96 * s if has_ci else np.nan,
             })
     return pd.DataFrame(rows)

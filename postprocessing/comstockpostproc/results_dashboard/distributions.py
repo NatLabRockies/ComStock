@@ -54,8 +54,10 @@ EUI_METRICS = {
     "electricity": "out.electricity.total.energy_consumption_intensity..kwh_per_ft2",
     "natural_gas": "out.natural_gas.total.energy_consumption_intensity..kwh_per_ft2",
 }
-# Metrics where a null on the CBECS side means "this building has no such fuel"
-# rather than "not surveyed".
+# A CBECS blank means the building does not use that fuel, for every metric here.
+# Only natural gas is filled with zero, so both sides' gas EUI describes all
+# buildings; the few CBECS buildings that use no major fuel at all stay out of the
+# electricity and site-energy distributions rather than adding zero-EUI points.
 FILL_NULL_AS_ZERO = {"natural_gas"}
 
 # Dimensions the distributions are cut by. All four exist on both sides; the

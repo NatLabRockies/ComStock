@@ -103,6 +103,18 @@ def fetch_comstock_annual(md_table: str, no_cache: bool = False) -> pd.DataFrame
     return athena.query(sql, no_cache=no_cache, label=f"annual by {len(cols)} dimensions")
 
 
+def _pct_of(value: pd.Series, ref: pd.Series) -> pd.Series:
+    """100 * (value - ref) / ref, NaN where ref is zero or missing.
+
+    A CBECS total of zero is a real estimate (no sampled building in the group
+    uses that fuel), but a percentage of it is undefined, not +/-inf.
+    """
+    ref = pd.to_numeric(ref, errors="coerce")
+    return pd.Series(np.where(ref.notna() & (ref != 0),
+                              100.0 * (pd.to_numeric(value, errors="coerce") - ref) / ref.where(ref != 0),
+                              np.nan), index=value.index)
+
+
 def roll_up(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
     """Sum the fine-grained frame to one dimension, plus an 'All' row.
 
@@ -198,9 +210,9 @@ def build_comparison(
         area = comp["category"].map(sq[f"{side}_value"])
         comp[f"{side}_eui"] = np.where(
             energy & area.notna() & (area > 0), comp[f"{side}_value"] * 1e9 / area, np.nan)
-    comp["eui_pct_diff"] = 100.0 * (comp["comstock_eui"] - comp["cbecs_eui"]) / comp["cbecs_eui"]
+    comp["eui_pct_diff"] = _pct_of(comp["comstock_eui"], comp["cbecs_eui"])
 
-    comp["pct_diff"] = 100.0 * (comp["comstock_value"] - comp["cbecs_value"]) / comp["cbecs_value"]
+    comp["pct_diff"] = _pct_of(comp["comstock_value"], comp["cbecs_value"])
     comp["within_cbecs_ci95"] = (
         (comp["comstock_value"] >= comp["cbecs_ci95_low"])
         & (comp["comstock_value"] <= comp["cbecs_ci95_high"])
@@ -256,8 +268,8 @@ def build_pair_comparison(cs_agg: pd.DataFrame, cbecs_pair: pd.DataFrame | None,
         area = pd.Series(idx.map(sq[f"{side}_value"]), index=comp.index)
         comp[f"{side}_eui"] = np.where(
             energy & area.notna() & (area > 0), comp[f"{side}_value"] * 1e9 / area, np.nan)
-    comp["eui_pct_diff"] = 100.0 * (comp["comstock_eui"] - comp["cbecs_eui"]) / comp["cbecs_eui"]
-    comp["pct_diff"] = 100.0 * (comp["comstock_value"] - comp["cbecs_value"]) / comp["cbecs_value"]
+    comp["eui_pct_diff"] = _pct_of(comp["comstock_eui"], comp["cbecs_eui"])
+    comp["pct_diff"] = _pct_of(comp["comstock_value"], comp["cbecs_value"])
 
     order = ORDERED_CATEGORIES.get(dim)
     if order:

@@ -74,9 +74,9 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
         "weights.",
         "",
         "**Reading caveats.** CBECS end-use splits are EIA statistical disaggregations, not "
-        "metered. A CBECS null means *not surveyed*, not zero — except natural-gas EUI, where "
-        "null means the building has no gas and is filled with zero so both sides describe all "
-        "buildings. CBECS carries no ASHRAE/IECC climate zone (its public-use microdata "
+        "metered. A CBECS blank means the building does not use that fuel or end use, so it "
+        "counts as zero in totals; a metric CBECS does not publish at all is absent, never zero. "
+        "The EUI distributions fill blanks with zero for natural gas only. CBECS carries no ASHRAE/IECC climate zone (its public-use microdata "
         "suppresses sub-regional geography), so census division is the finest geography it "
         "supports and the climate-zone view is ComStock-only. AMI is electricity-only, one "
         "region, compared against ComStock AMY2018; its floor-area denominators are uncertain, "

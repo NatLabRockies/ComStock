@@ -1535,7 +1535,9 @@ function rankedRows(dim, fuel){
     out.push({label, bt,
       cbecs:fuelRow.cbecs_value, comstock:fuelRow.comstock_value,
       delta:fuelRow.comstock_value-fuelRow.cbecs_value,
-      within:rowWithin(fuelRow), attr:d?d.attr:"—",
+      within:rowWithin(fuelRow),
+      tested:fuelRow.cbecs_ci95_low!==null&&fuelRow.cbecs_ci95_low!==undefined,
+      attr:d?d.attr:"—",
       areaEff:d?d.areaEff:null, intEff:d?d.intEff:null});
   };
   if(dim==="building_type"){
@@ -1564,7 +1566,9 @@ function renderRankTable(){
     r.run===PRIMARY&&r.category==="All"&&r.metric===fuel);
   const natGap=natRow?natRow.comstock_value-natRow.cbecs_value:null;
   let rows=rankedRows(state.rankDim, fuel);
-  if(state.rankSig) rows=rows.filter(r=>!r.within);
+  // "Outside the CI" needs a CI. A segment CBECS gives no interval -- a zero
+  // total, where no surveyed building uses the fuel -- is not evidence of a gap.
+  if(state.rankSig) rows=rows.filter(r=>r.tested&&!r.within);
   rows.sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
   const top=rows.slice(0,20);
   let t=`<table><thead><tr><th>#</th><th>Segment</th><th>CBECS TBtu</th><th>ComStock TBtu</th>
@@ -1573,7 +1577,8 @@ function renderRankTable(){
   top.forEach((r,i)=>{
     const share=natGap?100*r.delta/natGap:null;
     t+=`<tr class="clickable" data-type="${esc(r.bt)}"><td>${i+1}</td>
-      <td style="text-align:left">${esc(r.label)}${r.within?' <span class="badge">inside CI</span>':""}</td>
+      <td style="text-align:left">${esc(r.label)}${r.within?' <span class="badge">inside CI</span>':""}${
+        r.tested?"":' <span class="ci-na" title="CBECS gives no interval for this segment">†</span>'}</td>
       <td>${fmt(r.cbecs,1)}</td><td>${fmt(r.comstock,1)}</td>
       <td><span class="cell" style="background:${diffColor(r.delta>0?30:-30)}">${(r.delta>0?"+":"")+fmt(r.delta,1)}</span></td>
       <td>${share===null?absentTag("noValue"):fmt(share,0)+"%"}</td>
@@ -4952,7 +4957,8 @@ function renderHeatingFuel(host){
     heating and it leaves both sides, because ComStock assigns a fuel to every model.
     CBECS's district steam and hot water are summed to match ComStock's single district category,
     and ComStock cannot represent <b>wood</b>.${multi?` <b>${fmt(multi,0)} CBECS records report
-    more than one main heating fuel</b>, so its shares are not a strict partition.`:""}</p></div>`;
+    more than one main heating fuel</b>; each one's floor area is split equally among those fuels,
+    so the shares still sum to 100%.`:""}</p></div>`;
 
   h += `<div class="panel"><div class="head"><h2 style="margin-top:0">National mix
         <span class="badge">${scope}</span></h2></div>
@@ -5318,8 +5324,11 @@ function renderCoverage(){
     shape with the run under review. Tables that show only question one say so.</li>
     <li><b>CBECS end uses are modeled.</b> EIA disaggregates end uses statistically; only fuel
     totals and floor area are surveyed. End-use bars are hatched to keep that visible.</li>
-    <li><b>A CBECS null means "not surveyed", not zero</b> — except natural-gas EUI, where null
-    means the building has no gas and is counted as zero so both sides describe all buildings.</li>
+    <li><b>A CBECS blank means the building does not use that fuel or end use</b>, so it counts as
+    zero in every total, and a group where no surveyed building uses a fuel totals zero. A metric
+    CBECS does not publish at all is shown as absent, never as zero. In the EUI distributions only
+    natural gas fills blanks with zero, so both sides describe all buildings; the few CBECS
+    buildings that use no major fuel stay out of the electricity and site-energy distributions.</li>
     <li><b>Inside the CI is not a gap.</b> Confidence intervals come from the CBECS jackknife
     replicate weights; AMI carries its own 80% interval, drawn as dashed lines on the profile
     charts.</li>

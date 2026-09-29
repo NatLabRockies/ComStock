@@ -12,8 +12,9 @@ to paper over:
     flag exactly one fuel, none flag two, five flag none -- so a partition
     comparison is legitimate. That is a property of THIS file, re-verified on every
     run by `_check_single_choice` rather than assumed: if a future CBECS vintage
-    started reporting several fuels the shares would quietly stop summing to 100%,
-    so the check records what it found and warns instead of trusting it.
+    reports several fuels for one building, that building's floor area is split
+    equally among them (so the shares still sum to 100%) and the check counts and
+    warns about every such record instead of hiding them.
   * CBECS splits district heat into STEAM and HOT WATER; ComStock has a single
     `DistrictHeating`. The two CBECS categories are summed to match it.
   * CBECS has a WOOD category that ComStock cannot represent. It is kept as its
@@ -87,12 +88,20 @@ THIN_N = 30
 THIN_FUEL_N = 5
 
 
+def _canonical_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """One 0/1 column per CANONICAL fuel. District steam and district hot water
+    are one fuel here, so a record flagging both counts once, not twice."""
+    out = {}
+    for col, canon in CBECS_FUEL_COLS.items():
+        if col in df.columns:
+            f = (df[col] == "Yes").astype(int)
+            out[canon] = f if canon not in out else (out[canon] | f)
+    return pd.DataFrame(out, index=df.index)
+
+
 def _check_single_choice(df: pd.DataFrame, heated: pd.Series) -> dict:
     """Verify CBECS main heating fuel behaves as a single choice in THIS file."""
-    flags = pd.DataFrame({
-        c: (df[c] == "Yes").astype(int) for c in CBECS_FUEL_COLS if c in df.columns
-    })
-    n_fuels = flags.sum(axis=1)
+    n_fuels = _canonical_flags(df).sum(axis=1)
     h = heated.to_numpy()
     rep = {
         "heated_records": int(h.sum()),
@@ -102,8 +111,9 @@ def _check_single_choice(df: pd.DataFrame, heated: pd.Series) -> dict:
     }
     if rep["multiple_fuels"]:
         logger.warning(
-            "CBECS: %d heated records flag MORE THAN ONE main heating fuel; area "
-            "shares will sum above 100%% and must not be read as a partition",
+            "CBECS: %d heated records flag MORE THAN ONE main heating fuel; each "
+            "one's floor area and record count are split equally among its fuels, "
+            "so the shares still sum to 100%%",
             rep["multiple_fuels"])
     if rep["no_fuel_flagged"]:
         logger.info(
@@ -136,20 +146,31 @@ def cbecs_heating_fuel(cbecs_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         float(100.0 * area[~heated.to_numpy()].sum() / tot_area)
         if tot_area else float("nan"))
 
-    # One canonical fuel per record where a flag is set. A second flag must not
-    # silently overwrite the first, so assignment only fills what is still empty
-    # and the count of multi-fuel records is reported above rather than hidden.
-    fuel = pd.Series(pd.NA, index=d.index, dtype=object)
-    for col, canon in CBECS_FUEL_COLS.items():
-        fuel = fuel.mask((d[col] == "Yes") & fuel.isna(), canon)
-
-    base = pd.DataFrame({
-        "btype_col": d[BLDG_TYPE_COL].astype(object),
-        "division": d[DIV_COL].astype(object),
-        "fuel": fuel,
-        "area": area,
-        "heated": heated.to_numpy(),
-    })
+    # One row per (record, flagged canonical fuel). A record that flags k fuels
+    # contributes 1/k of its FLOOR AREA to each, so the shares stay a partition
+    # and no fuel wins by being listed first; the count of such records is
+    # reported above. Record counts stay whole: `n` is how many surveyed
+    # buildings report the fuel (the thin-fuel guard), and `rec` (1/k) lets the
+    # cell's record count count each building once. A record with no fuel flagged
+    # keeps one row with no fuel, which the shares leave out. None of the 3,891
+    # heated records in CBECS 2018 flags more than one fuel.
+    flags = _canonical_flags(d)
+    k = flags.sum(axis=1).to_numpy()
+    common = {"btype_col": d[BLDG_TYPE_COL].astype(object).to_numpy(),
+              "division": d[DIV_COL].astype(object).to_numpy(),
+              "heated": heated.to_numpy()}
+    parts = []
+    for canon in flags.columns:
+        on = flags[canon].to_numpy() == 1
+        if on.any():
+            frac = 1.0 / k[on]
+            parts.append(pd.DataFrame({key: v[on] for key, v in common.items()}
+                                      | {"fuel": canon, "area": area[on] * frac,
+                                         "n": 1.0, "rec": frac}))
+    none = k == 0
+    parts.append(pd.DataFrame({key: v[none] for key, v in common.items()}
+                              | {"fuel": pd.NA, "area": area[none], "n": 1.0, "rec": 1.0}))
+    base = pd.concat(parts, ignore_index=True)
     return _long_shares(base, run=CBECS_RUN_KEY, dataset="cbecs"), prov
 
 
@@ -198,6 +219,10 @@ def _long_shares(base: pd.DataFrame, run: str, dataset: str) -> pd.DataFrame:
     b = base.copy()
     if "n" not in b.columns:
         b["n"] = 1
+    # Records behind a cell. The CBECS side passes `rec` because one building
+    # can span several fuel rows; everywhere else a row is its own count.
+    if "rec" not in b.columns:
+        b["rec"] = b["n"]
 
     # Shares are over heated area WITH A KNOWN FUEL. Unheated area and
     # fuel-unknown area leave both the numerator and the denominator, and are
@@ -217,7 +242,7 @@ def _long_shares(base: pd.DataFrame, run: str, dataset: str) -> pd.DataFrame:
             continue
         for dim, keys in (("none", []), ("census_division", ["division"])):
             grp = sub.groupby(keys + ["fuel"], dropna=True, observed=True).agg(
-                area=("area", "sum"), n=("n", "sum")).reset_index()
+                area=("area", "sum"), n=("n", "sum"), rec=("rec", "sum")).reset_index()
             if grp.empty:
                 continue
             cat = (grp["division"] if keys
@@ -228,7 +253,7 @@ def _long_shares(base: pd.DataFrame, run: str, dataset: str) -> pd.DataFrame:
                                              np.nan)
             # Records behind the WHOLE cell, not just this fuel: that is what
             # decides whether the cell is too thin to trust.
-            grp["cell_n"] = grp.groupby("category", observed=True)["n"].transform("sum")
+            grp["cell_n"] = grp.groupby("category", observed=True)["rec"].transform("sum")
             out.append(grp.assign(dataset=dataset, run=run, btype=btype_label,
                                   dimension=dim)[
                 ["dataset", "run", "btype", "dimension", "category", "fuel",
