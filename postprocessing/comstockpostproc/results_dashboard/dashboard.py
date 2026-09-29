@@ -447,6 +447,11 @@ a.jump:hover{color:var(--ink);border-color:var(--ink-3)}
 .key[data-eu]:hover,.key[data-fe]:hover{color:var(--ink)}
 .key[data-eu][aria-pressed="false"],
 .key[data-fe][aria-pressed="false"]{opacity:.42;text-decoration:line-through}
+/* other runs on the AMI tab: off by default and shaded, not struck through --
+   an undrawn run is an option to add, not a series that was removed */
+.key[data-amirun]{cursor:pointer;user-select:none}
+.key[data-amirun]:hover{color:var(--ink)}
+.key[data-amirun][aria-pressed="false"]{opacity:.42}
 /* multi-measure dropdown checklist: stays compact however many measures a run
    carries; the swatches double as the legend */
 .mmulti{position:relative;display:inline-block}

@@ -154,6 +154,8 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               measPop: "app",
               measCatGroup: "building_type", euHidden: [], feHidden: [], measHidden: [],
               runsHidden: [],
+              // other runs drawn on the AMI tab; none by default (see renderAmi)
+              amiRuns: [],
               annualMetric: "electricity.total", annualDim: "vintage",
               /* Which breakdown to show. These tabs carried EVERY breakdown
                  stacked one after another - by vintage, census division, floor
@@ -2204,7 +2206,8 @@ function ldcChart(host, pts, opts={}){
   const plotW=W-padL-padR, plotH=H-padT-padB;
   const xMax=Math.max(...pts.map(p=>p.hours))||1;
   // Same 0/0 trap as profileChart: an all-zero curve must still draw.
-  const yRaw=Math.max(...pts.flatMap(p=>[p.comstock,p.amiHi,p.comstock2])
+  const extra=opts.extraLines||[];
+  const yRaw=Math.max(...pts.flatMap(p=>[p.comstock,p.amiHi,p.comstock2].concat(extra.map(l=>p[l.key])))
     .filter(v=>v!==null&&v!==undefined));
   const yMax=yRaw>0 ? yRaw*1.08 : 1;
   const x=h=>padL+(h/xMax)*plotW, y=v=>padT+plotH-(v/yMax)*plotH;
@@ -2236,6 +2239,16 @@ function ldcChart(host, pts, opts={}){
   line("ami","var(--ink)","");
   if(pts.some(p=>p.comstock2!==null&&p.comstock2!==undefined))
     line("comstock2",opts.comstock2Color||"#56B4E9","7 4",2);
+  // Other runs: a missing rank breaks the line (a new subpath starts after
+  // it) rather than dropping to zero or being bridged by a straight chord.
+  extra.forEach(l=>{
+    const has=p=>p[l.key]!==null&&p[l.key]!==undefined;
+    if(!pts.some(has)) return;
+    const d=pts.map((p,i)=>has(p)?`${i&&has(pts[i-1])?"L":"M"}${x(p.hours).toFixed(1)},${y(p[l.key]).toFixed(1)}`:"")
+      .filter(Boolean).join(" ");
+    svg.appendChild(el("path",{d,fill:"none",stroke:l.color,"stroke-width":l.width||2,
+      "stroke-linejoin":"round",...(l.dash?{"stroke-dasharray":l.dash}:{})}));
+  });
   line("comstock",opts.comstockColor||"#0072B2","");
   svg.appendChild(el("rect",{x:padL,y:padT,width:plotW,height:plotH,
     fill:"none",stroke:"var(--ink-2)","stroke-width":1}));
@@ -2249,7 +2262,9 @@ function ldcChart(host, pts, opts={}){
     showTip(`<b>top ${best.hours.toLocaleString()} hours</b>`+
       `<div class="row"><span>ComStock</span><span>${fmt(best.comstock,4)}</span></div>`+
       `<div class="row"><span>AMI</span><span>${fmt(best.ami,4)}</span></div>`+
-      `<div class="row"><span>AMI 80% CI</span><span>${fmt(best.amiLo,4)}–${fmt(best.amiHi,4)}</span></div>`,ev);
+      `<div class="row"><span>AMI 80% CI</span><span>${fmt(best.amiLo,4)}–${fmt(best.amiHi,4)}</span></div>`+
+      extra.map(l=>best[l.key]===null||best[l.key]===undefined ? ""
+        : `<div class="row"><span>${esc(l.label)}</span><span>${fmt(best[l.key],4)}</span></div>`).join(""),ev);
   });
   hit.addEventListener("mouseleave",hideTip);
   svg.appendChild(hit);
@@ -2362,7 +2377,13 @@ function renderAmi(){
   // Rows carry a `run` column when the assessment ran the AMI leg for more than
   // one run; older assessments have no run column and are primary-only.
   const pts=allRows.filter(r=>!r.run||r.run===PRIMARY);
-  const secRows=SECONDARY?allRows.filter(r=>r.run===SECONDARY.key):[];
+  /* Every other run the AMI leg covered here, in display order. The run under
+     review and the meters are always drawn; the others are legend keys, off
+     until clicked, so six runs do not arrive as six overlapping lines. The
+     header's run toggles still apply: a run hidden there is not offered. */
+  const others=RUNS.filter(r=>r.key!==PRIMARY&&allRows.some(p=>p.run===r.key));
+  const shownRuns=others.filter(r=>(state.amiRuns||[]).includes(r.key));
+  const runRows=k=>allRows.filter(r=>r.run===k);
   const met=(D.amiShape[region]||[]).filter(r=>r.building_type===sn);
   if(!pts.length){
     // A type with no AMI key at all (no entry in typeToSnake) can never match
@@ -2413,29 +2434,32 @@ function renderAmi(){
     const keys=all?(D.enduseOrder||[]):euOrderVisible();
     const items=keys.slice().reverse().map(k=>({color:D.enduseColors[k]||"#888",
       label:k.replace(/_/g," "), euKey:k}));
-    /* Hiding an end use makes profileChart draw the run's FULL total as a solid
-       line, because the stack top no longer is that total. That line was drawn
-       without ever being keyed, so it appeared unannounced and unexplained —
-       the one thing a legend exists to prevent. It is listed whenever it is
-       drawn, and only when it is drawn. */
-    if(euAnyHidden())
-      items.push({color:runColor(PRIMARY),
-        label:`${runShort(PRIMARY)} total, all end uses${nModels(PRIMARY)}`, line:true});
+    /* The run under review is always drawn as a solid total line on top of its
+       stack, and keyed, so the legend names the run on screen. It used to be
+       drawn and keyed only once an end use was hidden, which left a full stack
+       with no run name on it. */
+    items.push({color:runColor(PRIMARY),
+      label:`${runShort(PRIMARY)} total${euAnyHidden()?", all end uses":""}${nModels(PRIMARY)}`, line:true});
     items.push({color:"#1a1d1f", label:`AMI metered${nMeters()}`, line:true});
-    if(secRows.length)
-      items.push({color:SECONDARY.color,
-        label:`${runShort(SECONDARY.key)} total${nModels(SECONDARY.key)}`, line:true, dash:true});
+    // Other runs: every one on screen (the off ones shaded, to click); only the
+    // drawn ones in exports and the expanded view. No model count: the recorded
+    // counts belong to the run under review.
+    (all?others:shownRuns).forEach(r=>items.push({color:runColor(r.key),
+      label:`${runShort(r.key)} total`, line:true, dash:true, runKey:r.key}));
     return items;
   }
   function amiLegendHTML(){
-    // End-use keys are clickable here too; the AMI/ComStock line keys are not,
-    // since hiding a reference line would just hide the comparison.
-    const hid=euHidden();
+    // End-use keys and the other runs' keys are clickable; the AMI and
+    // run-under-review keys are not, since hiding either hides the comparison.
+    const hid=euHidden(), on=new Set(shownRuns.map(r=>r.key));
     return amiLegendItems(true).map(i=>{
       const c=safeColor(i.color==="#1a1d1f"?"var(--ink)":i.color);
       const attrs=(i.euKey&&!i.line&&!i.band)
         ? ` data-eu="${i.euKey}" role="button" aria-pressed="${!hid.has(i.euKey)}"
-            title="click to hide or show this end use"` : "";
+            title="click to hide or show this end use"`
+        : i.runKey
+        ? ` data-amirun="${esc(i.runKey)}" role="button" aria-pressed="${on.has(i.runKey)}"
+            title="click to show or hide this run's total"` : "";
       return `<span class="key"${attrs}>${
         i.band?`<span class="sw" style="background:var(--ink);opacity:.18"></span>`
         :i.line?`<span style="width:14px;height:0;border-top:2.5px ${i.dash?"dashed":"solid"} ${c};display:inline-block;flex:none"></span>`
@@ -2473,9 +2497,9 @@ function renderAmi(){
          total. This view depends on the AMI floor-area estimate — where that is uncertain, use a
          normalized view.`}
       The solid dark line is metered AMI; the dashed dark lines are its 80% confidence interval.
-      ${secRows.length?`The dashed <b style="color:${safeColor(SECONDARY.color)}">${runShort(SECONDARY.key)}</b> line is
-      the comparison run's total on the same basis, so whether this run moved toward or away from
-      the meters reads directly.`:""}
+      The solid <b style="color:${safeColor(runColor(PRIMARY))}">${runShort(PRIMARY)}</b> line is its
+      total.${others.length?` The other runs are in the legend, off by default: click one to add its
+      total as a dashed line on the same basis, to see whether it sits closer to the meters.`:""}
       Each subplot's Copy button puts a report-ready PNG on the clipboard — white background, title
       and legend included.</p>
     <div class="ami-wrap">
@@ -2484,12 +2508,12 @@ function renderAmi(){
     </div></div>`;
 
   const ldcAll=(D.amiLdc[region]||[]).filter(r=>r.building_type===sn);
-  const ldcSec={};
-  if(SECONDARY) ldcAll.filter(r=>r.run===SECONDARY.key)
-    .forEach(r=>{ ldcSec[r.hours]=r.comstock_kwh_per_sf; });
+  // The drawn runs' curves, keyed by hours so they line up with the primary's.
+  const ldcRuns=shownRuns.map(r=>{ const m={};
+    ldcAll.filter(x=>x.run===r.key).forEach(x=>{ m[x.hours]=x.comstock_kwh_per_sf; }); return m; });
   const ldcPts=ldcAll.filter(r=>!r.run||r.run===PRIMARY)
     .map(r=>({hours:r.hours, comstock:r.comstock_kwh_per_sf, ami:r.ami_kwh_per_sf,
-      comstock2:ldcSec[r.hours]??null,
+      ...Object.fromEntries(ldcRuns.map((m,i)=>[`run${i}`, m[r.hours]??null])),
       /* null, never NaN: a region with no measured sampling uncertainty gets no
          band at all rather than a fabricated one. ldcChart draws the pair only
          when amiHi is non-null (line 1252), and NaN would slip past that test
@@ -2568,16 +2592,20 @@ function renderAmi(){
   const pending=[];
   seasonRows.forEach(s=>dayCols.forEach(d=>{
     const raw=pts.filter(p=>p.season===s&&p.day_type===d).sort((a,b)=>a.hour-b.hour);
-    // Comparison run's total for the same panel, normalized by ITS OWN divisor
-    // in each mode so both runs are on the convention's terms.
-    const sec=secRows.filter(p=>p.season===s&&p.day_type===d).sort((a,b)=>a.hour-b.hour);
-    let secByHour={};
-    if(sec.length){
-      let div=1;
-      if(state.amiMode==="daytype") div=sec.reduce((t,p)=>t+(p.comstock_kwh_per_sf||0),0);
-      else if(state.amiMode==="annual") div=sec[0].comstock_annual_kwh_per_sf;
-      sec.forEach(p=>{ secByHour[p.hour]=div?p.comstock_kwh_per_sf/div:null; });
-    }
+    // Each drawn run's total for the same panel, normalized by ITS OWN divisor
+    // in each mode so every run is on the convention's terms.
+    const runByHour=shownRuns.map(r=>{
+      const rows=runRows(r.key).filter(p=>p.season===s&&p.day_type===d);
+      const byHour={};
+      if(rows.length){
+        let div=1;
+        if(state.amiMode==="daytype") div=rows.reduce((t,p)=>t+(p.comstock_kwh_per_sf||0),0);
+        else if(state.amiMode==="annual") div=rows[0].comstock_annual_kwh_per_sf;
+        rows.forEach(p=>{ byHour[p.hour]=div?p.comstock_kwh_per_sf/div:null; });
+      }
+      return byHour;
+    });
+    const runVals=h=>Object.fromEntries(runByHour.map((m,i)=>[`run${i}`, m[h]??null]));
     const box=document.createElement("div");
     box.className="chartbox";
     box.innerHTML=`<div class="head"><h3>${s} · ${d}</h3></div><div class="chart"></div>`;
@@ -2608,7 +2636,7 @@ function renderAmi(){
         const u=p.ami_sample_uncertainty||0;
         return {hour:p.hour,
           comstock:csDiv?p.comstock_kwh_per_sf/csDiv:null, ami,
-          comstock2:secByHour[p.hour]??null,
+          ...runVals(p.hour),
           amiHi:ami===null?null:ami*(1+u), amiLo:ami===null?null:Math.max(ami*(1-u),0),
           rawComstock:p.comstock_kwh_per_sf, rawAmi:p.ami_kwh_per_sf, eu};
       });
@@ -2617,16 +2645,17 @@ function renderAmi(){
         const u=p.ami_sample_uncertainty||0;
         const eu={}; stackKeys.forEach(k=>eu[k]=p["eu_"+k]);
         return {hour:p.hour, comstock:p.comstock_kwh_per_sf, ami:p.ami_kwh_per_sf,
-          comstock2:secByHour[p.hour]??null,
+          ...runVals(p.hour),
           rawComstock:p.comstock_kwh_per_sf, rawAmi:p.ami_kwh_per_sf,
           amiHi:p.ami_kwh_per_sf*(1+u), amiLo:Math.max(p.ami_kwh_per_sf*(1-u),0), eu};
       });
     }
     pending.push({box, sub, label:`${s} · ${d}`,
       opts:{title:`${s} ${d}`, normalized:norm, stack:true, stackKeys, stackBase,
-       comstockColor:runColor(PRIMARY), comstock2Color:SECONDARY?SECONDARY.color:undefined,
-       comstock2Label:SECONDARY?runShort(SECONDARY.key):undefined,
-       showTotalLine:euAnyHidden(),
+       comstockColor:runColor(PRIMARY),
+       extraLines:shownRuns.map((r,i)=>({key:`run${i}`, color:safeColor(runColor(r.key)),
+         dash:"7 4", width:2, label:runShort(r.key)})),
+       showTotalLine:true,
        yLabel:norm?NORM_LABEL[state.amiMode]:"kWh/ft² per hour",
        copy:{title:`${bt} — ${region} — ${s} ${d} mean hourly electricity, `
                +`${norm?NORM_LABEL[state.amiMode].toLowerCase():"kWh/ft² per hour"}`,
@@ -2643,18 +2672,24 @@ function renderAmi(){
   registerGroup("gami", [], [], amiLegendItems(), amiTitle, 2);
   GROUPS.gami.charts=figureCharts;
   if(ldcPts.length){
-    const ldcLegend=[{color:runColor(PRIMARY),label:runLabel(PRIMARY),line:true}];
-    if(Object.keys(ldcSec).length)
-      ldcLegend.push({color:SECONDARY.color,label:`${runShort(SECONDARY.key)} (dashed)`,line:true,dash:true});
+    const ldcLines=shownRuns.map((r,i)=>({key:`run${i}`, color:safeColor(runColor(r.key)),
+      dash:"7 4", width:2, label:runShort(r.key)}))
+      .filter(l=>ldcPts.some(p=>p[l.key]!==null&&p[l.key]!==undefined));
+    const ldcLegend=[{color:runColor(PRIMARY),label:runLabel(PRIMARY),line:true}]
+      .concat(ldcLines.map(l=>({color:l.color,label:`${l.label} (dashed)`,line:true,dash:true})));
     ldcLegend.push({color:"#1a1d1f",label:"AMI metered",line:true},
                    {color:"#1a1d1f",label:"AMI 80% CI (dashed)",line:true,dash:true});
-    ldcChart($("#ldc"), ldcPts, {comstockColor:runColor(PRIMARY),
-      comstock2Color:SECONDARY?SECONDARY.color:undefined,
+    ldcChart($("#ldc"), ldcPts, {comstockColor:runColor(PRIMARY), extraLines:ldcLines,
       copy:{title:`${bt} — ${region} — load duration curve (kWh/ft², full year)`,
             legend:ldcLegend}});
   }
   wireAmiRegion();
   wireEnduseLegend(renderAmi);
+  document.querySelectorAll("[data-amirun]").forEach(k=>k.addEventListener("click",()=>{
+    const key=k.dataset.amirun, on=new Set(state.amiRuns||[]);
+    if(on.has(key)) on.delete(key); else on.add(key);
+    state.amiRuns=[...on]; renderAmi(); syncHash();
+  }));
   wireGroups();
   document.querySelectorAll("[data-ami]").forEach(b=>
     b.addEventListener("click",()=>{ state.amiMode=b.dataset.ami; renderAmi(); syncHash(); }));
@@ -5278,9 +5313,9 @@ function renderCoverage(){
     <li><b>Two questions organize every comparison.</b> (1) How does ${runLabel(D.primaryRun)}
     compare to the references — every "% vs CBECS" is that run minus CBECS, as a share of CBECS.
     (2) Where did it improve or worsen that comparison relative to the previous run — the
-    scorecard arrows and "Δ gap" columns measure the change in the <i>absolute</i> gap, and the
-    dashed comparison-run line on the AMI charts shows the same thing for shapes. Tables that show
-    only question one say so.</li>
+    scorecard arrows and "Δ gap" columns measure the change in the <i>absolute</i> gap. On the
+    AMI charts any other run can be added from the legend as a dashed total line, to compare its
+    shape with the run under review. Tables that show only question one say so.</li>
     <li><b>CBECS end uses are modeled.</b> EIA disaggregates end uses statistically; only fuel
     totals and floor area are surveyed. End-use bars are hatched to keep that visible.</li>
     <li><b>A CBECS null means "not surveyed", not zero</b> — except natural-gas EUI, where null
@@ -5319,7 +5354,7 @@ function renderCoverage(){
 const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim","distScale",
                  "dpGroup","dpDim","hfView",
                  "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
-                 "measDistGroup","measMulti","runsHidden","measBasis","measPop",
+                 "measDistGroup","measMulti","runsHidden","amiRuns","measBasis","measPop",
                  "measCatGroup","euHidden","feHidden","measHidden"];
 function syncHash(){
   const p=new URLSearchParams();
@@ -5338,6 +5373,7 @@ function parseHash(){
       // validated against the real run list so a stale link cannot hide a
       // run that is not in this dashboard
       : k==="runsHidden" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
+      : k==="amiRuns" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="measMulti" ? v.split(",").filter(u=>MEAS_LIST.some(m=>m.up===u))
       : k==="euHidden" ? v.split(",").filter(x=>(D.enduseOrder||[]).includes(x))
       // "enduse|fuel"; validated against both halves so a stale link cannot
