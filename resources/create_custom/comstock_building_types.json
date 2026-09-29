@@ -1753,6 +1753,48 @@
           }
         }
       ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "exam/treatment",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.00039
+            }
+          }
+        },
+        {
+          "space_type": "operating room",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.01884
+            }
+          }
+        },
+        {
+          "space_type": "imaging",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.00397
+            }
+          }
+        },
+        {
+          "space_type": "restroom",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.0
+            }
+          }
+        },
+        {
+          "space_type": "lounge/breakroom",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.0
+            }
+          }
+        }
+      ],
       "constructions": [
         {
           "applicable_templates": [
@@ -2073,6 +2115,9 @@
             "*": {
               "peak_flow_rate_gph_per_floor_area_ft2": 0.032,
               "mixed_water_temperature_f": 110.0
+            },
+            "Dishwasher Booster": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.0
             }
           }
         }
@@ -2213,6 +2258,18 @@
               "ratio": 0.8291999999999999,
               "space_type_gen": true,
               "default": false
+            }
+          }
+        }
+      ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "retail",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.00088,
+              "mixed_water_temperature_f": 140.0,
+              "loop_type": "Shared"
             }
           }
         }
@@ -2686,7 +2743,7 @@
               "space_type_gen": true,
               "default": true
             },
-            "laundry/washing": {
+            "laundry/washing - coin-operated laundries": {
               "ratio": 0.0244,
               "space_type_gen": true,
               "default": false
@@ -2715,6 +2772,32 @@
               "ratio": 0.0325,
               "space_type_gen": true,
               "default": false
+            }
+          }
+        }
+      ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "guest room",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.006324786
+            }
+          }
+        },
+        {
+          "space_type": "lounge/breakroom",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.0
+            }
+          }
+        },
+        {
+          "space_type": "restroom",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.0
             }
           }
         }
