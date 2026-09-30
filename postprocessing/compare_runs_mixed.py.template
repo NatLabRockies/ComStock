@@ -9,7 +9,9 @@ needs, in the same order as compare_runs.py:
     kind='process'   Postprocessed here: download, cache, apportion to the entry's own
                      `estimate`, scale to CBECS, export, crawl. About 35 minutes per 100k
                      baseline-only run on the first pass; minutes on a rerun, because the
-                     caches and Athena tables are reused. Runs with measures take hours.
+                     caches and Athena tables are reused. Each measure scenario adds its
+                     own download, bills and national export, plus a county export of
+                     ~3,100 files (~15 min) when those are wanted for it.
     kind='athena'    Already crawled into its `database` by an earlier driver. Its tables
                      are read; nothing is downloaded, apportioned, exported or crawled.
     kind='release'   A published OEDI release in buildstock_sdr. Read-only, like 'athena'.
@@ -17,6 +19,14 @@ needs, in the same order as compare_runs.py:
 The FIRST entry is the run under review: drawn last in every grouped bar and measured
 against DELTA_REF. With no 'process' entries this is the Athena-only case
 (results_dashboard_from_athena.py) and finishes in minutes.
+
+MEASURES. measures=True on the first entry (a 'process' run) postprocesses its measure
+scenarios too: the dashboard gets its Measures tabs -- each measure against the run's own
+baseline -- and the measure load shapes at MEASURE_TIMESERIES_LOCATIONS. Comparison runs
+never need measures; the release-comparison panel simply has nothing to show. State
+locations read the national aggregate; AMI and county locations read the county one, so
+the county export always covers the baseline when INCLUDE_AMI, and covers every measure
+when COUNTY_TABLES_FOR_MEASURES or when a location is a county.
 
 SAMPLES. Each 'process' entry names the stock estimate its sample was drawn against. Runs
 on one sample share one Apportion; a run on another sample gets its own. Comparing runs
@@ -57,6 +67,14 @@ MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'pro
                                    # only their wide CSVs and the dashboard, which is faster
 INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
+MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
+                                   # measure load-shape profiles, used only when the first entry has
+                                   # measures=True: state codes, county gisjoins ('G2500250'), or a
+                                   # tuple of either as one profile, each with its display name
+COUNTY_TABLES_FOR_MEASURES = False # True: the county export covers every measure, not only the
+                                   # baseline (~15 min each). Nothing in the dashboard needs that: AMI and
+                                   # state profiles read the baseline's county data only, and a county
+                                   # location above turns it on by itself
 CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
                                    # every sampled (building type, tract) pair must exist in it
 COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
@@ -79,7 +97,10 @@ DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrow
 #                   optional     label (display name), version (cache folder), rebuild=True
 #                                (re-export and re-crawl: table existence is not weight freshness,
 #                                so set it when the apportionment changed),
-#                                acceptable_failure_percentage (default 0.25)
+#                                acceptable_failure_percentage (default 0.25; only 'Fail' counts,
+#                                not a measure's not-applicable models), measures=True (FIRST
+#                                entry only: postprocess its measure scenarios, see MEASURES),
+#                                upgrade_ids_to_skip=[...] (measures to leave out, e.g. [4, 5])
 #   kind='athena'   run          the crawled table prefix;  database  where the tables are
 #                   color; optional label (default 'ComStock <run>')
 #   kind='release'  key, label, md_table, database, color; optional md_county_table, ts_table
@@ -109,12 +130,12 @@ def main():
             assert_sample_matches_estimate(r['run'], buildstock_path(r), r['estimate'])
 
     # 2. A ComStock object for every run postprocessed here.
-    objects = {}
+    objects, construct = {}, {}
     for r in processed:
         cached = sim_cache_exists(cache_version(r))
         logger.info('%s: simulation-output cache %s', r['run'],
                     'found, reloading it' if cached else 'not found, first pass, building it')
-        objects[r['run']] = cspp.ComStock(
+        construct[r['run']] = dict(
             s3_base_dir=r['s3_base_dir'],
             comstock_run_name=r['run'],
             comstock_run_version=cache_version(r),
@@ -127,8 +148,21 @@ def main():
             color_hex=r['color'],
             skip_missing_columns=True,     # build_existing_model columns may differ between runs
             reload_from_cache=cached,
-            include_upgrades=False,        # baseline only
+            # measure scenarios only for the run under review (check_declaration)
+            include_upgrades=bool(r.get('measures')),
+            upgrade_ids_to_skip=list(r.get('upgrade_ids_to_skip', [])),
+            timeseries_locations_to_plot=MEASURE_TIMESERIES_LOCATIONS if r.get('measures') else {},
             )
+        objects[r['run']] = cspp.ComStock(**construct[r['run']])
+        if r.get('measures'):
+            # A cache that lacks one of the run's upgrades (a first pass that died partway,
+            # an id taken off upgrade_ids_to_skip) would reload without it and fail in the
+            # bills step after apportionment. Rebuild it from the results instead.
+            missing = set(map(int, objects[r['run']].upgrade_ids_to_process)) - loaded_upgrades(objects[r['run']])
+            if missing:
+                logger.warning('%s: cached simulation outputs lack upgrades %s; rebuilding the '
+                               'cache from the results files', r['run'], sorted(missing))
+                objects[r['run']] = cspp.ComStock(**{**construct[r['run']], 'reload_from_cache': False})
         if r.get('label'):
             objects[r['run']].dataset_name = r['label']
 
@@ -153,8 +187,11 @@ def main():
             remove_non_comstock_bldg_types_from_cbecs=True)
         # No reload flag: short-circuits whenever output/ComStock <v>/
         # cached_allocated_weights_plus_bills/ exists, and the S3 export reads from it.
-        # Delete that folder when the apportionment changes.
-        obj.create_allocated_weights_plus_util_bills_for_upgrade(0)
+        # Delete that folder when the apportionment changes. One per upgrade LOADED:
+        # the baseline, plus every measure of a measures=True run. Not
+        # upgrade_ids_to_process, which lists every results file on disk.
+        for upgrade_id in sorted(loaded_upgrades(obj)):
+            obj.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
     cbecs.export_to_csv_wide()             # the dashboard reads 'CBECS wide.csv'
 
     # 5. The processed runs against each other and CBECS: figures (optional) and wide CSVs.
@@ -175,8 +212,17 @@ def main():
     #    missing; a rerun logs "already has every table it needs". It logs and returns
     #    False rather than raising; the dashboard then says what it could not read.
     for r in processed:
+        measures = bool(r.get('measures'))
+        # The national export always covers every upgrade the run loaded. The county
+        # export (AMI, county profiles) covers the baseline, or every upgrade when
+        # asked for or when a measure location is a county.
+        county_all = measures and (COUNTY_TABLES_FOR_MEASURES
+                                   or has_county_location(MEASURE_TIMESERIES_LOCATIONS))
+        rebuild = bool(r.get('rebuild')) or (measures and national_lacks_measures(r, objects[r['run']]))
         ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
-                                        ami=INCLUDE_AMI, rebuild=bool(r.get('rebuild')))
+                                        timeseries=measures, ami=INCLUDE_AMI,
+                                        upgrade_ids=None if county_all else [0],
+                                        rebuild=rebuild)
         if not ok:
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
@@ -200,6 +246,10 @@ def main():
                                                          'results_dashboard'),
         database=RUNS[0].get('database', ATHENA_DATABASE),   # the primary's; refs carry their own
         delta_ref=DELTA_REF,
+        # every measure of a measures=True primary; none otherwise (a table reference
+        # has no upgrade list to take them from)
+        include_measures=None if RUNS[0].get('measures') else [],
+        measure_states=MEASURE_TIMESERIES_LOCATIONS if RUNS[0].get('measures') else None,
         )
     if dashboard.skipped_reason:
         logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
@@ -230,8 +280,59 @@ def check_declaration():
                              'version its sample was drawn against)')
         if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
             raise SystemExit(f'release entries need key and md_table: {r}')
+    carry = [r.get('run') or r.get('key') for r in RUNS if r.get('measures')]
+    if carry and (carry != [names[0]] or RUNS[0]['kind'] != 'process'):
+        raise SystemExit(f'measures=True belongs on the FIRST entry, a process run (the run under '
+                         f'review); found on {carry}')
+    if RUNS[0].get('measures') and not MEASURE_TIMESERIES_LOCATIONS:
+        logger.warning('measures=True but MEASURE_TIMESERIES_LOCATIONS is empty: the measure '
+                       'load-shape tab will say it has no locations')
     if DELTA_REF not in names[1:]:
         raise SystemExit(f'DELTA_REF {DELTA_REF!r} must be one of the comparison runs {names[1:]}')
+
+
+def loaded_upgrades(obj):
+    """The upgrade ids a ComStock object actually holds (cache reload or fresh build)."""
+    ids = obj.data.select(obj.UPGRADE_ID).unique().collect().to_series().to_list()
+    return {int(i) for i in ids}
+
+
+def national_lacks_measures(entry, obj):
+    """True when the run's national table already exists but is missing some of the
+    upgrades this pass loaded -- a run crawled baseline-only earlier, for one.
+    prepare_athena_tables checks tables by name, not by content, so it would export
+    nothing and the dashboard would skip. Any failure to check says False and logs:
+    the existing tables are then used as they are, as before."""
+    from comstockpostproc.athena_tables import NATIONAL_EXPORT, existing_tables
+    from comstockpostproc.results_dashboard import athena, measures
+    run, db = entry['run'], entry.get('database', ATHENA_DATABASE)
+    national = f'{run}_md_agg_{NATIONAL_EXPORT}_parquet'
+    try:
+        names = existing_tables(run, db)
+        if not names or national not in names:
+            return False                      # first pass: prepare_athena_tables exports it
+        athena.configure(database=db, reflect_table=national)
+        have = {int(u) for u in measures.available_upgrades(national, no_cache=True)}
+        missing = sorted(loaded_upgrades(obj) - have)
+    except Exception as exc:                  # noqa: BLE001
+        logger.warning('%s: could not check which upgrades %s holds (%s); using it as is',
+                       run, national, exc)
+        return False
+    if missing:
+        logger.warning('%s: %s exists but lacks upgrades %s; re-exporting and re-crawling',
+                       run, national, missing)
+    return bool(missing)
+
+
+def has_county_location(locations):
+    """Does any measure timeseries location name a county (a gisjoin such as
+    'G2500250', alone or in a tuple)? County profiles need the county aggregate for
+    every upgrade; state codes do not."""
+    for key in (locations or {}):
+        for i in (key if isinstance(key, (tuple, list)) else (key,)):
+            if str(i).upper().startswith('G') and len(str(i)) > 2:
+                return True
+    return False
 
 
 def cache_version(entry):
