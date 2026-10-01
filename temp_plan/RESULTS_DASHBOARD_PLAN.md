@@ -103,7 +103,7 @@ real misreading, so the table now shows both.
 
 ## 5. Open items
 
-Housekeeping the repo owner should drive:
+### 5a. Housekeeping the repo owner should drive
 
 - [ ] PR title and description — draft in `pr_463_description.md`
 - [ ] File the weight-inflation issue — draft in `issue_weight_inflation.md`
@@ -113,6 +113,313 @@ Housekeeping the repo owner should drive:
 - [ ] Decide whether the untracked investigation scripts belong on this branch or elsewhere:
       `compare_fan_*_dbtest.py`, `compute_fan_fix_btype.py`, `build_fanfix_btype_json.py`,
       `plot_fan_fix_*.py`. They are analysis, not dashboard code.
+
+### 5b. Work plan — placeholders, coverage, axes, local-only checks (opened 2026-09-30)
+
+**Owner's rules, which every item below serves.**
+1. No placeholders shown as data: no default, sentinel, dummy or "not computed" value may be
+   displayed, averaged or counted as a modelled property; no hard-coded statistic in a note.
+2. Coverage wherever the data has it: if the exported tables carry a value for a building, the
+   panel uses it and "applies to" says so.
+3. Averages are fine as long as they correctly represent the average and accurately show
+   change. Do not drop a population to make a number look better; do fix an average that mixes
+   in a value that is not the quantity being averaged.
+4. Axes: tick increments on clean values (1, 2, 5 x 10^k; never 7s or 2.5s); the top and the
+   bottom of every axis are labelled ticks, so the last label is never at 75% of the height.
+5. No template others run, and no driver being run or tested, may depend on a file that only
+   this machine has.
+
+**How each item was checked.** `[V]` re-derived by hand in this session from the raw
+`results_up00.parquet` of `str_100k_new_sample_plugfix_fanfix` (103,605 successful models) or
+from the cited code lines. `[A]` confirmed by two independent readers (auditor, then a skeptic
+told to refute it) in workflow `wf_1708b547-785` (journal.jsonl holds the full evidence) but not
+re-run by hand. `[?]` one reader only; verify before acting. Nothing below has been applied.
+
+#### D. Dashboard only — fix in `results_dashboard/`, re-render from the existing Athena tables (this PR)
+
+**Status 2026-09-30 evening.** D1–D9 are coded (design_params.py, dashboard.js, assessment.py,
+annual.py, heating_fuel.py; 31 tests pass, `test_results_dashboard_design_params.py` pins the rules:
+no percentages in notes, absent_note on partial metrics, tokens resolved, spread kept per type).
+Verified in the browser on a CSV-only re-render of the fanfix dashboard: axes end on labelled 1-2-5
+ticks, "none qualify" / cause tooltips, every-metric table shows absent not 0.00, Coverage-tab
+sentences derived from the data. **Still needed:** re-run the fanfix assessment (Athena; SSO had
+expired) so the new design-param metrics (unitary fans, separable pumps, share cooled, EFLH from
+metered energy, cooling-blend guard, per-type spread, absent_note text) and the complete heating-
+fuel partition appear; then read the Fans & pumps and Ventilation groups against the raw-parquet
+numbers in this plan. M1-M7 unchanged (measure).
+
+- [x] **D1 Fans: cover unitary, packaged and zone-equipment fans.** `[V]` The panel reads only
+      `out.params.air_system_fan_*`, which the reporting measure fills for loop-level fans only.
+      Fans inside `AirLoopHVACUnitarySystem` (PSZ/RTU, residential furnace) and zone equipment
+      (PTAC/PTHP, fan coils, WSHP) are recorded under `out.params.zone_hvac_fan_static_pressure..inwc`,
+      `out.params.zone_hvac_fan_total_efficiency` (`measure.rb:1230-1371`; exported, column
+      definitions :682-684). 36.5% of models have air-system fan data, 72.4% zone-HVAC, 8.9% both,
+      0% neither. Retail 0.9%/99.1%, grocery/QSR/small hotel 0/100%, small office 20/80%. Add rows
+      "Unitary / zone-equipment fan power (W/cfm), static pressure, total efficiency" with guard
+      `zsp > 0 AND zeff > 0`, weight `W * sqft`. Never add the zone min-flow column (1.0 for all
+      75,033 zone fans: on/off and CV fans have no turndown). This is what makes the fan fix
+      visible: zone-fan efficiency changed in 27,486 models (PSZ-AC gas coil median 0.37 -> 0.55).
+- [x] **D2 Air-loop fan rows: rename, guard the diluted models, split min-flow.** `[V]` Rename
+      the existing rows "Air-loop (AHU) fan ...". Dilution (see M1): 1,309 of 37,807 air-system
+      models report a static pressure below 2.49 in. w.c., the smallest value any single-loop
+      model has (single-loop values are exactly 2.5, 4.0, 4.09, 4.46, 5.58, 6.32); none is
+      single-loop, all also have zone fans; medium office 860 (median 0.21 in.), outpatient 344
+      (0.02 in.). Their values are real fans averaged with unitary loops counted at 0 Pa. Interim
+      guard for fan_sp/fan_eff/fan_minflow/fan_wcfm: `sp >= 2.49 AND eff >= 0.50` (excludes no
+      single-loop model). It cannot correct partial dilution; only M1 can. "Fan minimum flow
+      fraction" -> "VAV fan minimum flow fraction" with guard `minflow < 0.999 AND vav > -900`:
+      1.0 on a CV fan is a real property, but blending it with VAV turndowns produces a number
+      that is neither (LargeHotel reads 99.6% because 98% of its air-loop fans are CV).
+- [x] **D3 Pumps: remove "Pump motor efficiency"; replace with separable metrics.** `[V]`
+      43,493 models (42.0%) report exactly 1.0, and all 43,493 use 0 pump kWh: they carry only the
+      zero-head placeholder circulation pump openstudio-standards puts on a service-hot-water loop
+      that has no real pump. Grocery 100%, strip mall 98.5%, small office 88.9%, secondary school
+      45%. The rated-flow weighting also pulls real pumps toward 100% where a placeholder shares
+      the building (FSR +4.2 pp). The note's reason ("autosized pumps have 0 rated power") is
+      false for these runs (all hardsized). Replace with: SWH circulator efficiency (models with
+      SWH const-speed pumps only: 29,161, mean 58%); HVAC constant-speed (5,580, 90%); HVAC
+      variable-speed on models without a placeholder (3,917, 87%); rated pump power density
+      `(pump_total_constant_speed_pump_power_w..w + pump_total_variable_speed_pump_power_w..w)/sqft`
+      for all ~30k HVAC-pump models. Column names lower-case as Athena has them. No percentages
+      in notes. Full split until M3 lands.
+- [x] **D4 Cooling setpoint: stop averaging the cooling-off value as a setpoint.** `[V]` The
+      measure averages the schedule minimum over every zone with a cooling thermostat schedule,
+      weighted by floor area (`measure.rb:1555-1614`). Warehouse zones that are not cooled still
+      carry a schedule whose value is ~52 C (126 F, implied from the export), so every warehouse
+      exports 42.8-43.8 C (fraction cooled 0.30-0.34) and the panel shows "109 F" for Warehouse
+      and 77.2 F for the stock, against ~73 F over the buildings whose value is a setpoint. Per
+      rule 3 the average must represent the setpoints that exist and move only when they move;
+      this one also moves if the cooled fraction moves. Fix so it does: M5 in the measure. Until
+      then: guard `c_min < 35` on clg_sp and `c_min < 35 AND c_max < 35` on clg_setup (35 C is
+      above any real setpoint and below any blend), report in "applies to" the share of COOLED
+      floor area covered, and show `out.params.building_fraction_cooled` beside the row so the
+      Warehouse cell says "34% of floor area cooled; exported setpoint is a blend" instead of a
+      number. Delete the `< 45` sentinel rule and its comment (design_params.py:205-219).
+- [x] **D5 Keep real zeros where zero is a modelled outcome.** `[A]` Cooling setup depth drops
+      flat schedules (`c_max - c_min > 0.5`): 16,811 non-warehouse models were sampled with
+      `hvac_tst_clg_delta_f = 0`, so 0 is the value; the shown mean is 19% high (5.79 vs 4.85 F)
+      and not comparable with the heating setback beside it. Occupant density drops 717 zero-
+      occupant warehouses (a modelled 0). Keep both zeros; keep `> 0` only for per-person and
+      EFLH ratios and say so in the note.
+- [x] **D6 Lighting EFLH: compute from metered energy.** `[V]` For the 12,157 models with zone
+      multipliers, metered interior lighting kWh / (LPD x sqft x EFLH) has median 2.02 (p10 1.30,
+      p90 6.17; large office 2.82, hospital 2.07, large hotel 1.84); for the 91,448 models without
+      multipliers it is exactly 1.000. The measure takes EFLH = LightingSummary consumption /
+      total power (`measure.rb:882`) and the two carry the multiplier inconsistently; LPD is
+      unaffected (identical between groups). Define light_eflh as
+      `electricity.interior_lighting kWh * 1000 / (LPD * sqft)`, weighted by connected load as
+      now. Drop light_implied, or relabel it "Interior lighting intensity (simulated)" and delete
+      the "design-implied, NOT simulated" note. M6 for the measure.
+- [x] **D7 Weighting that misstates the average.** `[A]` Plug-load density is weighted by
+      building count (1.51 W/ft2) although equipment-served area is within 5% of floor area for
+      98% of models; weight by floor area (0.91 W/ft2) and delete the "cannot be multiplied by
+      floor area" note. Window-to-wall ratio is weighted by NET wall area (10.3%); weight by gross
+      wall (wall + window: 13.0%, which equals aggregate window / aggregate gross wall). Outdoor-
+      air fraction: guard `num_air_loops > 0 AND oaf IS NOT NULL` (residential-furnace loops
+      with no OA intake are a real 0; PTAC/PTHP have no air loop and their zone OA is not
+      recorded, see M4); rename "Air-loop outdoor air fraction"; note that DOAS loops read ~100%.
+- [x] **D8 Labels, notes and tags that assert what the data does not.** `[V]` where marked.
+      (a) `[V]` No literal statistic in any Metric note, docstring or panel note: "68% have
+      none", "72.6%", "26%", "34%" were measured once and are wrong now (design_params.py:14-30,
+      205-209, 233-234, 244-245, 249-250, 274; dashboard.js:5041-5048). Derive shares at render
+      time from n_models / coverage_pct or say nothing.
+      (b) `[V]` `notPublished` ("this release does not carry the columns") is rendered whenever
+      wmean is null (dashboard.js:4733-4736), including rows that exist with n_models = 0 (20
+      per run today: grocery/QSR/small-hotel fans, warehouse hot water and cooling setup, small-
+      hotel OA). Use it only when the row is missing; otherwise a cause-specific tag ("no model
+      of this type has an air-loop fan", "no model has service hot water").
+      (c) `[V]` Per-building-type p10/p90 are computed in every pass (design_params.py:372-377)
+      and discarded for by-type rows (:463-468); the panel then prints "stock-wide only". Keep
+      them (`if not by_bt or dim_key == "none"`), render them, delete `stockWideOnly` and its
+      legend row (dashboard.js:4745-4748, 5311, 5047-5048).
+      (d) `[V]` The per-type "every metric" table prints CBECS **0.00** for the 80 cells where
+      CBECS publishes nothing (`fmt(r.cbecs_value*scale,2)` on null, dashboard.js:2030), which
+      contradicts the Coverage tab's "absent, never zero". Render absent; pick the CI tag by
+      cause (0 -> none surveyed, derived -> real interval, else not published).
+      (e) `[A]` Weight-basis text: Coverage tab and annual.py say "not scaled to CBECS";
+      findings.md says it is scaled and "should read 0%"; the export does scale
+      (comstock.py:2469) and floor area lands +4.6% to +6.9% above CBECS in every type. Generate
+      one sentence from the data (X5 owns the cause). AMI caveat: build from
+      `coverage.ami_regions_compared` (9 regions assessed, text names one).
+      (f) `[A]` The population badge on multi-measure panels sums apportionment rows and calls
+      them models (163,212 vs 93,889 for the stock: +74%); sum n_models.
+      (g) `[A]` Heating-fuel matrix labels a fuel ComStock does not assign to a type "cannot
+      represent"; for 26 of the 61 such cells it is a sampling gap, not a structural limit. Emit
+      zero-share rows for every fuel and show the numeric difference with a "ComStock assigns
+      no <fuel> to this type" note.
+- [x] **D9 Axes: clean increments, labelled extremes.** `[V]` `niceStep` chooses steps from
+      {1, 2, 2.5, 5, 10} x 10^k and `niceTicks` deliberately leaves the SCALE at the data maximum
+      (x1.1 headroom in some figures), so the top gridline "may sit below the frame"
+      (dashboard.js:214-245). Example: max 455 -> axis 500.5 -> step 200 -> ticks 0, 200, 400 ->
+      last label at 80% of the axis. Change: steps from {1, 2, 5} x 10^k only; axis max =
+      ceil(dataMax / step) x step and, when the axis does not start at 0, axis min =
+      floor(dataMin / step) x step, so both ends are labelled ticks; include CI whiskers, violins
+      and negative bars in dataMax/dataMin so nothing is clipped; drop the x1.1 headroom where the
+      ceiling supplies it. Call sites: `yAxis` (:239), histogram y and x (:783, :790), 24-h
+      profiles (:867, `max = rawMax*1.1`), waterfall (:1182), :2221, diverging bars (:3146, :3206),
+      and any figure that computes its own ticks. Check every tab after: bar heights change
+      because the scale changes.
+- [ ] **D10 Site energy vs CBECS like-for-like.** `[V]` ComStock site energy includes propane
+      and district cooling, which CBECS never counts. From this run's own table: Hospital shown
+      +7.3%, without them -4.0% (district cooling is 49.3 TBtu, 10.5% of hospital site energy);
+      LargeOffice +74.0% vs +63.0%; FSR +161.6% vs +151.7%; national +53.3% vs +49.6%. Define the
+      CBECS-comparable site total as electricity + natural gas + fuel oil + district heating
+      wherever CBECS is the reference (headline card, verdict strip, ranked gaps, EUI
+      distributions); keep the full ComStock total as a ComStock-only row.
+- [ ] **D11 End-use waterfall: the grey bar is ComStock load, and lighting is mis-paired.**
+      `[A]` CBECS electricity end uses sum exactly to its total (2,633.2 TBtu). The ComStock end
+      uses in END_USES sum to 3,609.0 against 3,779.0, so the 170.0 TBtu grey bar labelled "CBECS
+      does not disaggregate" is exterior lighting (105.0) + pumps (51.0) + heat recovery (6.8) +
+      heat rejection (7.1). CBECS lighting (459.0) is paired with ComStock INTERIOR lighting
+      (502.0, +9%); like-for-like is lighting_combined (607.0, +32%). Add the missing end uses as
+      ComStock-only bars, pair CBECS lighting with lighting_combined, and split the residual into
+      "ComStock end uses with no CBECS counterpart" and a true remainder.
+- [ ] **D12 Measure summary omits propane and fuel-oil savings.** `[V]` `measures.FUELS =
+      ["electricity", "natural_gas"]` (measures.py:37) feeds the summary; site - elec - gas =
+      614.94 - 141.68 - 421.21 = 52.05 TBtu for HPRTU_E_Backup (9-11% of site savings per
+      measure), which the scenario rows (queried with all fuels) account for exactly: propane
+      29.9 + fuel oil 22.1 + district heating. Add propane/fuel-oil/district-heating columns from
+      the scenario pair; fix the note that claims the difference is something else.
+- [ ] **D13 Measure timeseries: gas 11.6x high; other fuels absent.** `[V]` The `_timeseries_vu`
+      view divides kBtu gas by the kWh factor instead of multiplying (X1). Until X1 lands and the
+      views are recreated, the tab must read the crawled `total_site_gas_kbtu` and convert
+      (x0.29307) itself, or say the MW-thermal panels are wrong. Then add propane, fuel oil and
+      district heating (`[A]` in MN they are 146 GWh against 219 GWh gas; in AZ 48% of fossil
+      heating savings) as an "other fuels" line, after verifying the crawled column names.
+- [ ] **D14 Savings distributions: undefined and zero-baseline models are dropped silently.**
+      `[A]` The % view drops models whose baseline is 0 (24,210 of 40,867 applicable have no
+      electric heating before HPRTU), so "electricity heating" reads -60% on the typical building
+      when most gain electric heating; bill % savings drop 7,090 models (19%) whose bill saving
+      is 0 or non-finite (X2 fills nulls with 0). Count n_undefined and n_zero, show them beside
+      n, grey the % box and point to the EUI/$ view when undefined >= 25%.
+- [ ] **D15 Fuel mix is computed and never shown.** `[A]` `fuel_mix_by_*.csv` are written and
+      embedded (`D.fuelByDim`) and nothing renders them; distributions.py:22 points readers to a
+      table that does not exist. Grocery 0.0% gas-free floor area vs CBECS 30.1%, outpatient 0.1
+      vs 28.2, FSR 0.3 vs 20+. Add the panel on the Annual and Distributions tabs.
+- [ ] **D16 AMI: thin types relabelled "no AMI data".** `[V]` `compare_region` drops a building
+      type whose MINIMUM hourly meter count is below 3 and then computes `ami_missing_types =
+      cs_types - ami_types` from the already-reduced set (ami_shapes.py:415-436), so 11 region x
+      type pairs with data (veic large office: 1 hour of 8,759 below 3 meters) are listed under
+      "No AMI truth data". Compute missing before removing thin; keep a type when >= 95% of hours
+      have >= 3 meters and drop only the thin hours; record the dropped-hour share.
+- [ ] **D17 Thin EUI cells drawn solid.** `[A]` distributions.py sets `thin` for n < 10 and
+      promises a flag; boxPlot never reads it. 89 CBECS crossed cells have n < 10, 16 have n = 1
+      and draw as a zero-height box. Grey/hatch thin boxes, append n, state the threshold;
+      findings.md says "n < 60" (assessment.py:156) — use `distributions.THIN_MODELS`.
+- [ ] **D18 Climate zone 7 / 7A / 7B.** `[A]` Three bins for one zone (81, 260, 20 Mft2) from
+      mixed codebooks in the sampled `climate_zone_ashrae_2006`; the category audit has no
+      climate-zone list so it reports nothing. Merge for display with a note; add the canonical
+      list to `ORDERED_CATEGORIES`; X4 for the upstream codebook.
+- [ ] **D19 Run-vs-run design-parameter deltas include apportionment noise.** `[A]` Each run is
+      apportioned separately (random draw per group), so identical per-model inputs show deltas
+      up to 1.4% (lighting, plug, envelope). When two runs share a sample (same building_ids and
+      sqft), compute the comparison run's parameters on the primary run's weights, or render the
+      delta as 0 when the per-model inputs are identical.
+- [ ] **D20 Model counts that do not reconcile.** `[A]` Completion table: 40,870 applicable;
+      Measures summary: 37,029. The 9.4% gap (27% of hospitals) is models never drawn by the
+      apportionment (by design, comstock.py:3345-3350) — not an export loss — but nothing says
+      so, and measure failure rates include the 3 baseline failures. Add "in weighted aggregate"
+      and "not apportioned" columns; subtract baseline failures from measure rows; change "one
+      vote per simulated model" to "one vote per model in the apportioned table".
+
+#### X. Export / library — `comstockpostproc`, also on `main` (separate PR)
+
+- [ ] **X1 `create_views` divides by the to-kWh factor.** `[V]` comstock.py:4779 (main :4719):
+      `(col/conv_factor)` where conv_factor is kWh per unit, so kBtu columns come out 11.64x high,
+      therm 858x low, MBtu 85,891x low in every `<run>_timeseries_vu`; kWh columns are right.
+      Anything reading those views inherits it (dashboard measure load shapes, SightGlass).
+      Change to `col*conv_factor`, recreate the views for every run in use, then D13.
+- [ ] **X2 Bill percent savings: nulls and NaNs filled with 0.** `[V]` comstock.py:3590-3591
+      `fill_null(0.0)` / `fill_nan(0.0)` after the percent division, so "not computed" and "0%
+      saving" are the same number (~19% of applicable models per measure). Leave them null; D14
+      then counts them.
+- [ ] **X3 Climate-zone codebook.** `[A]` `climate_zone_ashrae_2006` in the sampled buildstock.csv
+      has '7' 1,020, '7A' 2,093, '7B' 567; normalise in the TSV/sampler or map in the export.
+- [ ] **X4 Floor area lands +5.4% above `CBECS wide.csv` in every run and type.** `[V]` from the
+      findings tables of every dashboard built so far (+4.6% to +6.9% by type). The scaling step
+      should make it 0%; find where weight is added after `create_allocated_weights_scaled_to_cbecs`
+      (see `issue_weight_inflation.md`, gotcha 3).
+- [ ] **X5 Export the fan flow weights** once M2 registers them (column definitions +
+      full_metadata TRUE), and the descriptions of pump columns 693/695/699 should carry the
+      placeholder caveat until M3.
+
+#### M. Reporting measure — `measures/comstock_sensitivity_reports/measure.rb` (needs new simulations)
+
+- [ ] **M1 Air-system fan values diluted by unitary loops.** `[V]` The air-loop pass adds every
+      loop's mixed-air mass flow to the denominator (:1160) but fills fan properties only when
+      `air_loop_hvac.supplyFan` returns a fan (:1083-1108); a loop whose fan sits inside a unitary
+      system contributes flow at 0 Pa / 0 efficiency (the code warns about this at :1067 and
+      counts the flow anyway). Keep a separate fan weight incremented only when a fan was read;
+      divide by it at :1176-1180; keep the total flow for the OA fraction. Add a `FanSystemModel`
+      branch (OS 3.10 `supplyFan` returns it; today it falls to "type not recognized" and dilutes).
+- [ ] **M2 Register per-group fan flow.** `[A]` `zone_hvac_fan_total_air_flow_m3_per_s` is a
+      local (:1226, :1319) and no air-system fan flow is registered, so no combined per-building
+      fan metric is possible for the 8.9% of models with both kinds. Register both.
+- [ ] **M3 Placeholder SWH pumps.** `[V]` symptom (D3). Exclude pumps with rated head <= 1 Pa
+      (or power < 0.0746 W) from every pump efficiency and count (:1397-1451); register the
+      non-circulating SWH loop count separately; fall back to `autosizedRatedFlowRate` (:1399,
+      :1414) and leave the value NULL, not 0.0, when a building has no real pump.
+- [ ] **M4 Zone-HVAC outdoor-air fields are 0 in all 103,605 models.** `[A]`
+      `zone_hvac_total_outdoor_air_mass_flow_rate` and `zone_hvac_average_outdoor_air_fraction`
+      are exactly 0 everywhere because `sql_get_report_variable_data_double` returns 0.0 on a
+      failed lookup (:50-75) and the OA node name lookup fails. Skip `registerValue` (NULL) on a
+      failed lookup; fix the node name.
+- [ ] **M5 Cooling (and heating) setpoint averaged over zones whose schedule is "off".** `[V]`
+      :1555-1614 weights every zone with a thermostat schedule. Exclude schedule values that are
+      not setpoints (cooling >= 40 C, heating <= 5 C) from the weighted sums, or weight by the
+      cooled/heated zone area already computed for `building_fraction_cooled/heated` (:1499).
+- [ ] **M6 Lighting EFLH inconsistent with zone multipliers.** `[V]` symptom (D6): EFLH from
+      LightingSummary consumption / total power (:882) is off by ~the multiplier in multiplied
+      models. Take consumption from the interior-lights meter and power with multipliers applied
+      (or compute EFLH per Lights object and weight by power).
+- [ ] **M7 `[?]` Hot water scales with the zone multiplier.** One reader claimed SWH demand is
+      multiplied twice. Symptom check this session (exported m3 per ft2, medians, multiplied vs
+      not): hospital 0.057 vs 0.016 (3.6x), large office 0.032 vs 0.019 (1.7x), large hotel 0.060
+      vs 0.037 (1.6x), outpatient 0.040 vs 0.025 (1.6x), medium office 0.0187 vs 0.0182 (none).
+      Consistent with a multiplier problem in most large types but not conclusive; it is model
+      generation (SWH sizing), not the reporting measure. Verify on one multiplied model before
+      any change. If real, it also inflates the water-heating end use on the annual and CBECS tabs.
+
+#### T. Templates and drivers — local-only checks (audit `wf_c7167ba6-fb6`, 5 readers + 5 skeptics)
+
+- [ ] **T1 This PR** (templates it already touches):
+  - [ ] `compare_runs_mixed.py.template`, then copy into `compare_fanfix_measures.py` and
+        `compare_runs_mixed*.py`: the pairing-failure hint globs local `truth_data/` (~l.424) so a
+        fresh machine lists no candidates — list `s3://eulp/truth_data/v01/StockE/` instead;
+        `estimate_path` docstring/error says hand-copy an estimate into the local folder — say
+        upload estimate AND tract list to StockE; the docstring launch line redirects into
+        `logs/`, which a fresh clone lacks.
+  - [ ] `compare_runs.py.template:73`: `Apportion(reload_from_cache=True)` raises on a machine
+        that never apportioned 2025R3 (after both runs are processed). Detect the cache.
+  - [ ] `compare_comstock_to_ami.py.template:63`: `CBECS(reload_from_csv=True)` raises without
+        `CBECS wide.csv`. Use `cspp.load_cbecs()`.
+  - [ ] `compare_comstock_to_cbecs.py.template:96`: `include_upgrades=True` but bills are built
+        for upgrade 0 only; `create_plotting_lazyframe` needs bills per upgrade. Loop over the
+        loaded upgrades.
+- [ ] **T2 Separate PR:**
+  - [ ] `create_load_components_long_csv.py.template`: broken for everyone (reloads a cache that
+        does not exist, no bills step, `C:/path/to/...` read path).
+  - [ ] `extract_models_and_errors` / `transfer_model_files_to_s3` templates: example yml paths
+        (FY22 `/projects`, retired Eagle); transfer's default destination is the published OEDI
+        2023 R1 prefix. Placeholders plus a guard.
+  - [ ] Library: `reload_from_*=True` raises instead of building (Apportion, CBECS, AMI, ComStock
+        sim cache, `create_allocated_weights`, EIA). `load_ami`/`load_cbecs` show the fix.
+  - [ ] Library, silent result differences: the bills cache
+        (`cached_allocated_weights_plus_bills/`) is reused whatever weights were just computed;
+        the upgrade list is a glob of `results_up*.parquet` on disk.
+- [ ] **T3 Retire the one-off drivers** (`compare_four_runs_hospital_plugfix.py`,
+      `compare_three_runs_*`, `compare_str_100k_*`, the ignored `compare_runs.py` /
+      `compare_upgrades.py` / ... copies): 11 of 12 hard-code `reload_*=True` for this disk. Point
+      teammates at the mixed template (Eric hit both the estimate guard and the AMI CSV in the
+      hospital driver on 2026-09-30).
+
+#### Suggested order
+
+1. D9 axes, D8 labels, D1-D3 fans and pumps, D4-D7 setpoints/EFLH/weighting: all design-
+   parameter work, one re-render to check.
+2. D10-D12, D14-D20: the other panels, one re-render.
+3. D13 with X1: fix the view, recreate views, re-render the measure tab.
+4. T1 in this PR; T2, X2-X5 as their own PRs; M1-M7 to the reporting-measure owner.
 
 ## 6. Gotchas that cost time before
 
