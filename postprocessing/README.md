@@ -124,7 +124,8 @@ code block per run it takes a single `RUNS` list, one entry per run, each entry 
 kind it is: `process` (postprocessed here: download, apportion to the entry's own stock
 estimate, scale to CBECS, export, crawl), `athena` (already crawled by an earlier driver:
 its tables are read, nothing is recomputed) or `release` (a published OEDI release). The
-first entry is the run under review. Runs on one sample share one apportionment and a run
+run under review is the one `REVIEW_RUN` names, and every view draws CBECS first and then the
+runs in `RUNS` order, top to bottom = left to right. Runs on one sample share one apportionment and a run
 on another sample gets its own, so the samples may differ, and a guard checks every
 `process` run's sample against its stated estimate before anything expensive starts.
 With no `process` entries it is the Athena-only case below and finishes in minutes.
@@ -141,7 +142,8 @@ and AMI files depend on no run and are always reused; Athena tables follow each 
 `rebuild` flag.
 
 1. Copy `compare_runs_mixed.py.template` to `compare_runs_mixed.py`
-2. Fill in `RUNS`, `COMPARISON_NAME` and `DELTA_REF` at the top
+2. Fill in `RUNS` (in the order you want them drawn), `REVIEW_RUN`, `COMPARISON_NAME` and
+   `DELTA_REF` at the top
 3. Run it as above; everything lands in `output/<COMPARISON_NAME>/`
 
 ### Comparing upgrades in a single ComStock run

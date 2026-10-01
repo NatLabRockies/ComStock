@@ -344,6 +344,108 @@ the measures_ts CSVs (they were dropped by a hard-coded column list in assess_me
       and "not apportioned" columns; subtract baseline failures from measure rows; change "one
       vote per simulated model" to "one vote per model in the apportioned table".
 
+- [x] **D21 Run order on the page follows the driver's list.** Owner's request 2026-10-01. The
+      dashboard drew every run in manifest order but moved the run under review to the END, so
+      the bar order differed from the list just written. Now: CBECS first, then the runs in
+      RUNS order, top to bottom = left to right, everywhere (grouped bars, legends, tables, the
+      header checkboxes). `REVIEW_RUN` names the run under review in the mixed template, so it
+      can sit anywhere in the list; `measures=True` belongs on that entry. The order travels as
+      `display_order` (ResultsDashboard -> manifest -> payload); an older assessment falls back
+      to its manifest order. findings.md follows it too, and its run-vs-run change is now
+      measured against DELTA_REF (it was against whichever run happened to be listed last).
+      Verified 2026-10-01 from cache: the fanfix driver (listed fanfix, plugfix) draws CBECS,
+      fanfix, plugfix; a reordered copy (`compare_fanfix_measures_dbtest_order.py`, listed
+      plugfix then fanfix, REVIEW_RUN fanfix, output `fanfix order test/`) draws CBECS, plugfix,
+      fanfix with fanfix still the run under review (Measures tabs, AMI stack, toggles).
+#### T. Templates and drivers — local-only checks (audit `wf_c7167ba6-fb6`, 5 readers + 5 skeptics)
+
+- [x] **T1 This PR** (done 2026-10-01; the driver copies got the same text) (templates it already touches):
+  - [x] `compare_runs_mixed.py.template`, then copy into `compare_fanfix_measures.py` and
+        `compare_runs_mixed*.py`: the pairing-failure hint globs local `truth_data/` (~l.424) so a
+        fresh machine lists no candidates — list `s3://eulp/truth_data/v01/StockE/` instead;
+        `estimate_path` docstring/error says hand-copy an estimate into the local folder — say
+        upload estimate AND tract list to StockE; the docstring launch line redirects into
+        `logs/`, which a fresh clone lacks.
+  - [x] `compare_runs.py.template:73`: `Apportion(reload_from_cache=True)` raises on a machine
+        that never apportioned 2025R3 (after both runs are processed). Detect the cache.
+  - [x] `compare_comstock_to_ami.py.template:63`: `CBECS(reload_from_csv=True)` raises without
+        `CBECS wide.csv`. Use `cspp.load_cbecs()`.
+  - [x] `compare_comstock_to_cbecs.py.template:96`: `include_upgrades=True` but bills are built
+        for upgrade 0 only; `create_plotting_lazyframe` needs bills per upgrade. Loop over the
+        loaded upgrades.
+- [ ] **T3 Retire the one-off drivers** (`compare_four_runs_hospital_plugfix.py`,
+      `compare_three_runs_*`, `compare_str_100k_*`, the ignored `compare_runs.py` /
+      `compare_upgrades.py` / ... copies): 11 of 12 hard-code `reload_*=True` for this disk. Point
+      teammates at the mixed template (Eric hit both the estimate guard and the AMI CSV in the
+      hospital driver on 2026-09-30).
+
+**Cache report + REUSE_CACHES (2026-10-01, owner's request).** `cspp.report_caches()` logs one
+line per cache a driver will touch (REUSE / BUILD / REBUILD / RECOMPUTE, date, path, upgrades held)
+before anything expensive starts; every template calls it. The mixed template (and the driver
+copies) gained `REUSE_CACHES`: True reuses what the disk holds, False rebuilds the run-specific
+caches and deletes each run's bills folder (the one cache nothing refreshes). Detection stays
+automatic either way -- a user-set "trust the cache" flag is what stranded Eric twice.
+
+#### Suggested order
+
+1. D9 axes, D8 labels, D1-D3 fans and pumps, D4-D7 setpoints/EFLH/weighting: all design-
+   parameter work, one re-render to check.
+2. D10-D12, D14-D20: the other panels, one re-render.
+3. D13 with X1: fix the view, recreate views, re-render the measure tab.
+4. T1, the cache report and D21 in this PR. Everything else is queued in 5c.
+
+### 5c. Separate PRs — not this PR; break them off one at a time
+
+Everything below was found during this PR but belongs elsewhere. Each line is its own PR
+(or an issue for another owner); tick it when that PR merges, and keep the evidence that
+follows the queue until then. Context as of 2026-10-01.
+
+- [ ] **PR-A `create_views` unit inversion (X1).** comstock.py `create_views` divides a
+      crawled run's kBtu / therm / MBtu timeseries columns by the to-kWh factor instead of
+      multiplying: gas 11.6x too high, therms 858x too low, MBtu 85,891x too low; kWh columns
+      are right. Introduced with the SDR 2025 R4 work (`0c14308b`, 2026-01-21). Scope, checked in
+      Athena 2026-10-01: the 32 `<run>_timeseries_vu` views in `enduse` (internal crawled runs,
+      including `sdr_2025_r4_103224_baseline_2`); none in `buildstock_sdr` (the published R2/R3
+      `ts_by_state` views store kWh, factor 1, no division) and none in `vizstock`; OEDI files
+      untouched (a view is a query-time object); metadata `_vu` views only rename and cast.
+      SightGlassDataProcessing `euss_release_c3` builds its aggregates from the per-building
+      parquet with weights and its view script has no arithmetic, so it is not affected by the
+      code; any SightGlass instance that was loaded FROM an `enduse` timeseries view is wrong for
+      fossil fuels. Fix: multiply, then recreate the 32 views. The dashboard already reads the
+      crawled tables and refuses a view's fossil fuels (this PR, D13).
+- [ ] **PR-B weight inflation (X4).** Exported floor area lands +4.6% to +6.9% above CBECS in
+      every run assessed, after a scaling step that should leave 0%. Measured on the fanfix run:
+      allocation stage 14,009,063 rows / 93,978 models; bills stage (what is exported)
+      14,784,323 rows / 93,889 models: +5.5% rows for fewer models, so rows are duplicated inside
+      `create_allocated_weights_plus_util_bills_for_upgrade`. NOT the tract-to-utility map (one
+      row per tract, 108,660); the join of the exploded per-utility bill results is the suspect.
+      First task: find the key the duplication is on (the 15 M-row group-by crashed polars in
+      memory; chunk it by state). Then fix and re-export the runs in use. Gotcha 3.
+- [ ] **PR-C bill percent savings filled with 0 (X2).** `fill_null(0.0)` / `fill_nan(0.0)` after
+      the percent division (comstock.py:3590-3591): "not computed" reads as "0% saving", ~19% of
+      applicable models per measure. Leave them null; the dashboard already counts them (D14).
+- [ ] **PR-D climate-zone codebook (X3).** The sampled `climate_zone_ashrae_2006` spells zone 7
+      as '7', '7A' and '7B'; normalize in the sampling TSV / sampler. The dashboard merges them
+      for display (D18).
+- [ ] **PR-E templates and library reliability (T2).** `create_load_components_long_csv.py.template`
+      broken for everyone; extract/transfer templates point at retired Eagle paths and the
+      transfer template's default destination is the published OEDI 2023 R1 prefix;
+      `reload_from_*=True` raises instead of building (Apportion, CBECS, AMI, the ComStock
+      simulation cache, `create_allocated_weights`, EIA); the bills cache is reused whatever
+      weights were just computed (now visible in the cache report and deletable with
+      REUSE_CACHES=False, but the library should refresh it); the upgrade list is a glob of the
+      `results_up*.parquet` files on disk.
+- [ ] **PR-F export the fan flow weights (X5)**, once the reporting measure registers them (M2).
+- [ ] **Reporting measure, for its owner (M1-M6; needs new simulations).** M1 air-loop fan values
+      diluted by unitary loops counted at 0 Pa; M2 register per-group fan airflow; M3 the zero-head
+      placeholder SWH pump counted as a pump; M4 zone-HVAC outdoor-air fields written as 0 on a
+      failed lookup; M5 setpoint averages include zones whose schedule means "off"; M6 lighting
+      EFLH inconsistent with zone multipliers.
+- [ ] **M7 investigation, model generation (unverified).** Hot water per ft2 is 1.6-3.6x higher
+      in multiplied large buildings; verify on one multiplied model before anything changes.
+
+Evidence for each, as found (moved here from 5b):
+
 #### X. Export / library — `comstockpostproc`, also on `main` (separate PR)
 
 - [ ] **X1 `create_views` divides by the to-kWh factor.** `[V]` comstock.py:4779 (main :4719):
@@ -402,22 +504,8 @@ the measures_ts CSVs (they were dropped by a hard-coded column list in assess_me
       generation (SWH sizing), not the reporting measure. Verify on one multiplied model before
       any change. If real, it also inflates the water-heating end use on the annual and CBECS tabs.
 
-#### T. Templates and drivers — local-only checks (audit `wf_c7167ba6-fb6`, 5 readers + 5 skeptics)
+#### T2. Templates and library reliability (PR-E)
 
-- [x] **T1 This PR** (done 2026-10-01; the driver copies got the same text) (templates it already touches):
-  - [x] `compare_runs_mixed.py.template`, then copy into `compare_fanfix_measures.py` and
-        `compare_runs_mixed*.py`: the pairing-failure hint globs local `truth_data/` (~l.424) so a
-        fresh machine lists no candidates — list `s3://eulp/truth_data/v01/StockE/` instead;
-        `estimate_path` docstring/error says hand-copy an estimate into the local folder — say
-        upload estimate AND tract list to StockE; the docstring launch line redirects into
-        `logs/`, which a fresh clone lacks.
-  - [x] `compare_runs.py.template:73`: `Apportion(reload_from_cache=True)` raises on a machine
-        that never apportioned 2025R3 (after both runs are processed). Detect the cache.
-  - [x] `compare_comstock_to_ami.py.template:63`: `CBECS(reload_from_csv=True)` raises without
-        `CBECS wide.csv`. Use `cspp.load_cbecs()`.
-  - [x] `compare_comstock_to_cbecs.py.template:96`: `include_upgrades=True` but bills are built
-        for upgrade 0 only; `create_plotting_lazyframe` needs bills per upgrade. Loop over the
-        loaded upgrades.
 - [ ] **T2 Separate PR:**
   - [ ] `create_load_components_long_csv.py.template`: broken for everyone (reloads a cache that
         does not exist, no bills step, `C:/path/to/...` read path).
@@ -429,26 +517,6 @@ the measures_ts CSVs (they were dropped by a hard-coded column list in assess_me
   - [ ] Library, silent result differences: the bills cache
         (`cached_allocated_weights_plus_bills/`) is reused whatever weights were just computed;
         the upgrade list is a glob of `results_up*.parquet` on disk.
-- [ ] **T3 Retire the one-off drivers** (`compare_four_runs_hospital_plugfix.py`,
-      `compare_three_runs_*`, `compare_str_100k_*`, the ignored `compare_runs.py` /
-      `compare_upgrades.py` / ... copies): 11 of 12 hard-code `reload_*=True` for this disk. Point
-      teammates at the mixed template (Eric hit both the estimate guard and the AMI CSV in the
-      hospital driver on 2026-09-30).
-
-**Cache report + REUSE_CACHES (2026-10-01, owner's request).** `cspp.report_caches()` logs one
-line per cache a driver will touch (REUSE / BUILD / REBUILD / RECOMPUTE, date, path, upgrades held)
-before anything expensive starts; every template calls it. The mixed template (and the driver
-copies) gained `REUSE_CACHES`: True reuses what the disk holds, False rebuilds the run-specific
-caches and deletes each run's bills folder (the one cache nothing refreshes). Detection stays
-automatic either way -- a user-set "trust the cache" flag is what stranded Eric twice.
-
-#### Suggested order
-
-1. D9 axes, D8 labels, D1-D3 fans and pumps, D4-D7 setpoints/EFLH/weighting: all design-
-   parameter work, one re-render to check.
-2. D10-D12, D14-D20: the other panels, one re-render.
-3. D13 with X1: fix the view, recreate views, re-render the measure tab.
-4. T1 in this PR; T2, X2-X5 as their own PRs; M1-M7 to the reporting-measure owner.
 
 ## 6. Gotchas that cost time before
 

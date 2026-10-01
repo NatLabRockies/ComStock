@@ -16,11 +16,13 @@ needs, in the same order as compare_runs.py:
                      are read; nothing is downloaded, apportioned, exported or crawled.
     kind='release'   A published OEDI release in buildstock_sdr. Read-only, like 'athena'.
 
-The FIRST entry is the run under review: drawn last in every grouped bar and measured
-against DELTA_REF. With no 'process' entries this is the Athena-only case
+ORDER. Every view draws CBECS first and then the runs in RUNS order, top to bottom = left
+to right. REVIEW_RUN names the run under review -- the findings, the scorecard, the AMI
+end-use stack and the Measures tabs are about it -- and it may sit anywhere in the list;
+it is measured against DELTA_REF. With no 'process' entries this is the Athena-only case
 (results_dashboard_from_athena.py) and finishes in minutes.
 
-MEASURES. measures=True on the first entry (a 'process' run) postprocesses its measure
+MEASURES. measures=True on the REVIEW_RUN entry (a 'process' run) postprocesses its measure
 scenarios too: the dashboard gets its Measures tabs -- each measure against the run's own
 baseline -- and the measure load shapes at MEASURE_TIMESERIES_LOCATIONS. Comparison runs
 never need measures; the release-comparison panel simply has nothing to show. State
@@ -69,7 +71,7 @@ MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'pro
 INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
 MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
-                                   # measure load-shape profiles, used only when the first entry has
+                                   # measure load-shape profiles, used only when the REVIEW_RUN entry has
                                    # measures=True: state codes, county gisjoins ('G2500250'), or a
                                    # tuple of either as one profile, each with its display name
 COUNTY_TABLES_FOR_MEASURES = False # True: the county export covers every measure, not only the
@@ -90,11 +92,14 @@ REUSE_CACHES           = True      # True: every cache found on disk is reused -
 COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
                                             # Keep it short on Windows: the deepest plot path beneath
                                             # it must stay under 260 characters
+REVIEW_RUN             = '<run_under_review>' # the run under review; any entry of RUNS, wherever it sits
+                                            # (RUNS order is the order every view draws the runs in)
 DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrows, the "moved toward
                                             # CBECS" line and the heating-fuel gap column measure against
 
 # ---- Runs -------------------------------------------------------------------
-# One entry per run. The FIRST is the run under review; the order is the bar order.
+# One entry per run, in the order every view draws them: top to bottom = left to right,
+# after CBECS. REVIEW_RUN above names the run under review.
 #
 #   kind='process'  run          comstock_run_name on S3; also the Athena table prefix and, unless
 #                                `version` is given, the cache folder (comstock_data/<run>,
@@ -108,8 +113,8 @@ DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrow
 #                                (re-export and re-crawl: table existence is not weight freshness,
 #                                so set it when the apportionment changed),
 #                                acceptable_failure_percentage (default 0.25; only 'Fail' counts,
-#                                not a measure's not-applicable models), measures=True (FIRST
-#                                entry only: postprocess its measure scenarios, see MEASURES),
+#                                not a measure's not-applicable models), measures=True (the
+#                                REVIEW_RUN entry only: postprocess its measure scenarios, see MEASURES),
 #                                upgrade_ids_to_skip=[...] (measures to leave out, e.g. [4, 5])
 #   kind='athena'   run          the crawled table prefix;  database  where the tables are
 #                   color; optional label (default 'ComStock <run>')
@@ -254,15 +259,17 @@ def main():
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
 
-    # 7. The dashboard. The first entry is the primary; every other entry is a comparison,
-    #    processed runs through their freshly crawled tables. Every run carries its own
-    #    database, so the entries may live in different ones.
-    primary = objects[RUNS[0]['run']] if RUNS[0]['kind'] == 'process' else reference(RUNS[0])
+    # 7. The dashboard, about REVIEW_RUN; every other entry is a comparison, processed
+    #    runs through their freshly crawled tables, and RUNS order is the order every view
+    #    draws them in (after CBECS). Every run carries its own database, so the entries
+    #    may live in different ones.
+    review = review_entry()
+    primary = objects[review['run']] if review['kind'] == 'process' else reference(review)
     comparisons = [
         cspp.AthenaRunRef.from_comstock(objects[r['run']],
                                         database=r.get('database', ATHENA_DATABASE))
         if r['kind'] == 'process' else reference(r)
-        for r in RUNS[1:]]
+        for r in RUNS if r is not review]
     dashboard = cspp.ResultsDashboard(
         primary,
         cbecs=cbecs,
@@ -271,12 +278,13 @@ def main():
         comparison=comparison,             # -> output/<COMPARISON_NAME>/results_dashboard/
         output_dir=None if comparison else os.path.join(HERE, 'output', COMPARISON_NAME,
                                                          'results_dashboard'),
-        database=RUNS[0].get('database', ATHENA_DATABASE),   # the primary's; refs carry their own
+        database=review.get('database', ATHENA_DATABASE),   # the run under review's; refs carry their own
         delta_ref=DELTA_REF,
+        display_order=[r.get('run') or r.get('key') for r in RUNS],
         # every measure of a measures=True primary; none otherwise (a table reference
         # has no upgrade list to take them from)
-        include_measures=None if RUNS[0].get('measures') else [],
-        measure_states=MEASURE_TIMESERIES_LOCATIONS if RUNS[0].get('measures') else None,
+        include_measures=None if review.get('measures') else [],
+        measure_states=MEASURE_TIMESERIES_LOCATIONS if review.get('measures') else None,
         )
     if dashboard.skipped_reason:
         logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
@@ -294,8 +302,11 @@ def check_declaration():
     if bad or not RUNS:
         raise SystemExit(f'every RUNS entry needs kind in {sorted(kinds)}: {bad or "RUNS is empty"}')
     names = [r.get('run') or r.get('key') for r in RUNS]
-    if any(not n or '<' in n for n in names) or '<' in DELTA_REF:
-        raise SystemExit(f'RUNS or DELTA_REF still has placeholder names: {names}, {DELTA_REF!r}')
+    if any(not n or '<' in n for n in names) or '<' in DELTA_REF or '<' in REVIEW_RUN:
+        raise SystemExit(f'RUNS, REVIEW_RUN or DELTA_REF still has placeholder names: {names}, '
+                         f'{REVIEW_RUN!r}, {DELTA_REF!r}')
+    if REVIEW_RUN not in names:
+        raise SystemExit(f'REVIEW_RUN {REVIEW_RUN!r} must be one of the RUNS entries {names}')
     if len(set(names)) != len(names):
         raise SystemExit(f'RUNS lists a run twice: {names}')
     for r in RUNS:
@@ -308,14 +319,20 @@ def check_declaration():
         if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
             raise SystemExit(f'release entries need key and md_table: {r}')
     carry = [r.get('run') or r.get('key') for r in RUNS if r.get('measures')]
-    if carry and (carry != [names[0]] or RUNS[0]['kind'] != 'process'):
-        raise SystemExit(f'measures=True belongs on the FIRST entry, a process run (the run under '
-                         f'review); found on {carry}')
-    if RUNS[0].get('measures') and not MEASURE_TIMESERIES_LOCATIONS:
+    if carry and (carry != [REVIEW_RUN] or review_entry()['kind'] != 'process'):
+        raise SystemExit(f'measures=True belongs on the REVIEW_RUN entry ({REVIEW_RUN}), and it '
+                         f'must be a process run; found on {carry}')
+    if review_entry().get('measures') and not MEASURE_TIMESERIES_LOCATIONS:
         logger.warning('measures=True but MEASURE_TIMESERIES_LOCATIONS is empty: the measure '
                        'load-shape tab will say it has no locations')
-    if DELTA_REF not in names[1:]:
-        raise SystemExit(f'DELTA_REF {DELTA_REF!r} must be one of the comparison runs {names[1:]}')
+    others = [n for n in names if n != REVIEW_RUN]
+    if DELTA_REF not in others:
+        raise SystemExit(f'DELTA_REF {DELTA_REF!r} must be one of the comparison runs {others}')
+
+
+def review_entry():
+    """The RUNS entry REVIEW_RUN names (check_declaration has made sure there is one)."""
+    return next(r for r in RUNS if (r.get('run') or r.get('key')) == REVIEW_RUN)
 
 
 def loaded_upgrades(obj):

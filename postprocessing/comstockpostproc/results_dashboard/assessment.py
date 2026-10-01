@@ -96,8 +96,33 @@ def _ami_scope_sentence(coverage) -> str:
     return s + "."
 
 
+def _display_order(requested, runs) -> list[str]:
+    """Run keys left to right after CBECS.
+
+    The caller's order where it gave one (the driver's RUNS list), else the order
+    the runs arrived in -- the run under review first, then the comparisons as
+    passed. A named key this assessment does not hold (a dropped run, a typo) is
+    left out; a run the order does not name goes at the end, in arrival order, so
+    no run can vanish from a view because the order list missed it.
+    """
+    keys = [r.key for r in runs]
+    if not requested:
+        return keys
+    req = list(dict.fromkeys(str(k) for k in requested))
+    unknown = [k for k in req if k not in keys]
+    if unknown:
+        logger.warning("display order names runs this assessment does not hold %s; "
+                       "left out", unknown)
+    out = [k for k in req if k in keys]
+    return out + [k for k in keys if k not in out]
+
+
 def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
-                   ami_metrics, coverage) -> None:
+                   ami_metrics, coverage, order=None, delta_ref=None) -> None:
+    # Every run-wise list below in the page's order (the driver's list), not the
+    # internal one, which puts the run under review first for lookups.
+    rank = {k: i for i, k in enumerate(order or [r.key for r in runs])}
+    runs = sorted(runs, key=lambda r: rank.get(r.key, len(rank)))
     L = [
         f"# Results dashboard — {primary.label}",
         "",
@@ -144,25 +169,34 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
         L += ["", "## Run vs run — where the releases differ most (electricity, by building type)",
               "", "| building type | " + " | ".join(r.key for r in runs) + " | change |",
               "|---" * (len(runs) + 2) + "|"]
-        base = comps.get((runs[0].key, "building_type"))
+        # The change column is the run under review against the delta reference
+        # -- the same pair every delta on the page uses. It used to be the first
+        # run against the LAST one listed, which with three or more runs was
+        # whichever happened to be at the end.
+        others = [r for r in runs if r.key != primary.key]
+        ref = next((r for r in others if r.key == delta_ref), others[0] if others else None)
+        base = comps.get((primary.key, "building_type"))
         cats = [c for c in ORDERED_CATEGORIES["building_type"]
                 if c in set(base["category"])] if base is not None else []
+
+        def _elec(key, cat):
+            c = comps.get((key, "building_type"))
+            if c is None:
+                return None
+            m = c[(c["category"] == cat) & (c["metric"] == "electricity.total")]
+            return float(m["comstock_value"].iloc[0]) if len(m) else None
+
         rows = []
         for cat in cats:
-            vals = []
-            for r in runs:
-                c = comps.get((r.key, "building_type"))
-                v = None
-                if c is not None:
-                    m = c[(c["category"] == cat) & (c["metric"] == "electricity.total")]
-                    v = float(m["comstock_value"].iloc[0]) if len(m) else None
-                vals.append(v)
-            if vals[0] and vals[-1]:
-                chg = 100.0 * (vals[0] - vals[-1]) / vals[-1]
+            vals = [_elec(r.key, cat) for r in runs]
+            vp, vr = _elec(primary.key, cat), (_elec(ref.key, cat) if ref else None)
+            if vp and vr:
+                chg = 100.0 * (vp - vr) / vr
                 rows.append((abs(chg), cat, vals, chg))
         for _, cat, vals, chg in sorted(rows, reverse=True):
             L.append(f"| {cat} | " + " | ".join(_fmt(v) for v in vals) + f" | {_pct(chg)} |")
-        L += ["", f"Change is {runs[0].key} relative to {runs[-1].key}."]
+        if ref is not None:
+            L += ["", f"Change is {primary.key} relative to {ref.key}."]
 
     # The distributions leg is skipped whenever CBECS is absent, which leaves
     # `quantiles` an EMPTY frame with no columns at all -- so indexing it by
@@ -175,13 +209,13 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
     else:
         L += ["", "## EUI distributions — site energy median and spread (kBtu/ft²·yr, count-weighted)",
               "", "| building type | " + " | ".join(
-                  f"{d} p25–p50–p75" for d in ([r.key for r in runs] + ["CBECS 2018"])) + " | CBECS n |",
+                  f"{d} p25–p50–p75" for d in (["CBECS 2018"] + [r.key for r in runs])) + " | CBECS n |",
               "|---" * (len(runs) + 2) + "|"]
         q = quantiles[(quantiles["metric"] == "site_energy") & (quantiles["basis"] == "count")
                       & (quantiles["dimension"] == "building_type")]
         for cat in ORDERED_CATEGORIES["building_type"]:
             cells, n = [], ""
-            for ds in [r.key for r in runs] + ["CBECS 2018"]:
+            for ds in ["CBECS 2018"] + [r.key for r in runs]:
                 s = q[(q["dataset"] == ds) & (q["category"] == cat)]
                 if len(s):
                     r0 = s.iloc[0]
@@ -819,11 +853,16 @@ def _assess(args) -> None:
         coverage["failures_skipped_reason"] = str(exc)
 
     (out / "coverage.json").write_text(json.dumps(coverage, indent=2), encoding="utf-8")
+    order = _display_order(getattr(args, "display_order", None), runs)
     (out / "manifest.json").write_text(json.dumps({
         "runs": [{"key": r.key, "label": r.label, "md_table": r.md_table,
                   "md_county_table": r.md_county_table, "ts_table": r.ts_table,
                   "color": r.color} for r in runs],
         "primary_run": primary.key,
+        # The order every view draws the runs in, left to right after CBECS: the
+        # driver's list order. `runs` above stays run-under-review first, which
+        # the lookups rely on; this is display only.
+        "display_order": order,
         # The run the delta annotations compare against -- the arrows, the
         # "moved toward CBECS" line and the heating-fuel gap column. With one
         # comparison run this is simply that run. With several it USED to be
@@ -842,7 +881,8 @@ def _assess(args) -> None:
         "created": datetime.datetime.now().isoformat(timespec="seconds"),
     }, indent=2), encoding="utf-8")
 
-    write_findings(out, runs, primary, comps, fuel_mixes, quantiles, ami_metrics, coverage)
+    write_findings(out, runs, primary, comps, fuel_mixes, quantiles, ami_metrics, coverage,
+                   order=order, delta_ref=getattr(args, "delta_ref", None))
     logger.info("assessment written to %s", out)
 
 
@@ -951,6 +991,7 @@ class ResultsDashboard:
     def __init__(self, comstock, cbecs=None, ami=None, comparison_runs=(),
                  comparison=None, enabled: bool = True, database: str = "enduse",
                  output_dir=None, region: str = "all", delta_ref: str | None = None,
+                 display_order=None,
                  measure_states=None, include_measures=None,
                  skip_distributions: bool = False,
                  skip_design_params: bool = False,
@@ -966,6 +1007,9 @@ class ResultsDashboard:
             delta_ref: key of the comparison run the delta annotations compare
                 against (arrows, "moved toward CBECS", heating-fuel gap column).
                 Defaults to the first comparison run.
+            display_order: run keys in the order every view draws them, left to
+                right after CBECS -- the driver's own list order. None draws the
+                run under review first and then comparison_runs as given.
             comparison_runs: AthenaRunRef values for releases to compare
                 against. These need no local results and no apportionment.
             comparison: the driver's comparison object, if there is one --
@@ -993,6 +1037,7 @@ class ResultsDashboard:
         # first one, which is the only sensible default but is worth naming
         # rather than leaving to list order once there are several.
         self.delta_ref = delta_ref
+        self.display_order = list(display_order) if display_order else None
         self.comparison = comparison
         self.enabled = enabled
         self.database = database
@@ -1245,6 +1290,7 @@ class ResultsDashboard:
             refs=refs,
             region=self.region,
             delta_ref=self.delta_ref,
+            display_order=self.display_order,
             skip_ami=ami_csv is None,
             measures=",".join(measure_ids),
             measure_states=self.measure_states,

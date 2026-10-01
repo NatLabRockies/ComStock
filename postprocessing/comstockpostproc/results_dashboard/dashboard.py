@@ -209,6 +209,9 @@ def build_payload(assess: Path) -> dict:
     return {
         "runs": runs,
         "primaryRun": primary,
+        # left to right after CBECS: the driver's list order (manifest
+        # display_order), else the manifest's own order
+        "displayOrder": manifest.get("display_order") or [r["key"] for r in runs],
         # The comparison run the delta annotations reference. Stated explicitly
         # so a multi-run dashboard does not leave the reader guessing which of
         # several comparison runs the arrows are measured against.

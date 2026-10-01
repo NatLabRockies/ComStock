@@ -68,10 +68,16 @@ const axisPadL = (tickLabels, hasTitle) => Math.ceil(
    so every view renders either the run comparison or the standard single-run
    version. Labels and colors always resolve against the full run list. */
 const ALL_RUNS = D.runs, PRIMARY = D.primaryRun;
-// Display order puts the run under review LAST, so every grouped bar reads
-// oldest to newest left-to-right and the current run is the bar your eye ends
-// on. The manifest order (primary first) is kept only for lookups.
-const displayOrder = rs => rs.filter(r=>r.key!==PRIMARY).concat(rs.filter(r=>r.key===PRIMARY));
+/* Display order is the driver's list order, top to bottom = left to right,
+   after CBECS (which every view draws first). The run under review sits wherever
+   the driver listed it: it used to be moved to the END, so the bars read in a
+   different order from the list that produced them. An assessment written
+   before the order was recorded falls back to its manifest order. Array sort is
+   stable, so runs the order does not name keep their relative order. */
+const RUN_ORDER = (Array.isArray(D.displayOrder) && D.displayOrder.length)
+  ? D.displayOrder : ALL_RUNS.map(r=>r.key);
+const runRank = k => { const i=RUN_ORDER.indexOf(k); return i<0 ? RUN_ORDER.length : i; };
+const displayOrder = rs => rs.slice().sort((a,b)=>runRank(a.key)-runRank(b.key));
 let RUNS = displayOrder(ALL_RUNS);
 /* The delta annotations -- the closer/further arrows, the "moved toward CBECS"
    line, the heating-fuel gap column -- are measured against ONE comparison run.
@@ -5749,7 +5755,7 @@ function init(){
     // unreachable. The primary has no checkbox: it is the subject of the findings
     // and the only run carrying an AMI end-use stack, so hiding it would empty
     // views rather than simplify them.
-    const cmps=ALL_RUNS.filter(r=>r.key!==PRIMARY);
+    const cmps=displayOrder(ALL_RUNS).filter(r=>r.key!==PRIMARY);
     const wrap=document.createElement("span");
     wrap.style.cssText="display:inline-flex;align-items:center;gap:10px;margin-right:10px";
     cmps.forEach(r=>{
