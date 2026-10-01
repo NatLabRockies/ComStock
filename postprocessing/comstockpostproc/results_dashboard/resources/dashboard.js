@@ -4948,7 +4948,13 @@ function dpTable(group){
             : "this assessment predates the per-type spread; a re-run carries it")
         :`${fmt(dpNum(p.p10),dpDec(dpNum(p.p10)))} – ${fmt(dpNum(p.p90),dpDec(dpNum(p.p90)))}`}</td>
       <td class="list"${low?' style="color:var(--bad)"':""}>${cov===null?absentTag("noValue")
-        :`${cov>0&&cov<1?fmt(cov,1):fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
+        /* "0% of cooled floor area" beside a share-cooled row of 34% read as a
+           contradiction: it means no model here has a usable value, not that
+           nothing is cooled. Say that, with the metric's reason in the tip. */
+        :Number(p.n_models)===0
+          ? `<span title="${esc(m.absent_note||"no model in this selection passes this parameter's guard")}">0% of ${
+              m.coverage_basis||"buildings"} — no model has a usable value</span>`
+          :`${cov>0&&cov<1?fmt(cov,1):fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
   });
   return t+"</tbody></table></div>";
 }
