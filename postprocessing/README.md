@@ -129,6 +129,17 @@ on another sample gets its own, so the samples may differ, and a guard checks ev
 `process` run's sample against its stated estimate before anything expensive starts.
 With no `process` entries it is the Athena-only case below and finishes in minutes.
 
+Every cache the run will touch is listed in the log before anything expensive starts --
+simulation outputs, apportionment, bills, `CBECS wide.csv`, `AMI long.csv` -- with what
+this pass will do (reuse or build), when the cache was written and where it is
+(`cspp.report_caches`). Caches are detected, never assumed: one that exists is reused,
+one that does not is built. `REUSE_CACHES = False` is the override for the case the disk
+cannot show, an estimate, export or weight code that changed while the files stayed: it
+rebuilds the run-specific caches and deletes each `process` run's
+`cached_allocated_weights_plus_bills` folder, the one cache nothing else refreshes. CBECS
+and AMI files depend on no run and are always reused; Athena tables follow each entry's
+`rebuild` flag.
+
 1. Copy `compare_runs_mixed.py.template` to `compare_runs_mixed.py`
 2. Fill in `RUNS`, `COMPARISON_NAME` and `DELTA_REF` at the top
 3. Run it as above; everything lands in `output/<COMPARISON_NAME>/`
