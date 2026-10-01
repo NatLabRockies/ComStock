@@ -83,6 +83,12 @@ REGIONS = {
 }
 
 MIN_BLDG_COUNT = 3  # mirrors comstock_to_ami_comparison.py skip guard
+# A type is compared when at least this share of its hours is backed by
+# MIN_BLDG_COUNT meters; the thin hours themselves are dropped from the
+# profiles. The previous rule skipped a type if ANY hour fell below the count,
+# which threw out comparisons backed by three meters in 8,758 of 8,759 hours
+# and then listed them as having no metered data at all.
+MIN_HOUR_COVERAGE = 0.95
 
 # The COMSTOCK-side equivalent, which did not exist. MIN_BLDG_COUNT guards only
 # the metered side, so a cell backed by ONE sampled model rendered as a
@@ -412,11 +418,16 @@ def compare_region(cs: pd.DataFrame, ami: pd.DataFrame, region_name: str
     """Returns (profiles long, shape metrics, coverage, load-duration curve)."""
     seasons = REGIONS[region_name]["seasons"]
 
-    counts = ami.groupby("building_type")["bldg_count"].agg(["min", "mean", "count"])
-    thin = counts[counts["min"] < MIN_BLDG_COUNT].index.tolist()
-    ami_types = set(counts.index) - set(thin) - {"total"}
+    counts = ami.groupby("building_type")["bldg_count"].agg(["min", "mean", "count", "median"])
+    backed = (ami.assign(_ok=ami["bldg_count"] >= MIN_BLDG_COUNT)
+              .groupby("building_type")["_ok"].mean())
+    thin = backed[backed < MIN_HOUR_COVERAGE].index.tolist()
+    ami_present = set(counts.index) - {"total"}
+    ami_types = ami_present - set(thin)
     cs_types = set(cs["building_type"].unique())
     both = sorted(ami_types & cs_types)
+    # Hours below the meter count leave the profiles; the type stays.
+    ami = ami[(ami["bldg_count"] >= MIN_BLDG_COUNT) | (ami["building_type"] == "total")]
     # ComStock-side model counts per compared type, so thin cells are visible
     # rather than implied. Reported, not dropped: removing them would understate
     # which types the run actually covers.
@@ -430,9 +441,18 @@ def compare_region(cs: pd.DataFrame, ami: pd.DataFrame, region_name: str
     coverage = {
         "region": region_name,
         "compared_types": both,
-        "ami_missing_types": sorted(cs_types - ami_types - {"total"}),
+        # Types the metered data does not carry at all -- NOT the thin ones,
+        # which used to be folded in here and read as "no AMI data".
+        "ami_missing_types": sorted(cs_types - ami_present),
         "comstock_missing_types": sorted(ami_types - cs_types),
         "ami_thin_sample_types_skipped": thin,
+        "ami_min_hour_coverage": MIN_HOUR_COVERAGE,
+        # Share of hours dropped for falling below the meter count, per
+        # compared type: how much of the year the comparison does not see.
+        "ami_thin_hours_dropped_share": {bt: round(float(1.0 - backed.get(bt, 1.0)), 4)
+                                         for bt in both},
+        "ami_meter_counts_median": {bt: int(counts.loc[bt, "median"])
+                                    for bt in both if bt in counts.index},
         # Metered building count per compared type, the AMI-side counterpart to
         # comstock_model_counts. bldg_count varies hour to hour as meters drop in
         # and out, so the MINIMUM is reported: it is the count every hour of the

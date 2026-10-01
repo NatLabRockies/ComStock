@@ -35,7 +35,9 @@ AMI_COLOR = "#CC79A7"   # COLOR_AMI in comstockpostproc
 HEADLINE_METRICS = [
     ("electricity.total", "Electricity"),
     ("natural_gas.total", "Natural gas"),
-    ("site_energy.total", "Site energy"),
+    # the CBECS-comparable site total (the four fuels CBECS surveys); ComStock's
+    # all-fuel total has no CBECS counterpart and is shown as ComStock-only
+    ("site_energy.cbecs_fuels", "Site energy (CBECS fuels)"),
     ("all_fuel.heating", "Heating (all fuel)"),
     ("electricity.cooling", "Cooling"),
     ("sqft", "Floor area"),
@@ -52,7 +54,8 @@ ANNUAL_END_USES = [
 
 FUEL_TOTALS_ORDER = [
     "electricity.total", "natural_gas.total", "fuel_oil.total", "propane.total",
-    "district_heating.total", "district_cooling.total", "site_energy.total",
+    "district_heating.total", "district_cooling.total", "site_energy.cbecs_fuels",
+    "site_energy.total",
 ]
 
 

@@ -133,7 +133,7 @@ const CROSS = "__cross__";
 
 const CROSS_METRICS = [
   ["electricity.total","Electricity"],["natural_gas.total","Natural gas"],
-  ["site_energy.total","Site energy"],["all_fuel.heating","Heating (all fuel)"],
+  ["site_energy.cbecs_fuels","Site energy (CBECS fuels)"],["all_fuel.heating","Heating (all fuel)"],
   ["electricity.cooling","Cooling"],["sqft","Floor area"],
 ];
 const EUI_METRICS = [["site_energy","Site energy"],["electricity","Electricity"],
@@ -173,6 +173,11 @@ const FUEL_SHORT = {electricity:"elec", natural_gas:"gas", fuel_oil:"oil", propa
 const USE_SHORT = {interior_lighting:"int lighting", exterior_lighting:"ext lighting",
   interior_equipment:"int equip", water_systems:"water htg", refrigeration:"refrig"};
 function shortLabel(metric){
+  /* ComStock's site total carries propane and district cooling, which CBECS
+     never surveys; the comparable figure is the sum of the four fuels CBECS
+     does. Both are shown, named for what they are. */
+  if(metric==="site_energy.cbecs_fuels") return "site (CBECS fuels)";
+  if(metric==="site_energy.total") return "site (all fuels, ComStock only)";
   const [fuel,use] = metric.split(".");
   const f = FUEL_SHORT[fuel] || fuel.replace(/_/g," ");
   if (use === "total") return f;
@@ -717,7 +722,11 @@ function boxPlot(host, cats, series, opts={}){
          across p05..p95, 1.5-IQR outliers as dots. Drawn only where the
          pipeline stored a density computed from the raw per-building values. */
       const kd=parseKde(st.kde);
-      if(kd){
+      // A cell on fewer than the pipeline's THIN_MODELS buildings (st.thin)
+      // gets no violin, a faded dashed box and its count in the tip: one
+      // surveyed building drawn as a solid distribution misleads.
+      const thin=st.thin===true||st.thin==="True"||st.thin===1;
+      if(kd&&!thin){
         const half=bw*0.92, nP=kd.d.length;
         /* A KDE pads two bandwidths past the data, so a right-skewed EUI
            density runs negative — and this axis starts at 0. Clamp to the axis
@@ -737,7 +746,8 @@ function boxPlot(host, cats, series, opts={}){
         stroke:"var(--ink-2)","stroke-width":1,opacity:.85})));
       // IQR box
       g.appendChild(el("rect",{x, y:y(st.p75), width:bw, height:Math.max(y(st.p25)-y(st.p75),1),
-        fill:s.color, stroke:"var(--ink-2)", "stroke-width":0.9}));
+        fill:s.color, opacity:thin?0.35:1, stroke:"var(--ink-2)", "stroke-width":0.9,
+        ...(thin?{"stroke-dasharray":"3 2"}:{})}));
       // median solid, mean dashed
       g.appendChild(el("line",{x1:x,y1:y(st.p50),x2:x+bw,y2:y(st.p50),
         stroke:"#111","stroke-width":1.6}));
@@ -750,6 +760,7 @@ function boxPlot(host, cats, series, opts={}){
         {cx, cy:y(v), r:1.15, fill:"var(--ink-2)","pointer-events":"none"})));
       g.addEventListener("mousemove", ev=>showTip(
         `<b>${esc(c.label)} · ${esc(s.label)}</b>`+
+        (thin?`<div class="row"><span>thin cell</span><span>${fmt(st.n_models,0)} models — indicative only</span></div>`:"")+
         `<div class="row"><span>p95</span><span>${fmt(st.p95,0)}</span></div>`+
         `<div class="row"><span>p75</span><span>${fmt(st.p75,0)}</span></div>`+
         `<div class="row"><span>median</span><span>${fmt(st.p50,0)}</span></div>`+
@@ -1392,7 +1403,10 @@ function completionPanel(){
       <span class="badge">Fail = simulation failed · Invalid = measure not applicable</span></h2>
     <p class="note">Every sampled model, from buildstockbatch's own results tables. On a measure row,
     <b>Invalid</b> is the buildings the measure does not apply to, not a failure, so the failed share
-    is taken over the applicable models only.</p>`;
+    is taken over the applicable models only. <b>In weighted aggregate</b> is how many of the
+    successful models the dashboard's figures rest on: the apportionment draws one model per real
+    building, with replacement, so a model never drawn (<b>not apportioned</b>) carries no weight and
+    appears in no figure. Baseline failures are counted again on every measure row they fail in.</p>`;
   // Notes and the skip reason are Athena exception text and table names:
   // data, escaped like every other string that reaches innerHTML.
   const noteLine=Object.entries(notes).map(([k,v])=>`<b>${esc(k)}</b> — ${esc(v)}`).join("; ");
@@ -1416,8 +1430,18 @@ function completionPanel(){
     return ra!==rb ? ra-rb : (+A.upgrade)-(+B.upgrade); });
   const measName=u=>{ const m=(typeof MEAS_LIST!=="undefined"?MEAS_LIST:[]).find(m=>String(m.up)===String(u));
     return m&&m.name ? " · "+esc(m.name) : ""; };
+  /* The models the dashboard's figures rest on, from the weighted aggregate:
+     the apportionment draws one model per real building, with replacement, so
+     a model never drawn carries no weight and is in no figure. Without this
+     column the completion count (40,870 applicable) and the measures tab
+     (37,029) disagreed with nothing to say why. */
+  const SCEN=(typeof MEAS!=="undefined"&&MEAS&&MEAS.scenarios)||[];
+  const inAgg=(run,up)=>{ const row=SCEN.find(x=>(!x.run||x.run===run)&&(up==="0"
+      ? x.scenario==="stock_baseline" : (x.scenario==="measure"&&String(x.upgrade)===String(up))));
+    return row&&row.n_models!==undefined&&row.n_models!==null&&row.n_models!==""?+row.n_models:null; };
   h+=`<div class="scroll"><table><thead><tr><th>Run</th><th>Upgrade</th><th>Models</th>
       <th>Not applicable</th><th>Applicable</th><th>Failed</th><th>Failed % of applicable</th>
+      <th>In weighted aggregate</th><th>Not apportioned</th>
       <th>By status</th></tr></thead><tbody>`;
   keys.forEach(k=>{ const r=by[k];
     const invalid=r.statuses["Invalid"]||0;
@@ -1434,6 +1458,10 @@ function completionPanel(){
       <td>${base?"0 · baseline":esc(r.upgrade)+measName(r.upgrade)}</td>
       <td>${fmt(r.total,0)}</td><td>${invalid?fmt(invalid,0):"—"}</td><td>${fmt(applicable,0)}</td>
       <td>${failCell}</td><td>${pctCell}</td>
+      ${(()=>{ const a=r.run===PRIMARY?inAgg(r.run,r.upgrade):null;
+        if(a===null) return `<td>${absentTag("noValue","no aggregate count for this run or scenario")}</td><td>${absentTag("noValue")}</td>`;
+        const succ=applicable-failed;
+        return `<td>${fmt(a,0)}</td><td title="successful applicable models the apportionment never drew">${fmt(Math.max(0,succ-a),0)}</td>`; })()}
       <td style="text-align:left">${Object.entries(r.statuses).sort((a,b)=>b[1]-a[1])
         .map(([s,n])=>`${esc(s)} ${fmt(n,0)}`).join(" · ")}</td></tr>`;
   });
@@ -1723,22 +1751,44 @@ const CROSS_BIN_DIMS=["building_type","vintage","census_division","size_bin","cl
    CBECS end uses do not sum to its fuel total (some pieces are not surveyed or
    not disaggregated), so a grey residual bar closes the walk to the fuel-total
    gap honestly instead of hiding the difference. */
+const WF_CS_ONLY="#A08C5B", WF_RESID="#8b949b";
 function enduseWaterfallItems(cat, fuelPrefix, fuelTotalKey){
   const src=(D.byDim.building_type||[]).filter(r=>r.run===PRIMARY&&r.category===cat);
   const items=[];
+  const val=v=>(v===null||v===undefined||Number.isNaN(v))?null:v;
   D.endUses.filter(k=>k.startsWith(fuelPrefix)).forEach(k=>{
     const m=src.find(r=>r.metric===k);
-    if(!m||m.cbecs_value===null||m.cbecs_value===undefined) return;
-    if(m.comstock_value===null||m.comstock_value===undefined) return;
-    items.push({label:(k.split(".")[1]||k).replace(/_/g," "),
-                delta:m.comstock_value-m.cbecs_value});
+    if(!m||val(m.comstock_value)===null) return;
+    /* CBECS "lighting" is all lighting and lands under interior_lighting, while
+       ComStock splits interior and exterior, so the fair pair is the combined
+       metric: interior is paired through it and exterior is folded in. Paired
+       naively, lighting read +9% when it is +32%. */
+    if(k==="electricity.exterior_lighting") return;
+    if(k==="electricity.interior_lighting"){
+      const c=src.find(r=>r.metric==="electricity.lighting_combined");
+      if(c&&val(c.cbecs_value)!==null&&val(c.comstock_value)!==null){
+        items.push({label:"lighting (interior + exterior)",delta:c.comstock_value-c.cbecs_value});
+        return;
+      }
+    }
+    const label=(k.split(".")[1]||k).replace(/_/g," ");
+    if(val(m.cbecs_value)===null){
+      /* An end use CBECS has no category for (pumps, heat recovery, heat
+         rejection): its whole value is a gap by construction, named as such
+         rather than left inside a residual labelled "not disaggregated". */
+      items.push({label:`${label} (no CBECS end use)`,delta:m.comstock_value,color:WF_CS_ONLY});
+      return;
+    }
+    items.push({label,delta:m.comstock_value-m.cbecs_value});
   });
   const tot=src.find(r=>r.metric===fuelTotalKey);
-  let total=null;
-  if(tot&&tot.cbecs_value!==null&&tot.cbecs_value!==undefined){
-    total=tot.comstock_value-tot.cbecs_value;
+  if(tot&&val(tot.cbecs_value)!==null&&val(tot.comstock_value)!==null){
+    const total=tot.comstock_value-tot.cbecs_value;
     const resid=total-items.reduce((s,i)=>s+i.delta,0);
-    if(Math.abs(resid)>0.05) items.push({label:"not disaggregated",delta:resid,color:"#8b949b"});
+    // what is left once every end use on both sides is paired or named: the
+    // CBECS disaggregation residual (its end uses do not sum exactly to its
+    // fuel total) and any ComStock end use the list above does not carry
+    if(Math.abs(resid)>0.05) items.push({label:"disaggregation residual",delta:resid,color:WF_RESID});
   }
   items.sort((a,b)=>b.delta-a.delta);
   return items;
@@ -1750,8 +1800,11 @@ function enduseWaterfallPanel(cat, anchor=""){
       <span class="badge">${runShort(PRIMARY)} − CBECS 2018</span>
       <span class="badge">CBECS end uses are EIA disaggregations</span></h2>
     <p class="note">CBECS end uses are EIA statistical disaggregations, so read these as
-    indicative. The grey bar is the part of the fuel-total gap CBECS does not disaggregate — end
-    uses it did not survey, or the disaggregation residual.</p>
+    indicative. Lighting is paired as interior + exterior against CBECS's single lighting
+    figure. A <b>tan</b> bar is a ComStock end use CBECS has no category for (pumps, heat
+    recovery, heat rejection), so its whole value is a gap by construction. The <b>grey</b> bar
+    is what remains once every end use is paired or named: the CBECS disaggregation
+    residual.</p>
     <div class="grid2" data-scale="own">
       <div><h3>Electricity — TBtu</h3><div id="wf-eu-elec"></div></div>
       <div><h3>Natural gas — TBtu</h3><div id="wf-eu-gas"></div></div>
@@ -1763,13 +1816,15 @@ function renderEnduseWaterfalls(cat){
      copy:{title:`Electricity gap by end use — ${cat} (TBtu, ComStock − CBECS)`,
            legend:[{color:"#D55E00",label:"ComStock over CBECS"},
                    {color:"#0072B2",label:"ComStock under CBECS"},
-                   {color:"#8b949b",label:"Not disaggregated by CBECS"}]}});
+                   {color:WF_CS_ONLY,label:"ComStock end use with no CBECS category"},
+                   {color:WF_RESID,label:"CBECS disaggregation residual"}]}});
   waterfall($("#wf-eu-gas"), enduseWaterfallItems(cat,"natural_gas.","natural_gas.total"),
     {height:260, totalLabel:"Natural gas gap", yLabel:"TBtu (ComStock − CBECS)",
      copy:{title:`Natural gas gap by end use — ${cat} (TBtu, ComStock − CBECS)`,
            legend:[{color:"#D55E00",label:"ComStock over CBECS"},
                    {color:"#0072B2",label:"ComStock under CBECS"},
-                   {color:"#8b949b",label:"Not disaggregated by CBECS"}]}});
+                   {color:WF_CS_ONLY,label:"ComStock end use with no CBECS category"},
+                   {color:WF_RESID,label:"CBECS disaggregation residual"}]}});
 }
 
 function dimSigToggle(){
@@ -1831,7 +1886,7 @@ function renderCross(){
   const shownDims=dimsToShow(availDims, state.xDim);
   // the index lists what is actually on the page, so it can never point at a
   // section the breakdown selector has hidden
-  const SECTIONS=[["sec-fuels","By fuel"],["sec-enduse","By end use"]]
+  const SECTIONS=[["sec-fuels","By fuel"],["sec-gasfree","No natural gas"],["sec-enduse","By end use"]]
     .concat(shownDims.map(d=>
       ["sec-"+d,(D.dimensions[d]||{label:d}).label.replace(/,.*$/,"")]))
     .concat([["sec-gap","End-use gap waterfalls"]]);
@@ -1842,6 +1897,18 @@ function renderCross(){
   h+=`<div class="panel" id="sec-fuels"><h2 style="margin-top:0">Annual consumption by fuel — TBtu
       <span class="badge">whole stock, national</span></h2>
       <div class="scroll" id="all-fuels"></div></div>`;
+  /* Who uses gas at all, by building type, before how much. The gas EUI boxes
+     cannot separate a stock that gives every restaurant a gas line from one
+     that gives too much gas to the restaurants that have it; this can.
+     Computed by the pipeline since the first version and never drawn. */
+  h+=`<div class="panel" id="sec-gasfree"><h2 style="margin-top:0">Buildings with no natural gas
+      — % of floor area, by building type
+      <span class="badge">CBECS 2018 vs ${RUNS.map(r=>runShort(r.key)).join(" vs ")}</span></h2>
+      <p class="note">Share of weighted floor area whose annual natural-gas use is exactly zero.
+      A large difference is a prevalence question for the sampling — which buildings get a gas
+      line — not an intensity question for the models, and it is what the gas EUI
+      distributions inherit.</p>
+      <div class="scroll" id="all-gasfree"></div></div>`;
   /* This chart hatches its CBECS bars, so it needs the hatch key — and it cannot
      borrow the legend at the top of the tab, which sits above the by-fuel chart
      and correctly omits the hatch. Keying "the hatch belongs only on charts that
@@ -1896,6 +1963,25 @@ function renderCross(){
   groupedBar($("#all-fuels"), allRows(D.fuelTotals), annualSeries(),
     {height:245, copy:{title:"All building types — fuel totals (TBtu)",
                        legend:runLegendItems(false)}});
+  {
+    const fm=D.fuelByDim.building_type||[];
+    const order=(D.ordered&&D.ordered.building_type)||[];
+    const cats=[...new Set(fm.map(r=>r.category))].filter(c=>c!=="All")
+      .sort((a,b)=>(order.indexOf(a)+1||99)-(order.indexOf(b)+1||99));
+    const num=v=>(v===null||v===undefined||v===""||Number.isNaN(+v))?null:100*+v;
+    const rows=cats.map(c=>{
+      const values={};
+      const cb=fm.find(r=>r.category===c&&num(r.cbecs_zero_gas_share)!==null);
+      if(cb) values.cbecs=num(cb.cbecs_zero_gas_share);
+      RUNS.forEach(r=>{ const m=fm.find(x=>x.category===c&&x.run===r.key);
+        values[r.key]=m?num(m.comstock_zero_gas_share):null; });
+      return {label:c, values, ciLow:null, ciHigh:null, hatched:false};
+    }).filter(r=>Object.values(r.values).some(v=>v!==null));
+    groupedBar($("#all-gasfree"), rows, annualSeries(),
+      {height:245, yLabel:"% of floor area",
+       copy:{title:"All building types — floor area with no natural gas (%)",
+             legend:runLegendItems(false)}});
+  }
   groupedBar($("#all-enduse"), allRows(D.endUses), annualSeries(),
     {height:265, copy:{title:"All building types — end uses by fuel (TBtu)",
                        legend:runLegendItems(true)}});
@@ -1971,6 +2057,25 @@ function renderAnnual(){
       ${annualLegend()}<div class="scroll" id="c-enduse"></div>
       <p class="note">Hatched CBECS bars are EIA statistical disaggregations, not metered values —
       a difference against them is weaker evidence than one against a metered fuel total.</p></div>`;
+  /* Who uses gas at all, before how much: the gas EUI boxes cannot separate a
+     stock that gives every restaurant a gas line from one that gives too much
+     gas to the restaurants that have it. Computed by the pipeline and, until
+     now, never shown. */
+  const fmRows=(D.fuelByDim.building_type||[]).filter(r=>r.category===bt);
+  if(fmRows.length){
+    const cb=fmRows.find(r=>r.cbecs_zero_gas_share!==null&&r.cbecs_zero_gas_share!==undefined);
+    h+=`<div class="panel"><h2>${bt}: buildings with no natural gas — % of floor area
+        <span class="badge">CBECS 2018 vs ${RUNS.map(r=>runShort(r.key)).join(" vs ")}</span></h2>
+      <p class="note">Share of weighted floor area whose annual natural-gas use is exactly zero —
+      who has gas, as distinct from how much gas is used. A large difference here is a
+      prevalence question for the sampling, not an intensity question for the models.</p>
+      <div class="scroll"><table><thead><tr><th>Dataset</th><th>floor area with no natural gas</th></tr></thead><tbody>
+        ${cb?`<tr><td style="text-align:left">${headChip(CBECS_COLOR,"CBECS 2018")}</td><td>${fmt(100*cb.cbecs_zero_gas_share,1)}%</td></tr>`:""}
+        ${RUNS.map(r=>{ const m=fmRows.find(x=>x.run===r.key);
+          const v=m&&m.comstock_zero_gas_share!==null&&m.comstock_zero_gas_share!==undefined?+m.comstock_zero_gas_share:null;
+          return `<tr><td style="text-align:left">${runHead(r.key)}</td><td>${v===null?absentTag("noValue"):fmt(100*v,1)+"%"}</td></tr>`;}).join("")}
+      </tbody></table></div></div>`;
+  }
   const pairDims=Object.keys(D.byPair);
   const shownPairDims=dimsToShow(pairDims, state.xDim);
   h+=`<div class="panel"><div class="head" style="margin:0">
@@ -3294,8 +3399,15 @@ function hBoxChart(host, entries, opts={}){
   /* Left pad from the longest ROW LABEL, which now carries its "(n=486)" count,
      and a small right pad since the count no longer sits out there. A fixed 170
      clipped the longer building-type names once the label grew. */
-  const rowLabels=entries.map(e=>e.label
-    +(e.series?"":` (n=${Number((e.stats||{}).n_models||0).toLocaleString()})`));
+  /* n is the models with a nonzero value; the label also says how many had an
+     UNDEFINED value (a percent saving over a zero baseline -- for the HP-RTU
+     measures, most applicable buildings on electric heating) or exactly zero,
+     so a chart over the minority cannot read as the measure's typical effect. */
+  const nLabel=st=>{ if(!st) return "";
+    const n=Number(st.n_models||0), u=Number(st.n_undefined||0), z=Number(st.n_zero||0);
+    return ` (n=${n.toLocaleString()}${u?` · ${u.toLocaleString()} undefined`:""}${
+      z?` · ${z.toLocaleString()} zero`:""})`; };
+  const rowLabels=entries.map(e=>e.label+(e.series?"":nLabel(e.stats)));
   const padL=Math.min(260, Math.max(120, Math.ceil(
     AX_CHAR_W*1.02*Math.max(...rowLabels.map(t=>t.length))+16)));
   const padR=18;
@@ -3338,9 +3450,12 @@ function hBoxChart(host, entries, opts={}){
   entries.forEach(e=>{
     const height=rh(e), yMid=yCur+height/2;
     const lab=el("text",{x:padL-8,y:yMid+4,class:"ax","text-anchor":"end"});
-    // "Category (n=486)", the way upstream labels these rows
-    const nOwn=e.series?null:(e.stats||{}).n_models;
-    lab.textContent=e.label+(nOwn?` (n=${Number(nOwn).toLocaleString()})`:"");
+    // "Category (n=486 · 21,679 undefined)", the count the box rests on and
+    // the counts it does not
+    lab.textContent=e.label+(e.series?"":nLabel(e.stats));
+    const u=Number((e.stats||{}).n_undefined||0), nn=Number((e.stats||{}).n_models||0);
+    // red when the undefined values outnumber the values the box rests on
+    if(!e.series&&u&&u>=0.25*(u+nn)) lab.setAttribute("fill","var(--bad)");
     svg.appendChild(lab);
     const series=e.series||[{stats:e.stats,color:e.color||"#4C78B0"}];
     series.forEach((s,j)=>{
@@ -3518,6 +3633,10 @@ function measKeyLegend(list, dashed){
 function measSummaryTable(list){
   const num=k=>(MEAS.summary||[]).some(r=>r[k]!==undefined&&r[k]!==null&&!isNaN(+r[k]));
   const area=num("pct_of_stock_sqft");
+  // propane, fuel oil, district heat and cooling: a fuel-switching measure's
+  // savings there were a tenth of its site savings and were not shown, so site
+  // did not reconcile with electricity + gas
+  const other=num("other_fuels_savings_tbtu");
   const EU=[["heating_elec_savings_tbtu","heating (elec)"],
             ["heating_gas_savings_tbtu","heating (gas)"],
             ["cooling_savings_tbtu","cooling"],
@@ -3526,12 +3645,12 @@ function measSummaryTable(list){
   let h=`<div class="scroll"><table><thead>
     <tr><th rowspan="2" style="text-align:left">Measure</th>
       <th colspan="${area?2:1}">Applicable stock</th>
-      <th colspan="3">Savings (TBtu)</th>
+      <th colspan="${other?4:3}">Savings (TBtu)</th>
       ${EU.length?`<th colspan="${EU.length}">End-use savings (TBtu)</th>`:""}
       <th colspan="2">Bill savings</th>
       <th colspan="2">Emissions savings</th></tr>
     <tr>${area?"<th>floor area</th>":""}<th>buildings</th>
-      <th>site</th><th>electricity</th><th>natural gas</th>
+      <th>site</th><th>electricity</th><th>natural gas</th>${other?"<th>other fuels</th>":""}
       ${EU.map(c=>`<th>${c[1]}</th>`).join("")}
       <th>$/bldg·yr</th><th>$M/yr</th>
       <th>MMT CO₂e</th><th>%</th></tr></thead><tbody>`;
@@ -3541,7 +3660,7 @@ function measSummaryTable(list){
       ${area?`<td>${share(r.pct_of_stock_sqft)}</td>`:""}
       <td>${share(r.pct_of_stock)} <span class="note">(${fmt(r.weighted_bldgs/1e3,0)}k)</span></td>
       <td>${fmt(r.site_savings_tbtu)}</td><td>${fmt(r.elec_savings_tbtu)}</td>
-      <td>${fmt(r.gas_savings_tbtu)}</td>
+      <td>${fmt(r.gas_savings_tbtu)}</td>${other?`<td>${fmt(r.other_fuels_savings_tbtu)}</td>`:""}
       ${EU.map(c=>`<td>${fmt(r[c[0]])}</td>`).join("")}
       <td>${fmt(r.bill_avg_savings_usd_per_bldg,0)}</td>
       <td>${fmt(r.bill_total_savings_musd,0)}</td>
@@ -3591,7 +3710,12 @@ function measDistPanels(list){
     range, <b>dots</b> points beyond 1.5×IQR, and the shaded outline is a kernel density.
     All of these are <b>unweighted — one row per model</b>, not per building represented, unlike
     the weighted boxes on the Distributions tab. n counts models with a nonzero value — the
-    conventions of the savings_distributions figures in the measure postprocessing pack. Left tails past zero are buildings the measure hurts — the QAQC
+    conventions of the savings_distributions figures in the measure postprocessing pack — and
+    the label also counts the applicable models the box does NOT rest on: <b>undefined</b> (a
+    percent saving over a zero baseline, e.g. electric heating added where there was none) and
+    <b>zero</b>. A row label in red has more undefined values than values; read its box as a
+    minority, and use the EUI or $/ft² view beside it. Left tails past zero are buildings the
+    measure hurts — the QAQC
     signal. Energy and utility-bill versions side by side; bill savings by end use are not
     tracked upstream, so that combination is empty.${multi?` Each category carries one box per
     selected measure. These are per-building distributions over each measure's OWN applicable
@@ -3746,9 +3870,11 @@ function renderMeasuresAnnual(){
       <span class="badge">${runShort(PRIMARY)}</span>
       <span class="badge">savings = baseline − measure, each measure's applicable buildings</span></h2></div>
     <p class="note">Positive = the measure saves. Bills use the mean-rate bill; emissions use
-    eGRID 2021 subregion factors for electricity plus fuel factors. The end-use columns are the
-    four an HVAC measure moves — they do not sum to the site total, since lighting, plug loads
-    and water heating are untouched.</p>
+    eGRID 2021 subregion factors for electricity plus fuel factors. Site savings are electricity
+    + natural gas + other fuels (propane, fuel oil, district heat and cooling) — the other-fuel
+    column is where a fuel-switching measure's propane and oil heating goes. The end-use columns
+    are the four an HVAC measure moves — they do not sum to the site total, since lighting, plug
+    loads and water heating are untouched.</p>
     ${measSummaryTable(sel)}</div>`;
   let h=`<div class="panel"><div class="head">
       <h2 style="margin-top:0">Measures <span class="badge">${runShort(PRIMARY)}</span></h2>
@@ -4205,6 +4331,11 @@ function renderMeasuresAnnual(){
   wireGroups();
 }
 
+const TS_OTHER_COLS=["propane_kwh","fuel_oil_kwh","district_heating_kwh"];
+const TS_FUEL_LABEL={elec:"electricity", gas:"natural gas",
+                     other:"other fuels (propane, fuel oil, district heat)"};
+const tsHasOther=st=>((typeof MEAS!=="undefined"&&MEAS.ts&&MEAS.ts[st])||[])
+  .some(r=>TS_OTHER_COLS.some(k=>r[k]!==null&&r[k]!==undefined&&r[k]!==""&&!Number.isNaN(+r[k])));
 function renderMeasuresTs(){
   const states=Object.keys(MEAS.ts||{});
   // One location at a time. `states` stays the full list for the dropdown;
@@ -4397,6 +4528,24 @@ function renderMeasuresTs(){
             <span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink);display:inline-block;flex:none"></span>Baseline total (applicable)</span>
           </div>
         </div></div>`;
+      /* Propane, fuel oil and district heat: in the colder states they are a
+         third or more of a fuel-switching measure's fossil heating savings, and
+         until this panel existed nothing on the tab said they were missing. Only
+         drawn when the run's timeseries table carries them. */
+      if(tsHasOther(st)) h+=`<div class="panel"><h2>Average hourly other-fuel demand — ${st} — MW thermal
+          <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
+          <span class="badge">propane + fuel oil + district heat</span>
+          ${groupControls(`gts-other-${st}`)}</h2>
+        <p class="note">The fossil and district fuels other than natural gas, summed, as thermal
+        megawatts. Solid is the measure, dashed the same buildings' baseline; the gap is the
+        savings shape.</p>
+        <div class="ami-wrap">
+          <div class="ami-grid" id="mts-other-${st}"></div>
+          <div class="ami-legend">
+            <span class="key"><span style="width:14px;height:0;border-top:3px solid var(--ink);display:inline-block;flex:none"></span>Measure total</span>
+            <span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink);display:inline-block;flex:none"></span>Baseline total (applicable)</span>
+          </div>
+        </div></div>`;
     } else {
       const tsLegend=`${tsBasis==="stock"
         ? `<span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink);display:inline-block;flex:none"></span>Baseline (whole stock)</span>`
@@ -4440,14 +4589,24 @@ function renderMeasuresTs(){
     state.measLoc=e.target.value; renderMeasuresTs(); syncHash(); });
   const MW=v=>(v===null||v===undefined)?null:v/1000;
   const tsLegendItems=(stack,lines)=>(stack?enduseLegendItemsVisible():[]).concat(lines);
+  // other_kwh is summed here from the per-fuel columns the query carries; a
+  // fuel the table lacks arrives null and is left out rather than counted as 0
+  Object.values(MEAS.ts||{}).forEach(rows=>rows.forEach(r=>{
+    if(r.other_kwh!==undefined) return;
+    const parts=TS_OTHER_COLS.map(k=>r[k]).filter(v=>v!==null&&v!==undefined&&v!==""&&!Number.isNaN(+v));
+    r.other_kwh=parts.length?parts.reduce((a,b)=>a+ +b,0):null;
+  }));
   shown.forEach(st=>{
     const rows=MEAS.ts[st];
     const get=(up,sn,d)=>rows.filter(r=>String(r.upgrade)===String(up)&&r.season===sn
       &&(d?r.day_type===d:true));
     if(state.measView==="single"&&sel.length){
       const mm=sel[0];
-      [["elec","elec_kwh",true],["gas","gas_kwh",false]].forEach(([slug,col,doStack])=>{
+      const panels=[["elec","elec_kwh",true],["gas","gas_kwh",false]];
+      if(tsHasOther(st)) panels.push(["other","other_kwh",false]);
+      panels.forEach(([slug,col,doStack])=>{
         const g=$(`#mts-${slug}-${st}`);
+        if(!g) return;
         // two-pass so every panel in this grid shares one y scale
         const pend=[];
         SEASONS.forEach(sn=>["Weekday","Weekend"].forEach(d=>{
@@ -4468,7 +4627,7 @@ function renderMeasuresTs(){
           g.appendChild(box);
           pend.push({box, sub,
             opts:{title:`${sn} ${d}`, stack:doStack, stackKeys, baseLabel:"Measure total",
-             yLabel:slug==="gas"?"MW thermal":"MW",
+             yLabel:slug==="elec"?"MW":"MW thermal",
              extraLines:[{key:"mtot",color:"var(--ink)",dash:"",width:doStack?2.4:2,label:"Measure total"},
                          {key:"btot",color:"var(--ink)",dash:"7 4",width:2.4,label:"Baseline (applicable)"}],
              copy:{title:`${mm.up} ${mm.name} — ${st} ${sn} ${d} seasonal average (MW)`,
@@ -4484,8 +4643,8 @@ function renderMeasuresTs(){
             [{color:"#1a1d1f",label:"Measure total",line:true},
              {color:"#1a1d1f",label:"Baseline, applicable (dashed)",line:true,dash:true}]),
           `${mm.up} ${mm.name} — ${st} — average hourly `
-            +`${slug==="gas"?"natural gas":"electricity"} demand `
-            +`(${slug==="gas"?"MW thermal":"MW"})`, 2);
+            +`${TS_FUEL_LABEL[slug]} demand `
+            +`(${slug==="elec"?"MW":"MW thermal"})`, 2);
       });
     } else {
       // On the stock basis a measure's hourly line is re-based the same way the
@@ -4789,7 +4948,7 @@ function dpTable(group){
             : "this assessment predates the per-type spread; a re-run carries it")
         :`${fmt(dpNum(p.p10),dpDec(dpNum(p.p10)))} – ${fmt(dpNum(p.p90),dpDec(dpNum(p.p90)))}`}</td>
       <td class="list"${low?' style="color:var(--bad)"':""}>${cov===null?absentTag("noValue")
-        :`${fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
+        :`${cov>0&&cov<1?fmt(cov,1):fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
   });
   return t+"</tbody></table></div>";
 }
@@ -5293,7 +5452,9 @@ function renderCoverage(){
          showing. A type absent in one region may be well covered in another, so read across the
          row before concluding there is no metered evidence for it.</p>
          <div class="scroll"><table><thead><tr><th>Region</th><th>Types compared</th>
-           <th>No AMI truth data</th><th>Skipped — thin AMI sample (&lt;3 buildings)</th>
+           <th>No AMI truth data</th><th>Skipped — fewer than 3 meters in over ${
+             Math.round(100*(1-(c.ami_min_hour_coverage||0.95)))}% of hours</th>
+           <th>Hours dropped (&lt;3 meters)</th>
            <th>Thin ComStock sample (&lt;${c.comstock_min_models_threshold||10} models)</th>
            <th>In AMI, absent from ComStock</th></tr></thead><tbody>
          ${regKeys.map(rk=>{
@@ -5303,6 +5464,9 @@ function renderCoverage(){
               <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"compared_types")}</td>
               <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"ami_missing_types")}</td>
               <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"ami_thin_sample_types_skipped")}</td>
+              <td class="list" style="text-align:left;font-size:12px">${
+                Object.entries(o.ami_thin_hours_dropped_share||{}).filter(([,v])=>v>0)
+                  .map(([k,v])=>`${esc(k)} ${fmt(100*v,1)}%`).join(", ")||"none"}</td>
               <td class="list" style="text-align:left;font-size:12px">${thinCs(o)}</td>
               <td class="list" style="text-align:left;font-size:12px">${rowFor(o,"comstock_missing_types")}</td>
               </tr>`;}).join("")}
@@ -5311,7 +5475,8 @@ function renderCoverage(){
           <tr><td>AMI region</td><td>${c.region||absentTag("noValue")}</td></tr>
           <tr><td>Types compared against AMI</td><td>${(c.compared_types||[]).map(esc).join(", ")||"none"}</td></tr>
           <tr><td>No AMI truth data</td><td>${(c.ami_missing_types||[]).map(esc).join(", ")||"none"}</td></tr>
-          <tr><td>Skipped — thin AMI sample (&lt;3 buildings)</td>
+          <tr><td>Skipped — fewer than 3 meters in over ${
+              Math.round(100*(1-(c.ami_min_hour_coverage||0.95)))}% of hours</td>
               <td>${(c.ami_thin_sample_types_skipped||[]).map(esc).join(", ")||"none"}</td></tr>
           <tr><td>Thin ComStock sample (&lt;${c.comstock_min_models_threshold||10} models)</td>
               <td>${thinCs(c)}</td></tr>

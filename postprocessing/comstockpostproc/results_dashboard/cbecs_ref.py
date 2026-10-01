@@ -28,6 +28,7 @@ from .metrics_def import (
     ALL_KWH_METRICS,
     BLDG_TYPE_COL,
     COMSTOCK_BLDG_TYPES,
+    DERIVED,
     DIMENSIONS,
     GAS_TOTAL_COL,
     SIZE_BIN_EDGES,
@@ -72,6 +73,11 @@ def aggregate_cbecs(df: pd.DataFrame, dim: str) -> tuple[pd.DataFrame, pd.DataFr
     missing = [k for k, (c, _) in ALL_KWH_METRICS.items() if c not in df.columns]
     if missing:
         logger.info("CBECS wide lacks columns for: %s", ", ".join(missing))
+    # Derived metrics (all-fuel heating, combined lighting, the CBECS-fuel site
+    # total) as per-RECORD sums before the jackknife, so they carry an interval
+    # like any published column instead of none. A blank component is zero, the
+    # rule grouped_totals_with_ci applies to every published column.
+    df = _with_derived_columns(df, metric_cols)
     value_cols = [SQFT_COL] + list(metric_cols.values())
 
     frames = []
@@ -109,7 +115,21 @@ def aggregate_cbecs(df: pd.DataFrame, dim: str) -> tuple[pd.DataFrame, pd.DataFr
     return totals, diag
 
 
-PAIR_METRIC_KEYS = ["electricity.total", "natural_gas.total", "site_energy.total"]
+def _with_derived_columns(df: pd.DataFrame, metric_cols: dict) -> pd.DataFrame:
+    """Add one per-record column per DERIVED metric and register it in
+    `metric_cols` (mutated), so the jackknife treats it as a published column."""
+    df = df.copy()
+    for key, (components, _prov) in DERIVED.items():
+        cols = [metric_cols[c] for c in components if c in metric_cols]
+        if not cols:
+            continue
+        dcol = f"__derived__{key}"
+        df[dcol] = df[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).sum(axis=1)
+        metric_cols[key] = dcol
+    return df
+
+
+PAIR_METRIC_KEYS = ["electricity.total", "natural_gas.total", "site_energy.cbecs_fuels"]
 
 
 def aggregate_cbecs_pair(df: pd.DataFrame, dim: str) -> pd.DataFrame:
@@ -121,9 +141,15 @@ def aggregate_cbecs_pair(df: pd.DataFrame, dim: str) -> pd.DataFrame:
     """
     col = DIMENSIONS[dim]["col"]
     metric_cols = {k: ALL_KWH_METRICS[k][0] for k in PAIR_METRIC_KEYS
-                   if ALL_KWH_METRICS[k][0] in df.columns}
-    value_cols = [SQFT_COL] + list(metric_cols.values())
+                   if k in ALL_KWH_METRICS and ALL_KWH_METRICS[k][0] in df.columns}
     sub = df[df[col].notna()].copy()
+    # the derived pair metric (CBECS-fuel site total) as a per-record column
+    base = {k: c for k, (c, _) in ALL_KWH_METRICS.items() if c in sub.columns}
+    sub = _with_derived_columns(sub, base)
+    for k in PAIR_METRIC_KEYS:
+        if k in DERIVED and k in base:
+            metric_cols[k] = base[k]
+    value_cols = [SQFT_COL] + list(metric_cols.values())
     sub["_pair"] = sub[BLDG_TYPE_COL].astype(str) + "||" + sub[col].astype(str)
     res = grouped_totals_with_ci(sub, value_cols, by="_pair", weight_col="weight")
     parts = res["_pair"].str.split("||", regex=False, expand=True)

@@ -192,7 +192,8 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
                     cells.append("n/a")
             if any(c != "n/a" for c in cells):
                 L.append(f"| {cat} | " + " | ".join(cells) + f" | {n} |")
-        L += ["", "Small CBECS cells (n < 60) give unstable quartiles — read those rows with care."]
+        L += ["", f"Cells resting on fewer than {distributions.THIN_MODELS} buildings are drawn "
+              "hatched on the page and should be read as indicative only."]
 
     if ami_metrics is not None and not ami_metrics.empty:
         L += ["", f"## AMI — {coverage.get('region')} ({primary.key} only)", "",
@@ -255,6 +256,9 @@ def _assess(args) -> None:
         fine = annual.fetch_comstock_annual(r.md_table, no_cache=args.no_cache)
         logger.info("  %d fine-grained rows", len(fine))
         audits.update({f"{r.key}.{k}": v for k, v in annual.check_categories(fine, r.key).items()})
+        # Zone 7 arrives spelled three ways; the audit above has recorded that,
+        # so merging to one bin here hides nothing (annual.merge_climate_zones).
+        fine = annual.merge_climate_zones(fine)
 
         for dim, spec in DIMENSIONS.items():
             if dim not in fine.columns or fine[dim].isna().all():
@@ -331,13 +335,15 @@ def _assess(args) -> None:
     # timeseries table is <run>_timeseries when crawled but <run>_ts_by_state on
     # a published release, so both are discovered rather than assumed. Reject
     # the _vu view for the METADATA table (create_views renames in.sqft..ft2,
-    # which build_sqft_sql selects by its original name) and PREFER it for the
-    # timeseries (create_views is what translates a crawled run's
-    # electricity_<enduse>_kwh columns into the published spelling).
+    # which build_sqft_sql selects by its original name) and for the TIMESERIES
+    # too: ts_dialect reads both spellings of the end-use columns, and the
+    # view's unit conversion is inverted for every non-kWh fuel
+    # (ComStock.create_views), so gas read through it is 11.6x too high. The
+    # crawled table first, the view only when there is no table.
     county_table = _discover(primary.md_county_table, stem,
                              require=("_md_agg_", "county"), reject=("_vu",))
-    ts_table = (_discover(f"{stem}_timeseries_vu", stem, require=("timeseries", "_vu"))
-                or _discover(primary.ts_table, stem, require=("timeseries",))
+    ts_table = (_discover(primary.ts_table, stem, require=("timeseries",), reject=("_vu",))
+                or _discover(f"{stem}_timeseries_vu", stem, require=("timeseries", "_vu"))
                 or _discover(primary.ts_table, stem, require=("ts_by_state",)))
     # Applied INDEPENDENTLY. Coupling them meant that a run with a timeseries
     # table but no county aggregate -- the normal state of a run postprocessed
@@ -451,10 +457,10 @@ def _assess(args) -> None:
                 r_cty = _discover(r.md_county_table, r_stem,
                                   require=("_md_agg_", "county"), reject=("_vu",),
                                   database=r.database)
-                r_ts = (_discover(f"{r_stem}_timeseries_vu", r_stem,
-                                  require=("timeseries", "_vu"), database=r.database)
-                        or _discover(r.ts_table, r_stem, require=("timeseries",),
-                                     database=r.database)
+                r_ts = (_discover(r.ts_table, r_stem, require=("timeseries",),
+                                  reject=("_vu",), database=r.database)
+                        or _discover(f"{r_stem}_timeseries_vu", r_stem,
+                                     require=("timeseries", "_vu"), database=r.database)
                         or _discover(r.ts_table, r_stem, require=("ts_by_state",),
                                      database=r.database))
                 if r_cty and r_ts:

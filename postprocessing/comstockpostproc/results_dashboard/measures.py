@@ -513,7 +513,10 @@ def build_category_sql(md_table: str, upgrades: list[str], have: set[str], dim: 
 def build_savings_sql(md_table: str, upgrade: str, have: set[str],
                      up_type: str = "varchar") -> str:
     """Direct weighted savings by end use x fuel, plus name/bills, one row."""
-    fe = fuel_enduses(have)
+    # Every fuel, not electricity and gas only: a fuel-switching measure's
+    # propane, fuel-oil and district-heat savings are a tenth of its site
+    # savings, and without them the summary did not reconcile.
+    fe = fuel_enduses(have, FUELS_ALL)
     sums = ['    SUM(weight) AS w', '    COUNT(*) AS n',
             '    arbitrary("in.upgrade_name") AS upgrade_name']
     for f, eus in fe.items():
@@ -575,7 +578,14 @@ def savings_distribution_rows(dist: pd.DataFrame, up: str, name: str) -> list[di
 
     def _stat(v, kind, group, label):
         v = pd.to_numeric(v, errors="coerce").to_numpy(float)
+        # Dropped values are COUNTED, not just dropped: a percent saving is
+        # undefined for a building with no such end use at baseline (0 -> +x
+        # divides by zero), and for the HP-RTU measures that is most applicable
+        # buildings for electric heating. A chart that silently drops them says
+        # the measure cuts electric heating when it adds it.
+        n_undefined = int((~np.isfinite(v)).sum())
         v = v[np.isfinite(v)]
+        n_zero = int((v == 0).sum())
         n_nonzero = int((v != 0).sum())
         v = v[v != 0]
         if not len(v):
@@ -598,6 +608,8 @@ def savings_distribution_rows(dist: pd.DataFrame, up: str, name: str) -> list[di
             "mean": float(v.mean()),
             "share_negative_pct": neg, "share_trimmed_pct": trimmed,
             "n_models": n_nonzero,
+            "n_undefined": n_undefined,
+            "n_zero": n_zero,
             # Density for the violin outline, and the far-tail points drawn
             # as outliers. Both must be computed HERE, from the raw
             # per-model values: seven quantiles cannot be turned back into a
@@ -642,6 +654,9 @@ def savings_distribution_rows(dist: pd.DataFrame, up: str, name: str) -> list[di
 # dashboard's seasonal profiles match the measure postprocessing plots. Not
 # region-tuned like the AMI legs; stated on the chart.
 MEASURE_SEASONS = {"Summer": [6, 7, 8], "Winter": [12, 1, 2], "Shoulder": [3, 4, 5, 9, 10, 11]}
+# The fuels other than electricity and gas the timeseries queries carry (NULL
+# where the table lacks one); the page sums them into an "other fuels" panel.
+TS_OTHER_FUEL_COLS = ["propane_kwh", "fuel_oil_kwh", "district_heating_kwh"]
 
 
 def _ts_state_line(dialect, loc):
@@ -676,6 +691,9 @@ def build_ts_sql(ts_table: str, md_table: str, loc: dict,
         f"    {hour_trunc(dialect)} AS hour_ts,\n"
         f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
         f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
+        f"    {total_sum(dialect, 'propane', 'propane_kwh')},\n"
+        f"    {total_sum(dialect, 'fuel_oil', 'fuel_oil_kwh')},\n"
+        f"    {total_sum(dialect, 'district_heating', 'district_heating_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
         f"JOIN {md_table} m\n"
@@ -727,6 +745,9 @@ def build_ts_mask_sql(ts_table: str, md_table: str, loc: dict,
         f"    {hour_trunc(dialect)} AS hour_ts,\n"
         f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
         f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
+        f"    {total_sum(dialect, 'propane', 'propane_kwh')},\n"
+        f"    {total_sum(dialect, 'fuel_oil', 'fuel_oil_kwh')},\n"
+        f"    {total_sum(dialect, 'district_heating', 'district_heating_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
         f"JOIN {md_table} m\n"
@@ -783,6 +804,9 @@ def build_ts_base_sql(ts_table: str, md_table: str, loc: dict,
         f"    {hour_trunc(dialect)} AS hour_ts,\n"
         f"    {total_sum(dialect, 'electricity', 'elec_kwh')},\n"
         f"    {total_sum(dialect, 'natural_gas', 'gas_kwh')},\n"
+        f"    {total_sum(dialect, 'propane', 'propane_kwh')},\n"
+        f"    {total_sum(dialect, 'fuel_oil', 'fuel_oil_kwh')},\n"
+        f"    {total_sum(dialect, 'district_heating', 'district_heating_kwh')},\n"
         f"{enduses}\n"
         f"FROM {ts_table} t\n"
         f"JOIN {md_table} m\n"
@@ -831,6 +855,12 @@ def build_ts_sqft_sql(md_table: str, loc: dict, upgrades: list[str],
         "  AND completed_status = 'Success'\n"
         "GROUP BY 1"
     )
+
+
+def _nansum(row: pd.Series, keys: list[str]) -> float:
+    """Sum of the keys present and finite; NaN when none is."""
+    vals = [float(row[k]) for k in keys if k in row.index and pd.notna(row[k])]
+    return float(sum(vals)) if vals else float("nan")
 
 
 def _melt_prefixed(row: pd.Series, prefix: str) -> pd.DataFrame:
@@ -960,6 +990,17 @@ def assess_measures(md_table: str, upgrades: list[str], no_cache: bool = False):
             "site_savings_tbtu": site_sav,
             "elec_savings_tbtu": float(s.get("s|electricity|total", np.nan)),
             "gas_savings_tbtu": float(s.get("s|natural_gas|total", np.nan)),
+            # The other fuels a fuel-switching measure moves. Without them
+            # site - electricity - gas was an unexplained residual.
+            "propane_savings_tbtu": float(s.get("s|propane|total", np.nan)),
+            "fuel_oil_savings_tbtu": float(s.get("s|fuel_oil|total", np.nan)),
+            "district_heating_savings_tbtu": float(s.get("s|district_heating|total", np.nan)),
+            "district_cooling_savings_tbtu": float(s.get("s|district_cooling|total", np.nan)),
+            "other_fuels_savings_tbtu": _nansum(s, ["s|propane|total", "s|fuel_oil|total",
+                                                   "s|district_heating|total",
+                                                   "s|district_cooling|total"]),
+            "heating_other_fuels_savings_tbtu": _nansum(s, ["s|propane|heating", "s|fuel_oil|heating",
+                                                           "s|district_heating|heating"]),
             "bill_total_savings_musd": bill_sav_busd * 1e3,
             "bill_avg_savings_usd_per_bldg": bill_sav_busd * 1e9 / w_app if w_app else np.nan,
             "bill_pct_savings": 100.0 * (bill_base - bill_meas) / bill_base
@@ -1092,7 +1133,7 @@ def assess_measure_timeseries_masked(ts_table: str, md_table: str, loc: dict,
     ts = ts.assign(season=season,
                    day_type=np.where(ts["hour_ts"].dt.weekday >= 5, "Weekend", "Weekday"),
                    hour=ts["hour_ts"].dt.hour)
-    val_cols = (["elec_kwh", "gas_kwh"]
+    val_cols = (["elec_kwh", "gas_kwh"] + [c for c in TS_OTHER_FUEL_COLS if c in ts.columns]
                 + [e for e in ENDUSE_STACK_ORDER if e in ts.columns])
     prof = (ts.groupby(["upgrade", "mask", "season", "day_type", "hour"], as_index=False)
             [val_cols].mean())
@@ -1166,6 +1207,7 @@ def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
     daytype = np.where(ts["hour_ts"].dt.weekday >= 5, "Weekend", "Weekday")
     ts = ts.assign(season=season, day_type=daytype, hour=ts["hour_ts"].dt.hour)
     val_cols = (["elec_kwh_per_sf", "gas_kwh_per_sf", "elec_kwh", "gas_kwh"]
+                + [c for c in TS_OTHER_FUEL_COLS if c in ts.columns]
                 + [f"eu_{e}" for e in ENDUSE_STACK_ORDER if f"eu_{e}" in ts.columns]
                 + [f"raw_{e}" for e in ENDUSE_STACK_ORDER if f"raw_{e}" in ts.columns])
     prof = (ts.groupby(["upgrade", "season", "day_type", "hour"], as_index=False)[val_cols]

@@ -258,6 +258,10 @@ def _long_shares(base: pd.DataFrame, run: str, dataset: str) -> pd.DataFrame:
             full = pd.MultiIndex.from_product(
                 [sorted(grp["category"].unique()), FUEL_ORDER],
                 names=["category", "fuel"])
+            # plain floats before the reindex: the ComStock count arrives as a
+            # nullable Int64, and pandas cannot fill that with a float zero
+            for c in ("area", "n", "rec"):
+                grp[c] = pd.to_numeric(grp[c], errors="coerce").astype(float)
             grp = (grp.set_index(["category", "fuel"])
                       .reindex(full, fill_value=0.0).reset_index())
             if keys:

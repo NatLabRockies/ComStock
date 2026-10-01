@@ -77,12 +77,27 @@ EST_TO_LOCAL_HOURS = {
     "AK": -4, "HI": -5,
 }
 
-# Fuel totals, published spelling -> crawled spelling.
+KBTU_TO_KWH = 0.2930710701722222
+
+# Fuel totals: candidate (column, factor to kWh) pairs in preference order. The
+# publication pipeline stores every fuel in kWh under the dotted spelling; the
+# crawled table stores electricity in kWh and the other fuels in kBtu. A
+# create_views `_vu` view of a crawled run carries the dotted spelling but
+# DIVIDES by the kWh factor where it should multiply (ComStock.create_views), so
+# its non-kWh fuels are wrong by that factor squared; ts_dialect drops those.
 TOTAL_CANDIDATES = {
-    "electricity": ("out.electricity.total.energy_consumption",
-                    "total_site_electricity_kwh"),
-    "natural_gas": ("out.natural_gas.total.energy_consumption",
-                    "total_site_natural_gas_kwh"),
+    "electricity": [("out.electricity.total.energy_consumption", 1.0),
+                    ("total_site_electricity_kwh", 1.0)],
+    "natural_gas": [("out.natural_gas.total.energy_consumption", 1.0),
+                    ("total_site_natural_gas_kwh", 1.0),
+                    ("total_site_gas_kbtu", KBTU_TO_KWH)],
+    "propane": [("out.propane.total.energy_consumption", 1.0),
+                ("total_site_propane_kbtu", KBTU_TO_KWH)],
+    # the crawled spellings drop the underscore inside the fuel name
+    "fuel_oil": [("out.fuel_oil.total.energy_consumption", 1.0),
+                 ("total_site_fueloil_kbtu", KBTU_TO_KWH)],
+    "district_heating": [("out.district_heating.total.energy_consumption", 1.0),
+                         ("total_site_districtheating_kbtu", KBTU_TO_KWH)],
 }
 
 
@@ -105,7 +120,8 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
       missing      what a timeseries query needs and cannot find
     """
     d = {"bldg": "", "time": "", "state": "", "epoch_ns": False, "up_type": "",
-         "enduses": {}, "totals": {}, "kind": "unknown", "tz": "local", "missing": []}
+         "enduses": {}, "totals": {}, "total_factors": {}, "kind": "unknown",
+         "tz": "local", "missing": []}
     try:
         types = athena.table_column_types(ts_table, no_cache=no_cache)
     except Exception as exc:                                      # noqa: BLE001
@@ -132,9 +148,9 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
     d["enduses"] = {e: c for e, c in d["enduses"].items() if c}
 
     for fuel, cands in TOTAL_CANDIDATES.items():
-        col = next((c for c in cands if c in cols), "")
-        if col:
-            d["totals"][fuel] = col
+        hit = next(((c, f) for c, f in cands if c in cols), None)
+        if hit:
+            d["totals"][fuel], d["total_factors"][fuel] = hit
 
     if not d["bldg"]:
         d["missing"].append("a building identifier column (bldg_id or building_id)")
@@ -155,6 +171,18 @@ def ts_dialect(ts_table: str, no_cache: bool = False) -> dict:
     # Only the publication pipeline re-clocks to EST. A crawled table, even one
     # viewed through create_views, keeps the building's local standard time.
     d["tz"] = "est" if d["kind"] == "published" else "local"
+    # "mixed" is a create_views view of a crawled run: crawled identifiers,
+    # published spellings. Its unit conversion is inverted for every non-kWh
+    # fuel, so those columns are not read. An absent fuel is honest; a gas
+    # series 11.6x too high is not. The crawled table itself (preferred by the
+    # assessment) carries the kBtu columns with their factor.
+    if d["kind"] == "mixed":
+        for fuel in [f for f, c in d["totals"].items()
+                     if f != "electricity" and c.startswith("out.")]:
+            logger.warning("%s: %s read through a create_views view is not trusted "
+                           "(its unit conversion is inverted); fuel omitted", ts_table, fuel)
+            d["totals"].pop(fuel)
+            d["total_factors"].pop(fuel, None)
     if d["tz"] == "est" and not d["state"]:
         d["missing"].append("a state column, needed to convert published EST "
                             "timestamps back to local standard time")
@@ -168,7 +196,9 @@ PUBLISHED = {
     "bldg": "bldg_id", "time": "timestamp", "state": "state", "epoch_ns": False,
     "up_type": "bigint",
     "enduses": {e: TS_ENDUSE_COL.format(e) for e in ENDUSE_STACK_ORDER},
-    "totals": {f: c[0] for f, c in TOTAL_CANDIDATES.items()},
+    "totals": {f: next(c for c, _ in cands if c.startswith("out."))
+               for f, cands in TOTAL_CANDIDATES.items()},
+    "total_factors": {f: 1.0 for f in TOTAL_CANDIDATES},
     "kind": "published", "tz": "est", "missing": [],
 }
 
@@ -344,4 +374,9 @@ def total_sum(dialect: dict | None, fuel: str, as_name: str, alias: str = "t",
     col = d["totals"].get(fuel)
     if not col:
         return f"CAST(NULL AS double) AS {as_name}"
-    return f'SUM({alias}."{col}" * {weight}) AS {as_name}'
+    expr = f'SUM({alias}."{col}" * {weight})'
+    # to kWh: the crawled table stores fossil fuels in kBtu
+    fac = d.get("total_factors", {}).get(fuel, 1.0)
+    if fac != 1.0:
+        expr = f"({expr} * {fac!r})"
+    return f"{expr} AS {as_name}"

@@ -21,7 +21,10 @@ FUEL_TOTALS = {
     "propane.total": (f"out.propane.total{KWH}", "measured"),
     "district_heating.total": (f"out.district_heating.total{KWH}", "measured"),
     "district_cooling.total": (f"out.district_cooling.total{KWH}", "measured"),
-    "site_energy.total": (f"out.site_energy.total{KWH}", "measured (sum of fuels)"),
+    # ComStock's site total includes propane and district cooling, which CBECS
+    # never surveys, so it has no CBECS counterpart; the like-for-like site
+    # comparison is the DERIVED site_energy.cbecs_fuels below.
+    "site_energy.total": (f"out.site_energy.total{KWH}", "ComStock only (all fuels)"),
 }
 
 END_USES = {
@@ -33,6 +36,12 @@ END_USES = {
     "electricity.exterior_lighting": (f"out.electricity.exterior_lighting{KWH}", "disaggregated"),
     "electricity.refrigeration": (f"out.electricity.refrigeration{KWH}", "disaggregated"),
     "electricity.interior_equipment": (f"out.electricity.interior_equipment{KWH}", "disaggregated"),
+    # End uses CBECS has no category for. Without them the electricity end uses
+    # did not sum to the ComStock total and the difference was drawn as a grey
+    # "CBECS does not disaggregate" bar, which it was not.
+    "electricity.pumps": (f"out.electricity.pumps{KWH}", "ComStock only"),
+    "electricity.heat_recovery": (f"out.electricity.heat_recovery{KWH}", "ComStock only"),
+    "electricity.heat_rejection": (f"out.electricity.heat_rejection{KWH}", "ComStock only"),
     "natural_gas.heating": (f"out.natural_gas.heating{KWH}", "disaggregated"),
     "natural_gas.water_systems": (f"out.natural_gas.water_systems{KWH}", "disaggregated"),
     "natural_gas.interior_equipment": (f"out.natural_gas.interior_equipment{KWH}", "disaggregated"),
@@ -57,6 +66,15 @@ DERIVED = {
         ["electricity.water_systems", "natural_gas.water_systems", "fuel_oil.water_systems",
          "propane.water_systems", "district_heating.water_systems"],
         "disaggregated",
+    ),
+    # CBECS surveys electricity, natural gas, fuel oil and district heat, and
+    # its site total is their sum. ComStock's site total also carries propane
+    # and district cooling, so this sum, on both sides, is the like-for-like
+    # site comparison (hospital reads -4% against CBECS on it and +7% on the
+    # all-fuel total, because district cooling is a tenth of its site energy).
+    "site_energy.cbecs_fuels": (
+        ["electricity.total", "natural_gas.total", "fuel_oil.total", "district_heating.total"],
+        "measured (sum of the fuels CBECS surveys)",
     ),
     # CBECS "lighting" is all lighting and lands under interior_lighting;
     # ComStock splits interior/exterior. Combined is the fair comparison.
@@ -109,6 +127,15 @@ def size_bin_sql(sqft_col: str = SQFT_COL) -> str:
     ]
     return "CASE " + " ".join(parts) + f" ELSE '{SIZE_BIN_LABELS[-1]}' END"
 
+# ASHRAE 169-2006 climate zones as ComStock samples them. The sampled
+# `climate_zone_ashrae_2006` carries both '7' and the '7A'/'7B' spellings for the
+# one zone 7 (a codebook drift in the sampling TSV); the category audit reports
+# the split spellings and the annual leg merges them (annual.merge_climate_zones)
+# so zone 7 is one bin, not three.
+CLIMATE_ZONES = ["1A", "2A", "2B", "3A", "3B", "3C", "4A", "4B", "4C",
+                 "5A", "5B", "6A", "6B", "7", "8"]
+CZ_MERGE = {"7A": "7", "7B": "7"}
+
 # Canonical orderings, mirroring naming_mixin.ORDERED_CATEGORIES. "2019 or newer"
 # is deliberately included: both datasets emit it, but the package's ordering lists
 # only 8 vintage bins, so seaborn silently drops post-2018 stock from every vintage
@@ -130,6 +157,7 @@ ORDERED_CATEGORIES = {
         "SmallOffice", "Warehouse",
     ],
     "size_bin": SIZE_BIN_LABELS,
+    "climate_zone": CLIMATE_ZONES,
 }
 
 COMSTOCK_BLDG_TYPES = [

@@ -26,6 +26,7 @@ from .metrics_def import (
     BLDG_TYPE_COL,
     CEN_DIV_COL,
     CZ_COL,
+    CZ_MERGE,
     DERIVED,
     DIMENSIONS,
     GAS_TOTAL_COL,
@@ -117,6 +118,22 @@ def _pct_of(value: pd.Series, ref: pd.Series) -> pd.Series:
                               np.nan), index=value.index)
 
 
+def merge_climate_zones(fine: pd.DataFrame) -> pd.DataFrame:
+    """One bin for zone 7: the sampled codebook spells it '7', '7A' and '7B'.
+
+    Applied AFTER check_categories has reported the split spellings, so the
+    drift is still visible in coverage.json while the figures show one zone.
+    Every value column in the fine frame is an additive weighted sum, so the
+    merge is an exact re-aggregation.
+    """
+    if "climate_zone" not in fine.columns or not fine["climate_zone"].isin(CZ_MERGE).any():
+        return fine
+    f = fine.copy()
+    f["climate_zone"] = f["climate_zone"].map(lambda v: CZ_MERGE.get(v, v))
+    dims = [c for c in list(GROUP_COLS) + list(GROUP_EXPRS) if c in f.columns]
+    return f.groupby(dims, as_index=False, dropna=False).sum(min_count=1)
+
+
 def roll_up(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
     """Sum the fine-grained frame to one dimension, plus an 'All' row.
 
@@ -156,7 +173,13 @@ def check_categories(fine: pd.DataFrame, dataset: str) -> dict:
 
 def _add_derived(long_df: pd.DataFrame, value_col: str) -> pd.DataFrame:
     extra = []
+    present = set(long_df["metric"])
     for key, (components, _prov) in DERIVED.items():
+        # The CBECS side arrives with its derived metrics already summed per
+        # record and jackknifed (cbecs_ref.aggregate_cbecs); adding them again
+        # here would duplicate the rows and drop the interval.
+        if key in present:
+            continue
         sub = long_df[long_df["metric"].isin(components)]
         if sub.empty:
             continue
@@ -199,6 +222,14 @@ def build_comparison(
     comp["provenance"] = comp["metric"].map(prov)
     comp["dimension"] = dim
 
+    # ComStock's all-fuel site total has no CBECS counterpart (propane and
+    # district cooling are not surveyed); CBECS wide's site column is the sum of
+    # the fuels it does survey, which site_energy.cbecs_fuels carries on both
+    # sides. Blanked rather than compared, so no page can call it a gap.
+    cs_only = comp["metric"] == "site_energy.total"
+    comp.loc[cs_only, ["cbecs_value", "cbecs_se", "cbecs_rse_pct",
+                       "cbecs_ci95_low", "cbecs_ci95_high"]] = np.nan
+
     energy = comp["metric"] != "sqft"
     for c in ["comstock_value", "cbecs_value", "cbecs_se", "cbecs_ci95_low", "cbecs_ci95_high"]:
         comp.loc[energy, c] = comp.loc[energy, c] * KWH_TO_TBTU
@@ -233,7 +264,7 @@ def build_comparison(
 # Restricted to the headline metrics so the tables stay light; the single-dim
 # tables keep the full metric set.
 PAIR_DIMS = ["vintage", "census_division", "size_bin"]
-PAIR_METRICS = ["sqft", "electricity.total", "natural_gas.total", "site_energy.total"]
+PAIR_METRICS = ["sqft", "electricity.total", "natural_gas.total", "site_energy.cbecs_fuels"]
 
 
 def roll_up_pair(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
@@ -242,6 +273,11 @@ def roll_up_pair(fine: pd.DataFrame, dim: str) -> pd.DataFrame:
     value_cols = [c for c in fine.columns if c not in dim_cols]
     agg = (fine.groupby(["building_type", dim], as_index=False, dropna=True)[value_cols]
            .sum(min_count=1))          # all-NULL stays NULL; see roll_up
+    # the CBECS-comparable site total, from the same four fuel columns the
+    # CBECS side sums (cbecs_ref.aggregate_cbecs_pair)
+    comps = DERIVED["site_energy.cbecs_fuels"][0]
+    if all(c in agg.columns for c in comps):
+        agg["site_energy.cbecs_fuels"] = agg[comps].sum(axis=1, min_count=1)
     return agg.rename(columns={dim: "category"})
 
 
