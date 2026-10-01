@@ -73,3 +73,82 @@ def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
     if not have:
         cbecs.export_to_csv_wide()
     return cbecs
+
+
+def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
+                  truth_data_version: str = "v01", reuse: bool = True,
+                  output_dir: str | None = None) -> list[dict]:
+    """Log one line per cache a driver will touch -- what it is, whether it will be
+    REUSED or BUILT, when it was written and where -- and return the rows.
+
+    The drivers decide each cache from the disk (a cache that exists is reused,
+    one that does not is built), so nobody has to remember what a machine holds;
+    this makes that decision visible before anything expensive starts, with the
+    dates that give a stale cache away. `reuse=False` is a driver's switch to
+    rebuild the run-specific caches regardless -- simulation outputs, the
+    apportionment, the bills -- for the case the disk cannot show: the inputs
+    changed but the files still exist. CBECS and AMI depend on no run and are
+    always reused; the allocated weights are recomputed by the drivers on every
+    pass whatever the switch says.
+    """
+    import glob
+    import os
+    import re
+    from datetime import datetime
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = output_dir or os.path.join(here, "..", "..", "output")
+    rows: list[dict] = []
+
+    def add(scope, cache, paths, folder, run_specific=True, detail="", caveat="",
+            recompute=False):
+        found = [p for p in paths if os.path.exists(p)]
+        newest = max((os.path.getmtime(p) for p in found), default=None)
+        if recompute:
+            action = "RECOMPUTE"
+        elif not found:
+            action = "BUILD"
+        elif run_specific and not reuse:
+            action = "REBUILD"
+        else:
+            action = "REUSE"
+        rows.append({"scope": scope, "cache": cache, "action": action,
+                     "path": os.path.normpath(folder), "newest": newest,
+                     "detail": detail, "caveat": caveat})
+
+    def upgrades_in(paths, pattern):
+        ids = sorted({int(m.group(1)) for p in paths
+                      for m in [re.search(pattern, os.path.basename(p))] if m})
+        return f"upgrades {', '.join(map(str, ids))}" if ids else ""
+
+    for v in run_versions:
+        base = os.path.join(out, f"ComStock {v}")
+        sim_dir = os.path.join(base, "cached_simulation_outputs")
+        sim = glob.glob(os.path.join(sim_dir, "**", "cached_simulation_outputs_upgrade*.parquet"),
+                        recursive=True)
+        add(v, "simulation outputs", sim, sim_dir, detail=upgrades_in(sim, r"upgrade(\d+)"))
+        alloc = os.path.join(base, "cached_ComStock_alloc_wts.parquet")
+        add(v, "allocated weights", [alloc], alloc, recompute=True,
+            caveat="recomputed from the apportionment on every pass")
+        bills_dir = os.path.join(base, "cached_allocated_weights_plus_bills")
+        bills = glob.glob(os.path.join(bills_dir, "upgrade=*"))
+        add(v, "bills", bills, bills_dir, detail=upgrades_in(bills, r"upgrade=(\d+)"),
+            caveat="reused whenever present, so not refreshed when the apportionment "
+                   "changes; reuse=False deletes it")
+    for e in estimate_versions:
+        app = os.path.join(out, f"Stock Estimation {e}", "cached_ComStock_apportionment.parquet")
+        add(e, "apportionment", [app], app)
+    cb = os.path.join(out, f"CBECS {cbecs_year}", "CBECS wide.csv")
+    add(f"CBECS {cbecs_year}", "CBECS wide.csv", [cb], cb, run_specific=False)
+    ami = os.path.join(out, f"AMI {truth_data_version}", "AMI long.csv")
+    add(f"AMI {truth_data_version}", "AMI long.csv", [ami], ami, run_specific=False)
+
+    logger.info("caches on this machine (reuse=%s); each row is what this pass will do:", reuse)
+    for r in rows:
+        when = (datetime.fromtimestamp(r["newest"]).strftime("%Y-%m-%d %H:%M")
+                if r["newest"] else "absent")
+        logger.info("  %-40s %-20s %-9s %-16s %s%s%s", r["scope"][:40], r["cache"],
+                    r["action"], when, r["path"],
+                    f"  [{r['detail']}]" if r["detail"] else "",
+                    f"  -- {r['caveat']}" if r["caveat"] else "")
+    return rows

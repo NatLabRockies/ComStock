@@ -435,6 +435,13 @@ the measures_ts CSVs (they were dropped by a hard-coded column list in assess_me
       teammates at the mixed template (Eric hit both the estimate guard and the AMI CSV in the
       hospital driver on 2026-09-30).
 
+**Cache report + REUSE_CACHES (2026-10-01, owner's request).** `cspp.report_caches()` logs one
+line per cache a driver will touch (REUSE / BUILD / REBUILD / RECOMPUTE, date, path, upgrades held)
+before anything expensive starts; every template calls it. The mixed template (and the driver
+copies) gained `REUSE_CACHES`: True reuses what the disk holds, False rebuilds the run-specific
+caches and deletes each run's bills folder (the one cache nothing refreshes). Detection stays
+automatic either way -- a user-set "trust the cache" flag is what stranded Eric twice.
+
 #### Suggested order
 
 1. D9 axes, D8 labels, D1-D3 fans and pumps, D4-D7 setpoints/EFLH/weighting: all design-

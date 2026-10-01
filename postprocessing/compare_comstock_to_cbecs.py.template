@@ -24,6 +24,10 @@ COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
 
 
 def main():
+    # What is on this disk and what this pass will do with it: one log line per
+    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
+    # Keep the versions here in step with the objects below.
+    cspp.report_caches(run_versions=['baseline'], estimate_versions=['2025R3'])
 # ComStock run
     comstock = cspp.ComStock(
     s3_base_dir='com-sdr',  # If run not on S3, download results_up**.parquet manually

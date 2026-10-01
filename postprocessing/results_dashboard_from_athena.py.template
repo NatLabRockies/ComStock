@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    # What is on this disk and what this pass will do with it: one log line per
+    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
+    # Keep the versions here in step with the objects below.
+    cspp.report_caches()
     # The run under review, addressed by its Athena tables alone.
     #
     # `md_table` is the only REQUIRED one -- the national metadata + annual

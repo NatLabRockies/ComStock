@@ -48,6 +48,7 @@ Success: EXIT=0, one "athena tables: <run> ..." line per 'process' run, and
 import glob
 import logging
 import os
+import shutil
 
 import comstockpostproc as cspp
 
@@ -77,6 +78,15 @@ COUNTY_TABLES_FOR_MEASURES = False # True: the county export covers every measur
                                    # location above turns it on by itself
 CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
                                    # every sampled (building type, tract) pair must exist in it
+REUSE_CACHES           = True      # True: every cache found on disk is reused -- simulation outputs,
+                                   # apportionment, bills -- and the log lists each one before anything
+                                   # expensive starts (what it is, reuse or build, when it was written).
+                                   # False: those run-specific caches are rebuilt regardless, which
+                                   # DELETES output/ComStock <v>/cached_allocated_weights_plus_bills for
+                                   # every 'process' run. Set False after changing an estimate, a results
+                                   # export, or the code that computes weights. CBECS and AMI files depend
+                                   # on no run and are always reused; Athena tables follow each entry's
+                                   # rebuild flag
 COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
                                             # Keep it short on Windows: the deepest plot path beneath
                                             # it must stay under 260 characters
@@ -129,12 +139,21 @@ def main():
         for r in processed:
             assert_sample_matches_estimate(r['run'], buildstock_path(r), r['estimate'])
 
+    # What is on this disk and what this pass will do with it, before anything
+    # expensive starts: one line per cache, with its date (REUSE_CACHES above).
+    cspp.report_caches(run_versions=[cache_version(r) for r in processed],
+                       estimate_versions=sorted({r['estimate'] for r in processed}),
+                       reuse=REUSE_CACHES)
+
     # 2. A ComStock object for every run postprocessed here.
     objects, construct = {}, {}
     for r in processed:
-        cached = sim_cache_exists(cache_version(r))
+        have = sim_cache_exists(cache_version(r))
+        cached = REUSE_CACHES and have
         logger.info('%s: simulation-output cache %s', r['run'],
-                    'found, reloading it' if cached else 'not found, first pass, building it')
+                    'found, reloading it' if cached
+                    else 'found but REUSE_CACHES=False, rebuilding it' if have
+                    else 'not found, first pass, building it')
         construct[r['run']] = dict(
             s3_base_dir=r['s3_base_dir'],
             comstock_run_name=r['run'],
@@ -186,10 +205,18 @@ def main():
             cbecs, obj.get_sim_outs_for_upgrade(0), obj.get_allocated_weights(),
             remove_non_comstock_bldg_types_from_cbecs=True)
         # No reload flag: short-circuits whenever output/ComStock <v>/
-        # cached_allocated_weights_plus_bills/ exists, and the S3 export reads from it.
-        # Delete that folder when the apportionment changes. One per upgrade LOADED:
-        # the baseline, plus every measure of a measures=True run. Not
+        # cached_allocated_weights_plus_bills/ exists, and the S3 export reads from it,
+        # so it is not refreshed when the apportionment changes. REUSE_CACHES=False
+        # deletes it here so this pass's weights are the ones billed. One per upgrade
+        # LOADED: the baseline, plus every measure of a measures=True run. Not
         # upgrade_ids_to_process, which lists every results file on disk.
+        if not REUSE_CACHES:
+            bills_dir = os.path.join(HERE, 'output', f'ComStock {obj.comstock_run_version}',
+                                     'cached_allocated_weights_plus_bills')
+            if os.path.isdir(bills_dir):
+                logger.warning("REUSE_CACHES=False: deleting %s so the bills are rebuilt from "
+                               "this pass's weights", bills_dir)
+                shutil.rmtree(bills_dir)
         for upgrade_id in sorted(loaded_upgrades(obj)):
             obj.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
     cbecs.export_to_csv_wide()             # the dashboard reads 'CBECS wide.csv'
@@ -358,7 +385,7 @@ def stock_estimate(version, truth_data_version='v01'):
                          'cached_ComStock_apportionment.parquet')
     return cspp.Apportion(stock_estimation_version=version,
                           truth_data_version=truth_data_version,
-                          reload_from_cache=os.path.exists(cache))
+                          reload_from_cache=REUSE_CACHES and os.path.exists(cache))
 
 
 def buildstock_path(entry):

@@ -94,6 +94,10 @@ def stock_estimate(version, truth_data_version='v01'):
 
 
 def main():
+    # What is on this disk and what this pass will do with it: one log line per
+    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
+    # Keep the versions here in step with the objects below.
+    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2025R3'])
     # First ComStock run
     comstock_a = cspp.ComStock(
         s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
