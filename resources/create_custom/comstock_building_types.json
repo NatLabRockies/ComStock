@@ -57,6 +57,19 @@
           }
         }
       ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "food preparation",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.009
+            },
+            "Dishwasher Booster": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.014
+            }
+          }
+        }
+      ],
       "constructions": [
         {
           "applicable_templates": [

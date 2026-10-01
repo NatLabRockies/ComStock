@@ -134,6 +134,29 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
     assert(swh.any? { |o| o['space_type'] == 'food preparation' })
   end
 
+  # Every override family a building type definition may carry reaches the assembled definition,
+  # schedule_overrides and load_overrides included; a family left off this list is silently
+  # dropped by merged_overrides. The restaurant's kitchen draw override rides to a strip mall that
+  # carries the restaurant as a tenant.
+  def test_definitions_carry_every_override_family
+    definition = @measure.definition_for('FullServiceRestaurant', 'NA', 'ComStock 90.1-2013')
+    %w[thermostat_overrides service_water_heating_overrides exhaust_overrides ventilation_overrides
+       occupancy_overrides schedule_overrides load_overrides].each do |family|
+      assert(definition.key?(family), "definition_for should carry #{family}")
+    end
+    kitchen = definition['service_water_heating_overrides'].find { |o| o['space_type'] == 'food preparation' }
+    refute_nil(kitchen)
+    assert_in_delta(0.014, kitchen['equipment']['Dishwasher Booster']['peak_flow_rate_gph_per_floor_area_ft2'], 1e-9)
+    assert_in_delta(0.009, kitchen['equipment']['*']['peak_flow_rate_gph_per_floor_area_ft2'], 1e-9)
+
+    args = base_args('RetailStripmall').merge('bldg_type_b' => 'FullServiceRestaurant', 'bldg_subtype_b' => 'NA',
+                                              'bldg_type_b_fract_bldg_area' => 0.2)
+    refute_nil(@measure.space_type_ratios(@runner, args))
+    tenant = @measure.merged_overrides(@runner, 'service_water_heating_overrides')
+    assert(tenant.any? { |o| o['space_type'] == 'food preparation' }, 'the tenant kitchen takes the restaurant draws')
+    assert_empty(@measure.merged_overrides(@runner, 'schedule_overrides'), 'no building type pins a schedule at present')
+  end
+
   def test_override_collisions_prefer_the_primary_type_and_warn
     # Hospital and LargeHotel both override 'food preparation' service water heating
     args = base_args('Hospital').merge('bldg_type_b' => 'LargeHotel', 'bldg_subtype_b' => 'NA',
