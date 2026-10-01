@@ -9,30 +9,26 @@ envelope, water heating, and the two comfort results that judge them.
 Everything here was checked against the upstream measure that writes these
 columns (`measures/comstock_sensitivity_reports/measure.rb`) and against
 `comstock_column_definitions.csv`, because the column NAMES are misleading in
-several places and a plausible-looking average is the failure mode:
+several places and a plausible-looking average is the failure mode. The rules:
 
-  * `air_system_vav_avg_flow_ratio` is -999 for the 72.6% of buildings with no
-    VAV loop. A naive average returns -931. Several other columns carry the same
-    sentinel, so the guard is applied by rule, not case by case.
-  * A zero usually means "no such system" -- 68% of buildings have no central
-    air system, 26% no hot water -- and averaging those zeros in understates
-    every one of those parameters. Fan power over buildings that HAVE an air
-    system is 1.06 W/cfm; with the zeros folded in it reads 0.34.
-  * But for unmet hours a zero is the ANSWER, not a gap: 34% of models meet
-    setpoint all year. Same column shape, opposite rule.
-  * Lighting power density is normalized by whole-building area, while interior
-    equipment power density is normalized by the area of zones that HAVE
-    equipment. They are not the same denominator, so `sqft * density` is invalid
-    for plug loads and the two densities cannot be summed.
-  * Setpoints are area-weighted over zones that have a thermostat, so the stock
-    average has to be weighted by CONDITIONED area, not floor area.
-  * Cooling setpoint max reaches 50 C: that encodes "cooling disabled when
-    unoccupied", not a setback temperature.
-
-Each metric therefore carries its own guard, its own weighting basis, and a
-COVERAGE figure -- the share of weighted floor area (or buildings) the guard
-leaves behind. A design parameter reported without its coverage is not
-interpretable when two thirds of the stock is excluded by definition.
+  * No placeholder is averaged as a value. The measure writes sentinels (-999
+    for "no VAV loop"), zeros for "no such system", a perfectly efficient zero-head
+    pump on hot-water loops that have no real pump, and setpoint averages that
+    fold in zones whose schedule means "cooling off". Each metric's guard
+    excludes exactly those, and its note says what was excluded and why.
+  * A zero that IS the answer is kept: unmet hours of 0, a flat cooling
+    schedule (setup of 0), a building with no occupants. Same column shape as
+    a "no such system" zero, opposite rule, so it is decided per metric.
+  * Coverage wherever the data has it. Fans are recorded in two places (air-
+    loop fans, and the fans inside packaged/unitary and zone equipment), so
+    both are shown; between them every model has a fan.
+  * Each metric is weighted by its own denominator (floor area for an
+    intensity, connected load for an EFLH, window area for a window U-value)
+    and reports COVERAGE on that basis -- the share of the weighted stock the
+    guard leaves behind -- so a figure computed over a subset of buildings
+    cannot be mistaken for a stock-wide one.
+  * Notes carry no measured percentages. A share quoted in prose goes stale
+    with the next run; the coverage cell beside the number is always current.
 """
 
 from __future__ import annotations
@@ -57,6 +53,11 @@ PPL_M2_TO_PER_1000FT2 = 92.90304    # people/m2 -> people/1000 ft2
 M2_TO_FT2 = 10.7639104167097
 J_TO_KBTU = 9.4781712031332e-7
 SENTINEL = -900                     # anything <= this is "not applicable"
+# A thermostat schedule value this far above any occupied cooling setpoint is
+# the "cooling off" value the prototypes put on uncooled zones. The reporting
+# measure averages it into a building's cooling setpoint with the real zones,
+# so a building average above this line is a blend, not a setpoint.
+COOLING_OFF_C = 35.0
 
 # Baseline only, and only simulations that finished. Without the upgrade filter
 # a table carrying upgrades holds one row per (building, upgrade) and every
@@ -65,6 +66,11 @@ BASE_WHERE = "upgrade = 0 AND completed_status = 'Success'"
 
 SQFT = '"in.sqft..ft2"'
 W = "weight"
+
+# Tokens a guard may use for a scalar subquery against the run's own table.
+# build_params_sql fills them in; nothing else should see them.
+TABLE_TOKEN = "{TABLE}"
+WHERE_TOKEN = "{BASE_WHERE}"
 
 
 def q(col: str) -> str:
@@ -87,10 +93,16 @@ class Metric:
               "buildings" (they weight by surface area) and called lighting EFLH
               "floor area" (it weights by connected lighting load) -- 9 of 29
               metrics captioned with a basis that was not theirs.
+    `absent_note`
+              what it means when the row exists but NO model in the selection
+              passes the guard. Rendered in place of the number; without it the
+              page said "not published", which is a statement about the
+              release's columns, not about the buildings.
     """
 
     def __init__(self, key, name, group, unit, expr, weight, guard=None,
-                 needs=(), note="", kind="mean", weight_label=None):
+                 needs=(), note="", kind="mean", weight_label=None,
+                 absent_note=""):
         self.key = key
         self.name = name
         self.group = group
@@ -103,17 +115,19 @@ class Metric:
         self.kind = kind          # mean | distribution
         self.weight_label = weight_label or (
             "floor area" if SQFT in weight else "buildings")
+        self.absent_note = absent_note
 
 
 def _metrics() -> list[Metric]:
     lpd = q("out.params.interior_lighting_power_density..w_per_ft2")
-    eflh = q("out.params.interior_lighting_eflh..hr")
+    light_kwh = q("out.electricity.interior_lighting.energy_consumption..kwh")
     epd = q("out.params.interior_electric_equipment_power_density..w_per_ft2")
     e_eflh = q("out.params.interior_electric_equipment_eflh..hr")
     occ = q("out.params.occupant_density_ppl_per_m_2..people_per_m2")
     occ_eflh = q("out.params.occupant_eflh..hr")
     oa = q("out.params.design_outdoor_air_flow_rate..m3_per_m2_s")
     oaf = q("out.params.average_outdoor_air_fraction")
+    nal = q("out.params.num_air_loops")
     h_max = q("out.params.average_heating_setpoint_max..c")
     h_min = q("out.params.average_heating_setpoint_min..c")
     c_min = q("out.params.average_cooling_setpoint_min..c")
@@ -124,7 +138,16 @@ def _metrics() -> list[Metric]:
     eff = q("out.params.air_system_fan_total_efficiency")
     minflow = q("out.params.air_system_fan_power_minimum_flow_fraction")
     vav = q("out.params.air_system_vav_avg_flow_ratio")
-    pump_eff = q("out.params.pump_flow_weighted_avg_motor_efficiency")
+    zsp = q("out.params.zone_hvac_fan_static_pressure..inwc")
+    zeff = q("out.params.zone_hvac_fan_total_efficiency")
+    ec = q("out.params.pump_flow_weighted_avg_motor_efficiency_const_spd")
+    ev = q("out.params.pump_flow_weighted_avg_motor_efficiency_var_spd")
+    hc = q("out.params.pump_count_hvac_const_spd")
+    hv = q("out.params.pump_count_hvac_var_spd")
+    sc = q("out.params.pump_count_swh_const_spd")
+    sv = q("out.params.pump_count_swh_var_spd")
+    pc = q("out.params.pump_total_constant_speed_pump_power_w..w")
+    pv = q("out.params.pump_total_variable_speed_pump_power_w..w")
     wall_u = q("out.params.average_wall_u_value..btu_per_ft2_f_hr")
     roof_u = q("out.params.average_roof_u_value..btu_per_ft2_f_hr")
     win_u = q("out.params.average_window_u_value..btu_per_ft2_f_hr")
@@ -146,6 +169,33 @@ def _metrics() -> list[Metric]:
     heated = f"{W} * {SQFT} * COALESCE({fr_heat}, 1)"
     cooled = f"{W} * {SQFT} * COALESCE({fr_cool}, 1)"
 
+    # Air-loop fan values are DILUTED in the reporting measure wherever a
+    # building has an air loop whose fan it cannot read (the fan sits inside a
+    # unitary system): that loop's airflow enters the flow-weighted average at
+    # zero pressure and zero efficiency. Nothing exported says which buildings
+    # are affected, so the rule is the data's own: a value below the lowest one
+    # any SINGLE-air-loop building in the run reports cannot be an undiluted
+    # fan property, because a single loop is either read whole or not at all.
+    # Partial dilution above that floor passes; only the measure can fix that.
+    def undiluted(col):
+        return (f"{col} >= (SELECT MIN({col}) FROM {TABLE_TOKEN}"
+                f" WHERE {WHERE_TOKEN} AND {nal} = 1 AND {col} > 0)")
+    fan_ok = f"{sp} > 0 AND {eff} > 0 AND {undiluted(sp)} AND {undiluted(eff)}"
+    FAN_NOTE = ("Fans on an air loop whose fan the reporting measure reads directly "
+                "(VAV, PVAV, DOAS and similar). Fans inside packaged/unitary "
+                "systems and zone equipment are in the 'Unitary / zone-equipment' "
+                "rows. Where a building also has an air loop whose fan the measure "
+                "cannot read, that loop's airflow enters this average at zero; a "
+                "value below the lowest value any single-air-loop building in the "
+                "run reports is excluded as such a blend.")
+    FAN_ABSENT = ("no model of this type has an air-loop fan the reporting measure "
+                  "reads directly; see the unitary / zone-equipment rows")
+    ZFAN_NOTE = ("Fans inside packaged/unitary systems (PSZ, RTU, residential "
+                 "furnace) and zone equipment (PTAC/PTHP, fan coils, water-source "
+                 "heat pumps), weighted within a building by design airflow.")
+    ZFAN_ABSENT = ("no model of this type has a packaged, unitary or zone-equipment "
+                   "fan; see the air-loop rows")
+
     M = []
     a = M.append
 
@@ -153,28 +203,37 @@ def _metrics() -> list[Metric]:
     a(Metric("lpd", "Lighting power density", "Loads", "W/ft²",
              lpd, area, f"{lpd} > 0",
              note="Normalized by whole-building floor area."))
+    # Metered energy over connected load, not the reporting measure's EFLH
+    # column: that column divides two LightingSummary figures that carry zone
+    # multipliers inconsistently, so for every multiplied model it disagrees
+    # with the lighting energy the same model metered.
     a(Metric("light_eflh", "Lighting EFLH", "Loads", "hr/yr",
-             eflh, f"{area} * {lpd}", f"{eflh} > 0 AND {lpd} > 0",
-             note="Weighted by connected lighting load, so density x EFLH "
-                  "reproduces total lighting energy.",
+             f"({light_kwh} * 1000.0 / NULLIF({lpd} * {SQFT}, 0))",
+             f"{area} * {lpd}", f"{lpd} > 0 AND {light_kwh} > 0",
+             note="Metered interior-lighting energy over connected load (density x "
+                  "floor area), so density x EFLH reproduces the metered lighting "
+                  "energy. Weighted by connected lighting load.",
              weight_label="connected lighting load"))
-    a(Metric("light_implied", "Implied lighting use (design)", "Loads", "kWh/ft²·yr",
-             f"({lpd} * {eflh} / 1000.0)", area, f"{lpd} > 0 AND {eflh} > 0",
-             note="Design-implied, NOT simulated: density x EFLH. Compare "
-                  "against the metered interior-lighting end use."))
     a(Metric("epd", "Plug-load power density", "Loads", "W/ft²",
-             epd, W, f"{epd} > 0", kind="distribution",
-             note="Per equipment-served zone area, NOT whole-building area, so "
-                  "it cannot be multiplied by floor area or added to lighting "
-                  "density. Shown as a per-building distribution."))
-    a(Metric("epd_eflh", "Plug-load EFLH (bound)", "Loads", "hr/yr",
-             e_eflh, W, f"{e_eflh} > 0", kind="distribution",
-             note="Building-meter energy over zone-summed power: the two are "
-                  "different populations, so read it as a bound, not an EFLH."))
+             epd, area, f"{epd} > 0",
+             note="Normalized by the floor area of zones that carry plug loads, "
+                  "which the prototypes keep close to whole-building area. "
+                  "Weighted by floor area."))
+    a(Metric("epd_eflh", "Plug-load EFLH", "Loads", "hr/yr",
+             e_eflh, f"{area} * {epd}", f"{e_eflh} > 0 AND {epd} > 0",
+             note="Building-meter plug energy over connected plug load, weighted "
+                  "by connected load. Where the meter includes loads outside the "
+                  "zone-summed power it exceeds the hours in a year; read such a "
+                  "value as an upper bound.",
+             weight_label="connected plug load"))
     a(Metric("occ", "Occupant density", "Loads", "people/1000 ft²",
-             f"({occ} * {PPL_M2_TO_PER_1000FT2})", area, f"{occ} > 0"))
+             f"({occ} * {PPL_M2_TO_PER_1000FT2})", area, f"{occ} IS NOT NULL",
+             note="Models with no occupants are kept at zero: no occupants is a "
+                  "modelled property, not a missing value."))
     a(Metric("occ_eflh", "Occupant EFLH", "Loads", "hr/yr",
-             occ_eflh, area, f"{occ_eflh} > 0"))
+             occ_eflh, area, f"{occ_eflh} > 0 AND {occ} > 0",
+             note="Models with no occupants are excluded: there are no occupant "
+                  "hours to average."))
     a(Metric("wk_hours", "Weekday operating hours", "Loads", "hr/day",
              wk, W, f"{wk} > 0"))
     a(Metric("we_hours", "Weekend operating hours", "Loads", "hr/day",
@@ -184,9 +243,16 @@ def _metrics() -> list[Metric]:
     a(Metric("oa_flow", "Design outdoor air", "Ventilation & setpoints", "cfm/ft²",
              f"({oa} * {M_S_TO_CFM_FT2})", area, f"{oa} > 0",
              note="Per OA-SERVED floor area, not whole-building area."))
-    a(Metric("oa_frac", "Average outdoor air fraction", "Ventilation & setpoints", "%",
-             f"({oaf} * 100)", area, f"{oaf} > 0",
-             note="Buildings with no air system are excluded, not counted as 0."))
+    a(Metric("oa_frac", "Air-loop outdoor air fraction", "Ventilation & setpoints", "%",
+             f"({oaf} * 100)", area, f"{nal} > 0 AND {oaf} IS NOT NULL",
+             needs=("out.params.num_air_loops",),
+             note="Outdoor-air share of air-loop supply flow. An air loop with no "
+                  "outdoor-air intake counts as zero; a dedicated outdoor-air "
+                  "system is nearly all outdoor air by design. Buildings with no "
+                  "air loop (zone equipment only) are excluded: the reporting "
+                  "measure does not record zone-equipment outdoor air.",
+             absent_note="no model of this type has an air loop; zone-equipment "
+                         "outdoor air is not recorded by the reporting measure"))
     a(Metric("htg_sp", "Heating setpoint, occupied", "Ventilation & setpoints", "°F",
              f"({h_max} * 1.8 + 32)", heated, f"{h_max} IS NOT NULL",
              note="Weighted by heated floor area. The schedule MAX is the "
@@ -195,28 +261,42 @@ def _metrics() -> list[Metric]:
     a(Metric("htg_setback", "Heating setback depth", "Ventilation & setpoints", "°F",
              f"(({h_max} - {h_min}) * 1.8)", heated,
              f"{h_max} IS NOT NULL AND {h_min} IS NOT NULL",
-             note="A temperature DIFFERENCE, so 1.8 with no +32 offset.",
+             note="A temperature DIFFERENCE, so 1.8 with no +32 offset. A flat "
+                  "schedule is a setback of zero and is kept.",
              weight_label="heated floor area"))
+    # The reporting measure averages the cooling schedule over EVERY zone with
+    # a cooling thermostat, weighted by zone area -- including zones that are
+    # not cooled, whose schedule holds a "cooling off" value far above any
+    # occupied setpoint. A building whose exported average lands above that
+    # line (warehouses, whose office zones are the only cooled ones) is a blend
+    # of a setpoint and an off value; it is excluded, and the share-cooled row
+    # below says how much of the type that is.
+    real_clg = f"{c_min} IS NOT NULL AND {c_min} < {COOLING_OFF_C}"
+    CLG_ABSENT = ("every model of this type exports a cooling value that averages "
+                  "uncooled zones with cooled ones; see 'Share of floor area cooled'")
     a(Metric("clg_sp", "Cooling setpoint, occupied", "Ventilation & setpoints", "°F",
-             f"({c_min} * 1.8 + 32)", cooled, f"{c_min} IS NOT NULL",
-             note="The schedule MIN is the occupied setpoint; the max is the "
-                  "unoccupied setup, reported separately as clg_setup.",
-             weight_label="cooled floor area"))
-    # Cooling setup was long omitted on the belief that the schedule max is always a
-    # 50 C sentinel meaning "cooling disabled unoccupied". That is not true of current
-    # runs -- measured maxima sit at 25-26 C, a real setup temperature, and 64-95% of
-    # cooled floor area carries one. The guard below still excludes a genuine disabled
-    # sentinel so the mean stays a setup depth rather than mixing in a 25 C artifact.
+             f"({c_min} * 1.8 + 32)", cooled, real_clg,
+             note="Weighted by cooled floor area. The schedule MIN is the occupied "
+                  "setpoint; the max is the unoccupied setup, reported separately "
+                  "as the setup depth. The reporting measure averages every zone "
+                  "with a cooling schedule, cooled or not; a building whose "
+                  "average sits above any occupied setpoint is such a blend and is "
+                  "excluded rather than shown as a setpoint.",
+             weight_label="cooled floor area", absent_note=CLG_ABSENT))
     a(Metric("clg_setup", "Cooling setup depth", "Ventilation & setpoints", "°F",
              f"(({c_max} - {c_min}) * 1.8)", cooled,
-             f"{c_max} IS NOT NULL AND {c_min} IS NOT NULL AND {c_max} < 45 "
-             f"AND {c_max} - {c_min} > 0.5",
-             note="A temperature DIFFERENCE, so 1.8 with no +32 offset. Buildings "
-                  "whose cooling is disabled when unoccupied (schedule max >= 45 C) "
-                  "are EXCLUDED, not counted as a large setup; so is a flat schedule "
-                  "(max - min <= 0.5 C), which is no setup at all. Coverage therefore "
-                  "reads as the share of cooled floor area that actually sets up.",
-             weight_label="cooled floor area"))
+             f"{real_clg} AND {c_max} IS NOT NULL AND {c_max} < {COOLING_OFF_C}",
+             note="A temperature DIFFERENCE (schedule max minus min), so 1.8 with "
+                  "no +32 offset. A flat schedule is a setup of zero and is kept, "
+                  "so this averages like the heating setback beside it. Buildings "
+                  "whose exported schedule blends uncooled zones are excluded, as "
+                  "for the cooling setpoint.",
+             weight_label="cooled floor area", absent_note=CLG_ABSENT))
+    a(Metric("fr_cooled", "Share of floor area cooled", "Ventilation & setpoints", "%",
+             f"({fr_cool} * 100)", area, f"{fr_cool} IS NOT NULL",
+             note="Cooled zone area over total zone area, from the model. Where "
+                  "much of a type's area is uncooled, the exported cooling-setpoint "
+                  "averages blend uncooled zones and are not shown as setpoints."))
     a(Metric("unmet_htg", "Unmet heating hours", "Comfort", "hr/yr",
              unmet_h, W, f"{unmet_h} IS NOT NULL",
              note="Zeros KEPT: a model that meets setpoint all year is the "
@@ -227,27 +307,95 @@ def _metrics() -> list[Metric]:
              note="Zeros KEPT, as for heating."))
 
     # ---- Fans and pumps ----------------------------------------------------
-    a(Metric("fan_wcfm", "Air-system fan power", "Fans & pumps", "W/cfm",
-             f"(({sp} * {INWC_TO_W_PER_CFM}) / NULLIF({eff}, 0))", area,
-             f"{sp} > 0 AND {eff} > 0",
-             note="Static pressure x 0.117547 / total efficiency. Only "
-                  "buildings with a central air system; 68% have none."))
-    a(Metric("fan_sp", "Air-system fan static pressure", "Fans & pumps", "in. w.c.",
-             sp, area, f"{sp} > 0"))
-    a(Metric("fan_eff", "Air-system fan total efficiency", "Fans & pumps", "%",
-             f"({eff} * 100)", area, f"{eff} > 0"))
-    a(Metric("fan_minflow", "Fan minimum flow fraction", "Fans & pumps", "%",
-             f"({minflow} * 100)", area, f"{minflow} > 0"))
+    a(Metric("fan_wcfm", "Air-loop (AHU) fan power", "Fans & pumps", "W/cfm",
+             f"(({sp} * {INWC_TO_W_PER_CFM}) / NULLIF({eff}, 0))", area, fan_ok,
+             note="Static pressure x 0.117547 / total efficiency. " + FAN_NOTE,
+             absent_note=FAN_ABSENT))
+    a(Metric("fan_sp", "Air-loop (AHU) fan static pressure", "Fans & pumps", "in. w.c.",
+             sp, area, fan_ok, note=FAN_NOTE, absent_note=FAN_ABSENT))
+    a(Metric("fan_eff", "Air-loop (AHU) fan total efficiency", "Fans & pumps", "%",
+             f"({eff} * 100)", area, fan_ok, note=FAN_NOTE, absent_note=FAN_ABSENT))
+    # 1.0 is the correct minimum flow of a constant-volume fan, but averaged with
+    # VAV turndowns it produced a number that was neither; VAV fans only.
+    a(Metric("fan_minflow", "VAV fan minimum flow fraction", "Fans & pumps", "%",
+             f"({minflow} * 100)", area,
+             f"{fan_ok} AND {minflow} > 0 AND {minflow} < 0.999 AND {vav} > {SENTINEL}",
+             needs=("out.params.air_system_vav_avg_flow_ratio",),
+             note="Variable-volume air-loop fans only: a constant-volume fan's "
+                  "minimum flow equals its design flow by definition and is left out rather than "
+                  "averaged with turndowns. " + FAN_NOTE,
+             absent_note="no model of this type has a VAV fan on an air loop"))
     a(Metric("vav_flow", "VAV average flow ratio", "Fans & pumps", "%",
              f"({vav} * 100)", area, f"{vav} > {SENTINEL} AND {vav} > 0",
              needs=("out.params.air_system_vav_avg_flow_ratio",),
-             note="-999 marks 'no VAV loop' on 72.6% of buildings and is "
-                  "excluded, not averaged."))
-    a(Metric("pump_eff", "Pump motor efficiency", "Fans & pumps", "%",
-             f"({pump_eff} * 100)", W, f"{pump_eff} > 0",
-             needs=("out.params.pump_flow_weighted_avg_motor_efficiency",),
-             note="Weighted by building count: rated pump power is 0 for "
-                  "autosized pumps, so it cannot be used as a weight."))
+             note="Average operating airflow over design airflow, VAV loops only. "
+                  "Buildings with no VAV loop are excluded, not averaged as zero.",
+             absent_note="no model of this type has a VAV loop"))
+    a(Metric("zfan_wcfm", "Unitary / zone-equipment fan power", "Fans & pumps", "W/cfm",
+             f"(({zsp} * {INWC_TO_W_PER_CFM}) / NULLIF({zeff}, 0))", area,
+             f"{zsp} > 0 AND {zeff} > 0",
+             needs=("out.params.zone_hvac_fan_static_pressure..inwc",
+                    "out.params.zone_hvac_fan_total_efficiency"),
+             note="Static pressure x 0.117547 / total efficiency. " + ZFAN_NOTE,
+             absent_note=ZFAN_ABSENT))
+    a(Metric("zfan_sp", "Unitary / zone-equipment fan static pressure", "Fans & pumps",
+             "in. w.c.", zsp, area, f"{zsp} > 0 AND {zeff} > 0",
+             needs=("out.params.zone_hvac_fan_static_pressure..inwc",),
+             note=ZFAN_NOTE, absent_note=ZFAN_ABSENT))
+    a(Metric("zfan_eff", "Unitary / zone-equipment fan total efficiency", "Fans & pumps",
+             "%", f"({zeff} * 100)", area, f"{zsp} > 0 AND {zeff} > 0",
+             needs=("out.params.zone_hvac_fan_total_efficiency",),
+             note=ZFAN_NOTE, absent_note=ZFAN_ABSENT))
+    # Pumps. A service-hot-water loop with no real pump carries a zero-head
+    # placeholder pump whose motor efficiency is exactly 100% and whose power
+    # is nil; the reporting measure counts it like any other pump, as a
+    # variable-speed SWH pump. The overall flow-weighted efficiency therefore
+    # reads 100% for every building whose only "pump" is that placeholder, and
+    # is pulled toward 100% wherever the placeholder shares a building with real
+    # pumps. Only the separable populations are shown.
+    PUMP_NOTE = ("Rated-flow-weighted motor efficiency within a building, building-"
+                 "count weighted across buildings. A hot-water loop with no real "
+                 "pump carries a zero-head placeholder pump whose motor efficiency is "
+                 "reported as a perfect 1.0; buildings where that placeholder would "
+                 "be blended into this figure are excluded, as is any exact 1.0.")
+    a(Metric("pump_eff_swh", "SWH circulation pump motor efficiency", "Fans & pumps", "%",
+             f"({ec} * 100)", W,
+             f"{sc} > 0 AND {hc} = 0 AND {ec} > 0 AND {ec} < 1",
+             needs=("out.params.pump_flow_weighted_avg_motor_efficiency_const_spd",
+                    "out.params.pump_count_swh_const_spd", "out.params.pump_count_hvac_const_spd"),
+             note="Constant-speed pumps in buildings whose constant-speed pumps are "
+                  "all on service-hot-water loops. " + PUMP_NOTE,
+             absent_note="no model of this type has a service-hot-water circulation "
+                         "pump separable from the placeholder pump"))
+    a(Metric("pump_eff_hvac_c", "HVAC constant-speed pump motor efficiency", "Fans & pumps",
+             "%", f"({ec} * 100)", W,
+             f"{hc} > 0 AND {sc} = 0 AND {ec} > 0 AND {ec} < 1",
+             needs=("out.params.pump_flow_weighted_avg_motor_efficiency_const_spd",
+                    "out.params.pump_count_hvac_const_spd", "out.params.pump_count_swh_const_spd"),
+             note="Constant-speed pumps in buildings whose constant-speed pumps are "
+                  "all on HVAC plant loops. " + PUMP_NOTE,
+             absent_note="no model of this type has an HVAC constant-speed pump "
+                         "separable from service-hot-water pumps"))
+    a(Metric("pump_eff_hvac_v", "HVAC variable-speed pump motor efficiency", "Fans & pumps",
+             "%", f"({ev} * 100)", W,
+             f"{hv} > 0 AND {sv} = 0 AND {ev} > 0 AND {ev} < 1",
+             needs=("out.params.pump_flow_weighted_avg_motor_efficiency_var_spd",
+                    "out.params.pump_count_hvac_var_spd", "out.params.pump_count_swh_var_spd"),
+             note="Variable-speed pumps in buildings with no variable-speed pump on "
+                  "a service-hot-water loop (where the placeholder lives). " + PUMP_NOTE,
+             absent_note="every model of this type with an HVAC variable-speed pump "
+                         "also carries the placeholder hot-water pump, so the two "
+                         "cannot be separated"))
+    a(Metric("pump_w_ft2", "Rated pump power density", "Fans & pumps", "W/ft²",
+             f"((COALESCE({pc}, 0) + COALESCE({pv}, 0)) / NULLIF({SQFT}, 0))", area,
+             f"COALESCE({hc}, 0) + COALESCE({hv}, 0) + COALESCE({sc}, 0) > 0",
+             needs=("out.params.pump_total_constant_speed_pump_power_w..w",
+                    "out.params.pump_total_variable_speed_pump_power_w..w"),
+             note="Rated power of every real pump (constant and variable speed, HVAC "
+                  "and service hot water) over floor area. Buildings whose only "
+                  "pump is the zero-power placeholder are excluded; the placeholder "
+                  "itself has no rated power to add.",
+             absent_note="no model of this type has a real pump"))
 
     # ---- Envelope ----------------------------------------------------------
     # Each U-value is weighted by ITS OWN surface area, and guarded > 0 because
@@ -264,19 +412,28 @@ def _metrics() -> list[Metric]:
     a(Metric("shgc", "Window SHGC", "Envelope", "–",
              shgc, f"{W} * COALESCE({win_a}, 0)", f"{shgc} > 0",
              weight_label="window area"))
+    # Gross wall (opaque + window), so the stock figure is total window area
+    # over total wall area. Weighting by the opaque area alone understated
+    # every high-ratio building.
     a(Metric("wwr", "Window-to-wall ratio", "Envelope", "%",
-             f"({wwr} * 100)", f"{W} * COALESCE({wall_a}, 0)", f"{wwr} > 0",
-             weight_label="exterior wall area"))
+             f"({wwr} * 100)",
+             f"{W} * (COALESCE({wall_a}, 0) + COALESCE({win_a}, 0))", f"{wwr} > 0",
+             note="Window area over gross exterior wall area (opaque wall plus "
+                  "window), weighted by that gross area.",
+             weight_label="gross exterior wall area"))
 
     # ---- Water heating -----------------------------------------------------
     a(Metric("hw_ft2", "Hot water use", "Water heating", "gal/ft²·yr",
              f"({hw} * {M3_TO_GAL} / NULLIF({SQFT}, 0))", area, f"{hw} > 0",
-             note="Hot-side draw. Buildings with no hot water (26%) excluded."))
+             note="Hot-side draw. Buildings with no service hot water are excluded.",
+             absent_note="no model of this type has service hot water"))
     a(Metric("hw_person", "Hot water per person", "Water heating", "gal/person·day",
              f"({hw} * {M3_TO_GAL} / 365.0"
              f" / NULLIF({occ} * {SQFT} / {M2_TO_FT2}, 0))",
              area, f"{hw} > 0 AND {occ} > 0",
-             note="Design occupant count from occupant density x floor area."))
+             note="Design occupant count from occupant density x floor area. "
+                  "Buildings with no hot water or no occupants are excluded.",
+             absent_note="no model of this type has both service hot water and occupants"))
     return M
 
 
@@ -339,6 +496,7 @@ def metric_meta(md_table: str) -> pd.DataFrame:
         "metric": m.key, "name": m.name, "group": m.group, "unit": m.unit,
         "kind": m.kind, "note": m.note,
         "coverage_basis": m.weight_label,
+        "absent_note": m.absent_note,
     } for m in mets])
 
 
@@ -352,6 +510,11 @@ def _per_model_weight(expr: str) -> str:
     return re.sub(r"\bweight\b", "weight_model", expr)
 
 
+def _resolve(sql: str, md_table: str, base_where: str) -> str:
+    """Fill the table and baseline-filter tokens a guard's subquery may carry."""
+    return sql.replace(TABLE_TOKEN, md_table).replace(WHERE_TOKEN, base_where)
+
+
 def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
                      by_btype: bool = False, base_where: str | None = None) -> str:
     """Weighted mean, median, p10/p90 and coverage for each metric.
@@ -360,12 +523,15 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
     weighted stock each parameter actually applies to, so a figure computed over
     a third of the buildings cannot be mistaken for a stock-wide one.
     """
+    where = base_where or athena.baseline_where(md_table)
     sel = []
     for m in metrics:
         # weight -> weight_model: the per-model total from the window below.
         # Every basis is `weight` times model-level factors, so this is an exact
         # substitution, not an approximation. See the module note on grain.
-        g, e, w = m.guard, m.expr, _per_model_weight(m.weight)
+        g = _resolve(m.guard, md_table, where)
+        e = _resolve(m.expr, md_table, where)
+        w = _per_model_weight(m.weight)
         sel += [
             f"  SUM(CASE WHEN {g} THEN ({w}) * ({e}) END)"
             f" / NULLIF(SUM(CASE WHEN {g} THEN ({w}) END), 0) AS {m.key}__wmean",
@@ -381,8 +547,7 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
             f"  COUNT(DISTINCT CASE WHEN {g} THEN bldg_id END) AS {m.key}__n",
             # Coverage on the metric's OWN weighting basis. Reporting it as a
             # share of building count understates an area-weighted parameter:
-            # central air systems are in 8% of buildings by count but a far
-            # larger share of floor area, because the big buildings have them.
+            # the big buildings are the ones with central plant.
             f"  SUM(CASE WHEN {g} THEN ({w}) END) AS {m.key}__wcov",
             f"  SUM({w}) AS {m.key}__wall",
         ]
@@ -413,10 +578,45 @@ def build_params_sql(md_table: str, metrics: list[Metric], dim: str | None,
                  f"        SUM({W}) OVER (PARTITION BY {part}) AS weight_model,\n"
                  f"        ROW_NUMBER() OVER (PARTITION BY {part}"
                  f" ORDER BY bldg_id) AS _rn\n"
-                 f" FROM {md_table}\n WHERE {base_where or athena.baseline_where(md_table)}) t")
+                 f" FROM {md_table}\n WHERE {where}) t")
     return (f"SELECT\n{grp}"
             f"  COUNT(*) AS n_rows,\n  SUM(weight_model) AS w_total,\n"
             + ",\n".join(sel) + f"\nFROM {per_model}\nWHERE t._rn = 1\n{tail}")
+
+
+def rows_from_result(df: pd.DataFrame, mets: list[Metric], run_key: str,
+                     dim_key: str, dim_col: str | None, by_bt: bool) -> list[dict]:
+    """One long row per (btype, category, metric) from one query result."""
+    rows = []
+    for _, r in df.iterrows():
+        for m in mets:
+            wcov = r.get(f"{m.key}__wcov")
+            wcov = float(wcov) if wcov == wcov and wcov is not None else 0.0
+            wall = r.get(f"{m.key}__wall")
+            w_total = float(wall) if wall == wall and wall is not None else 0.0
+            row = {
+                "run": run_key,
+                "btype": str(r["btype"]) if by_bt else "All",
+                "dimension": dim_key,
+                "category": "All" if dim_col is None else str(r["category"]),
+                "metric": m.key,
+                "wmean": r.get(f"{m.key}__wmean"),
+                "p50": r.get(f"{m.key}__p50"),
+                "n_models": int(r.get(f"{m.key}__n") or 0),
+                "coverage_pct": 100.0 * wcov / w_total if w_total else float("nan"),
+            }
+            # The p10-p90 spread is carried on the stock-wide rows and on the
+            # per-type national rows (dimension "none"), which the table shows
+            # when one building type is selected. Dropping it there made the
+            # page say "stock-wide only" about a spread that had been computed.
+            # The per-type breakdown rows (type x vintage, ...) still omit it:
+            # the figure that view draws has no use for it and it would roughly
+            # double the payload.
+            if not by_bt or dim_key == "none":
+                row["p10"] = r.get(f"{m.key}__p10")
+                row["p90"] = r.get(f"{m.key}__p90")
+            rows.append(row)
+    return rows
 
 
 def assess_design_params(md_table: str, run_key: str,
@@ -443,28 +643,5 @@ def assess_design_params(md_table: str, run_key: str,
                  + (" x building type" if by_bt else ""))
         df = athena.query(build_params_sql(md_table, mets, dim_col, by_bt),
                           no_cache=no_cache, label=label)
-        for _, r in df.iterrows():
-            for m in mets:
-                wcov = r.get(f"{m.key}__wcov")
-                wcov = float(wcov) if wcov == wcov and wcov is not None else 0.0
-                wall = r.get(f"{m.key}__wall")
-                w_total = float(wall) if wall == wall and wall is not None else 0.0
-                row = {
-                    "run": run_key,
-                    "btype": str(r["btype"]) if by_bt else "All",
-                    "dimension": dim_key,
-                    "category": "All" if dim_col is None else str(r["category"]),
-                    "metric": m.key,
-                    "wmean": r.get(f"{m.key}__wmean"),
-                    "p50": r.get(f"{m.key}__p50"),
-                    "n_models": int(r.get(f"{m.key}__n") or 0),
-                    "coverage_pct": 100.0 * wcov / w_total if w_total else float("nan"),
-                }
-                # The p10-p90 spread is carried only on the stock-wide rows: on
-                # the per-type cross-tab it would roughly double the payload for
-                # a figure that view does not show.
-                if not by_bt:
-                    row["p10"] = r.get(f"{m.key}__p10")
-                    row["p90"] = r.get(f"{m.key}__p90")
-                rows.append(row)
+        rows += rows_from_result(df, mets, run_key, dim_key, dim_col, by_bt)
     return pd.DataFrame(rows)

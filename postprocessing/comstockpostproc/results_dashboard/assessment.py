@@ -55,6 +55,47 @@ def _pct(v):
     return "n/a" if v is None or v != v else f"{v:+.1f}%"
 
 
+def _weight_basis_sentence(comps, primary) -> str:
+    """The floor-area basis as MEASURED on this run, not as assumed.
+
+    Two documents used to assert two different things here (the weights are /
+    are not scaled to CBECS), and the export does scale them, yet every run
+    assessed so far lands a few percent above CBECS floor area. Reporting the
+    measured gap, with its spread across building types, is the only sentence
+    that stays true; the cause belongs to the export, not to this page.
+    """
+    c = comps.get((primary.key, "building_type"))
+    if c is None or c.empty:
+        return "Weights are the exported run weights as published."
+    sq = c[(c["metric"] == "sqft") & c["pct_diff"].notna()]
+    nat = sq[sq["category"] == "All"]["pct_diff"]
+    typ = sq[sq["category"] != "All"]["pct_diff"]
+    if nat.empty:
+        return "Weights are the exported run weights as published."
+    s = (f"Weights are the exported run weights; their floor area lands {_pct(float(nat.iloc[0]))} "
+         f"against CBECS nationally")
+    if len(typ) > 1:
+        s += f" ({_pct(float(typ.min()))} to {_pct(float(typ.max()))} across building types)"
+    return s + (", and the energy comparisons inherit that basis. The export scales weights to "
+                "CBECS floor area per building type, so a non-zero gap here is a question for the "
+                "export, not for the model.")
+
+
+def _ami_scope_sentence(coverage) -> str:
+    """Which metered regions were assessed and which one the headline shows."""
+    regions = coverage.get("ami_regions_compared") or []
+    head = coverage.get("region")
+    if not regions and not head:
+        return "No AMI comparison was run."
+    s = "AMI is electricity-only, compared against ComStock AMY2018"
+    if regions:
+        s += f", assessed for {len(regions)} metered region{'s' if len(regions) != 1 else ''} ({', '.join(regions)})"
+    if head:
+        s += f"; the headline table below shows {head}" + (
+            " only, which is not representative of the others" if len(regions) > 1 else "")
+    return s + "."
+
+
 def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
                    ami_metrics, coverage) -> None:
     L = [
@@ -64,12 +105,9 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
         "",
         "Runs compared: " + "; ".join(f"**{r.label}** (`{r.key}`)" for r in runs) + ".",
         "",
-        "ComStock side is queried from the Athena metadata tables. Their weights are scaled per "
-        "building type to CBECS floor area at postprocessing time, so the sqft rows below should "
-        "read 0% -- a consistent positive gap means weight was added downstream of that scaling "
-        "(the exported tables carry more weight than the scaled allocation; see "
-        "create_allocated_weights_plus_util_bills_for_upgrade), and energy comparisons inherit "
-        "that basis. CBECS side is comstockpostproc's `CBECS wide.csv` restricted to ComStock "
+        "ComStock side is queried from the Athena metadata tables. "
+        + _weight_basis_sentence(comps, primary)
+        + " CBECS side is comstockpostproc's `CBECS wide.csv` restricted to ComStock "
         "building types, with jackknife 95% confidence intervals computed from its 151 replicate "
         "weights.",
         "",
@@ -78,9 +116,10 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
         "counts as zero in totals; a metric CBECS does not publish at all is absent, never zero. "
         "The EUI distributions fill blanks with zero for natural gas only. CBECS carries no ASHRAE/IECC climate zone (its public-use microdata "
         "suppresses sub-regional geography), so census division is the finest geography it "
-        "supports and the climate-zone view is ComStock-only. AMI is electricity-only, one "
-        "region, compared against ComStock AMY2018; its floor-area denominators are uncertain, "
-        "so shape (0–1) metrics are reported alongside kWh/ft² levels.",
+        "supports and the climate-zone view is ComStock-only. "
+        + _ami_scope_sentence(coverage)
+        + " Its floor-area denominators are uncertain, so shape (0–1) metrics are reported "
+        "alongside kWh/ft² levels.",
         "",
         "## Headline, national (TBtu)",
         "",

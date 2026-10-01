@@ -6,9 +6,11 @@ One fine-grained query groups by building type x census division x vintage x
 climate zone; weighted sums are additive, so every single-dimension view rolls
 up from that one result exactly. That keeps Athena to a single scan per run.
 
-The Athena `weight` on published SDR tables is the StockE apportionment weight
-(not rescaled to CBECS), so floor area runs a few percent above CBECS across the
-board. That basis is reported rather than silently corrected.
+The Athena `weight` is the exported run weight. The export scales it to CBECS
+floor area per building type, yet every run assessed so far lands a few percent
+above CBECS floor area; the measured gap is reported on the page (findings.md
+and the Coverage tab derive their sentence from the sqft rows) rather than
+asserted or silently corrected. The cause is the export's to find.
 """
 
 from __future__ import annotations

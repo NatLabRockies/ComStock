@@ -12,7 +12,7 @@ const ABSENT = {
   notPublished:  "not published",   // that release's tables lack the columns
   notApplicable: "not applicable",  // cannot exist by construction
   noneSurveyed:  "none surveyed",   // the reference holds zero records here
-  stockWideOnly: "stock-wide only", // computed, but not at this scope
+  noneQualify:   "none qualify",    // rows exist; no model here passes the guard
   measureAbsent: "measure absent",  // the measure is not in that release
   noRecords:     "no records",      // zero usable rows for this selection
 };
@@ -214,34 +214,41 @@ function minmax(vals){
   return vals.map(v=>(v===null||v===undefined)?null:(v-lo)/(hi-lo));
 }
 
-/* ---------- axis helper ---------- */
-/* ---------- nice axis ticks ----------
-   Ticks used to be the data maximum split into four equal parts, so an axis read
-   0, 566, 1,132, 1,699, 2,265 -- exact, and no help to a reader looking for where
-   1,000 falls. niceTicks places them on multiples of a 1-2-5 step chosen for about
-   n intervals across [lo, hi]. The SCALE is unchanged: nothing in a figure moves,
-   only the gridlines and their labels, and the top gridline may sit below the
-   frame when the maximum is not itself a multiple of the step. */
+/* ---------- nice axis ----------
+   The axis is sized to its ticks, not the ticks to the data. niceAxis picks a
+   step from {1, 2, 5} x 10^k for about n intervals over the data span, then
+   extends the axis to the first step at or beyond the data at both ends. So the
+   top of every axis is a labelled tick (it used to be the data maximum, with
+   the last gridline sitting as low as 75% of the frame), increments are always
+   1-2-5 (never 2.5s or 7s), and an axis that does not start at zero has a
+   labelled floor as well. Every figure scales to ax.lo..ax.hi, so nothing it
+   draws can cross the frame. The former niceTicks kept the data scale and only
+   moved the gridlines; nothing calls it any more. */
 function niceStep(span, n){
   if(!(span>0)) return {step:1, dec:0};
   const raw=span/Math.max(1,n), k=Math.floor(Math.log10(raw)), mag=Math.pow(10,k), r=raw/mag;
-  const m = r<=1?1 : r<=2?2 : r<=2.5?2.5 : r<=5?5 : 10;
+  const m = r<=1?1 : r<=2?2 : r<=5?5 : 10;
   const step=m*mag;
-  const dec=Math.min(6, Math.max(0, -k + (m===2.5?1:0) - (m===10?1:0)));
+  const dec=Math.min(6, Math.max(0, -k - (m===10?1:0)));
   return {step, dec};
 }
-function niceTicks(lo, hi, n=4){
-  const {step, dec}=niceStep(hi-lo, n), ticks=[];
-  for(let v=Math.ceil(lo/step-1e-9)*step; v<=hi+step*1e-9; v+=step) ticks.push(+v.toFixed(dec+2));
-  return {ticks: ticks.length>1?ticks:[lo,hi], dec};
+function niceAxis(lo, hi, n=4){
+  if(!(hi>lo)) hi=lo+1;
+  const {step, dec}=niceStep(hi-lo, n);
+  // An axis that starts at or just above zero keeps its floor at zero; a
+  // negative or offset minimum snaps down to the step below it.
+  const aLo = (lo>=0 && lo<step) ? 0 : Math.floor(lo/step+1e-9)*step;
+  const aHi = Math.ceil(hi/step-1e-9)*step;
+  const ticks=[];
+  for(let v=aLo; v<=aHi+step*1e-9; v+=step) ticks.push(+v.toFixed(dec+2));
+  return {lo:+aLo.toFixed(dec+2), hi:+aHi.toFixed(dec+2), step, dec, ticks};
 }
-function yAxis(svg, max, padL, padT, plotH, width, padR, dec, ticks=4){
-  const ntk=niceTicks(0, max, ticks);
-  ntk.ticks.forEach(v=>{
-    const yy = padT+plotH-(v/max)*plotH;
+function yAxis(svg, ax, padL, padT, plotH, width, padR, dec){
+  ax.ticks.forEach(v=>{
+    const yy = padT+plotH-((v-ax.lo)/(ax.hi-ax.lo))*plotH;
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
     const t = el("text",{x:padL-10,y:yy+4,class:"ax","text-anchor":"end"});
-    t.textContent = fmt(v, Math.max(dec, ntk.dec)); svg.appendChild(t);
+    t.textContent = fmt(v, Math.max(dec, ax.dec)); svg.appendChild(t);
   });
 }
 
@@ -279,7 +286,7 @@ function groupedBar(host, rows, series, opts={}){
   const H = (opts.height||250) + Math.max(0, padB-76), plotH = H-padT-padB;
   const all = rows.flatMap(r => series.map(s=>r.values[s.key]).concat([r.ciHigh]))
                   .filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
-  const max = Math.max(...all, 1e-9);
+  const ax = niceAxis(0, Math.max(...all, 1e-9), 4), max = ax.hi;
   const y = v => padT+plotH-(v/max)*plotH;
 
   const svg = el("svg",{viewBox:`0 0 ${width} ${H}`,
@@ -293,7 +300,7 @@ function groupedBar(host, rows, series, opts={}){
     defs.appendChild(pat);
   });
   svg.appendChild(defs);
-  yAxis(svg, max, padL, padT, plotH, width, padR, max<10?1:0);
+  yAxis(svg, ax, padL, padT, plotH, width, padR, max<10?1:0);
   const yl = el("text",{x:12,y:padT+plotH/2,class:"axl","text-anchor":"middle",
                         transform:`rotate(-90 12 ${padT+plotH/2})`});
   yl.textContent = opts.yLabel||"TBtu"; svg.appendChild(yl);
@@ -684,7 +691,9 @@ function boxPlot(host, cats, series, opts={}){
     const kd=parseKde(v.kde);
     return [v.p95].concat(kd?[kd.x1]:[]).concat(parseOutliers(v.outliers));
   }));
-  const max = Math.max(...vals.filter(v=>Number.isFinite(v)), 1e-9)*(clipTails?1.08:1.05);
+  // The step is chosen over the drawn extent (whiskers, or everything), and the
+  // axis ends on the first tick at or above it; that rounding is the headroom.
+  const ax = niceAxis(0, Math.max(...vals.filter(v=>Number.isFinite(v)), 1e-9), 4), max = ax.hi;
   let hiddenPts=0;
   const y = v => padT+plotH-(v/max)*plotH;
   // Compact charts scale DOWN to their container so side-by-side panels need no
@@ -692,7 +701,7 @@ function boxPlot(host, cats, series, opts={}){
   // fixed width and scroll, since shrinking 15 categories makes labels unreadable.
   const svg = el("svg",{viewBox:`0 0 ${width} ${H}`,
     style: opts.compact ? figStyle(width) : `width:${width}px;max-width:none`});
-  yAxis(svg, max, padL, padT, plotH, width, padR, 0);
+  yAxis(svg, ax, padL, padT, plotH, width, padR, 0);
   const yl = el("text",{x:12,y:padT+plotH/2,class:"axl","text-anchor":"middle",
                         transform:`rotate(-90 12 ${padT+plotH/2})`});
   yl.textContent = opts.yLabel||"kBtu/ft²·yr"; svg.appendChild(yl);
@@ -774,20 +783,21 @@ function histChart(host, bins, series, opts={}){
   const any = bins.some(b=>keys.some(k=>b.shares[k]!==undefined));
   if(!bins.length||!any){ host.innerHTML='<p class="note">No histogram data.</p>'; return; }
   const plotW=W-padL-padR, plotH=H-padT-padB;
-  const xMax=bins[bins.length-1].right, xMin=bins[0].left;
-  const yMax=Math.max(...bins.flatMap(b=>keys.map(k=>b.shares[k]||0)),1e-9)*1.1;
+  const axX=niceAxis(bins[0].left, bins[bins.length-1].right, 5);
+  const axY=niceAxis(0, Math.max(...bins.flatMap(b=>keys.map(k=>b.shares[k]||0)),1e-9), 4);
+  const xMin=axX.lo, xMax=axX.hi, yMax=axY.hi;
   const x=v=>padL+((v-xMin)/(xMax-xMin))*plotW, y=v=>padT+plotH-(v/yMax)*plotH;
   // No style at all meant the global `svg{width:100%}` rule stretched this one
   // to the full panel — a 680-unit figure at 1098px, magnifying its text to 18px.
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  const nty=niceTicks(0, yMax, 4);
+  const nty=axY;
   nty.ticks.forEach(v=>{
     const yy=y(v);
     svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"});
     t.textContent=(v*100).toFixed(Math.max(0,nty.dec-2))+"%"; svg.appendChild(t);
   });
-  const ntx=niceTicks(xMin, xMax, 5);
+  const ntx=axX;
   ntx.ticks.forEach(v=>{
     const t=el("text",{x:x(v),y:H-padB+16,class:"ax","text-anchor":"middle"});
     t.textContent=fmt(v,ntx.dec); svg.appendChild(t);
@@ -857,14 +867,14 @@ function profileChart(host, pts, opts={}){
   /* `opts.yMax` lets a grid of small multiples share ONE scale: six seasonal
      panels each autoscaled to itself cannot be compared by eye, which is the
      only reason to put them in a grid. */
-  const max = opts.yMax || (rawMax>0 ? rawMax*1.1 : 1);
+  const axY = niceAxis(0, opts.yMax || (rawMax>0 ? rawMax : 1), 3), max = axY.hi;
   // Constant decimals per axis, chosen so the top tick has two significant
   // figures — every tick on one axis then shows the same digit count, and
   // annual-normalized ticks (~1e-4) stay distinct.
   const dec = Math.min(6, Math.max(0, 1-Math.floor(Math.log10(max))));
   const tickFmt = v => v.toFixed(dec);
   // padL after the tick format is known, so it fits the labels it must clear
-  const ntk=niceTicks(0, max, 3), tickDec=Math.max(dec, ntk.dec);
+  const ntk=axY, tickDec=Math.max(dec, ntk.dec);
   const padL = axisPadL(ntk.ticks.map(v=>v.toFixed(tickDec)), true);
   const plotW = W-padL-padR;
   const x=h=>padL+(h/23)*plotW, y=v=>padT+plotH-(v/max)*plotH;
@@ -1175,11 +1185,12 @@ function waterfall(host, items, opts={}){
   const n=items.length+1;
   const plotW=n*bw+(n-1)*gap, width=padL+padR+plotW+30;
   let cum=0; const steps=items.map(it=>{const s=cum; cum+=it.delta; return {...it,start:s,end:cum};});
-  const lo=Math.min(0,...steps.map(s=>Math.min(s.start,s.end)));
-  const hi=Math.max(0,...steps.map(s=>Math.max(s.start,s.end)));
+  const ax=niceAxis(Math.min(0,...steps.map(s=>Math.min(s.start,s.end))),
+                    Math.max(0,...steps.map(s=>Math.max(s.start,s.end))), 4);
+  const lo=ax.lo, hi=ax.hi;
   const plotH=H-padT-padB, y=v=>padT+plotH-((v-lo)/(hi-lo||1))*plotH;
   const svg=el("svg",{viewBox:`0 0 ${width} ${H}`, style:figStyle(width)});
-  const ntk=niceTicks(lo, hi, 4);
+  const ntk=ax;
   ntk.ticks.forEach(v=>{
     const yy=y(v);
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
@@ -2010,13 +2021,21 @@ function renderAnnual(){
   const rows=src.filter(r=>r.run===PRIMARY&&r.category===bt);
   rows.sort((a,b)=>a.metric.localeCompare(b.metric)).forEach(r=>{
     const scale=r.metric==="sqft"?1e-6:1, unit=r.metric==="sqft"?" Mft²":"";
+    /* Why there is no interval differs by cause: CBECS does not publish the
+       metric at all; it publishes it and no surveyed building in this group uses
+       it (a zero total has no replicate variance); or the metric is a sum of
+       published ones for which no interval is carried. */
+    const noCb=r.cbecs_value===null||r.cbecs_value===undefined;
+    const ciWhy = noCb ? ["notPublished","CBECS does not publish this metric"]
+      : r.cbecs_value===0 ? ["noneSurveyed","no surveyed building in this group uses it, so there is no interval"]
+      : ["noValue","no interval is carried for this metric (a total derived from published ones)"];
     const ci=(r.cbecs_ci95_low!==null&&r.cbecs_ci95_low!==undefined)
       ? `${fmt(r.cbecs_ci95_low*scale)}–${fmt(r.cbecs_ci95_high*scale)}`
-      : absentTag("notPublished","CBECS publishes no confidence interval for this metric");
+      : absentTag(ciWhy[0], ciWhy[1]);
     const w=r.within_cbecs_ci95;
     const badge = w===true?`<span style="color:var(--good)">inside</span>`
       : w===false?`<span style="color:var(--bad)">outside</span>`
-      : absentTag("notPublished","no CBECS interval to test against");
+      : absentTag(ciWhy[0], ciWhy[1]);
     let dcol="";
     if(MULTI&&SECONDARY){
       const o=src.find(x=>x.run===SECONDARY.key&&x.category===bt&&x.metric===r.metric);
@@ -2027,8 +2046,13 @@ function renderAnnual(){
         d<-0.5?"rgba(26,127,90,.22)":d>0.5?"rgba(213,94,0,.22)":"transparent"}">${
         (d>0?"+":"")+fmt(d,1)}</span>`}</td>`;
     }
-    t+=`<tr><td>${r.metric}</td><td>${fmt(r.cbecs_value*scale,2)}${unit}</td><td>${ci}</td>
-      <td>${fmt(r.comstock_value*scale,2)}${unit}</td>
+    /* null*scale is 0 in JavaScript, so a metric CBECS does not publish printed
+       as "0.00" -- a measured zero. Absent stays absent. */
+    const num=v=>(v===null||v===undefined)?null:v*scale;
+    t+=`<tr><td>${r.metric}</td><td>${noCb
+        ? absentTag("notPublished","CBECS does not publish this metric")
+        : fmt(num(r.cbecs_value),2)+unit}</td><td>${ci}</td>
+      <td>${num(r.comstock_value)===null?absentTag("noValue"):fmt(num(r.comstock_value),2)+unit}</td>
       <td><span class="cell" style="background:${diffColor(r.pct_diff)}">${pct(r.pct_diff)}</span></td>
       ${dcol}<td>${badge}</td><td>${r.provenance||""}</td></tr>`;
   });
@@ -2214,20 +2238,23 @@ function ldcChart(host, pts, opts={}){
   const extra=opts.extraLines||[];
   const yRaw=Math.max(...pts.flatMap(p=>[p.comstock,p.amiHi,p.comstock2].concat(extra.map(l=>p[l.key])))
     .filter(v=>v!==null&&v!==undefined));
-  const yMax=yRaw>0 ? yRaw*1.08 : 1;
+  const axY=niceAxis(0, yRaw>0 ? yRaw : 1, 4), yMax=axY.hi;
   const x=h=>padL+(h/xMax)*plotW, y=v=>padT+plotH-(v/yMax)*plotH;
   const dec=Math.min(6,Math.max(0,1-Math.floor(Math.log10(yMax))));
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  const ntk=niceTicks(0, yMax, 4);
+  const ntk=axY;
   ntk.ticks.forEach(v=>{
     const yy=y(v);
     svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
     const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"});
     t.textContent=v.toFixed(Math.max(dec, ntk.dec)); svg.appendChild(t);
   });
-  [0,.25,.5,.75,1].forEach(f=>{
-    const t=el("text",{x:x(xMax*f),y:H-padB+16,class:"ax","text-anchor":"middle"});
-    t.textContent=Math.round(xMax*f).toLocaleString(); svg.appendChild(t);
+  // Hours on 1-2-5 steps, and the full year labelled at the end of the axis
+  // (8,760 is the extent, not a tick, so it is appended rather than rounded to).
+  const xt=niceAxis(0, xMax, 4).ticks.filter(v=>v<xMax-xMax*0.05).concat([xMax]);
+  xt.forEach(v=>{
+    const t=el("text",{x:x(v),y:H-padB+16,class:"ax","text-anchor":"middle"});
+    t.textContent=Math.round(v).toLocaleString(); svg.appendChild(t);
   });
   const xl=el("text",{x:padL+plotW/2,y:H-8,class:"axl","text-anchor":"middle"});
   xl.textContent="Hours equaled or exceeded"; svg.appendChild(xl);
@@ -2981,7 +3008,9 @@ function basisPopulation(sel, basis){
   MASKS.forEach(r=>{
     if(String(r.scenario)!=="baseline") return;
     if(basis!=="own"&&!pred(r.mask)) return;
-    w+=+r.w||0; n+=+r.n||0; sqft+=+r.sqft||0;
+    w+=+r.w||0; sqft+=+r.sqft||0;
+    // n_models, not n: n counts apportionment ROWS, a model once per geography
+    n+=+((r.n_models!==undefined&&r.n_models!==null&&r.n_models!=="")?r.n_models:r.n)||0;
   });
   let sw=0, ssq=0;
   MASKS.forEach(r=>{ if(String(r.scenario)==="baseline"){ sw+=+r.w||0; ssq+=+r.sqft||0; } });
@@ -3143,8 +3172,8 @@ function stackedBarChart(host, bars, opts={}){
   const f0 = bars.some(b=>b.topLabel) ? Math.min(0.4, room0/Math.max(1,plotH0)) : 0;
   const posMax0 = f0 ? (rawMax0-f0*negMin0)/(1-f0) : rawMax0;
   const vdec0 = Math.abs(posMax0-negMin0)<10 ? 1 : 0;
-  const ntk0=niceTicks(negMin0, posMax0, 4);
-  const padL = axisPadL(ntk0.ticks.map(v=>fmt(v, Math.max(vdec0, ntk0.dec))), true);
+  const ax0=niceAxis(negMin0, posMax0, 4);
+  const padL = axisPadL(ax0.ticks.map(v=>fmt(v, Math.max(vdec0, ax0.dec))), true);
   const availW = fillW ? Math.max(120, fillW-padL-padR)
                        : (opts.wide?760:560);
   // grow to fit the bars, but never past the column the caller gave us
@@ -3181,7 +3210,9 @@ function stackedBarChart(host, bars, opts={}){
   const TOT_FONT=12.5;
   // computed before padL (see above) and reused verbatim here, so the scale the
   // tick labels were measured from is the scale actually drawn
-  const plotH=plotH0, rawMax=rawMax0, negMin=negMin0, posMax=posMax0;
+  // the axis is ax0's: the headroom solved for above is honoured because
+  // ax0.hi >= posMax0, and the top and bottom of the frame are labelled ticks
+  const plotH=plotH0, rawMax=rawMax0, negMin=ax0.lo, posMax=ax0.hi;
   const y=v=>padT+(posMax-v)/(posMax-negMin||1)*plotH;
   /* An explicit px width, not `width:100%`. Now that the figure sizes itself to
      its bar count it is often narrower than the column, and a percentage width
@@ -3203,7 +3234,7 @@ function stackedBarChart(host, bars, opts={}){
      unreadable numbers on more. The 1.35x factor is the label's line box. */
   const SEG_FONT=11.5;
   const labelMin=Math.max(SEG_FONT*1.35, plotH*0.045);
-  const ntk=niceTicks(negMin, posMax, 4);
+  const ntk=ax0;
   ntk.ticks.forEach(v=>{
     const yy=y(v);
     svg.appendChild(el("line",{x1:padL-6,y1:yy,x2:width-padR,y2:yy,class:"gl"}));
@@ -3283,17 +3314,18 @@ function hBoxChart(host, entries, opts={}){
       .concat(kd?[kd.x0,kd.x1]:[])
       .concat(parseOutliers(s.stats.outliers));
   })).filter(v=>Number.isFinite(v));
-  let lo=Math.min(0,...all), hi=Math.max(0,...all);
-  if(hi===lo){ hi=lo+1; }
-  const pad=(hi-lo)*0.04; lo-=pad; hi+=pad;
+  // 1-2-5 steps with both ends labelled, like every other axis; the 4% pad
+  // that kept a violin tail off the frame is now the step rounding itself.
+  const axX=niceAxis(Math.min(0,...all), Math.max(0,...all), 6);
+  const lo=axX.lo, hi=axX.hi;
   const x=v=>padL+(v-lo)/(hi-lo)*plotW;
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
-  for(let i=0;i<=6;i++){
-    const v=lo+(hi-lo)*i/6, xx=x(v);
+  axX.ticks.forEach(v=>{
+    const xx=x(v);
     svg.appendChild(el("line",{x1:xx,y1:padT,x2:xx,y2:H-padB,class:"gl"}));
     const t=el("text",{x:xx,y:H-padB+14,class:"ax","text-anchor":"middle"});
-    t.textContent=fmt(v,Math.abs(hi-lo)<20?1:0); svg.appendChild(t);
-  }
+    t.textContent=fmt(v,axX.dec); svg.appendChild(t);
+  });
   svg.appendChild(el("line",{x1:x(0),y1:padT,x2:x(0),y2:H-padB,class:"zero"}));
   const xl=el("text",{x:padL+plotW/2,y:H-6-(opts.note?15:0),class:"axl","text-anchor":"middle"});
   xl.textContent=opts.xLabel||""; svg.appendChild(xl);
@@ -4605,10 +4637,11 @@ const refName=v=>String(v).replace(/^.*[\/]/,"");
 /* ================= Design parameters =================
    What the model was TOLD to do, before arguing about what it produced.
    Every metric arrives with its own COVERAGE, because these parameters do not
-   all apply to every building: most of the stock's floor area has no central
-   air system, so a fan figure quoted stock-wide would be a different number
-   about a different population. Coverage is on each metric's own weighting
-   basis - floor area for an intensity, buildings for a per-building value. */
+   all apply to every building (a VAV turndown exists only where there is a VAV
+   fan), and no placeholder is averaged as a value: design_params.py says, per
+   metric, what is excluded and why, and the cell says so when nothing in the
+   selection qualifies. Coverage is on each metric's own weighting basis: floor
+   area for an intensity, buildings for a per-building value. */
 /* Rehydrate the columnar, dictionary-encoded design-parameter frame into the
    array of objects the renderer expects. Packed, it is about a third the size:
    as an array of objects the repeated key names alone were larger than the
@@ -4731,8 +4764,15 @@ function dpTable(group){
         String(m.note).replace(/"/g,"&quot;")}">i</span>`:""}</td>
       <td style="color:var(--ink-3)">${m.unit}</td>
       ${runs.map(k=>{ const r=byRun[k]; const v=r?dpNum(r.wmean):null;
-        return `<td>${v===null
+        /* Three different absences. No row at all: that release's tables lack
+           the columns. A row with no qualifying model: the buildings are there
+           and the parameter applies to none of them -- the metric's absent_note
+           says why. A row with models but no mean: a data gap. */
+        return `<td>${!r
           ? absentTag("notPublished", `${runShort(k)} does not carry the columns this parameter needs`)
+          : v===null ? (Number(r.n_models)===0
+              ? absentTag("noneQualify", m.absent_note||"no model in this selection passes this parameter's guard")
+              : absentTag("noValue"))
           : fmt(v,dpDec(v))}</td>`;}).join("")}
       ${other?`<td>${d===null?absentTag("noValue","one of the two runs has no value for this parameter"):(()=>{
         const dec=dpDec(d), txt=fmt(d,dec);
@@ -4741,10 +4781,12 @@ function dpTable(group){
         const zero=Number(String(txt).replace(/[^0-9.-]/g,""))===0;
         return `<span class="cell" style="background:${zero?"transparent":diffColor(d)}">${
           zero?"0":(d>0?"+":"")+txt}</span>`;})()}</td>`:""}
-      <td>${dpNum(p.p50)===null?absentTag("noValue"):fmt(dpNum(p.p50),dpDec(dpNum(p.p50)))}</td>
+      <td>${dpNum(p.p50)===null
+        ? absentTag("noValue", Number(p.n_models)===0 ? "no qualifying model, so no median" : "")
+        : fmt(dpNum(p.p50),dpDec(dpNum(p.p50)))}</td>
       <td style="color:var(--ink-3)">${dpNum(p.p10)===null
-        ? (bt==="All" ? absentTag("noValue")
-            : absentTag("stockWideOnly","The decile spread is computed across the whole stock, not within one building type"))
+        ? absentTag("noValue", Number(p.n_models)===0 ? "no qualifying model, so no spread"
+            : "this assessment predates the per-type spread; a re-run carries it")
         :`${fmt(dpNum(p.p10),dpDec(dpNum(p.p10)))} – ${fmt(dpNum(p.p90),dpDec(dpNum(p.p90)))}`}</td>
       <td class="list"${low?' style="color:var(--bad)"':""}>${cov===null?absentTag("noValue")
         :`${fmt(cov,0)}% of ${m.coverage_basis||"buildings"}`}</td></tr>`;
@@ -4802,6 +4844,13 @@ const hfShare = (rows, cat, run, fuel) => {
   const r = rows.find(x=>x.category===cat && x.run===run && x.fuel===fuel);
   return r ? dpNum(r.area_share_pct) : null;
 };
+/* The one fuel a dataset cannot represent at all: ComStock has no wood heating
+   (heating_fuel.COMSTOCK_FUEL_MAP). Every other zero share is a result -- the
+   sample gave that building type none of the fuel -- and is shown as a number,
+   with the national share telling the reader whether the type has it anywhere. */
+const hfCannot = (run, fuel) => run!==HF_CBECS && fuel==="Wood";
+const hfNationalShare = (run, fuel) =>
+  hfShare(hfRows(dpBtype(),"none"), "National", run, fuel);
 // Records behind the whole CBECS cell. A division x building-type cell can rest
 // on a single surveyed building, and a share read off one building is noise.
 const hfCellN = (rows, cat) => {
@@ -4817,10 +4866,10 @@ function hfBars(rows, cat, series){
   return series.map(s=>{
     const segs = HF_FUELS.map(f=>{
       const v = hfShare(rows, cat, s.run, f);
-      /* null, not 0: a fuel a dataset cannot represent (Wood in ComStock) must
-         draw no segment at all. A zero-height segment would key a colour the
-         reader then hunts for in a bar that never had it. */
-      return v===null ? null
+      /* No segment for a zero share or a fuel the dataset cannot represent: a
+         zero-height segment would key a colour the reader then hunts for in a
+         bar that never had it. */
+      return (v===null || v<=0 || hfCannot(s.run, f)) ? null
         : {key:f, value:v, color:HF_COLORS[f], label:f};
     }).filter(Boolean);
     return {label:s.label, segs};
@@ -4831,21 +4880,25 @@ function hfBars(rows, cat, series){
    heat map without being a second chart. `diffColor` is the same ramp the gap
    tables use, so orange/blue already mean over/under to a returning reader. */
 function hfDiffCell(src, cat, run, fuel){
+  if(hfCannot(run, fuel)) return `<td>${absentTag("notApplicable",
+    `${runShort(run)} has no ${fuel.toLowerCase()} heating fuel`)}</td>`;
   const cb = hfShare(src, cat, HF_CBECS, fuel);
   const v  = hfShare(src, cat, run, fuel);
-  if(cb===null && v===null) return `<td>${absentTag("notApplicable",
-    `Neither CBECS nor ${runShort(run)} reports ${fuel.toLowerCase()} in this region`)}</td>`;
-  if(cb===null) return `<td>${absentTag("noneSurveyed",
-    `${runShort(run)} models ${fuel.toLowerCase()} here; CBECS surveyed none`)}</td>`;
-  if(v===null) return `<td>${absentTag("notApplicable",
-    `CBECS reports ${fuel.toLowerCase()}; ${runShort(run)} cannot represent it`)}</td>`;
+  // Every cell carries every fuel (zero where a dataset has none), so a missing
+  // row is a data gap, not a statement about either dataset.
+  if(cb===null || v===null) return `<td>${absentTag("noValue")}</td>`;
   const d = v-cb, fn = hfFuelN(src, cat, fuel);
   /* A difference measured against a handful of surveyed buildings is sampling
      noise however large it looks, so it is greyed rather than coloured -- a
-     bright +36 that rests on three buildings is worse than no number. */
+     bright +36 that rests on three buildings is worse than no number. A zero
+     CBECS share has zero records behind that fuel and is greyed the same way. */
   const noisy = fn!==null && fn<HF_THIN_FUEL_N;
+  /* A zero run share is a sampling result, not a model limit; say which when
+     the type has none of the fuel anywhere in the run. */
+  const none = v===0 && hfNationalShare(run, fuel)===0;
   const tip = `${fuel}: CBECS ${fmt(cb,1)}% vs ${runShort(run)} ${fmt(v,1)}%`
-    + (fn!==null?` — ${fmt(fn,0)} CBECS record${fn===1?"":"s"}`:"");
+    + (fn!==null?` — ${fmt(fn,0)} CBECS record${fn===1?"":"s"}`:"")
+    + (none?` — ${runShort(run)} assigns no ${fuel.toLowerCase()} to this building type anywhere (a sampling gap, not a model limit)`:"");
   return `<td title="${tip}${noisy?" — too few to judge":""}">${noisy
     ? `<span style="color:var(--ink-3)">${(d>0?"+":"")+fmt(d,1)}*</span>`
     : `<span class="cell" style="background:${diffColor(d)}">${
@@ -4907,9 +4960,9 @@ function hfSharesTable(btype){
       <td style="text-align:left"><span class="sw" style="background:${safeColor(s.color)}"></span>${esc(s.label)}</td>
       ${fuels.map(f=>{
         const v = hfShare(src, cat, s.run, f);
-        return `<td>${v===null
-          ? absentTag("notApplicable", `${s.label} has no ${f.toLowerCase()} category`)
-          : fmt(v,1)}</td>`;}).join("")}</tr>`).join("");
+        return `<td>${hfCannot(s.run, f)
+          ? absentTag("notApplicable", `${s.label} has no ${f.toLowerCase()} heating fuel`)
+          : v===null ? absentTag("noValue") : fmt(v,1)}</td>`;}).join("")}</tr>`).join("");
   return `<div class="scroll"><table><thead><tr>
       <th>Region</th><th style="text-align:left">Dataset</th>
       ${fuels.map(f=>`<th><span class="sw" style="background:${
@@ -4971,13 +5024,13 @@ function renderHeatingFuel(host){
           const cb = hfShare(nat,"National",HF_CBECS,f);
           return `<tr><td><span class="sw" style="background:${HF_COLORS[f]}"></span>${f}</td>
             ${series.map(s=>{const v=hfShare(nat,"National",s.run,f);
-              return `<td>${v===null
-                ? absentTag("notApplicable", `${s.label} has no ${f.toLowerCase()} category`)
-                : fmt(v,1)+"%"}</td>`;}).join("")}
+              return `<td>${hfCannot(s.run, f)
+                ? absentTag("notApplicable", `${s.label} has no ${f.toLowerCase()} heating fuel`)
+                : v===null ? absentTag("noValue") : fmt(v,1)+"%"}</td>`;}).join("")}
             ${runs.map(s=>{const v=hfShare(nat,"National",s.run,f);
-              if(cb===null||v===null) return `<td>${v===null
-                ? absentTag("notApplicable", `${s.label} cannot represent ${f.toLowerCase()}`)
-                : absentTag("noneSurveyed", `CBECS surveyed no ${f.toLowerCase()}`)}</td>`;
+              if(hfCannot(s.run, f)) return `<td>${absentTag("notApplicable",
+                `${s.label} has no ${f.toLowerCase()} heating fuel`)}</td>`;
+              if(cb===null||v===null) return `<td>${absentTag("noValue")}</td>`;
               const d=v-cb;
               return `<td><span class="cell" style="background:${diffColor(d)}">${
                 (d>0?"+":"")+fmt(d,1)}</span></td>`;}).join("")}</tr>`;}).join("")}
@@ -5039,13 +5092,15 @@ function renderDesignParams(){
       <h2 style="margin:0">Design parameters — the modelling inputs behind the results</h2></div>
     <p class="note">Model inputs across ${scope}, baseline scenario only. Each run column is a
     <b>weighted mean</b> on that parameter's own basis, named in <b>applies to</b> along with the
-    share of stock it covers — a fan figure describes only buildings that have a central air
-    system, not the whole stock. <b>median (p50)</b> and <b>p10–p90</b> are ${runShort(PRIMARY)}
-    only and are <b>unweighted</b> — one vote per simulated model, not per building represented —
-    so they will not agree with the weighted mean and are not the median building in the
-    stock.${other?` The difference column is ${runShort(PRIMARY)} − ${runShort(other)} of the two
-    weighted means.`:""}${bt==="All"?"":
-    ` p10–p90 is computed stock-wide, so it is not shown for a single building type.`}</p>
+    share of that basis the parameter covers — read a figure that covers part of the stock
+    against that share, and hover the <b>i</b> badge for what is excluded and why. No default,
+    sentinel or placeholder value is averaged as a modelled property; where none of a type's
+    models carries a usable value, the cell says so. <b>median (p50)</b> and <b>p10–p90</b> are
+    ${runShort(PRIMARY)} only and are <b>unweighted</b> — one vote per model in the apportioned
+    table, not per building represented — so they will not agree with the weighted mean and are
+    not the median building in the stock.${other?` The difference column is ${runShort(PRIMARY)}
+    − ${runShort(other)} of the two weighted means; where the two runs share a sample, part of a
+    small difference is their separate apportionment draws rather than a change in the model.`:""}</p>
     <div class="head" style="margin:10px 0 0"><span class="legend-title"
         style="margin:0 8px 0 0">Group</span>
       <div class="tabs" role="group" aria-label="Parameter group" id="dpGroupCtl">
@@ -5182,6 +5237,24 @@ function renderStateTiles(met){
     {title:`${met.name} by state — ${met.unit} (${runShort(PRIMARY)})`, legend:[]});
 }
 
+/* The floor-area basis as measured on this run, from the sqft rows the Annual
+   tab already carries. Two hard-coded versions of this sentence disagreed with
+   each other and with the data; the export scales weights to CBECS floor area
+   per building type, yet every run lands a few percent above, so the measured
+   gap is the only statement that stays true. */
+function weightBasisText(){
+  const by=annualBy[PRIMARY]||{};
+  const nat=((by["All"]||{})["sqft"]||{}).pct_diff;
+  if(nat===null||nat===undefined||Number.isNaN(nat))
+    return "Weights are the exported run weights as published.";
+  const typ=Object.keys(by).filter(k=>k!=="All").map(k=>((by[k]||{})["sqft"]||{}).pct_diff)
+    .filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
+  const range=typ.length>1?` (${pct(Math.min(...typ))} to ${pct(Math.max(...typ))} across building types)`:"";
+  return `Weights are the exported run weights; their floor area lands ${pct(nat)} against CBECS
+    nationally${range}, and every energy comparison inherits that basis. The export scales
+    weights to CBECS floor area per building type, so a non-zero gap here is a question for the
+    export, not for the model.`;
+}
 function renderCoverage(){
   const c=D.coverage, man=D.manifest;
   let h=`<div class="panel"><h2>Runs compared — source tables and colors</h2><table class="wrap-cells"><tbody>
@@ -5308,8 +5381,10 @@ function renderCoverage(){
         construction — ComStock has no wood heating fuel, for instance.</td></tr>
       <tr><td>${absentTag("noneSurveyed")}</td><td>The reference holds zero records here, so there
         is nothing to compare against even though ComStock reports a value.</td></tr>
-      <tr><td>${absentTag("stockWideOnly")}</td><td>The statistic was computed, but only across the
-        whole stock — it is not meaningful at the narrower scope on screen.</td></tr>
+      <tr><td>${absentTag("noneQualify")}</td><td>The data is there, but no model in the current
+        selection carries a usable value for this parameter — hover the cell for the reason (no
+        such system in that building type, or only a placeholder value the page refuses to
+        average).</td></tr>
       <tr><td>${absentTag("measureAbsent")}</td><td>That release does not contain this measure, so
         the row is missing rather than zero.</td></tr>
       <tr><td>${absentTag("noRecords")}</td><td>The current selection matches no rows at all.</td></tr>
@@ -5332,14 +5407,16 @@ function renderCoverage(){
     <li><b>Inside the CI is not a gap.</b> Confidence intervals come from the CBECS jackknife
     replicate weights; AMI carries its own 80% interval, drawn as dashed lines on the profile
     charts.</li>
-    <li><b>Weight basis.</b> The published run weight is the StockE apportionment weight, not
-    scaled to CBECS, so floor area runs a few percent high across every type. Energy comparisons
-    inherit that basis.</li>
+    <li><b>Weight basis.</b> ${weightBasisText()}</li>
     <li><b>Distributions have two weighting bases.</b> By buildings answers "what is a typical
     building?"; by floor area answers "where does the square footage sit?". They can disagree, and
     the upstream package mixes them (count-weighted boxplots, area-weighted histograms).</li>
-    <li><b>AMI is electricity only</b>, from ${c.region||"one region"} in a specific year, compared
-    against ComStock AMY2018. Hour alignment is first-pass: peak-hour and ramp metrics can be off by
+    <li><b>AMI is electricity only</b>, compared against ComStock AMY2018${
+      (c.ami_regions_compared||[]).length
+        ? ` for ${c.ami_regions_compared.length} metered region${c.ami_regions_compared.length===1?"":"s"} (${
+            c.ami_regions_compared.map(esc).join(", ")}); the headline tables show ${esc(c.region||"one region")}${
+            c.ami_regions_compared.length>1?", which is not representative of the others":""}`
+        : ` from ${esc(c.region||"one region")}`}. Hour alignment is first-pass: peak-hour and ramp metrics can be off by
     an hour. Its floor-area denominators are uncertain — prefer a normalized view when levels and
     shapes disagree. The normalized views use the same scalar divisors as the postprocessing script
     (day sum = 1, annual sum = 1), so end-use stacks stay intact in every view.</li>

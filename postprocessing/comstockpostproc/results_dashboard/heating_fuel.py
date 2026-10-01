@@ -248,6 +248,20 @@ def _long_shares(base: pd.DataFrame, run: str, dataset: str) -> pd.DataFrame:
             cat = (grp["division"] if keys
                    else pd.Series("National", index=grp.index))
             grp = grp.assign(category=cat.astype(object))
+            # Every canonical fuel in every cell, at zero where the dataset has
+            # none. A missing row used to be read by the page as "this dataset
+            # cannot represent that fuel", which is true of wood in ComStock and
+            # false of district heat in a building type the sample simply gave
+            # none to. With the zero present the difference is a number, and
+            # the page decides from the dataset -- not from a gap -- what is
+            # structural.
+            full = pd.MultiIndex.from_product(
+                [sorted(grp["category"].unique()), FUEL_ORDER],
+                names=["category", "fuel"])
+            grp = (grp.set_index(["category", "fuel"])
+                      .reindex(full, fill_value=0.0).reset_index())
+            if keys:
+                grp["division"] = grp["category"]
             tot = grp.groupby("category", observed=True)["area"].transform("sum")
             grp["area_share_pct"] = np.where(tot > 0, 100.0 * grp["area"] / tot,
                                              np.nan)
