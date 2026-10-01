@@ -404,18 +404,18 @@ the measures_ts CSVs (they were dropped by a hard-coded column list in assess_me
 
 #### T. Templates and drivers — local-only checks (audit `wf_c7167ba6-fb6`, 5 readers + 5 skeptics)
 
-- [ ] **T1 This PR** (templates it already touches):
-  - [ ] `compare_runs_mixed.py.template`, then copy into `compare_fanfix_measures.py` and
+- [x] **T1 This PR** (done 2026-10-01; the driver copies got the same text) (templates it already touches):
+  - [x] `compare_runs_mixed.py.template`, then copy into `compare_fanfix_measures.py` and
         `compare_runs_mixed*.py`: the pairing-failure hint globs local `truth_data/` (~l.424) so a
         fresh machine lists no candidates — list `s3://eulp/truth_data/v01/StockE/` instead;
         `estimate_path` docstring/error says hand-copy an estimate into the local folder — say
         upload estimate AND tract list to StockE; the docstring launch line redirects into
         `logs/`, which a fresh clone lacks.
-  - [ ] `compare_runs.py.template:73`: `Apportion(reload_from_cache=True)` raises on a machine
+  - [x] `compare_runs.py.template:73`: `Apportion(reload_from_cache=True)` raises on a machine
         that never apportioned 2025R3 (after both runs are processed). Detect the cache.
-  - [ ] `compare_comstock_to_ami.py.template:63`: `CBECS(reload_from_csv=True)` raises without
+  - [x] `compare_comstock_to_ami.py.template:63`: `CBECS(reload_from_csv=True)` raises without
         `CBECS wide.csv`. Use `cspp.load_cbecs()`.
-  - [ ] `compare_comstock_to_cbecs.py.template:96`: `include_upgrades=True` but bills are built
+  - [x] `compare_comstock_to_cbecs.py.template:96`: `include_upgrades=True` but bills are built
         for upgrade 0 only; `create_plotting_lazyframe` needs bills per upgrade. Loop over the
         loaded upgrades.
 - [ ] **T2 Separate PR:**

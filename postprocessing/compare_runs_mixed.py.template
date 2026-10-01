@@ -40,7 +40,7 @@ CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the w
 they were exported with.
 
 Launch it in the background and read the log:
-    ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
+    mkdir -p logs; ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
 Success: EXIT=0, one "athena tables: <run> ..." line per 'process' run, and
 "results dashboard: <path>". Runs on the same sample and estimate print identical
 "post-apportionment scaling factors to CBECS floor area" for every building type.
@@ -378,8 +378,10 @@ def buildstock_path(entry):
 
 def estimate_path(version, truth_data_version='v01'):
     """truth_data/<tdv>/<version>_building_estimate.parquet, fetched from S3 the same way
-    Apportion fetches it when absent. An estimate that is not on S3 yet must be copied
-    into that folder by hand; the error says so."""
+    Apportion fetches it when absent. An estimate that is not on S3 yet has to be UPLOADED
+    to s3://eulp/truth_data/<tdv>/StockE/ -- both <version>_building_estimate.parquet and
+    <version>_tract_list.csv -- so every machine finds it; the error says so. A file
+    copied into the local folder instead works on one machine only."""
     path = os.path.join(HERE, 'truth_data', truth_data_version, f'{version}_building_estimate.parquet')
     if not os.path.exists(path):
         import boto3
@@ -392,7 +394,9 @@ def estimate_path(version, truth_data_version='v01'):
         except ClientError as exc:
             raise FileNotFoundError(
                 f'{os.path.basename(path)} is neither in {os.path.dirname(path)} nor at '
-                f's3://eulp/{key} ({exc}). Copy the estimate into that folder.') from exc
+                f's3://eulp/{key} ({exc}). Upload {version}_building_estimate.parquet AND '
+                f'{version}_tract_list.csv to s3://eulp/truth_data/{truth_data_version}/StockE/ '
+                f'(the folder Apportion downloads from), then rerun.') from exc
     return path
 
 
@@ -421,16 +425,36 @@ def assert_sample_matches_estimate(run_name, bs_path, version):
     if missing.height:
         by_type = dict(missing.group_by('building_type').len()
                        .sort('len', descending=True).iter_rows())
-        local = sorted(os.path.basename(p).split('_building_estimate')[0]
-                       for p in glob.glob(os.path.join(TRUTH_DIR, '*_building_estimate.parquet')))
-        others = {v: missing_from(v).height for v in local if v != version}
+        others = {v: missing_from(v).height for v in candidate_estimates() if v != version}
         raise RuntimeError(
             f'{run_name}: {missing.height:,} of {bs.height:,} sampled (building type, tract) pairs '
             f'are ABSENT from the {version} estimate ({by_type}), so apportioning to it would '
-            f'mis-weight the run. Missing pairs against the other estimates on this machine: '
+            f'mis-weight the run. Missing pairs against the other estimates available: '
             f'{others}. Set this entry\'s estimate to the one its sample was drawn against.')
     logger.info('%s: all %s sampled (building type, tract) pairs exist in the %s estimate '
                 '-- pairing OK', run_name, f'{bs.height:,}', version)
+
+
+def candidate_estimates(truth_data_version='v01'):
+    """Every estimate version available to anyone: the shared S3 folder Apportion
+    downloads from, plus any file that exists only locally. Listed from S3 so the
+    pairing hint reads the same on every machine; if the listing fails, the hint
+    covers the local files and says so. Only reached on a failed pairing, and each
+    estimate it checks is fetched once (~40 MB) by estimate_path."""
+    local = {os.path.basename(f).split('_building_estimate')[0]
+             for f in glob.glob(os.path.join(TRUTH_DIR, '*_building_estimate.parquet'))}
+    try:
+        import boto3
+        pages = boto3.client('s3').get_paginator('list_objects_v2').paginate(
+            Bucket='eulp', Prefix=f'truth_data/{truth_data_version}/StockE/')
+        remote = {os.path.basename(o['Key']).split('_building_estimate')[0]
+                  for page in pages for o in page.get('Contents', [])
+                  if o['Key'].endswith('_building_estimate.parquet')}
+    except Exception as exc:                                   # noqa: BLE001
+        logger.warning('could not list s3://eulp/truth_data/%s/StockE/ (%s); the estimate '
+                       'hint covers the local files only', truth_data_version, exc)
+        remote = set()
+    return sorted(local | remote)
 
 
 def reference(entry):

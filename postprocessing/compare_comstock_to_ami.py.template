@@ -55,13 +55,10 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
 
-    # CBECS
-    cbecs = cspp.CBECS(
-        cbecs_year=2018,  # 2012 and 2018 currently available
-        truth_data_version='v01',  # Typically don't change this
-        color_hex='#009E73',  # Color used to represent CBECS in plots
-        reload_from_csv=True  # True if CSV already made and want faster reload times
-        )
+    # CBECS. load_cbecs reads 'CBECS wide.csv' when it exists and builds and exports
+    # it when it does not; CBECS(reload_from_csv=True) raised on any machine that had
+    # never exported it, after the run above had been processed.
+    cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#009E73')
 
     # First scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     # Then scale both ComStock runs to CBECS 2018 AND remove non-ComStock buildings from CBECS
@@ -70,7 +67,8 @@ def main():
     alloc_wts = comstock.get_allocated_weights()
     comstock.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
     comstock.create_allocated_weights_plus_util_bills_for_upgrade(0)
-    cbecs.export_to_csv_wide()  # the results dashboard reads 'CBECS wide.csv'
+    # 'CBECS wide.csv' exists after load_cbecs, whichever way it got it; the
+    # results dashboard reads it.
 
 
     # county resolution, files by state and county

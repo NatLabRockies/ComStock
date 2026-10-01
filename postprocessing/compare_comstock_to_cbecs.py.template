@@ -69,7 +69,14 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock.get_allocated_weights()
     comstock.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
-    comstock.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    # Bills for every upgrade LOADED (include_upgrades above): create_plotting_lazyframe
+    # reads bills per upgrade, and with only the baseline's built it raised on any
+    # machine without leftover bills folders. Read from the data rather than from
+    # upgrade_ids_to_process, which lists every results file on disk whatever
+    # include_upgrades says.
+    loaded = comstock.data.select(comstock.UPGRADE_ID).unique().collect().to_series().to_list()
+    for upgrade_id in sorted(int(i) for i in loaded):
+        comstock.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
 
     # Define the geographic partitions to export
     geo_exports = [

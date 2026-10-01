@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import os
 
 import comstockpostproc as cspp
 
@@ -63,15 +64,12 @@ def main():
         include_upgrades=False  # False if not looking at upgrades
         )
 
-    # Stock Estimation for Apportionment:
-    stock_estimate = cspp.Apportion(
-        stock_estimation_version='2025R3',  # Only updated when a new stock estimate is published
-        truth_data_version='v01',  # Typically don't change this
-        # True reuses the cached apportionment so values stay consistent between runs.
-        # The cache is per stock_estimation_version, so set False the FIRST time you use
-        # a new one -- True raises rather than building it.
-        reload_from_cache=True
-    )
+    # Stock Estimation for Apportionment. The cache is per stock_estimation_version
+    # and reload_from_cache=True RAISES when it is absent -- after both runs above
+    # have been downloaded and processed -- so whether it exists is detected rather
+    # than remembered (stock_estimate() below). Only updated when a new estimate is
+    # published.
+    stock_estimate = apportionment('2025R3')
 
     # If the runs were sampled against DIFFERENT stock estimates, this file is the wrong
     # starting point -- use compare_runs_different_samples.py.template instead.
@@ -147,6 +145,19 @@ def main():
             logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
         else:
             logger.info('results dashboard: %s', dashboard.dashboard_path)
+
+def apportionment(version, truth_data_version='v01'):
+    """A cspp.Apportion that reuses its cache when the cache exists and builds it
+    otherwise. Apportion(reload_from_cache=True) raises on a machine that has never
+    apportioned this estimate, and False rebuilds for nothing on one that has; the
+    answer is on disk, so read it from disk."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cache = os.path.join(here, 'output', f'Stock Estimation {version}',
+                         'cached_ComStock_apportionment.parquet')
+    return cspp.Apportion(stock_estimation_version=version,
+                          truth_data_version=truth_data_version,
+                          reload_from_cache=os.path.exists(cache))
+
 
 # Code to execute the script
 if __name__=="__main__":
