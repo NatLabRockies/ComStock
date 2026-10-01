@@ -148,6 +148,28 @@ metered energy, cooling-blend guard, per-type spread, absent_note text) and the 
 fuel partition appear; then read the Fans & pumps and Ventilation groups against the raw-parquet
 numbers in this plan. M1-M7 unchanged (measure).
 
+**Status 2026-10-01 morning.** The design-parameter re-assessment ran (9 min, Athena accepted
+the scalar subqueries; the new tab verified in the browser: unitary fans 66% of floor area
+stock-wide, 45.1% -> 52.4% efficiency across the fan fix; warehouse cooling rows say why they
+are empty; separable pump rows). Step 2 (D10-D18, D20) is coded: site_energy.cbecs_fuels on
+both sides with a jackknife interval (derived metrics now get intervals), the all-fuel site
+total blanked against CBECS; waterfall pairs lighting as interior+exterior and names the
+ComStock-only end uses; summary carries other-fuel savings; savings distributions count
+undefined/zero values; gas-free floor-area panels (per type and across types); AMI thin-hour
+rule (>=95% of hours backed, thin hours dropped, missing != thin); thin EUI cells drawn
+faded/dashed; zone 7 merged after the audit; completion table shows in-aggregate / not-
+apportioned counts; the measure timeseries reads the CRAWLED table (kBtu x 0.29307) and
+refuses a create_views view's fossil fuels, so gas is right without waiting for X1, plus an
+other-fuels panel. D19 has only the note (the fix is export-side).
+Verified on the regenerated fanfix dashboard (2026-10-01 08:46 build): headline site energy on
+CBECS fuels +49.6% (was +53.3% on all fuels), waterfall names the ComStock-only end uses and the
+disaggregation residual, summary reconciles (614.9 = 141.7 + 421.2 + 52.1), distribution label
+"n=14,858 · 21,679 undefined · 492 zero" in red, completion 93,889 in aggregate / 9,716 not
+apportioned, AMI thin-hour rule keeps cherryland small_hotel + FSR (0.1% hours dropped), zone 7 one
+bin, gas timeseries from the crawled table (MN winter weekday gas 2.0 GW thermal vs 1.1 GW
+electric; the view would have given 23 GW). One more re-run carries the other-fuel columns into
+the measures_ts CSVs (they were dropped by a hard-coded column list in assess_measure_timeseries).
+
 - [x] **D1 Fans: cover unitary, packaged and zone-equipment fans.** `[V]` The panel reads only
       `out.params.air_system_fan_*`, which the reporting measure fills for loop-level fans only.
       Fans inside `AirLoopHVACUnitarySystem` (PSZ/RTU, residential furnace) and zone equipment
@@ -259,14 +281,14 @@ numbers in this plan. M1-M7 unchanged (measure).
       profiles (:867, `max = rawMax*1.1`), waterfall (:1182), :2221, diverging bars (:3146, :3206),
       and any figure that computes its own ticks. Check every tab after: bar heights change
       because the scale changes.
-- [ ] **D10 Site energy vs CBECS like-for-like.** `[V]` ComStock site energy includes propane
+- [x] **D10 Site energy vs CBECS like-for-like.** `[V]` ComStock site energy includes propane
       and district cooling, which CBECS never counts. From this run's own table: Hospital shown
       +7.3%, without them -4.0% (district cooling is 49.3 TBtu, 10.5% of hospital site energy);
       LargeOffice +74.0% vs +63.0%; FSR +161.6% vs +151.7%; national +53.3% vs +49.6%. Define the
       CBECS-comparable site total as electricity + natural gas + fuel oil + district heating
       wherever CBECS is the reference (headline card, verdict strip, ranked gaps, EUI
       distributions); keep the full ComStock total as a ComStock-only row.
-- [ ] **D11 End-use waterfall: the grey bar is ComStock load, and lighting is mis-paired.**
+- [x] **D11 End-use waterfall: the grey bar is ComStock load, and lighting is mis-paired.**
       `[A]` CBECS electricity end uses sum exactly to its total (2,633.2 TBtu). The ComStock end
       uses in END_USES sum to 3,609.0 against 3,779.0, so the 170.0 TBtu grey bar labelled "CBECS
       does not disaggregate" is exterior lighting (105.0) + pumps (51.0) + heat recovery (6.8) +
@@ -274,39 +296,39 @@ numbers in this plan. M1-M7 unchanged (measure).
       (502.0, +9%); like-for-like is lighting_combined (607.0, +32%). Add the missing end uses as
       ComStock-only bars, pair CBECS lighting with lighting_combined, and split the residual into
       "ComStock end uses with no CBECS counterpart" and a true remainder.
-- [ ] **D12 Measure summary omits propane and fuel-oil savings.** `[V]` `measures.FUELS =
+- [x] **D12 Measure summary omits propane and fuel-oil savings.** `[V]` `measures.FUELS =
       ["electricity", "natural_gas"]` (measures.py:37) feeds the summary; site - elec - gas =
       614.94 - 141.68 - 421.21 = 52.05 TBtu for HPRTU_E_Backup (9-11% of site savings per
       measure), which the scenario rows (queried with all fuels) account for exactly: propane
       29.9 + fuel oil 22.1 + district heating. Add propane/fuel-oil/district-heating columns from
       the scenario pair; fix the note that claims the difference is something else.
-- [ ] **D13 Measure timeseries: gas 11.6x high; other fuels absent.** `[V]` The `_timeseries_vu`
+- [x] **D13 Measure timeseries: gas 11.6x high; other fuels absent.** `[V]` The `_timeseries_vu`
       view divides kBtu gas by the kWh factor instead of multiplying (X1). Until X1 lands and the
       views are recreated, the tab must read the crawled `total_site_gas_kbtu` and convert
       (x0.29307) itself, or say the MW-thermal panels are wrong. Then add propane, fuel oil and
       district heating (`[A]` in MN they are 146 GWh against 219 GWh gas; in AZ 48% of fossil
       heating savings) as an "other fuels" line, after verifying the crawled column names.
-- [ ] **D14 Savings distributions: undefined and zero-baseline models are dropped silently.**
+- [x] **D14 Savings distributions: undefined and zero-baseline models are dropped silently.**
       `[A]` The % view drops models whose baseline is 0 (24,210 of 40,867 applicable have no
       electric heating before HPRTU), so "electricity heating" reads -60% on the typical building
       when most gain electric heating; bill % savings drop 7,090 models (19%) whose bill saving
       is 0 or non-finite (X2 fills nulls with 0). Count n_undefined and n_zero, show them beside
       n, grey the % box and point to the EUI/$ view when undefined >= 25%.
-- [ ] **D15 Fuel mix is computed and never shown.** `[A]` `fuel_mix_by_*.csv` are written and
+- [x] **D15 Fuel mix is computed and never shown.** `[A]` `fuel_mix_by_*.csv` are written and
       embedded (`D.fuelByDim`) and nothing renders them; distributions.py:22 points readers to a
       table that does not exist. Grocery 0.0% gas-free floor area vs CBECS 30.1%, outpatient 0.1
       vs 28.2, FSR 0.3 vs 20+. Add the panel on the Annual and Distributions tabs.
-- [ ] **D16 AMI: thin types relabelled "no AMI data".** `[V]` `compare_region` drops a building
+- [x] **D16 AMI: thin types relabelled "no AMI data".** `[V]` `compare_region` drops a building
       type whose MINIMUM hourly meter count is below 3 and then computes `ami_missing_types =
       cs_types - ami_types` from the already-reduced set (ami_shapes.py:415-436), so 11 region x
       type pairs with data (veic large office: 1 hour of 8,759 below 3 meters) are listed under
       "No AMI truth data". Compute missing before removing thin; keep a type when >= 95% of hours
       have >= 3 meters and drop only the thin hours; record the dropped-hour share.
-- [ ] **D17 Thin EUI cells drawn solid.** `[A]` distributions.py sets `thin` for n < 10 and
+- [x] **D17 Thin EUI cells drawn solid.** `[A]` distributions.py sets `thin` for n < 10 and
       promises a flag; boxPlot never reads it. 89 CBECS crossed cells have n < 10, 16 have n = 1
       and draw as a zero-height box. Grey/hatch thin boxes, append n, state the threshold;
       findings.md says "n < 60" (assessment.py:156) — use `distributions.THIN_MODELS`.
-- [ ] **D18 Climate zone 7 / 7A / 7B.** `[A]` Three bins for one zone (81, 260, 20 Mft2) from
+- [x] **D18 Climate zone 7 / 7A / 7B.** `[A]` Three bins for one zone (81, 260, 20 Mft2) from
       mixed codebooks in the sampled `climate_zone_ashrae_2006`; the category audit has no
       climate-zone list so it reports nothing. Merge for display with a note; add the canonical
       list to `ORDERED_CATEGORIES`; X4 for the upstream codebook.
@@ -315,7 +337,7 @@ numbers in this plan. M1-M7 unchanged (measure).
       up to 1.4% (lighting, plug, envelope). When two runs share a sample (same building_ids and
       sqft), compute the comparison run's parameters on the primary run's weights, or render the
       delta as 0 when the per-model inputs are identical.
-- [ ] **D20 Model counts that do not reconcile.** `[A]` Completion table: 40,870 applicable;
+- [x] **D20 Model counts that do not reconcile.** `[A]` Completion table: 40,870 applicable;
       Measures summary: 37,029. The 9.4% gap (27% of hospitals) is models never drawn by the
       apportionment (by design, comstock.py:3345-3350) — not an export loss — but nothing says
       so, and measure failure rates include the 3 baseline failures. Add "in weighted aggregate"
