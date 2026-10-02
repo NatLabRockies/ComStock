@@ -4621,6 +4621,39 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         return conv_factor, col_alias
 
     @staticmethod
+    def timeseries_view_columns(cols):
+        """The SELECT list of a timeseries view: each crawled column renamed to the
+        published spelling and converted to kWh.
+
+        `create_column_alias` returns the factor as kWh PER UNIT of the source
+        column (kBtu -> 0.29307), so the conversion multiplies. It used to divide,
+        which put every kBtu column 11.6x too high, every therm column 858x too low
+        and every MBtu column 85,891x too low; kWh columns were unaffected.
+        """
+        cols_aliased = []
+        for col in cols:
+
+            # rename
+            conv_factor, col_alias = ComStock.create_column_alias(col)
+            if (col.name == col_alias) & (conv_factor==1): # and conversion factor is 1
+                cols_aliased.append(col)
+            elif (col.name != col_alias) & (conv_factor==1): #name different, conversion factor 1
+                cols_aliased.append(col.label(col_alias)) #TODO: return both alias and new units
+            else: # name and conversion different: source units -> kWh
+                cols_aliased.append((col * conv_factor).label(col_alias)) #TODO: return both alias and new units
+
+            if col.name == 'timestamp': #timestamp
+                # Convert bigint to timestamp type if necessary
+                if str(col.type) == 'BIGINT':
+                    # Pandas uses nanosecond resolution integer timestamps.
+                    # Presto expects second resolution values in from_unixtime.
+                    # Must divide values by 1e9 to go from nanoseconds to seconds.
+                    cols_aliased.append(sa.func.from_unixtime(col / 1e9).label('timestamp')) #NOTE: syntax for adding unit conversions
+                else:
+                    cols_aliased.append(col)
+        return cols_aliased
+
+    @staticmethod
     def create_views(
             dataset_name: str, database_name: str = "vizstock", workgroup: str = ATHENA_WORKGROUP
         ):
@@ -4765,30 +4798,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 )
                 meta = sa.MetaData()
                 ts_tbl = sa.Table(ts_tblname, meta, autoload_with=engine)
-                cols = list(filter(ComStock.column_filter, ts_tbl.columns))
-                cols_aliased = []
-                for col in cols:
-
-                    # rename
-                    conv_factor, col_alias = ComStock.create_column_alias(col)
-                    if (col.name == col_alias) & (conv_factor==1): # and conversion factor is 1
-                        cols_aliased.append(col)
-                    elif (col.name != col_alias) & (conv_factor==1): #name different, conversion factor 1
-                        cols_aliased.append(col.label(col_alias)) #TODO: return both alias and new units
-                    else: # name and conversion different
-                        cols_aliased.append((col/conv_factor).label(col_alias)) #TODO: return both alias and new units
-
-                    if col.name == 'timestamp': #timestamp
-                        # Convert bigint to timestamp type if necessary
-                        if str(col.type) == 'BIGINT':
-                            # Pandas uses nanosecond resolution integer timestamps.
-                            # Presto expects second resolution values in from_unixtime.
-                            # Must divide values by 1e9 to go from nanoseconds to seconds.
-                            cols_aliased.append(sa.func.from_unixtime(col / 1e9).label('timestamp')) #NOTE: syntax for adding unit conversions
-                        else:
-                            cols_aliased.append(col)
-
-                cols = cols_aliased
+                cols = ComStock.timeseries_view_columns(
+                    list(filter(ComStock.column_filter, ts_tbl.columns)))
 
                 q = sa.select(*cols)
                 view_name = f"{ts_tblname}_vu"
