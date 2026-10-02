@@ -49,8 +49,8 @@ def main():
 
     lines = ["# S3 failure summary: sdr_2026r1_all_measure_10k", ""]
     for i in ids:
-        cands = [k for k in pq if re.search(rf"results_up0*{i}\.parquet$", k)]
-        cands += [k for k in pq if re.search(rf"upgrade=0*{i}/", k)]
+        cands = sorted({k for k in pq if re.search(rf"results_up0*{i}\.parquet$", k) or re.search(rf"upgrade=0*{i}/", k)})
+        print("  files:", [k.replace(PREFIX, "") for k in cands])
         if not cands:
             print(f"--- upgrade {i}: no parquet found"); lines.append(f"## {i}: no parquet found"); continue
         df = pl.concat([read_parquet(s3, k) for k in cands], how="diagonal")
@@ -73,6 +73,20 @@ def main():
             for v, n in zip(vc[c].to_list(), vc["count"].to_list()):
                 print(f"    {n:6d} | {v}")
                 lines.append(f"- `{c}` x{n}: {v}")
+        # one full message per distinct failure signature (file.rb:line or first 60 chars)
+        if "step_failures" in df.columns:
+            seen = {}
+            for v in df["step_failures"].drop_nulls().cast(pl.Utf8).to_list():
+                if "step_errors': []" in v:
+                    continue
+                m = re.search(r"([A-Za-z_]+\.rb:\d+)", v)
+                sig = m.group(1) if m else v[:60]
+                if sig not in seen:
+                    seen[sig] = v
+            for sig, v in seen.items():
+                n = sum(1 for x in df["step_failures"].cast(pl.Utf8).to_list() if x and sig in x)
+                print(f"  FULL [{sig}] x{n}: {v[:700]}")
+                lines.append(f"- FULL `{sig}` x{n}: {v[:700]}")
         lines.append("")
 
     bs = [k for k in keys if k.endswith("buildstock.csv")]
