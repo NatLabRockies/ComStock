@@ -1661,6 +1661,9 @@ class PlottingMixin():
         li_pct_svgs_btype = self.col_name_to_percent_savings(en_col, 'percent')
         dict_saving['Percent Site Energy Savings by Building Type (%)'] = li_pct_svgs_btype
 
+        # EUI savings columns are kWh/ft2; convert to the kBtu/ft2 on the axis label
+        df_upgrade = self.convert_eui_cols_to_kbtu_per_ft2(df_upgrade, [li_eui_svgs_btype])
+
         # # loop through plot types
         for group_name, energy_col in dict_saving.items():
 
@@ -2032,6 +2035,9 @@ class PlottingMixin():
         li_pct_svgs_btype = self.col_name_to_percent_savings(en_col, 'percent')
         dict_saving['Percent Site Energy Savings by Climate Zone (%)'] = li_pct_svgs_btype
 
+        # EUI savings columns are kWh/ft2; convert to the kBtu/ft2 on the axis label
+        df_upgrade = self.convert_eui_cols_to_kbtu_per_ft2(df_upgrade, [li_eui_svgs_btype])
+
         # # loop through plot types
         for group_name, energy_col in dict_saving.items():
 
@@ -2126,6 +2132,9 @@ class PlottingMixin():
         li_pct_svgs_btype = self.col_name_to_percent_savings(en_col, 'percent')
         dict_saving['Percent Site Energy Savings by HVAC System (%)'] = li_pct_svgs_btype
 
+        # EUI savings columns are kWh/ft2; convert to the kBtu/ft2 on the axis label
+        df_upgrade = self.convert_eui_cols_to_kbtu_per_ft2(df_upgrade, [li_eui_svgs_btype])
+
         # # loop through plot types
         for group_name, energy_col in dict_saving.items():
 
@@ -2216,6 +2225,9 @@ class PlottingMixin():
         dict_saving['Site EUI Savings by Fuel (kBtu/ft<sup>2</sup>)'] = li_eui_svgs_fuel_cols
         li_pct_svgs_fuel_cols = [self.col_name_to_percent_savings(c, 'percent') for c in self.COLS_TOT_ANN_ENGY]
         dict_saving['Percent Site Energy Savings by Fuel (%)'] = li_pct_svgs_fuel_cols
+
+        # EUI savings columns are kWh/ft2; convert to the kBtu/ft2 on the axis labels
+        df_upgrade = self.convert_eui_cols_to_kbtu_per_ft2(df_upgrade, li_eui_svgs_enduse_cols + li_eui_svgs_fuel_cols)
 
         # loop through plot types
         for savings_name, col_list in dict_saving.items():
@@ -2581,6 +2593,21 @@ class PlottingMixin():
 
         # filter out % savings values greater than 100%
         df_2.loc[:, cols] = df_2[cols].mask(df_2[cols] > 100, np.nan)
+
+        return df_2
+
+    def convert_eui_cols_to_kbtu_per_ft2(self, df, cols):
+
+        # EUI columns carry their source column's energy units per ft2 (..kwh_per_ft2,
+        # see col_name_to_eui); convert them for plots labeled in kBtu/ft2
+
+        # make copy of dataframe
+        df_2 = df.copy()
+
+        # set() so a column listed twice is not converted twice
+        for col in set(cols):
+            energy_units = self.units_from_col_name(col).replace('_per_ft2', '')
+            df_2[col] = self.convert(df_2[col], energy_units, 'kbtu')
 
         return df_2
 
