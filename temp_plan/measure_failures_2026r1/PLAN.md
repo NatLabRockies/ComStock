@@ -90,7 +90,7 @@ defaults and returned false (`Standards.FanVariableVolume.rb:71-73` at v0.8.3). 
 (a=0.0278, b=0.0266, c=-0.0871, d=1.0309, minimum 10%), which changes Advanced RTU Controls
 and the packaged GSHP results relative to R3. Options: (1) parity, delete the call and leave a
 comment; (2) intended behavior, pass `'Single Zone VAV'` and record it in the measure changelog.
-Needs the measure owners' call; recommendation is (2), it is what the code meant to do.
+Applied provisionally as (2) in `ad147d38`; a comment at both call sites gives the parity alternative (delete the call). The owners of Advanced RTU Controls and the packaged GSHP should confirm.
 
 ### Class C: LED lighting measure relies on the dropped prototype workflow
 
@@ -107,9 +107,18 @@ sampled `lighting_generation`. The fork stamps `lighting_space_type` on each spa
 is never set, so `upgrade_light_led` errors on its first space type (S3: the first space type
 is `office` for 1,641 buildings, `retail` 1,211, `corridor` 897, and so on).
 
-Fix options:
+Fix applied (commit `ad147d38`, option B below): the measure now reads `lighting_space_type` and
+looks the row up in the gem's `lighting_space_types.json`, found from the loaded gem's own file
+path, converting the lux target to footcandles so the existing LPD math is unchanged; prototype
+models keep the CSV path; space types with no lighting data (`na`) are skipped with a warning
+instead of failing the building. The measure's `lighting_technology.csv` is byte-for-byte the
+gem's `lighting_technology.json`, so it was kept. Option B was chosen over A because it edits the
+existing lights definitions in place (schedules, multipliers and fractions untouched), which is
+what the measure always did; A would recreate the `Lights` objects.
 
-- **Option A (recommended): delegate to the gem.** Keep the measure's argument, its
+Fix options considered:
+
+- **Option A: delegate to the gem.** Keep the measure's argument, its
   "already LED" applicability check (gem LED technology names all contain `LED`, so the
   existing `include?('LED')` test keeps working), and its before/after power reporting and
   `registerValue` outputs, but replace the per-space-type CSV lookup and
@@ -137,30 +146,48 @@ the workflow; leave it. Fixing `upgrade_light_led` fixes 43, 55, 56, 57 and the 
 Small counts, found by the full scan. Items marked **Kestrel** need the datapoint's OSM, run.log
 or eplusout.err from Kestrel (down on 2026-10-02); the rest can be fixed from code.
 
-| where | count | cause from code | action |
+| where | count | cause from code | action | status |
+|---|---|---|---|---|
+| `upgrade_hvac_packaged_gshp` measure.rb:866 and :874 `air_loop_hvac.setAvailabilitySchedule(zone_data["<zone> schedule"])` | 51 + 32 in 29; 35 + 26 in 59; 35 + 24 in 63; 35 + 25 in 64 | `zone_data` is only filled for zones on the PVAV / PSZ loops the measure inventories (measure.rb:567-568, :691). Single-zone loops skipped as DOAS, residential, no-outdoor-air or evaporative, and zones on PTAC/PTHP/WSHP equipment, are never added to `zones_to_skip`, so a building that mixes them with one PSZ-classified loop passes the "no applicable loops" check and crashes on those zones. The S3 characteristics confirm the mix: :866 is DOAS + WSHP (21) and residential furnace (10) buildings, :874 is PTHP (12) and PTAC (11) buildings, all of which were not-applicable in 2025R3 because prototype models had one system type per building | guard before the zone loop: not applicable with the zone list when any conditioned zone has no inventory entry (the measure replaces the whole system and removes the plant loops, so it cannot leave those zones in place). **Kestrel** later if the owners want to replace those extra loops instead of NA | applied `ad147d38` |
+| `upgrade_hvac_packaged_gshp` measure.rb:941 `zone_data[thermal_zone.name.to_s]['pressure_rise']` | 2 in 29, 1 in 59, 2 in 63, 2 in 64 | a PSZ-classified loop that is not a unitary system gets a schedule entry (:691) but no data hash (:739 is inside the unitary branch) | covered by the same guard (it requires both keys) | applied `ad147d38` |
+| `upgrade_hvac_hydronic_gshp` measure.rb:443 `unit.supplyAirFlowRateMethodDuringHeatingOperation.get` | 69 in 28, 59, 63, 64 (large offices 40, medium offices 14, outpatient 8, large hotels 7; chiller + boiler systems) | `.get` on an empty optional: some `AirLoopHVACUnitarySystem` objects in the typical models leave the heating flow method blank | treat blank as `''` so the existing branch assigns a method | applied `ad147d38` |
+| `upgrade_env_exterior_wall_insulation` measure.rb:215 `surface.setConstruction(nil)` | 3 in 48, 54, 64 (buildings 195, 755, 884: warehouses built 2016-2017 in CEC9/10/13) | the measure maps only constructions it decides to insulate (skips metal building, already at target, thin insulation, no standards type), then assigns the map's value to every exterior wall; a model with two wall constructions where one was skipped gets nil | leave such walls unchanged with an info message | applied `ad147d38` |
+| `upgrade_hvac_console_gshp` "Sizing run failed" | 2 in 30, 1 in 59 and 63 (buildings 2692, 7749: large hotels, PTAC with electric coil, 1A and 6A) | sizing run inside the measure | **Kestrel**: sizing-run eplusout.err | open |
+| `upgrade_add_pvwatts` "Battery storage parameters not found for building type 'RetailStripmall'" | 601 in 47 (every strip mall) | `resources/deer_t24_2022.battery_storage_system.json` spells it `RetailStripMall`; `model_find_object` matches exactly; `main`'s workflow also passes `RetailStripmall`, so this is probably pre-existing (R3's published rows cannot show it because failed datapoints are dropped) | `RetailStripmall` row added with the `RetailStripMall` values | applied `ad147d38` |
+| `utility_bills` reporting measure, "Error running PySAM ... elec_rates/6452/5a5e50dd5457a3e16be429d4.json" | 16 in 47 (buildings 148, 313, 354, 630, 1837, 2234, 2342, 2406, 2431, 2619, 4047, 4094, ...) | PySAM bill calculation fails on the PV + battery hourly profile with that one rate | hand to the utility-bills owner; **Kestrel** for `electricity_hourly.csv` of one datapoint | open |
+| Fail with no measure error (simulation-side) | 11 each in 12 and 13 (VRF), 2 in 23, 32 in 28, 2 in 30, 1 in 48, 36 in 59, 30 in 63 | EnergyPlus fatal errors; `step_failures` is null | **Kestrel**: eplusout.err; see the cluster notes below | open |
+
+### Smaller clusters: hydronic GHP, VRF, console GHP, wall insulation, unoccupied AHU control
+
+From `s3_failed_building_characteristics.py` (output in `s3_failed_building_characteristics.txt`),
+the failing building ids joined to `buildstock.csv`. Fail counts exclude the two baseline
+failures every upgrade carries.
+
+| upgrade | Fail | what the file shows | verdict |
 |---|---|---|---|
-| `upgrade_hvac_packaged_gshp` measure.rb:866 and :874 `air_loop_hvac.setAvailabilitySchedule(zone_data["<zone> schedule"])` | 51 + 32 in 29; 35 + 26 in 59; 35 + 24 in 63; 35 + 25 in 64 | `zone_data` is only filled for zones on the PVAV / PSZ loops the measure inventories (measure.rb:567-568, :691, :739); a conditioned zone served by anything else has no entry, so the schedule is nil and the SWIG call raises. Candidates: the fork's new separate systems for extreme-load zones and CRAC/CRAH units (ComStock-Typical `79853e6`) | **Kestrel**: pull one failing OSM, list the zone's equipment; then either skip such zones like `zones_to_skip` or inventory their loops |
-| `upgrade_hvac_packaged_gshp` measure.rb:941 `zone_data[thermal_zone.name.to_s]['pressure_rise']` | 2 in 29, 2 in 64 | same root: no `zone_data` entry for the zone (nil receiver) | same as above |
-| `upgrade_hvac_hydronic_gshp` measure.rb:443 `unit.supplyAirFlowRateMethodDuringHeatingOperation.get` | 69 in 28, 59, 63, 64 | `.get` on an empty optional: some `AirLoopHVACUnitarySystem` objects in the typical models leave the heating flow method blank | guard with `is_initialized` and set `'SupplyAirFlowRate'` when blank (the code's own intent); **Kestrel** only to confirm which units |
-| `upgrade_env_exterior_wall_insulation` measure.rb:215 `surface.setConstruction(nil)` | 3 in 48, 3 in 54, 3 in 64 | an exterior wall carries a construction absent from `old_to_new_construction_map`, so the map returns nil | `next` with a warning when the map has no entry; **Kestrel** to see which construction (likely a hard-assigned one the mapping loop skips) |
-| `upgrade_hvac_console_gshp` "Sizing run failed" | 2 in 30 | sizing run inside the measure | **Kestrel**: sizing-run eplusout.err |
-| `upgrade_add_pvwatts` "Battery storage parameters not found for building type 'RetailStripmall'" | 601 in 47 (every strip mall) | `resources/deer_t24_2022.battery_storage_system.json` spells it `RetailStripMall`; `model_find_object` matches exactly; `main`'s workflow also passes `RetailStripmall`, so this is probably pre-existing (R3's published rows cannot show it because failed datapoints are dropped) | add a `RetailStripmall` row to the JSON (or match case-insensitively); check an R3 strip mall with battery if parity matters |
-| `utility_bills` reporting measure, "Error running PySAM ... elec_rates/6452/5a5e50dd5457a3e16be429d4.json" | 16 in 47 (buildings 148, 313, 354, 630, 1837, 2234, 2342, 2406, 2431, 2619, 4047, 4094, ...) | PySAM bill calculation fails on the PV + battery hourly profile with that one rate | hand to the utility-bills owner; **Kestrel** for `electricity_hourly.csv` of one datapoint |
-| Fail with no measure error (simulation-side) | 11 each in 12 and 13 (VRF), 2 in 23, 32 in 28, 2 in 30, 1 in 48, 36 in 59, 30 in 63 | EnergyPlus fatal errors; `step_failures` is null | **Kestrel**: eplusout.err; not gem-related |
+| 28 Hydronic_GHP | 101 | 69 are the `:443` empty optional (fixed above). 32 are simulation-side: secondary schools 12, primary schools 5, large hotels 4, large offices 4, hospitals 4, all on chiller + boiler systems, climate zones 5A 16 and 4A 9. Within secondary schools 12 of 151 non-invalid fail, so it is a subset, not a building type | 69 fixed from code; 32 need **Kestrel** eplusout.err (the same buildings fail in Package_6 and Package_10, so one datapoint explains all three) |
+| 12 and 13 VRF_with_DOAS | 11 each | the same 11 buildings in both variants, all large offices, mostly PVAV (PFP boxes 5, gas boiler reheat 3, district hot water reheat 2); 11 of 221 non-invalid large offices | one error class, building-specific; **Kestrel** eplusout.err of one of 3145, 3701, 3816 |
+| 30 Console_GHP | 4 | 2 sizing-run failures (large hotels on PTAC electric, 2692 and 7749; 7749 recurs in Package_6 and Package_10) and 2 simulation-side (1046 retail on residential AC, 3305 quick-service restaurant on PTAC electric; both 3A, both recur in the packages) | **Kestrel**: sizing-run and eplusout.err |
+| 48 Wall_Insulation | 4 | 3 are the nil construction (fixed above); 1 simulation-side (5552, primary school, DOAS + WSHP, CEC9) | 3 fixed from code; 1 **Kestrel** |
+| 23 Unoccupied_AHU_Control | 2 | simulation-side, buildings 4084 and 8613, both CEC4 offices on VAV systems | **Kestrel** eplusout.err |
+
+Across all upgrades the simulation-side failures involve 60 distinct buildings; 44 of them fail in
+more than one upgrade along the same measure path (VRF pairs, hydronic GSHP with its two packages,
+console GSHP with its packages), so the eplusout.err of one datapoint per cluster is enough.
 
 ## 3. Work breakdown
 
 | step | what | depends on | status |
 |---|---|---|---|
-| 1 | S3 diagnosis: per-upgrade status counts, backtraces, full 65-upgrade scan | SSO | done 2026-10-02 |
-| 2 | Port the seven class A call sites (one commit per measure); keep `std` for the instance methods that still exist (`fan_standard_minimum_motor_efficiency_and_size` etc.) | none | ready |
-| 3 | Fan curve decision (parity vs `'Single Zone VAV'`) recorded in both measures | owner input | open |
-| 4 | LED measure rewrite (option A) with a typical-built test model | 2 (shared bundle) | ready |
-| 5 | Class D code-side guards: hydronic_gshp:443, wall_insulation:215, battery JSON spelling | none | ready |
-| 6 | Unit tests under OS 3.10.0 with the `resources/` bundle (`bundle exec rake unit_tests:upgrade_measure_tests`, or the seven test files directly); regenerate `measure.xml` only where arguments change and diff it, the 3.10 CLI drops JSON resource entries | 2, 4, 5 | |
-| 7 | Kestrel items: packaged_gshp zone_data zones (one OSM), console GSHP sizing run, simulation-side fails (eplusout.err), baseline failures 2537 and 7223 (run.log), PySAM datapoint | Kestrel back | blocked |
-| 8 | Rerun the affected upgrades (14, 22, 26, 27, 29, 31, 43, 47, 55, 56, 57, 59, 63, 64) on a small sample on Kestrel; pass criteria: Fail limited to the Kestrel items of section 2, applicability fractions explained against the R3 column | 2-7 | blocked |
-| 9 | PR from `ccaradon/spacetype_refactor_measure_failures` into `spacetype_refactor` (not main); flag that the class A fixes and the battery JSON are needed on `main` too | 8 | |
+| 1 | S3 diagnosis: per-upgrade status counts, backtraces, full 65-upgrade scan, failing-building characteristics | SSO | done 2026-10-02 |
+| 2 | Port the seven class A call sites; `std` kept where instance methods still exist | none | done `ad147d38` |
+| 3 | Fan curve decision (parity vs `'Single Zone VAV'`) | owner input | applied provisionally as `'Single Zone VAV'` with a comment at both call sites giving the parity alternative; owners can flip it by deleting the call |
+| 4 | LED measure fix (option B) | none | done `ad147d38`, untested on a typical model |
+| 5 | Class D code-side guards: hydronic_gshp:443, wall_insulation:215, packaged_gshp not-applicable guard, battery JSON spelling, meta_measure exception message | none | done `ad147d38` |
+| 6 | Unit tests under OS 3.10.0 with the `resources/` bundle (bundle at `C:/tmp/csgems`, bundler 2.4.10, system Ruby 3.2.2 with the `site_ruby/openstudio.rb` shim; `BUNDLE_GEMFILE=C:/tmp/csgems/Gemfile bundle _2.4.10_ exec ruby <test>`); `measure.xml` left alone (no argument changes) | 2, 4, 5 | see PROGRESS.md |
+| 7 | Kestrel items: one datapoint each for the VRF large offices, hydronic GSHP schools, console GSHP sizing run and simulation-side pairs, unoccupied AHU CEC4 offices, wall insulation 5552, PySAM, baseline failures 2537 and 7223; plus a packaged GSHP mixed-system OSM if the owners want to replace the extra loops instead of NA | Kestrel back | blocked |
+| 8 | Rerun the affected upgrades (14, 22, 26, 27, 29, 31, 43, 47, 48, 55, 56, 57, 59, 63, 64) on a small sample on Kestrel; pass criteria: Fail limited to the Kestrel items, applicability fractions explained against the R3 column | 2-7 | blocked |
+| 9 | PR from `ccaradon/spacetype_refactor_measure_failures` into `spacetype_refactor` (not main); flag that the class A fixes, the battery JSON and the meta_measure logging are needed on `main` too | 8 | |
 
 ## 4. Baseline failures (not this branch's scope, for the fork owner)
 
@@ -174,7 +201,7 @@ county G4400070, 5A, gen4_led). The error text is in the Kestrel run.log only.
 `resources/meta_measure.rb:248` writes `"Measure Failed with Error: #{e.backtrace.join("\n")}"`.
 Adding `e.class` and `e.message` in front of the backtrace would have made every class A failure
 self-explanatory in the parquet (`NoMethodError: undefined method 'remove_hvac' for
-#<ComStock901_2019 ...>`). One-line change, own PR to main.
+#<ComStock901_2019 ...>`). Applied in `ad147d38` on this branch; needs its own PR to main as well.
 
 ## 6. Alternative for class A: a compatibility shim in the fork
 
