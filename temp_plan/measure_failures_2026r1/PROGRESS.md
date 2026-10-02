@@ -35,7 +35,7 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 | 55, 56, 57 | Packages 2-4 (light_led) | C | done | confirmed | via 43 | | |
 | 59, 63 | Package_6, Package_10 (gshp x3), missed by the summary | A + D | done | 5,577 and 5,572 Fail | via 29, 28; simulation-side open | | |
 | 64 | Package_11 (gshp x3 + envelope + light_led) | A + C + D | done | 8,040 Fail | via 29, 28, 43, 48 | | |
-| 28 | upgrade_hvac_hydronic_gshp | D | done for :443; 32 simulation-side need Kestrel | 69 + 32 | `ad147d38` (guard) | | |
+| 28 | upgrade_hvac_hydronic_gshp | D | done for :443; 32 simulation-side need Kestrel | 69 + 32 | `ad147d38` (guard) | suite 7/7 with GHEDesigner | |
 | 12, 13 | upgrade_hvac_vrf_hr_doas | sim | 11 large offices, same in both variants | 11 + 11 | Kestrel | | |
 | 30 | upgrade_hvac_console_gshp | sim | 2 sizing run, 2 simulation-side | 4 | Kestrel | | |
 | 23 | upgrade_unoccupied_oa_controls | sim | 2 CEC4 offices | 2 | Kestrel | | |
@@ -81,7 +81,9 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
     coil, electric coil and constant-volume fan creators.
   - upgrade_hvac_hydronic_gshp and upgrade_hvac_packaged_gshp: suites need a `ghedesigner` CLI;
     installed GHEDesigner 1.0 in a throwaway venv at `C:/tmp/ghe` (needs numpy<2, scipy<1.14,
-    pandas<2.3), suites running with `PATH=/c/tmp/ghe/Scripts:$PATH`; results to follow.
+    pandas<2.3), run with `PATH=/c/tmp/ghe/Scripts:$PATH`. Hydronic: 7 runs, 40 assertions, pass
+    (GHEDesigner succeeded in all three tests that reach it). Packaged: running after the 2026-10-02
+    reboot interrupted the first attempt; result to follow.
   None of the suites covers the typical-model code paths (lighting_space_type lookup, mixed-system
   NA guard, blank heating flow method); those wait for the Kestrel OSMs.
 
