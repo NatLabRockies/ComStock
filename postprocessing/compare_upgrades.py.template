@@ -131,8 +131,17 @@ def main():
         comstock.fix_timeseries_tables(crawler_name, database)
         comstock.create_views(crawler_name, database, workgroup)
 
-    # Create measure run comparisons; only use if run has measures
-    comparison = cspp.ComStockMeasureComparison(comstock, timeseries_locations_to_plot=comstock.timeseries_locations_to_plot, make_comparison_plots = comstock.make_comparison_plots, make_timeseries_plots = comstock.make_timeseries_plots)
+    # Create measure run comparisons; only use if run has measures.
+    # export_measure_doc_assets=True also writes measure_runs/upNN_<name>/doc_assets/: the tables,
+    # figures and manifest a measure document is built from. Off by default because it adds a few
+    # minutes per upgrade. For a run already postprocessed, run instead:
+    #   python -m comstockpostproc.measure_doc_assets "output/ComStock <comstock_run_version>"
+    comparison = cspp.ComStockMeasureComparison(
+        comstock,
+        timeseries_locations_to_plot=comstock.timeseries_locations_to_plot,
+        make_comparison_plots=comstock.make_comparison_plots,
+        make_timeseries_plots=comstock.make_timeseries_plots,
+        export_measure_doc_assets=False)
 
     # Export dictionaries corresponding to the exported columns
     #comstock.export_data_and_enumeration_dictionary()
