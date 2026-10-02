@@ -39,9 +39,10 @@ annual_totals.csv, savings_by_group.csv
     savings          baseline - upgrade, so a saving is positive
     percent_savings  savings / baseline * 100; blank when the baseline is 0
     column           the plotting-data column summed
-    derived          blank, or how a value the plotting data does not carry was built (fuel
-                     totals other than electricity and natural gas are sums of their end uses;
-                     the total bill is the mean electricity bill plus the other fuels' bills)
+    derived          blank, or how a total missing from the plotting data was rebuilt. Plotting
+                     caches carry every fuel's total and the total bill; one written before
+                     they did does not, and for it a fuel total is the sum of its end uses and
+                     the total bill the mean electricity bill plus the other fuels' bills
 
     savings_by_group.csv leaves out rows whose baseline and upgrade are both 0.
 
@@ -607,7 +608,8 @@ def _checks(totals):
             d = rel(site[side], sum(r[side] for r in fuels))
             checks.append({'name': f'site energy total = sum of fuel totals ({side})', 'ok': d < 1e-4,
                            'detail': f'relative difference {d:.1e} over {len(fuels)} fuels'})
-    for fuel in ('electricity', 'natural_gas'):
+    for fuel in sorted({k[1] for k in stock if k[0] == 'site_energy' and k[1] != 'site_energy'},
+                       key=lambda f: _rank(_FUEL_ORDER, f)):
         tot = stock.get(('site_energy', fuel, 'total', ''))
         uses = [r for k, r in stock.items() if k[0] == 'site_energy' and k[1] == fuel and k[2] not in _NOT_END_USES]
         if tot and uses and not tot['derived']:
@@ -615,6 +617,16 @@ def _checks(totals):
             checks.append({'name': f'{fuel} total = sum of its end uses (baseline)', 'ok': d < 1e-4,
                            'detail': f'relative difference {d:.1e} over {len(uses)} end uses'})
     return checks
+
+
+def _rebuilt_note(specs):
+    """Say so in the manifest when an older plotting cache made the export rebuild totals."""
+    rebuilt = [f"{s['fuel']} total" if s['quantity'] == 'site_energy' else 'total bill' for s in specs if s['parts']]
+    if not rebuilt:
+        return []
+    return [f'this plotting cache has no column for: {", ".join(rebuilt)}. {"Each was" if len(rebuilt) > 1 else "It was"} '
+            'rebuilt from its parts (see the derived column of the tables); postprocess the run again to use '
+            'the exported totals.']
 
 
 def _jsonable(v):
@@ -713,7 +725,7 @@ def export(lf, upgrade_id, baseline_id, upgrade_name, measure_dir, plotter=None,
                      **{r['metric']: r['value'] for r in appl if r['metric'] in ('models', 'models_applicable')}},
             'checks': _checks(totals),
             'files': files,
-            'notes': NOTES + [f'figure not made: {p}' for p in problems],
+            'notes': NOTES + _rebuilt_note(specs) + [f'figure not made: {p}' for p in problems],
         }
         (partial / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     except BaseException:

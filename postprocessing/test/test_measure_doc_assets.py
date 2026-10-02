@@ -92,6 +92,29 @@ def test_column_specs_derive_what_the_plotting_data_lacks():
     assert [s['quantity'] for s in specs][-2:] == ['floor_area', 'building_count']
 
 
+def test_plotting_columns_carry_every_fuel_total():
+    from comstockpostproc.comstock import ComStock
+    cols = set(ComStock.plotting_columns(mda.DocAssetsPlotter()))
+    for fuel in ('site_energy', 'electricity', 'natural_gas', 'fuel_oil', 'propane', 'district_heating', 'district_cooling'):
+        assert E.format(fuel, 'total') in cols, fuel
+    assert 'calc.weighted.utility_bills.total_bill_mean..billion_usd' in cols
+
+
+def test_exported_totals_are_used_when_the_cache_has_them():
+    lf = _frame().with_columns(
+        (pl.col(E.format('fuel_oil', 'heating')) + pl.col(E.format('fuel_oil', 'water_systems')) + 1e-3)
+        .alias(E.format('fuel_oil', 'total')),
+        (pl.col('calc.weighted.utility_bills.electricity_bill_mean..billion_usd')
+         + pl.col('calc.weighted.utility_bills.natural_gas_bill_state_average..billion_usd'))
+        .alias('calc.weighted.utility_bills.total_bill_mean..billion_usd'))
+    prepared = mda.prepare(lf, 1, 0)
+    specs = mda.column_specs(prepared.collect_schema().names())
+    assert not [s for s in specs if s['parts']]
+    assert mda._rebuilt_note(specs) == []
+    fo = _find(mda.annual_totals(prepared, specs), population='stock', quantity='site_energy', fuel='fuel_oil', end_use='total')
+    assert fo['derived'] == '' and fo['baseline'] == pytest.approx(1.4 + 4 * 1e-3)  # the column (4 baseline rows), not the sum
+
+
 def test_annual_totals_compare_the_same_buildings():
     prepared = _prepared()
     rows = mda.annual_totals(prepared, mda.column_specs(prepared.collect_schema().names()))
@@ -167,6 +190,7 @@ def test_export_writes_the_contract(tmp_path):
     assert m['generator']['package'] == 'comstockpostproc'
     assert m['data']['models'] == 3 and m['data']['rows'] == {'baseline': 4, 'upgrade': 4}
     assert all(c['ok'] for c in m['checks']), m['checks']
+    assert [n for n in m['notes'] if 'fuel_oil total, total bill' in n]  # this cache predates them
     paths = [f['path'] for f in m['files']]
     assert paths == ['tables/annual_totals.csv', 'tables/applicability.csv',
                      'tables/savings_by_group.csv', 'tables/savings_distributions.csv']
