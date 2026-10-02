@@ -28,7 +28,7 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 | 26 | upgrade_hvac_pump | A | done (was wrongly "all invalid") | confirmed :144 (2,512 Fail) | `ad147d38` | suite 11/11 | |
 | 27 | upgrade_hvac_enable_ideal_air_loads | A | done | confirmed :86 (8,632 Fail) | `ad147d38` | suite 5/5 (EPW substituted) | |
 | 29 | upgrade_hvac_packaged_gshp | A + D | done | confirmed :956 (5,407), :866 (51), :874 (32), :941 (2) | `ad147d38` (port, fan curve, NA guard for mixed systems) | | |
-| 31 | upgrade_hvac_chiller | A | done (was wrongly "all invalid") | confirmed :159 (1,161 Fail) | `ad147d38` | suite 2/3, simulation test re-running | |
+| 31 | upgrade_hvac_chiller | A | done (was wrongly "all invalid") | confirmed :159 (1,161 Fail) | `ad147d38` | suite 3/3 | |
 | 43 | upgrade_light_led | C | done | confirmed (8,632 Fail) | `ad147d38` (gem data lookup) | suite 8/8 (prototype path) | |
 | 47 | upgrade_add_pvwatts (+ utility_bills) | D | done; PySAM needs Kestrel | 601 battery JSON, 16 PySAM | `ad147d38` (JSON spelling); PySAM open | | |
 | 48, 54 | upgrade_env_exterior_wall_insulation | D | done | 3 nil construction, 1 simulation-side | `ad147d38` (guard); 1 Kestrel | direct two-construction run: Success | |
@@ -69,8 +69,7 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
   - upgrade_light_led: 8 runs, 23 assertions, pass (CSV path; the gem data file resolves and loads).
   - upgrade_hvac_enable_ideal_air_loads: 5 runs, 280 assertions, pass with the EPW substitution (remove_hvac port).
   - upgrade_advanced_rtu_control: 3 runs, 25 assertions, pass (fan curve port with 'Single Zone VAV').
-  - upgrade_hvac_chiller: 2 of 3 pass (90 assertions); the simulation test hit the relative-path quirk,
-    re-run with an absolute path in progress.
+  - upgrade_hvac_chiller: 3 runs, 120 assertions, pass with an absolute path (pump_get_brake_horsepower port, simulation test included).
   - upgrade_env_exterior_wall_insulation: its suite segfaults in its own weather-file setup on this
     machine regardless of the fix; verified instead with a direct run on 370_small_office_psz_gas_2A:
     Success on the stock model, and Success on a copy where one wall carries a cloned 'Metal Building'
