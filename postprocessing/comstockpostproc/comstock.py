@@ -30,6 +30,7 @@ from natsort import natsort_keygen, natsorted
 from pathlib import Path
 
 from buildstock_query import BuildStockQuery
+from comstockpostproc.athena_config import ATHENA_WORKGROUP
 from .comstock_query_builder import ComStockQueryBuilder
 from comstockpostproc.ami import AMI
 from comstockpostproc.cbecs import CBECS
@@ -116,7 +117,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # self.s3_client = boto3.client('s3', config=botocore.client.Config(max_pool_connections=50))
         # self.s3_resource = boto3.resource('s3')
         if self.athena_table_name is not None:
-            self.athena_client = BuildStockQuery(workgroup='comcore',
+            self.athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                                  db_name='enduse',
                                                  buildstock_type='comstock',
                                                  table_name=self.athena_table_name,
@@ -387,7 +388,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def download_timeseries_data_for_ami_comparison(self, ami, reload_from_csv=True, save_individual_regions=False):
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
@@ -664,6 +665,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 bool_possibilities = [set(['true', 'false']), set(['true']), set(['false'])]
                 if set(lower_col_vals) in bool_possibilities:
                     up_res = up_res.with_columns(pl.col(col).str.to_lowercase().replace({"false": False, "true": True}, default=None))
+
+            # Must precede the downselect: this is what makes the custom-building-spec
+            # geometry columns findable under the names the definitions use.
+            up_res = self.alias_custom_building_spec_columns(up_res)
 
             # Downselect columns to reduce memory use
             up_res = self.downselect_imported_columns(up_res)
@@ -1443,6 +1448,61 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         ]
 
         self.convert_units(col_names)
+
+    def alias_custom_building_spec_columns(self, df):
+        """Read create_custom_building_from_spec_* under the legacy measure names.
+
+        The custom-building-spec measure replaced two older measures and carries their
+        arguments under its own prefix:
+
+            create_bar_from_building_type_ratios_*   (geometry)
+            create_typical_building_from_model_*     (systems, loads, schedules)
+
+        comstock_column_definitions.csv names only the two legacy spellings, so without
+        this every one of those arguments goes missing on a custom-spec run -- including
+        in.sqft, which the whole weighting and EUI chain divides by, and
+        in.hvac_system_type, which the HVAC breakdowns and the results dashboard group by.
+        The failure surfaces late and unhelpfully, as a polars ColumnNotFoundError on the
+        renamed output ("in.sqft..ft2") rather than on the input that was actually absent.
+
+        Both sets are a verified 1:1 rename against hospital_resampling/str_100k_fixes_ts:
+        53 of 53 bar columns and 31 of 31 typical-building columns have an exact
+        custom-spec twin, none without. Ten carry named outputs -- in.sqft,
+        in.comstock_building_type, in.number_of_stories, in.rotation,
+        in.hvac_system_type, in.wall_construction_type and the four operating-hours
+        columns.
+
+        Only columns named in the definitions are aliased, and only where the legacy
+        spelling is ABSENT, so this is a no-op for runs built with the older measures.
+        """
+        CUSTOM = 'create_custom_building_from_spec'
+        LEGACY = ('create_bar_from_building_type_ratios',
+                  'create_typical_building_from_model')
+
+        col_defs_path = os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)
+        defined = (pl.scan_csv(col_defs_path)
+                   .select('original_col_name').collect().to_series().to_list())
+        present = set(df.columns)
+
+        renames = {}
+        for legacy_name in defined:
+            if not legacy_name or legacy_name in present:
+                continue
+            prefix = next((p for p in LEGACY if p in legacy_name), None)
+            if prefix is None:
+                continue
+            twin = legacy_name.replace(prefix, CUSTOM)
+            # Two legacy names can map onto one custom-spec column (both measures
+            # took e.g. _template). Keep the first and leave the duplicate missing
+            # rather than letting polars raise on a duplicate rename target.
+            if twin in present and twin not in renames:
+                renames[twin] = legacy_name
+
+        if renames:
+            df = df.rename(renames)
+            logger.info(f'Aliased {len(renames)} {CUSTOM}_* columns to the legacy measure '
+                        'names used by the column definitions')
+        return df
 
     def downselect_imported_columns(self, df):
         # Downselect to the columns marked for export in column definitions
@@ -4595,7 +4655,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
     @staticmethod
     def create_views(
-            dataset_name: str, database_name: str = "vizstock", workgroup: str = "eulp"
+            dataset_name: str, database_name: str = "vizstock", workgroup: str = ATHENA_WORKGROUP
         ):
             glue = boto3.client("glue", region_name="us-west-2")
 
@@ -4831,7 +4891,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             weight_view_table = f'{self.comstock_run_name}_md_agg_national_by_state_vu'
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
