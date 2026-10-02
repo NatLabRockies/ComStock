@@ -1,0 +1,227 @@
+
+=== upgrade 12 | (simulation-side, no measure error) | 11 buildings: [3145, 3701, 3816, 3909, 4391, 4426, 4879, 4977, 5730, 5779, 5855]
+   building_type: large_office (11)
+   hvac_system_type: PVAV with PFP boxes (5), PVAV with gas boiler reheat (3), PVAV with district hot water reheat (2), PSZ-AC with gas coil (1)
+   year_built: 1981 (1), 1931 (1), 1979 (1), 1960 (1), 1974 (1), 1975 (1)
+   climate_zone: 5A (4), 4A (3), 5B (2), 6A (1), 3A (1)
+   building_subtype: largeoffice_datacenter (11)
+   heating_fuel: Electricity (5), NaturalGas (4), DistrictHeating (2)
+   service_water_heating_fuel: Electricity (5), NaturalGas (5), DistrictHeating (1)
+
+=== upgrade 13 | (simulation-side, no measure error) | 11 buildings: [3145, 3701, 3816, 3909, 4391, 4426, 4879, 4977, 5730, 5779, 5855]
+   building_type: large_office (11)
+   hvac_system_type: PVAV with PFP boxes (5), PVAV with gas boiler reheat (3), PVAV with district hot water reheat (2), PSZ-AC with gas coil (1)
+   year_built: 1981 (1), 1964 (1), 1960 (1), 1974 (1), 1968 (1), 2016 (1)
+   climate_zone: 5A (4), 4A (3), 5B (2), 3A (1), 6A (1)
+   building_subtype: largeoffice_datacenter (11)
+   heating_fuel: Electricity (5), NaturalGas (4), DistrictHeating (2)
+   service_water_heating_fuel: NaturalGas (5), Electricity (5), DistrictHeating (1)
+
+=== upgrade 23 | (simulation-side, no measure error) | 2 buildings: [4084, 8613]
+   building_type: large_office (1), medium_office (1)
+   hvac_system_type: VAV district chilled water with district hot water reheat (1), PVAV with gas boiler reheat (1)
+   year_built: 1962 (1), 1990 (1)
+   climate_zone: CEC4 (2)
+   building_subtype: mediumoffice_nodatacenter (1), largeoffice_datacenter (1)
+   heating_fuel: NaturalGas (1), DistrictHeating (1)
+   service_water_heating_fuel: NaturalGas (1), DistrictHeating (1)
+
+=== upgrade 28 | (simulation-side, no measure error) | 32 buildings: [2419, 2443, 2552, 2553, 2674, 2974, 3506, 3952, 3968, 3987, 4028, 4388, 4878, 5345, 5674, 5687, 5844, 5945, 6014, 6034, 6297, 6862, 7488, 7592, 7597, 7609, 7734, 7845, 7912, 7938, 8031, 8222]
+   building_type: secondary_school (12), primary_school (5), large_hotel (4), large_office (4), hospital (4), medium_office (3)
+   hvac_system_type: VAV chiller with gas boiler reheat (13), VAV air-cooled chiller with gas boiler reheat (7), DOAS with fan coil air-cooled chiller with boiler (7), DOAS with fan coil chiller with boiler (4), VAV chiller with PFP boxes (1)
+   year_built: 1930 (3), 1998 (2), 1975 (2), 1960 (2), 1952 (2), 1986 (1)
+   climate_zone: 5A (16), 4A (9), 5B (4), 6A (2), 4C (1)
+   building_subtype: NA (25), largeoffice_nodatacenter (4), mediumoffice_nodatacenter (3)
+   heating_fuel: NaturalGas (21), FuelOil (9), Electricity (1), Propane (1)
+   service_water_heating_fuel: NaturalGas (16), Electricity (15), FuelOil (1)
+
+=== upgrade 28 | upgrade_hvac_hydronic_gshp:443 | 69 buildings: [1062, 1271, 1544, 1585, 2054, 2180, 2479, 2518, 2709, 2923, 3054, 3094, 3118, 3176, 3184, 3192, 3242, 3397, 3398, 3546, 3578, 3870, 3942, 4113, 4468, 4544, 4702, 4715, 4823, 4835, 4971, 4999, 5070, 5133, 5478, 5529, 5587, 5617, 5989, 6038]
+   building_type: large_office (40), medium_office (14), outpatient (8), large_hotel (7)
+   hvac_system_type: VAV chiller with gas boiler reheat (25), VAV chiller with PFP boxes (14), VAV air-cooled chiller with gas boiler reheat (8), DOAS with fan coil air-cooled chiller with boiler (8), PTAC with gas boiler (7), DOAS with fan coil chiller with boiler (7)
+   year_built: 1920 (3), 1980 (2), 1968 (2), 1956 (2), 1976 (2), 2013 (2)
+   climate_zone: 4A (26), 5A (10), 3A (7), 5B (6), 2A (6), 1A (4)
+   building_subtype: largeoffice_nodatacenter (21), largeoffice_datacenter (19), NA (15), mediumoffice_nodatacenter (12), mediumoffice_datacenter (2)
+   heating_fuel: NaturalGas (45), Electricity (14), FuelOil (6), Propane (4)
+   service_water_heating_fuel: NaturalGas (33), Electricity (33), Propane (3)
+
+=== upgrade 30 | (simulation-side, no measure error) | 2 buildings: [1046, 3305]
+   building_type: retail (1), quick_service_restaurant (1)
+   hvac_system_type: Residential AC with residential forced air furnace (1), PTAC with electric coil (1)
+   year_built: 1951 (1), 2013 (1)
+   climate_zone: 3A (2)
+   building_subtype: NA (2)
+   heating_fuel: Propane (1), Electricity (1)
+   service_water_heating_fuel: NaturalGas (1), Propane (1)
+
+=== upgrade 30 | Sizing run failed. See errors in sizing run directory or this measure']}] | 2 buildings: [2692, 7749]
+   building_type: large_hotel (2)
+   hvac_system_type: PTAC with electric coil (2)
+   year_built: 2015 (1), 1924 (1)
+   climate_zone: 1A (1), 6A (1)
+   building_subtype: NA (2)
+   heating_fuel: Electricity (2)
+   service_water_heating_fuel: NaturalGas (2)
+
+=== upgrade 48 | (simulation-side, no measure error) | 1 buildings: [5552]
+   building_type: primary_school (1)
+   hvac_system_type: DOAS with water source heat pumps cooling tower with boiler (1)
+   year_built: 1921 (1)
+   climate_zone: CEC9 (1)
+   building_subtype: NA (1)
+   heating_fuel: NaturalGas (1)
+   service_water_heating_fuel: Electricity (1)
+
+=== upgrade 48 | upgrade_env_exterior_wall_insulation:215 | 3 buildings: [195, 755, 884]
+   building_type: warehouse (3)
+   hvac_system_type: PTAC with electric coil (1), PSZ-HP (1), PSZ-AC with gas coil (1)
+   year_built: 2016 (2), 2017 (1)
+   climate_zone: CEC10 (1), CEC13 (1), CEC9 (1)
+   building_subtype: NA (3)
+   heating_fuel: Electricity (2), NaturalGas (1)
+   service_water_heating_fuel: Electricity (2), NaturalGas (1)
+
+=== upgrade 54 | upgrade_env_exterior_wall_insulation:215 | 3 buildings: [195, 755, 884]
+   building_type: warehouse (3)
+   hvac_system_type: PSZ-AC with gas coil (1), PTAC with electric coil (1), PSZ-HP (1)
+   year_built: 2016 (2), 2017 (1)
+   climate_zone: CEC9 (1), CEC13 (1), CEC10 (1)
+   building_subtype: NA (3)
+   heating_fuel: Electricity (2), NaturalGas (1)
+   service_water_heating_fuel: Electricity (2), NaturalGas (1)
+
+=== upgrade 59 | (simulation-side, no measure error) | 36 buildings: [1046, 2419, 2443, 2552, 2553, 2674, 2974, 3305, 3506, 3952, 3968, 3987, 4028, 4388, 4878, 5345, 5644, 5674, 5687, 5844, 5876, 5923, 5945, 6014, 6034, 6297, 6862, 7488, 7592, 7597, 7609, 7734, 7845, 7912, 8031, 8222]
+   building_type: secondary_school (12), primary_school (5), hospital (5), large_office (5), large_hotel (4), medium_office (3)
+   hvac_system_type: VAV chiller with gas boiler reheat (14), VAV air-cooled chiller with gas boiler reheat (8), DOAS with fan coil air-cooled chiller with boiler (7), DOAS with fan coil chiller with boiler (4), VAV chiller with PFP boxes (1), Residential AC with residential forced air furnace (1)
+   year_built: 1930 (3), 1960 (2), 1951 (2), 1975 (2), 1998 (2), 1962 (2)
+   climate_zone: 5A (18), 4A (8), 5B (5), 3A (2), 6A (2), 4C (1)
+   building_subtype: NA (28), largeoffice_nodatacenter (5), mediumoffice_nodatacenter (3)
+   heating_fuel: NaturalGas (23), FuelOil (9), Propane (2), Electricity (2)
+   service_water_heating_fuel: NaturalGas (19), Electricity (16), Propane (1)
+
+=== upgrade 59 | Sizing run failed. See errors in sizing run directory or this measure']}] | 1 buildings: [7749]
+   building_type: large_hotel (1)
+   hvac_system_type: PTAC with electric coil (1)
+   year_built: 1924 (1)
+   climate_zone: 6A (1)
+   building_subtype: NA (1)
+   heating_fuel: Electricity (1)
+   service_water_heating_fuel: NaturalGas (1)
+
+=== upgrade 59 | upgrade_hvac_hydronic_gshp:443 | 69 buildings: [1062, 1271, 1544, 1585, 2054, 2180, 2479, 2518, 2709, 2923, 3054, 3094, 3118, 3176, 3184, 3192, 3242, 3397, 3398, 3546, 3578, 3870, 3942, 4113, 4468, 4544, 4702, 4715, 4823, 4835, 4971, 4999, 5070, 5133, 5478, 5529, 5587, 5617, 5989, 6038]
+   building_type: large_office (40), medium_office (14), outpatient (8), large_hotel (7)
+   hvac_system_type: VAV chiller with gas boiler reheat (25), VAV chiller with PFP boxes (14), VAV air-cooled chiller with gas boiler reheat (8), DOAS with fan coil air-cooled chiller with boiler (8), PTAC with gas boiler (7), DOAS with fan coil chiller with boiler (7)
+   year_built: 1920 (3), 1968 (2), 1963 (2), 1912 (2), 1976 (2), 1983 (2)
+   climate_zone: 4A (26), 5A (10), 3A (7), 5B (6), 2A (6), 1A (4)
+   building_subtype: largeoffice_nodatacenter (21), largeoffice_datacenter (19), NA (15), mediumoffice_nodatacenter (12), mediumoffice_datacenter (2)
+   heating_fuel: NaturalGas (45), Electricity (14), FuelOil (6), Propane (4)
+   service_water_heating_fuel: Electricity (33), NaturalGas (33), Propane (3)
+
+=== upgrade 59 | upgrade_hvac_packaged_gshp:866 | 35 buildings: [112, 137, 186, 366, 941, 1742, 2345, 2600, 2792, 3138, 3393, 3480, 3574, 3842, 4082, 4164, 4478, 4775, 5215, 5330, 5450, 5919, 5920, 6053, 6148, 6266, 6403, 6413, 6519, 6598, 6604, 6655, 6686, 6800, 7070]
+   building_type: large_office (11), small_office (10), large_hotel (8), medium_office (6)
+   hvac_system_type: DOAS with water source heat pumps cooling tower with boiler (21), Residential AC with residential forced air furnace (10), DOAS with water source heat pumps with ground source heat pump (4)
+   year_built: 2013 (2), 1978 (2), 1958 (2), 1974 (2), 1980 (2), 1960 (2)
+   climate_zone: 4A (11), 5A (10), 6A (4), 5B (3), 2A (2), 3A (2)
+   building_subtype: NA (18), largeoffice_datacenter (8), mediumoffice_datacenter (6), largeoffice_nodatacenter (3)
+   heating_fuel: NaturalGas (22), Propane (6), Electricity (4), FuelOil (3)
+   service_water_heating_fuel: NaturalGas (23), Electricity (8), Propane (4)
+
+=== upgrade 59 | upgrade_hvac_packaged_gshp:874 | 26 buildings: [345, 410, 534, 840, 878, 890, 1059, 1441, 1480, 1535, 1652, 1814, 2346, 2360, 2395, 2865, 2967, 3181, 3567, 3892, 4332, 4357, 4441, 4449, 5964, 6127]
+   building_type: small_office (15), large_hotel (8), warehouse (3)
+   hvac_system_type: PTHP (12), PTAC with electric coil (7), PTAC with gas coil (4), PVAV with gas boiler reheat (3)
+   year_built: 1997 (3), 1940 (2), 1970 (2), 1975 (2), 2004 (2), 2015 (1)
+   climate_zone: 4A (10), 5B (4), 6A (3), 3A (3), 5A (2), 4C (2)
+   building_subtype: NA (26)
+   heating_fuel: Electricity (19), NaturalGas (6), Propane (1)
+   service_water_heating_fuel: Electricity (15), NaturalGas (11)
+
+=== upgrade 59 | upgrade_hvac_packaged_gshp:941 | 1 buildings: [6793]
+   building_type: outpatient (1)
+   hvac_system_type: PVAV with gas boiler reheat (1)
+   year_built: 1974 (1)
+   climate_zone: 3A (1)
+   building_subtype: NA (1)
+   heating_fuel: NaturalGas (1)
+   service_water_heating_fuel: Electricity (1)
+
+=== upgrade 59 | upgrade_hvac_packaged_gshp:956 | 5407 buildings: [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
+   building_type: small_office (668), medium_office (659), warehouse (581), outpatient (527), full_service_restaurant (517), strip_mall (502)
+   hvac_system_type: PSZ-AC with gas coil (2077), PSZ-AC with electric coil (1104), PVAV with gas boiler reheat (628), PSZ-HP (562), PVAV with PFP boxes (525), PVAV with gas heat with electric reheat (360)
+   year_built: 1980 (126), 1970 (116), 2000 (106), 1986 (105), 1950 (105), 1985 (102)
+   climate_zone: 4A (897), 5A (884), 3A (646), 6A (367), 5B (343), 2A (328)
+   building_subtype: NA (4108), mediumoffice_nodatacenter (527), strip_mall_restaurant20 (207), mediumoffice_datacenter (132), strip_mall_restaurant30 (120), strip_mall_restaurant10 (116)
+   heating_fuel: Electricity (2191), NaturalGas (2097), FuelOil (560), Propane (559)
+   service_water_heating_fuel: Electricity (3027), NaturalGas (1906), Propane (280), FuelOil (194)
+
+=== upgrade 63 | (simulation-side, no measure error) | 30 buildings: [1046, 2419, 2550, 2552, 2674, 3305, 3486, 3506, 3880, 3952, 3968, 3987, 4034, 4117, 5345, 5687, 5844, 5945, 6014, 6802, 6862, 6907, 7303, 7488, 7592, 7597, 7609, 7734, 7821, 7845]
+   building_type: secondary_school (15), hospital (3), primary_school (3), large_hotel (3), medium_office (2), large_office (2)
+   hvac_system_type: VAV chiller with gas boiler reheat (11), VAV air-cooled chiller with gas boiler reheat (6), DOAS with fan coil air-cooled chiller with boiler (6), DOAS with fan coil chiller with boiler (4), Residential AC with residential forced air furnace (1), PTAC with electric coil (1)
+   year_built: 1952 (2), 1930 (2), 1998 (2), 1900 (1), 1991 (1), 1981 (1)
+   climate_zone: 5A (15), 4A (9), 5B (3), 3A (2), 4B (1)
+   building_subtype: NA (26), mediumoffice_nodatacenter (2), largeoffice_nodatacenter (2)
+   heating_fuel: NaturalGas (18), FuelOil (9), Electricity (2), Propane (1)
+   service_water_heating_fuel: NaturalGas (15), Electricity (13), Propane (1), FuelOil (1)
+
+=== upgrade 63 | Sizing run failed. See errors in sizing run directory or this measure']}] | 1 buildings: [7749]
+   building_type: large_hotel (1)
+   hvac_system_type: PTAC with electric coil (1)
+   year_built: 1924 (1)
+   climate_zone: 6A (1)
+   building_subtype: NA (1)
+   heating_fuel: Electricity (1)
+   service_water_heating_fuel: NaturalGas (1)
+
+=== upgrade 63 | upgrade_env_exterior_wall_insulation:215 | 3 buildings: [195, 755, 884]
+   building_type: warehouse (3)
+   hvac_system_type: PSZ-AC with gas coil (1), PTAC with electric coil (1), PSZ-HP (1)
+   year_built: 2016 (2), 2017 (1)
+   climate_zone: CEC13 (1), CEC10 (1), CEC9 (1)
+   building_subtype: NA (3)
+   heating_fuel: Electricity (2), NaturalGas (1)
+   service_water_heating_fuel: Electricity (2), NaturalGas (1)
+
+=== upgrade 63 | upgrade_hvac_hydronic_gshp:443 | 69 buildings: [1062, 1271, 1544, 1585, 2054, 2180, 2479, 2518, 2709, 2923, 3054, 3094, 3118, 3176, 3184, 3192, 3242, 3397, 3398, 3546, 3578, 3870, 3942, 4113, 4468, 4544, 4702, 4715, 4823, 4835, 4971, 4999, 5070, 5133, 5478, 5529, 5587, 5617, 5989, 6038]
+   building_type: large_office (40), medium_office (14), outpatient (8), large_hotel (7)
+   hvac_system_type: VAV chiller with gas boiler reheat (25), VAV chiller with PFP boxes (14), DOAS with fan coil air-cooled chiller with boiler (8), VAV air-cooled chiller with gas boiler reheat (8), DOAS with fan coil chiller with boiler (7), PTAC with gas boiler (7)
+   year_built: 1920 (3), 1963 (2), 2011 (2), 2000 (2), 1968 (2), 1912 (2)
+   climate_zone: 4A (26), 5A (10), 3A (7), 2A (6), 5B (6), 1A (4)
+   building_subtype: largeoffice_nodatacenter (21), largeoffice_datacenter (19), NA (15), mediumoffice_nodatacenter (12), mediumoffice_datacenter (2)
+   heating_fuel: NaturalGas (45), Electricity (14), FuelOil (6), Propane (4)
+   service_water_heating_fuel: Electricity (33), NaturalGas (33), Propane (3)
+
+=== upgrade 63 | upgrade_hvac_packaged_gshp:866 | 35 buildings: [112, 137, 186, 366, 941, 1742, 2345, 2600, 2792, 3138, 3393, 3480, 3574, 3842, 4082, 4164, 4478, 4775, 5215, 5330, 5450, 5919, 5920, 6053, 6148, 6266, 6403, 6413, 6519, 6598, 6604, 6655, 6686, 6800, 7070]
+   building_type: large_office (11), small_office (10), large_hotel (8), medium_office (6)
+   hvac_system_type: DOAS with water source heat pumps cooling tower with boiler (21), Residential AC with residential forced air furnace (10), DOAS with water source heat pumps with ground source heat pump (4)
+   year_built: 2013 (2), 1974 (2), 1960 (2), 1978 (2), 1958 (2), 1980 (2)
+   climate_zone: 4A (11), 5A (10), 6A (4), 5B (3), 3A (2), 2A (2)
+   building_subtype: NA (18), largeoffice_datacenter (8), mediumoffice_datacenter (6), largeoffice_nodatacenter (3)
+   heating_fuel: NaturalGas (22), Propane (6), Electricity (4), FuelOil (3)
+   service_water_heating_fuel: NaturalGas (23), Electricity (8), Propane (4)
+
+=== upgrade 63 | upgrade_hvac_packaged_gshp:874 | 24 buildings: [345, 410, 534, 840, 878, 890, 1059, 1441, 1480, 1535, 1814, 2346, 2360, 2395, 2865, 3181, 3567, 3892, 4332, 4357, 4441, 4449, 6127, 7952]
+   building_type: small_office (15), large_hotel (8), warehouse (1)
+   hvac_system_type: PTHP (12), PTAC with electric coil (7), PTAC with gas coil (4), PVAV with gas boiler reheat (1)
+   year_built: 1997 (3), 2004 (2), 1970 (2), 1940 (2), 1962 (1), 1903 (1)
+   climate_zone: 4A (11), 5B (4), 6A (3), 3A (2), 2B (1), 4C (1)
+   building_subtype: NA (24)
+   heating_fuel: Electricity (19), NaturalGas (3), Propane (1), FuelOil (1)
+   service_water_heating_fuel: Electricity (13), NaturalGas (11)
+
+=== upgrade 63 | upgrade_hvac_packaged_gshp:941 | 2 buildings: [6252, 7570]
+   building_type: outpatient (1), large_office (1)
+   hvac_system_type: PVAV with PFP boxes (1), PVAV with gas boiler reheat (1)
+   year_built: 1995 (1), 1986 (1)
+   climate_zone: CEC7 (1), 5A (1)
+   building_subtype: largeoffice_datacenter (1), NA (1)
+   heating_fuel: Electricity (1), Propane (1)
+   service_water_heating_fuel: Electricity (2)
+
+=== upgrade 63 | upgrade_hvac_packaged_gshp:956 | 5406 buildings: [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
+   building_type: small_office (668), medium_office (659), warehouse (581), outpatient (527), full_service_restaurant (517), strip_mall (502)
+   hvac_system_type: PSZ-AC with gas coil (2076), PSZ-AC with electric coil (1104), PVAV with gas boiler reheat (630), PSZ-HP (561), PVAV with PFP boxes (524), PVAV with gas heat with electric reheat (360)
+   year_built: 1980 (126), 1970 (116), 2000 (107), 1950 (105), 1986 (104), 1985 (102)
+   climate_zone: 4A (896), 5A (884), 3A (648), 6A (367), 5B (343), 2A (328)
+   building_subtype: NA (4108), mediumoffice_nodatacenter (527), strip_mall_restaurant20 (207), mediumoffice_datacenter (132), strip_mall_restaurant30 (120), strip_mall_restaurant10 (116)
+   heating_fuel: Electricity (2189), NaturalGas (2100), FuelOil (559), Propane (558)
+   service_water_heating_fuel: Electricity (3027), NaturalGas (1905), Propane (280), FuelOil (194)
+
+simulation-side failures: 60 distinct buildings, 44 fail in more than one upgrade: 1046:[30, 59, 63], 2419:[28, 59, 63], 2443:[28, 59], 2552:[28, 59, 63], 2553:[28, 59], 2674:[28, 59, 63], 2974:[28, 59], 3145:[12, 13], 3305:[30, 59, 63], 3506:[28, 59, 63], 3701:[12, 13], 3816:[12, 13], 3909:[12, 13], 3952:[28, 59, 63], 3968:[28, 59, 63], 3987:[28, 59, 63], 4028:[28, 59], 4388:[28, 59], 4391:[12, 13], 4426:[12, 13], 4878:[28, 59], 4879:[12, 13], 4977:[12, 13], 5345:[28, 59, 63], 5674:[28, 59], 5687:[28, 59, 63], 5730:[12, 13], 5779:[12, 13], 5844:[28, 59, 63], 5855:[12, 13]

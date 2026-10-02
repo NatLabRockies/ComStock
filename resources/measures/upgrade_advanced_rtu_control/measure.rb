@@ -388,7 +388,11 @@ def run(model, runner, user_arguments)
 			fan.setMaximumFlowRate(fan_flow) #keep it the same as the existing fan, since the fan itself will be the same
 			fan.setFanTotalEfficiency(fan_motor_eff * fan_eff)
 			#set fan curve coefficients
-			standard.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
+			# openstudio-standards 0.8.5 moved this to OpenstudioStandards::HVAC with a control_type keyword. The old string
+			# 'Single Zone VAV Fan ' matched no option, so through 2025R3 the call only warned and left the OpenStudio default
+			# coefficients in place; 'Single Zone VAV' applies the 90.1-2016 System 11 curve the comment above intends.
+			# For parity with 2025R3 results, delete the call instead.
+			OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
 			fan.setFanPowerMinimumFlowFraction(min_flow_fraction) #resetting minimum flow fraction to be appropriate for retrofit as opposed to 10% in method above
 			#Add it to the unitary sys
 			component.setSupplyFan(fan)

@@ -850,6 +850,20 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       object_to_remove.remove
     end
 
+    # Zones the inventories above did not capture are served by a loop skipped as DOAS, residential,
+    # no-outdoor-air or evaporative, or by zone equipment the measure does not replace (PTAC, PTHP, WSHP).
+    # Prototype models never mixed those with PSZ/PVAV loops; typical models do (a building otherwise on
+    # PTAC or DOAS plus a separate single-zone loop), and such zones reached setAvailabilitySchedule(nil) or
+    # a nil zone_data hash below. The measure replaces the whole HVAC system and removes the plant loops,
+    # so it cannot leave those zones on their existing equipment: register as not applicable instead.
+    uninventoried_zones = model.getThermalZones.reject do |zone|
+      zones_to_skip.include?(zone.name.get) || unconditioned_zones.include?(zone.name.get) ||
+        (zone_data.key?("#{zone.name} schedule") && zone_data.key?(zone.name.to_s))
+    end
+    unless uninventoried_zones.empty?
+      runner.registerAsNotApplicable("Zones #{uninventoried_zones.map { |z| z.name.get }.join(', ')} are served by HVAC this measure does not replace (DOAS, residential, evaporative, PTAC/PTHP or other zone equipment); measure is not applicable.")
+      return true
+    end
     # loop through thermal zones and add
     model.getThermalZones.each do |thermal_zone|
       # skip if zone has baseboards and should not get a GHP
@@ -953,7 +967,11 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       fan.setFanPowerMinimumFlowRateInputMethod('Fraction')
       fan.setFanPowerMinimumFlowFraction(min_fan_flow_ratio) # need to add check for ventilation
       # set fan curve coefficients
-      std.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
+      # openstudio-standards 0.8.5 moved this to OpenstudioStandards::HVAC with a control_type keyword. The old string
+      # 'Single Zone VAV Fan ' matched no option, so through 2025R3 the call only warned and left the OpenStudio default
+      # coefficients in place; 'Single Zone VAV' applies the 90.1-2016 System 11 curve the comment above intends.
+      # For parity with 2025R3 results, delete the call instead.
+      OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
       zone_data["#{thermal_zone.name} min_fan_flow_ratio"] = min_fan_flow_ratio
 
 

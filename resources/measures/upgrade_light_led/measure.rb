@@ -36,6 +36,8 @@
 # *******************************************************************************
 
 require 'csv'
+require 'json'
+require 'comstock-typical'
 
 # start the measure
 class LightLED < OpenStudio::Measure::ModelMeasure
@@ -159,6 +161,41 @@ class LightLED < OpenStudio::Measure::ModelMeasure
   end
 
   # define what happens when the measure is run
+  # The gem's lighting space type data, located from the loaded gem so the measure never carries a copy.
+  # @return [Array<Hash>] rows of lighting_space_types.json, or nil (with an error registered) if not found
+  def load_gem_lighting_space_types(runner)
+    source = OpenstudioStandards::InteriorLighting.method(:create_typical_interior_lighting).source_location.first
+    path = File.join(File.dirname(source), 'data', 'lighting_space_types.json')
+    unless File.file?(path)
+      runner.registerError("Unable to find the gem's lighting space type data at #{path}")
+      return nil
+    end
+    JSON.parse(File.read(path), symbolize_names: true)[:lighting_space_types]
+  end
+
+  # Map a row of the gem's lighting_space_types.json onto the field names of the measure's
+  # prototype_lighting_space_type.csv so change_lighting_technology can use either source.
+  # The gem stores the target illuminance in lux; the CSV uses lumens per ft2 (footcandles).
+  # @return [Hash] properties keyed like the CSV rows
+  def gem_row_to_csv_fields(row)
+    illuminance = row[:lighting_space_type_target_illuminance_setpoint].to_f
+    units = row[:lighting_space_type_target_illuminance_units].to_s.downcase
+    illuminance_fc = units == 'lux' ? illuminance / 10.7639 : illuminance
+    {
+      prototype_lighting_space_type: row[:lighting_space_type_name].to_s,
+      total_horizontal_illuminance_lumens_per_ft2: illuminance_fc,
+      room_surface_dirt_depreciation: 1.0, # not in the gem data; the LPD formula ignores depreciation terms
+      general_lighting_fraction: row[:general_lighting_fraction].to_f,
+      general_lighting_coefficient_of_utilization: row[:general_lighting_coefficient_of_utilization].to_f,
+      task_lighting_fraction: row[:task_lighting_fraction].to_f,
+      task_lighting_coefficient_of_utilization: row[:task_lighting_coefficient_of_utilization].to_f,
+      supplemental_lighting_fraction: row[:supplemental_lighting_fraction].to_f,
+      supplemental_lighting_coefficient_of_utilization: row[:supplemental_lighting_coefficient_of_utilization].to_f,
+      wall_wash_lighting_fraction: row[:wall_wash_lighting_fraction].to_f,
+      wall_wash_lighting_coefficient_of_utilization: row[:wall_wash_lighting_coefficient_of_utilization].to_f
+    }
+  end
+
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
 
@@ -187,6 +224,10 @@ class LightLED < OpenStudio::Measure::ModelMeasure
     end
     lighting_technology_tbl = CSV.table(lighting_technology_csv)
     lighting_technology_hsh = lighting_technology_tbl.map(&:to_hash)
+
+    # lighting space type data from the gem, for typical models (see the lookup in the space type loop)
+    gem_lighting_space_types = load_gem_lighting_space_types(runner)
+    return false if gem_lighting_space_types.nil?
 
     # get lighting technology for the user-selected lighting generation
     lighting_technologies = lighting_technology_hsh.select { |r| (r[:lighting_generation] == lighting_generation) }
@@ -232,21 +273,30 @@ class LightLED < OpenStudio::Measure::ModelMeasure
       # get number of people for lighting calculations
       space_type_number_of_people = space_type.getNumberOfPeople(space_type_floor_area)
 
-      # get prototype lighting space type from the model
-      has_prototype_lighting_space_type = space_type.additionalProperties.hasFeature('prototype_lighting_space_type')
-      unless has_prototype_lighting_space_type
-        runner.registerError("Space type '#{space_type.name}' does not have a prototype_lighting_space_type property assigned.  Cannot assign lighting.")
-        break
+      # Lighting properties for the space type. Typical models (create_custom_building_from_spec) carry a
+      # 'lighting_space_type' property keyed to the gem's lighting_space_types.json, the data the baseline
+      # lighting was built from; prototype-era models carry 'prototype_lighting_space_type' and use the
+      # measure's CSV. Both are mapped onto the CSV field names so the LPD math below is shared.
+      if space_type.additionalProperties.hasFeature('lighting_space_type')
+        prototype_lighting_space_type = space_type.additionalProperties.getFeatureAsString('lighting_space_type').to_s
+        row = gem_lighting_space_types.select { |r| r[:lighting_space_type_name] == prototype_lighting_space_type }
+        if prototype_lighting_space_type == 'na' || row.empty?
+          runner.registerWarning("Space type '#{space_type.name}' has lighting space type '#{prototype_lighting_space_type}' with no lighting data, so it had no typical lighting. Skipping.")
+          next
+        end
+        prototype_lighting_space_type_properties = gem_row_to_csv_fields(row[0])
+      elsif space_type.additionalProperties.hasFeature('prototype_lighting_space_type')
+        prototype_lighting_space_type = space_type.additionalProperties.getFeatureAsString('prototype_lighting_space_type').to_s
+        row = prototype_lighting_space_type_hsh.select { |r| (r[:prototype_lighting_space_type] == prototype_lighting_space_type) }
+        if row.empty?
+          runner.registerError("Unable to find prototype lighting space type data for '#{prototype_lighting_space_type}'")
+          break
+        end
+        prototype_lighting_space_type_properties = row[0]
+      else
+        runner.registerWarning("Space type '#{space_type.name}' has neither a lighting_space_type nor a prototype_lighting_space_type property. Skipping.")
+        next
       end
-      prototype_lighting_space_type = space_type.additionalProperties.getFeatureAsString('prototype_lighting_space_type').to_s
-
-      # get lighting properties for the prototype lighting space type
-      row = prototype_lighting_space_type_hsh.select { |r| (r[:prototype_lighting_space_type] == prototype_lighting_space_type) }
-      if row.empty?
-        runner.registerError("Unable to find prototype lighting space type data for '#{prototype_lighting_space_type}'")
-        break
-      end
-      prototype_lighting_space_type_properties = row[0]
       prototype_lighting_space_type_properties[:space_type_average_height_ft] = space_type_average_height_ft
 
       # get initial conditions

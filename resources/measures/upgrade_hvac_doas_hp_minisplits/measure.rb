@@ -336,18 +336,18 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
             supply_outlet_node = air_loop_hvac.supplyOutletNode
 
             # add new cooling coil
-            clg_coil = std.create_coil_cooling_dx_single_speed(model,
+            clg_coil = OpenstudioStandards::HVAC.create_coil_cooling_dx_single_speed(model,
                         air_loop_node: supply_outlet_node,
                         name: "#{air_loop_hvac.name} 1spd DX AC Clg Coil",
                         type: 'PSZ-AC')
 
             # add new electric heating coil
-            htg_coil = std.create_coil_heating_electric(model,
+            htg_coil = OpenstudioStandards::HVAC.create_coil_heating_electric(model,
                         air_loop_node: supply_outlet_node,
                         name: "#{air_loop_hvac.name} Electric Htg Coil")
 
             # add new fan
-            fan = std.create_fan_constant_volume(model,
+            fan = OpenstudioStandards::HVAC.create_fan_constant_volume(model,
                         fan_name: "#{air_loop_hvac.name} Constant Volume Supply Fan",
                         pressure_rise: fan_static_pressure)
             fan.addToNode(supply_outlet_node) unless supply_outlet_node.nil?

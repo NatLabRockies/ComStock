@@ -226,6 +226,12 @@
       "notes": "From T24 2022 Table 140.10-B"
     },
     {
+      "building_type": "RetailStripmall",
+      "battery_storage_factor_b_energy_capacity": 1.03,
+      "battery_storage_factor_c_power_capacity": 0.26,
+      "notes": "From T24 2022 Table 140.10-B"
+    },
+    {
       "building_type": "retail_strip_mall",
       "battery_storage_factor_b_energy_capacity": 1.03,
       "battery_storage_factor_c_power_capacity": 0.26,

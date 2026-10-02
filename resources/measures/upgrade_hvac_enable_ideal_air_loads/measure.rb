@@ -83,7 +83,7 @@ class UpgradeHvacEnableIdealAirLoads < OpenStudio::Measure::ModelMeasure
 
     # remove existing HVAC
     runner.registerInfo('Removing existing HVAC systems from the model')
-    std.remove_hvac(model)
+    OpenstudioStandards::HVAC.remove_hvac(model)
 
     # add zone hvac ideal load air system objects
     conditioned_zones = []
