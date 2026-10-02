@@ -662,18 +662,37 @@ def plotting_cache_files(run_dir, upgrade_ids):
     return sorted(p for u in ids for p in root.glob(f'upgrade={u}/*.parquet'))
 
 
+def is_baseline(upgrade_id):
+    """True for the ComStock baseline, upgrade 0 (0 in the plotting cache, '00' in some runs)."""
+    return str(upgrade_id).isdigit() and int(str(upgrade_id)) == 0
+
+
 def export(lf, upgrade_id, baseline_id, upgrade_name, measure_dir, plotter=None, run=None,
            inputs=(), figures=True):
     """Write measure_dir/doc_assets/ for one upgrade and return its path.
 
     lf holds the plotting rows of the baseline and the upgrade (more rows are ignored). The
-    folder is built beside the old one and swapped in only when complete; if anything fails,
-    neither a partial folder nor a stale one from an earlier run is left behind.
+    baseline must be upgrade 0: the plotting data's savings columns, and the figures drawn from
+    them, are all computed against it.
+
+    The folder is built beside the current one and swapped in only when complete. If anything
+    fails, the current folder is left as it was and nothing partial remains; the manifest's input
+    hashes tell a reader whether a folder still matches its run.
     """
+    if not is_baseline(baseline_id):
+        raise ValueError(f'doc_assets compare an upgrade with the ComStock baseline, upgrade 0, not upgrade '
+                         f'{baseline_id}: the savings columns of the plotting data, and the figures drawn '
+                         'from them, are all computed against upgrade 0')
     measure_dir = Path(measure_dir)
     final = measure_dir / DOC_ASSETS_DIR
     partial = measure_dir / (DOC_ASSETS_DIR + '.partial')
+    previous = measure_dir / (DOC_ASSETS_DIR + '.previous')
     _check_path_length(partial, figures)
+    if previous.exists():  # left by an interrupted swap: it is the current folder if there is no other
+        if final.exists():
+            shutil.rmtree(previous, ignore_errors=True)
+        else:
+            previous.rename(final)
     shutil.rmtree(partial, ignore_errors=True)
     try:
         (partial / 'tables').mkdir(parents=True)
@@ -731,12 +750,22 @@ def export(lf, upgrade_id, baseline_id, upgrade_name, measure_dir, plotter=None,
     except BaseException:
         shutil.rmtree(partial, ignore_errors=True)
         if final.exists():
-            shutil.rmtree(final, ignore_errors=True)
-            logger.error(f'doc_assets: removed {final}, which no longer matches this run')
+            logger.warning(f'doc_assets: {final} was left as it was, from its earlier export')
         raise
-    if final.exists():
-        shutil.rmtree(final)
-    partial.rename(final)
+
+    # Swap: the current folder steps aside, and comes back if the new one cannot take its place.
+    try:
+        if final.exists():
+            final.rename(previous)
+        partial.rename(final)
+    except BaseException:
+        try:
+            if previous.exists() and not final.exists():
+                previous.rename(final)
+        finally:
+            shutil.rmtree(partial, ignore_errors=True)
+        raise
+    shutil.rmtree(previous, ignore_errors=True)
     logger.info(f'doc_assets: wrote {final} ({len(files)} files)')
     return final
 
@@ -779,8 +808,8 @@ def main(argv=None):
         description='Write measure_runs/upNN_<name>/doc_assets/ for a postprocessed run, from the '
                     'cached plotting data its comparison figures were drawn from.')
     ap.add_argument('run_dir', help='postprocessing output folder, e.g. "postprocessing/output/ComStock my_run"')
-    ap.add_argument('--upgrade', type=int, nargs='+', help='upgrade ids (default: every upgrade)')
-    ap.add_argument('--baseline', type=int, default=0, help='baseline upgrade id (default 0)')
+    ap.add_argument('--upgrade', type=int, nargs='+', help='upgrade ids (default: every upgrade); each is '
+                    'compared with the baseline, upgrade 0')
     ap.add_argument('--no-figures', action='store_true', help='tables and manifest only')
     ap.add_argument('--out', help='write <OUT>/upNN_<name>/doc_assets/ instead of into the run\'s measure_runs/')
     args = ap.parse_args(argv)
@@ -795,13 +824,15 @@ def main(argv=None):
     lf = (pl.scan_parquet([str(f) for f in files], hive_partitioning=True)
           .with_columns(pl.col(UPGRADE_NAME).cast(pl.String)))
     names = dict(lf.select(UPGRADE_ID, UPGRADE_NAME).unique().collect().iter_rows())
-    if args.baseline not in names:
-        print(f'error: baseline upgrade {args.baseline} is not in the cached plotting data', file=sys.stderr)
+    baseline = 0
+    if baseline not in names:
+        print('error: the baseline, upgrade 0, is not in the cached plotting data', file=sys.stderr)
         return 2
-    ids = args.upgrade or sorted(u for u in names if u != args.baseline)
+    ids = args.upgrade or sorted(u for u in names if u != baseline)
     missing = [u for u in ids if u not in names]
-    if missing:
-        print(f'error: upgrades {missing} are not in the cached plotting data (found {sorted(names)})', file=sys.stderr)
+    if missing or baseline in ids:
+        print(f'error: upgrades {missing or [baseline]} cannot be exported (found {sorted(names)}; '
+              'upgrade 0 is the baseline every upgrade is compared with)', file=sys.stderr)
         return 2
     dataset = lf.select(pl.col('dataset').first()).collect().item() if 'dataset' in lf.collect_schema().names() else run_dir.name
     plotter = DocAssetsPlotter()
@@ -809,9 +840,9 @@ def main(argv=None):
     for uid in ids:
         run = {'dataset_name': dataset, 'run_dir': str(run_dir),
                'source': 'cached plotting data, via python -m comstockpostproc.measure_doc_assets'}
-        out = export(lf.filter(pl.col(UPGRADE_ID).is_in([args.baseline, uid])), uid, args.baseline, names[uid],
+        out = export(lf.filter(pl.col(UPGRADE_ID).is_in([baseline, uid])), uid, baseline, names[uid],
                      measure_runs / measure_dir_name(uid, names[uid]), plotter=plotter, run=run,
-                     inputs=plotting_cache_files(run_dir, [args.baseline, uid]), figures=not args.no_figures)
+                     inputs=plotting_cache_files(run_dir, [baseline, uid]), figures=not args.no_figures)
         print(out)
     return 0
 

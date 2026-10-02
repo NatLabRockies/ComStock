@@ -208,20 +208,73 @@ def test_export_writes_the_contract(tmp_path):
     assert all(float(r['baseline']) == 0 for r in pv_free)  # blank only where the baseline is 0
 
 
-def test_export_replaces_and_never_leaves_partial_or_stale(tmp_path, monkeypatch):
+def _leftovers(measure_dir):
+    return sorted(p.name for p in measure_dir.iterdir() if p.name != 'doc_assets')
+
+
+def test_export_replaces_the_folder(tmp_path):
     measure_dir = tmp_path / 'up01_x'
     mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
-    (measure_dir / 'doc_assets' / 'stale.txt').write_text('old')
+    (measure_dir / 'doc_assets' / 'old.txt').write_text('old')
     mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
-    assert not (measure_dir / 'doc_assets' / 'stale.txt').exists()
+    assert not (measure_dir / 'doc_assets' / 'old.txt').exists()
+    assert _leftovers(measure_dir) == []
+
+
+def test_a_failed_export_keeps_the_current_folder(tmp_path, monkeypatch):
+    measure_dir = tmp_path / 'up01_x'
+    mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
+    (measure_dir / 'doc_assets' / 'old.txt').write_text('old')
 
     def boom(*a, **k):
         raise RuntimeError('boom')
     monkeypatch.setattr(mda, 'savings_by_group', boom)
     with pytest.raises(RuntimeError):
         mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
-    assert not (measure_dir / 'doc_assets').exists()
-    assert not (measure_dir / 'doc_assets.partial').exists()
+    assert (measure_dir / 'doc_assets' / 'old.txt').read_text() == 'old'
+    assert _leftovers(measure_dir) == []
+
+
+def test_a_failed_swap_restores_the_current_folder(tmp_path, monkeypatch):
+    measure_dir = tmp_path / 'up01_x'
+    mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
+    (measure_dir / 'doc_assets' / 'old.txt').write_text('old')
+    real_rename = Path.rename
+
+    def locked(self, target):
+        if self.name == 'doc_assets.partial':
+            raise PermissionError('in use')
+        return real_rename(self, target)
+    monkeypatch.setattr(Path, 'rename', locked)
+    with pytest.raises(PermissionError):
+        mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
+    assert (measure_dir / 'doc_assets' / 'old.txt').read_text() == 'old'
+    assert _leftovers(measure_dir) == []
+
+
+def test_an_interrupted_swap_is_recovered(tmp_path):
+    measure_dir = tmp_path / 'up01_x'
+    mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
+    (measure_dir / 'doc_assets').rename(measure_dir / 'doc_assets.previous')  # as if killed mid-swap
+    mda.export(_frame(), 1, 0, 'Test Measure', measure_dir, figures=False)
+    assert (measure_dir / 'doc_assets' / 'manifest.json').is_file()
+    assert _leftovers(measure_dir) == []
+
+
+def test_export_compares_with_upgrade_0_only(tmp_path):
+    three = pl.concat([_frame(), _frame().filter(pl.col('upgrade') == 1).with_columns(pl.lit(2, pl.Int64).alias('upgrade'))])
+    with pytest.raises(ValueError, match='upgrade 0'):
+        mda.export(three, 2, 1, 'Test Measure', tmp_path / 'up02_x', figures=False)
+    assert not (tmp_path / 'up02_x').exists()
+    assert mda.is_baseline(0) and mda.is_baseline('00') and not mda.is_baseline(1) and not mda.is_baseline('01')
+
+
+def test_plot_data_reads_string_upgrade_ids_as_numbers():
+    # The savings-distribution plots find upgrade rows with `upgrade != 0`; runs with '00'-style
+    # ids still work because the plotting loader casts the column to float first.
+    lf = _frame().with_columns(pl.col('upgrade').cast(pl.String).str.zfill(2))
+    df = LazyFramePlotter.select_columns(lf, ['upgrade', 'in.upgrade_name', 'applicability', 'bldg_id'])
+    assert set(df.loc[df['upgrade'] != 0, 'in.upgrade_name']) == {'Test Measure'}
 
 
 def test_normalize_figure(tmp_path):
