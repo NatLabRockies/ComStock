@@ -17,6 +17,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 REP_RE = re.compile(r"^Unknown Eligibility and Nonresponse Adjusted Replicate Weight (\d+)$")
 
@@ -37,7 +38,8 @@ def grouped_totals_with_ci(
 ) -> pd.DataFrame:
     """Weighted totals of each value column per group, with jackknife 95% CIs.
 
-    Returns tidy rows: [by, metric, estimate, se, rse_pct, ci95_low, ci95_high].
+    Returns tidy rows: [by, metric, estimate, se, rse_pct, ci95_low, ci95_high],
+    group-major in the groupby's sorted order.
 
     CBECS leaves consumption BLANK for a building that does not use the fuel or
     end use, so a blank in a published column counts as zero, and a group with
@@ -48,37 +50,49 @@ def grouped_totals_with_ci(
     propane -- is NaN in every group, never zero. "Published" is decided over
     the whole frame rather than per group: deciding it per group turned a group
     with no users of a fuel into "no value" instead of 0.
+
+    Every column is converted to numbers once, and the group sums are one sparse
+    product (groups x records) per metric. Converting inside a per-group loop cost
+    about a minute per dashboard build.
     """
     reps = replicate_cols(df)
     kappa = (len(reps) - 1) / len(reps)
-    published = df[value_cols].apply(pd.to_numeric, errors="coerce").notna().any(axis=0).to_numpy()
-    rows = []
-    for key, g in df.groupby(by, dropna=False, observed=True):
-        w = pd.to_numeric(g[weight_col], errors="coerce").to_numpy(float)
-        rep_w = g[reps].apply(pd.to_numeric, errors="coerce").to_numpy(float)  # n x R
-        vals = g[value_cols].apply(pd.to_numeric, errors="coerce").to_numpy(float)  # n x m
-        x = np.nan_to_num(vals, nan=0.0)                   # blank = not used = 0
-        theta = x.T @ np.nan_to_num(w)                     # m
-        rep_theta = x.T @ np.nan_to_num(rep_w)             # m x R
-        var = kappa * ((rep_theta - theta[:, None]) ** 2).sum(axis=1)
-        se = np.sqrt(var)
-        for i, m in enumerate(value_cols):
-            est = float(theta[i]) if published[i] else np.nan
-            s = float(se[i]) if published[i] else np.nan
-            # A zero total means no surveyed record in the group uses it, so every
-            # replicate is zero too and the SE is 0 by construction, not by
-            # precision. Report no interval: a [0, 0] "CI" made any ComStock value
-            # a significant gap on the strength of as little as one building.
-            if est == 0.0:
-                s = np.nan
-            has_ci = est == est and s == s
-            rows.append({
-                by: key,
-                "metric_col": m,
-                "estimate": est,
-                "se": s,
-                "rse_pct": (100.0 * s / est) if has_ci and est else np.nan,
-                "ci95_low": max(est - 1.96 * s, 0.0) if has_ci else np.nan,
-                "ci95_high": est + 1.96 * s if has_ci else np.nan,
-            })
-    return pd.DataFrame(rows)
+    num = lambda cols: df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(float)
+    vals = num(value_cols)                                  # n x m
+    published = ~np.isnan(vals).all(axis=0)
+    x = np.nan_to_num(vals, nan=0.0)                        # blank = not used = 0
+    w = np.nan_to_num(pd.to_numeric(df[weight_col], errors="coerce").to_numpy(float))
+    rep_w = np.nan_to_num(num(reps))                        # n x R
+
+    gb = df.groupby(by, dropna=False, observed=True)
+    codes = gb.ngroup().to_numpy()
+    keys = gb.size().index                                  # ngroup numbering order
+    k, m = len(keys), len(value_cols)
+    G = sparse.csr_matrix((np.ones(len(df)), (codes, np.arange(len(df)))), shape=(k, len(df)))
+    theta = np.asarray(G @ (x * w[:, None]))                # k x m
+    se = np.empty((k, m))
+    for i in range(m):
+        rep_theta = np.asarray(G @ (x[:, [i]] * rep_w))     # k x R
+        se[:, i] = np.sqrt(kappa * ((rep_theta - theta[:, [i]]) ** 2).sum(axis=1))
+
+    est = np.where(published[None, :], theta, np.nan)
+    s = np.where(published[None, :], se, np.nan)
+    # A zero total means no surveyed record in the group uses it, so every
+    # replicate is zero too and the SE is 0 by construction, not by precision.
+    # Report no interval: a [0, 0] "CI" made any ComStock value a significant
+    # gap on the strength of as little as one building.
+    s = np.where(est == 0.0, np.nan, s)
+    has_ci = ~np.isnan(est) & ~np.isnan(s)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rse = np.where(has_ci & (est != 0), 100.0 * s / est, np.nan)
+    lo = np.where(has_ci, np.maximum(est - 1.96 * s, 0.0), np.nan)
+    hi = np.where(has_ci, est + 1.96 * s, np.nan)
+    return pd.DataFrame({
+        by: keys.repeat(m).tolist(),
+        "metric_col": value_cols * k,
+        "estimate": est.ravel(),
+        "se": s.ravel(),
+        "rse_pct": rse.ravel(),
+        "ci95_low": lo.ravel(),
+        "ci95_high": hi.ravel(),
+    })
