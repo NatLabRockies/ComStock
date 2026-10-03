@@ -262,11 +262,63 @@ def fetch_comstock_profiles(ts_table: str, weights: pd.DataFrame, cfg: dict, dia
 # truth series per segment
 # ---------------------------------------------------------------------------
 
+def _dt(ts) -> pd.DatetimeIndex:
+    """`ts` as a DatetimeIndex. A datetime64 column is wrapped as is: pd.to_datetime
+    probes ~500 values for its cache on every call, and that probe, repeated per
+    segment and panel, was most of this module's runtime."""
+    if isinstance(ts, pd.DatetimeIndex):
+        return ts
+    if pd.api.types.is_datetime64_any_dtype(ts):
+        return pd.DatetimeIndex(ts)
+    return pd.DatetimeIndex(pd.to_datetime(ts))
+
+
+def _season_lut(seasons: dict) -> np.ndarray:
+    lut = np.full(13, np.nan, dtype=object)            # month 1..12 -> season (NaN = none)
+    for s, ms in seasons.items():
+        for m in ms:
+            lut[m] = s
+    return lut
+
+
 def season_daytype(ts: pd.Series, seasons: dict) -> tuple[pd.Series, pd.Series]:
-    month_to_season = {m: s for s, ms in seasons.items() for m in ms}
-    season = ts.dt.month.map(month_to_season)
-    day = pd.Series(np.where(ts.dt.dayofweek < 5, "Weekday", "Weekend"), index=ts.index)
+    t = _dt(ts)
+    index = ts.index if isinstance(ts, pd.Series) else None
+    season = pd.Series(_season_lut(seasons)[t.month.to_numpy()], index=index)
+    day = pd.Series(np.where(t.dayofweek.to_numpy() < 5, "Weekday", "Weekend"), index=index)
     return season, day
+
+
+class _Cal:
+    """One series' calendar fields as arrays, computed once and shared by every
+    metric of a segment: month, weekday (0 = Monday), hour, date, season, day type."""
+
+    def __init__(self, ts, seasons: dict):
+        t = _dt(ts)
+        self.month = t.month.to_numpy()
+        self.dow = t.dayofweek.to_numpy()
+        self.hour = t.hour.to_numpy()
+        self.date = t.normalize().to_numpy()
+        self.season = _season_lut(seasons)[self.month]
+        self.day = np.where(self.dow < 5, "Weekday", "Weekend")
+        # integer codes in the labels' sorted order, for grouping without strings
+        self.season_labels = np.array(sorted(seasons), dtype=object)
+        code = np.full(13, -1)
+        for i, lab in enumerate(self.season_labels):
+            code[list(seasons[lab])] = i
+        self.season_code = code[self.month]
+        self.day_code = (self.dow >= 5).astype(np.int64)
+
+
+def _nanmean(v: np.ndarray) -> float:
+    v = v[~np.isnan(v)]
+    return float(v.mean()) if len(v) else np.nan
+
+
+def _segments(frame: pd.DataFrame) -> dict:
+    """{(industry, cz_group, size): rows}, split in one pass instead of three string
+    comparisons over the whole frame per segment."""
+    return {k: g for k, g in frame.groupby(["industry", "cz_group", "size"], sort=False)}
 
 
 def truth_segments(truth: pd.DataFrame, utility: int, fuel: str, cfg: dict,
@@ -399,11 +451,18 @@ def _per_bldg(hourly: pd.DataFrame, segw: pd.DataFrame, utility: int) -> pd.Data
                              "gas_kwh_weighted": "gas_kwh_per_bldg"})
 
 
-def _mean_profile(ts: pd.Series, vals: pd.DataFrame, seasons: dict) -> pd.DataFrame:
-    season, day = season_daytype(ts, seasons)
-    df = vals.assign(season=season.to_numpy(), day_type=day.to_numpy(), hour=ts.dt.hour.to_numpy())
-    df = df.dropna(subset=["season"])
-    return df.groupby(["season", "day_type", "hour"], as_index=False).mean(numeric_only=True)
+def _mean_profile(cal: _Cal, vals: pd.DataFrame) -> pd.DataFrame:
+    """Mean of each column by season, day type and hour, sorted by those labels.
+    Grouped on integer codes (in the labels' sorted order) and labelled after: attaching
+    string columns to every hourly row cost more than the group-by itself."""
+    keep = cal.season_code >= 0
+    g = vals[keep].groupby([cal.season_code[keep], cal.day_code[keep], cal.hour[keep]]).mean(
+        numeric_only=True)
+    lev = [g.index.get_level_values(i).to_numpy() for i in range(3)]
+    keys = pd.DataFrame({"season": cal.season_labels[lev[0]],
+                         "day_type": np.array(["Weekday", "Weekend"], dtype=object)[lev[1]],
+                         "hour": lev[2]})
+    return pd.concat([keys, g.reset_index(drop=True)], axis=1)
 
 
 def _shape_row(a: np.ndarray, c: np.ndarray) -> dict:
@@ -438,25 +497,34 @@ def _ldc(cs: np.ndarray, tr: np.ndarray) -> list[dict]:
             for r in ranks if 1 <= r <= n]
 
 
-def _monthly_shares(ts: pd.Series, v: np.ndarray) -> np.ndarray:
-    m = pd.Series(v, index=pd.to_datetime(ts).to_numpy()).groupby(lambda x: x.month).sum()
-    m = m.reindex(range(1, 13)).fillna(0.0)
+def _monthly_shares(month: np.ndarray, v: np.ndarray) -> np.ndarray:
+    m = np.bincount(month, weights=np.nan_to_num(np.asarray(v, float)), minlength=13)[1:13]
     tot = m.sum()
-    return (m / tot).to_numpy() if tot else np.full(12, np.nan)
+    return m / tot if tot else np.full(12, np.nan)
 
 
-def _season_ratio(ts: pd.Series, v: np.ndarray, seasons: dict, num: str, den: str) -> float:
-    s, _ = season_daytype(pd.Series(pd.to_datetime(ts)), seasons)
-    vs = pd.Series(v).groupby(s.to_numpy()).mean()
-    return float(vs.get(num, np.nan) / vs.get(den, np.nan)) if vs.get(den) else np.nan
+def _season_ratio(season: np.ndarray, v: np.ndarray, num: str, den: str) -> float:
+    a, b = _nanmean(v[season == num]), _nanmean(v[season == den])
+    return float(a / b) if b else np.nan
 
 
-def _weekend_ratio(ts: pd.Series, v: np.ndarray, daily: bool) -> float:
-    t = pd.Series(pd.to_datetime(ts))
-    day = t.dt.normalize()
-    d = pd.Series(v).groupby(day.to_numpy()).sum() if not daily else pd.Series(v, index=day.to_numpy())
-    wk = pd.Series(pd.to_datetime(d.index).dayofweek < 5, index=d.index)
-    a, b = d[~wk.to_numpy()].mean(), d[wk.to_numpy()].mean()
+def _daily_totals(cal: _Cal, v: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(day-of-week, total, non-missing count) per calendar day, NaN counted as 0."""
+    v = np.asarray(v, float)
+    days, inv = np.unique(cal.date, return_inverse=True)
+    tot = np.bincount(inv, weights=np.nan_to_num(v), minlength=len(days))
+    cnt = np.bincount(inv, weights=~np.isnan(v), minlength=len(days))
+    # 1970-01-01 was a Thursday (Monday = 0)
+    dow = (days.astype("datetime64[D]").astype(np.int64) + 3) % 7
+    return dow, tot, cnt
+
+
+def _weekend_ratio(cal: _Cal, v: np.ndarray, daily: bool) -> float:
+    if daily:
+        dow, d = cal.dow, np.asarray(v, float)
+    else:
+        dow, d, _ = _daily_totals(cal, v)
+    a, b = _nanmean(d[dow >= 5]), _nanmean(d[dow < 5])
     return float(a / b) if b else np.nan
 
 
@@ -466,19 +534,22 @@ def compare_electricity(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict
     seasons = cfg["seasons"]
     h = _per_bldg(cs_hourly, segw, utility)
     eu_cols = [c for c in h.columns if c.startswith("eu_")]
+    segs = _segments(h)
     prof, met, summ, ldc, mon = [], [], [], [], []
     for d in desc.itertuples(index=False):
         key = (d.industry, d.cz_group, d.size)
-        cs = h[(h["industry"] == d.industry) & (h["cz_group"] == d.cz_group)
-               & (h["size"] == d.size)].sort_values("hour_ts")
+        cs = segs.get(key)
         tr = truth.get(key)
-        if cs.empty or tr is None or tr.empty:
+        if cs is None or cs.empty or tr is None or tr.empty:
             continue
+        cs = cs.sort_values("hour_ts")
+        ccal, tcal = _Cal(cs["hour_ts"], seasons), _Cal(tr["timestamp"], seasons)
+        cv, tv = cs["kwh_per_bldg"].to_numpy(), tr["value"].to_numpy()
         sw = cs.iloc[0]
         base = {"run": run_key, "utility_id": int(utility), "industry": d.industry,
                 "cz_group": d.cz_group, "size": d.size}
-        cp = _mean_profile(cs["hour_ts"], cs[["kwh_per_bldg"] + eu_cols], seasons)
-        tp = _mean_profile(tr["timestamp"], tr[["value"]].rename(columns={"value": "calmac"}), seasons)
+        cp = _mean_profile(ccal, cs[["kwh_per_bldg"] + eu_cols])
+        tp = _mean_profile(tcal, tr[["value"]].rename(columns={"value": "calmac"}))
         p = cp.merge(tp, on=["season", "day_type", "hour"], how="inner")
         cs_ann, tr_ann = float(cs["kwh_per_bldg"].sum()), float(tr["value"].sum())
         p = p.rename(columns={"kwh_per_bldg": "comstock_kwh_per_bldg",
@@ -495,15 +566,12 @@ def compare_electricity(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict
             row = _shape_row(g["calmac_kwh_per_premise"].to_numpy(),
                              g["comstock_kwh_per_bldg"].to_numpy())
             # season x day type load factor on the HOURLY series, each on its own calendar
-            for side, ts, v in (("comstock", cs["hour_ts"], cs["kwh_per_bldg"].to_numpy()),
-                                ("calmac", tr["timestamp"], tr["value"].to_numpy())):
-                s, dd = season_daytype(pd.Series(pd.to_datetime(ts).to_numpy()), seasons)
-                sel = v[(s.to_numpy() == season) & (dd.to_numpy() == day)]
+            for side, cal, v in (("comstock", ccal, cv), ("calmac", tcal, tv)):
+                sel = v[(cal.season == season) & (cal.day == day)]
                 row[f"load_factor_{side}"] = float(sel.mean() / sel.max()) if len(sel) and sel.max() else np.nan
             met.append({**base, "season": season, "day_type": day, **row,
                         "size_comparable": bool(d.size_comparable)})
-        cm, tm = _monthly_shares(cs["hour_ts"], cs["kwh_per_bldg"].to_numpy()), \
-            _monthly_shares(tr["timestamp"], tr["value"].to_numpy())
+        cm, tm = _monthly_shares(ccal.month, cv), _monthly_shares(tcal.month, tv)
         for i in range(12):
             mon.append({**base, "month": i + 1, "comstock_share": cm[i], "calmac_share": tm[i]})
         summ.append({
@@ -515,15 +583,13 @@ def compare_electricity(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict
             "comstock_sqft_per_bldg": float(sw["sqft_weighted"]) / float(sw["weight_sum"]),
             "load_factor_comstock": float(cs["kwh_per_bldg"].mean() / cs["kwh_per_bldg"].max()),
             "load_factor_calmac": float(tr["value"].mean() / tr["value"].max()),
-            "summer_to_winter_comstock": _season_ratio(cs["hour_ts"], cs["kwh_per_bldg"].to_numpy(),
-                                                       seasons, "Summer", "Winter"),
-            "summer_to_winter_calmac": _season_ratio(tr["timestamp"], tr["value"].to_numpy(),
-                                                     seasons, "Summer", "Winter"),
-            "weekend_to_weekday_comstock": _weekend_ratio(cs["hour_ts"], cs["kwh_per_bldg"].to_numpy(), False),
-            "weekend_to_weekday_calmac": _weekend_ratio(tr["timestamp"], tr["value"].to_numpy(), False),
+            "summer_to_winter_comstock": _season_ratio(ccal.season, cv, "Summer", "Winter"),
+            "summer_to_winter_calmac": _season_ratio(tcal.season, tv, "Summer", "Winter"),
+            "weekend_to_weekday_comstock": _weekend_ratio(ccal, cv, False),
+            "weekend_to_weekday_calmac": _weekend_ratio(tcal, tv, False),
             "monthly_share_rmse_pts": float(100 * np.sqrt(np.nanmean((cm - tm) ** 2))),
         })
-        for r in _ldc(cs["kwh_per_bldg"].to_numpy(), tr["value"].to_numpy()):
+        for r in _ldc(cv, tv):
             ldc.append({**base, **r})
     cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()  # noqa: E731
     return (cat(prof), pd.DataFrame(met), pd.DataFrame(summ), pd.DataFrame(ldc), pd.DataFrame(mon))
@@ -539,19 +605,21 @@ def compare_gas(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict, desc: 
     keys = ["utility_id", "cz_group", "industry", "size", "date"]
     dd = h.groupby(keys, as_index=False)["gas_kwh_per_bldg"].sum()
     dd["therms_per_bldg"] = dd["gas_kwh_per_bldg"] / SEG.KWH_PER_THERM
+    segs = _segments(dd)
     sw = segw[segw["utility_id"] == int(utility)].set_index(["cz_group", "industry", "size"])
+    heat = np.isin(np.arange(13), [11, 12, 1, 2, 3])          # heating months, by month number
     daily, met, summ, mon = [], [], [], []
     for d in desc.itertuples(index=False):
         key = (d.industry, d.cz_group, d.size)
-        cs = dd[(dd["industry"] == d.industry) & (dd["cz_group"] == d.cz_group)
-                & (dd["size"] == d.size)].sort_values("date")
+        cs = segs.get(key)
         tr = truth.get(key)
-        if cs.empty or tr is None or tr.empty:
+        if cs is None or cs.empty or tr is None or tr.empty:
             continue
+        cs = cs.sort_values("date")
         base = {"run": run_key, "utility_id": int(utility), "industry": d.industry,
                 "cz_group": d.cz_group, "size": d.size}
         w = sw.loc[(d.cz_group, d.industry, d.size)]
-        trd = tr.assign(date=pd.to_datetime(tr["timestamp"]).dt.normalize())
+        trd = tr.assign(date=_dt(tr["timestamp"]).normalize())
         # Calendars align when the truth is 2018 (PG&E, or normalized SDG&E); a raw
         # SDG&E series is 2025 and is joined by day of year only for display.
         same_cal = int(trd["date"].dt.year.iloc[0]) == int(cs["date"].dt.year.iloc[0])
@@ -563,19 +631,19 @@ def compare_gas(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict, desc: 
             a["doy"], b["doy"] = a["date"].dt.dayofyear, b["date"].dt.dayofyear
             j = a.merge(b.drop(columns="date"), on="doy", how="inner").drop(columns="doy")
         daily.append(j.assign(**base, basis=d.basis, same_calendar=same_cal))
-        for side, ts, v in (("comstock", a["date"], a["therms_per_bldg"].to_numpy()),
-                            ("calmac", trd["date"], trd["value"].to_numpy())):
-            s, day = season_daytype(pd.Series(pd.to_datetime(ts).to_numpy()), seasons)
-            for (season, dt_), g in pd.DataFrame({"s": s, "d": day, "v": v}).groupby(["s", "d"]):
+        cs_v, tr_v = a["therms_per_bldg"].to_numpy(), trd["value"].to_numpy()
+        ccal, tcal = _Cal(a["date"], seasons), _Cal(trd["date"], seasons)
+        for side, cal, v in (("comstock", ccal, cs_v), ("calmac", tcal, tr_v)):
+            frame = pd.DataFrame({"s": cal.season, "d": cal.day, "v": v})
+            for (season, dt_), g in frame.groupby(["s", "d"]):
                 met.append({**base, "season": season, "day_type": dt_, "side": side,
                             "mean_daily_therms": float(g["v"].mean())})
-        cm = _monthly_shares(a["date"], a["therms_per_bldg"].to_numpy())
-        tm = _monthly_shares(trd["date"], trd["value"].to_numpy())
+        cm, tm = _monthly_shares(ccal.month, cs_v), _monthly_shares(tcal.month, tr_v)
         for i in range(12):
             mon.append({**base, "month": i + 1, "comstock_share": cm[i], "calmac_share": tm[i]})
-        heat = [11, 12, 1, 2, 3]
-        cs_v, tr_v = a["therms_per_bldg"].to_numpy(), trd["value"].to_numpy()
-        hs = lambda ts, v: float(v[pd.to_datetime(ts).dt.month.isin(heat).to_numpy()].sum() / v.sum()) if v.sum() else np.nan  # noqa: E731
+
+        def hs(cal, v):
+            return float(v[heat[cal.month]].sum() / v.sum()) if v.sum() else np.nan
         shape_cv = np.nan
         if same_cal and len(j) > 300:
             x = j["therms_per_bldg"] / j["therms_per_bldg"].sum()
@@ -587,12 +655,12 @@ def compare_gas(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict, desc: 
             "size_comparable": bool(d.size_comparable), "basis": d.basis,
             "thin_comstock": int(w["model_count"]) < MIN_COMSTOCK_MODELS,
             "comstock_annual_per_bldg": float(cs_v.sum()), "calmac_annual_per_premise": float(tr_v.sum()),
-            "heating_season_share_comstock": hs(a["date"], cs_v),
-            "heating_season_share_calmac": hs(trd["date"], tr_v),
-            "summer_to_winter_comstock": _season_ratio(a["date"], cs_v, seasons, "Summer", "Winter"),
-            "summer_to_winter_calmac": _season_ratio(trd["date"], tr_v, seasons, "Summer", "Winter"),
-            "weekend_to_weekday_comstock": _weekend_ratio(a["date"], cs_v, True),
-            "weekend_to_weekday_calmac": _weekend_ratio(trd["date"], tr_v, True),
+            "heating_season_share_comstock": hs(ccal, cs_v),
+            "heating_season_share_calmac": hs(tcal, tr_v),
+            "summer_to_winter_comstock": _season_ratio(ccal.season, cs_v, "Summer", "Winter"),
+            "summer_to_winter_calmac": _season_ratio(tcal.season, tr_v, "Summer", "Winter"),
+            "weekend_to_weekday_comstock": _weekend_ratio(ccal, cs_v, True),
+            "weekend_to_weekday_calmac": _weekend_ratio(tcal, tr_v, True),
             "monthly_share_rmse_pts": float(100 * np.sqrt(np.nanmean((cm - tm) ** 2))),
             "daily_shape_cvrmse_pct": shape_cv, "same_calendar": same_cal,
         })
@@ -603,21 +671,18 @@ def compare_gas(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict, desc: 
 DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _daily_by_dow(ts: pd.Series, v: np.ndarray, hourly: bool) -> pd.DataFrame:
+def _daily_by_dow(cal: _Cal, v: np.ndarray, hourly: bool) -> pd.DataFrame:
     """Mean daily total per day of week (0 = Monday), on the series' OWN calendar.
     Hourly series count only complete days (24 hours), so a daylight-saving
     transition day -- one hour missing, one merged reading excluded -- does not read
     as a low-use day."""
-    t = pd.to_datetime(pd.Series(ts).reset_index(drop=True))
-    df = pd.DataFrame({"date": t.dt.normalize(), "v": np.asarray(v, float)})
+    dow, tot, cnt = _daily_totals(cal, v)
     if hourly:
-        daily = df.groupby("date")["v"].agg(["sum", "count"])
-        daily = daily.loc[daily["count"] == 24, "sum"]
-    else:
-        daily = df.groupby("date")["v"].sum()
-    out = (pd.DataFrame({"v": daily.to_numpy(), "dow": pd.DatetimeIndex(daily.index).dayofweek})
-           .groupby("dow")["v"].agg(["mean", "count"]).reindex(range(7)))
-    return out
+        dow, tot = dow[cnt == 24], tot[cnt == 24]
+    n = np.bincount(dow, minlength=7).astype(float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.bincount(dow, weights=tot, minlength=7) / n
+    return pd.DataFrame({"mean": mean, "count": n}, index=pd.RangeIndex(7, name="dow"))
 
 
 def compare_day_of_week(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict,
@@ -629,16 +694,18 @@ def compare_day_of_week(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict
     is daily already. Each side keeps its own calendar, so a raw 2025 CalMAC series
     is grouped by its 2025 weekdays."""
     h = _per_bldg(cs_hourly, segw, utility)
+    segs = _segments(h)
     col = "kwh_per_bldg" if fuel == "electricity" else "gas_kwh_per_bldg"
     scale = 1.0 if fuel == "electricity" else 1.0 / SEG.KWH_PER_THERM
     rows = []
     for d in desc.itertuples(index=False):
-        cs = h[(h["industry"] == d.industry) & (h["cz_group"] == d.cz_group) & (h["size"] == d.size)]
+        cs = segs.get((d.industry, d.cz_group, d.size))
         tr = truth.get((d.industry, d.cz_group, d.size))
-        if cs.empty or tr is None or tr.empty:
+        if cs is None or cs.empty or tr is None or tr.empty:
             continue
-        c = _daily_by_dow(cs["hour_ts"], cs[col].to_numpy() * scale, hourly=True)
-        a = _daily_by_dow(tr["timestamp"], tr["value"].to_numpy(), hourly=(fuel == "electricity"))
+        c = _daily_by_dow(_Cal(cs["hour_ts"], {}), cs[col].to_numpy() * scale, hourly=True)
+        a = _daily_by_dow(_Cal(tr["timestamp"], {}), tr["value"].to_numpy(),
+                          hourly=(fuel == "electricity"))
         c_avg, a_avg = c["mean"].mean(), a["mean"].mean()
         for dow in range(7):
             cm, am = c.loc[dow, "mean"], a.loc[dow, "mean"]
@@ -651,8 +718,8 @@ def compare_day_of_week(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict
                 "diff_per_unit": cm - am,
                 "diff_pct": 100.0 * (cm - am) / am if am else np.nan,
                 "comstock_norm": cn, "calmac_norm": an, "diff_norm": cn - an,
-                "comstock_days": int(c.loc[dow, "count"]) if pd.notna(c.loc[dow, "count"]) else 0,
-                "calmac_days": int(a.loc[dow, "count"]) if pd.notna(a.loc[dow, "count"]) else 0,
+                "comstock_days": int(c.loc[dow, "count"]),
+                "calmac_days": int(a.loc[dow, "count"]),
                 "basis": d.basis})
     return pd.DataFrame(rows)
 
