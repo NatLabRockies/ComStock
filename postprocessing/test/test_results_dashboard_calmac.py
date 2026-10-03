@@ -156,3 +156,56 @@ def test_compare_electricity_identical_shapes_score_zero():
     assert not ldc.empty and np.allclose(ldc["comstock_rel"], ldc["calmac_rel"])
     ag = CS.cross_segment_agreement(met.assign(utility_id=SEG.PGE))
     assert ag["consistency"].iloc[0] == "insufficient groups"
+
+
+def _dow_inputs(weekend_factor):
+    """A ComStock warehouse whose weekends run at `weekend_factor` of a weekday."""
+    idx = pd.date_range("2018-01-01", "2018-12-31 23:00", freq="h")
+    wk = np.where(idx.dayofweek >= 5, weekend_factor, 1.0)
+    hourly = pd.DataFrame({"utility_id": SEG.PGE, "cz_group": "C", "industry": "Wareho",
+                           "size": SEG.POOLED, "hour_ts": idx, "kwh_weighted": 60.0 * 2 * wk,
+                           "gas_kwh_weighted": 60.0 * SEG.KWH_PER_THERM * wk})
+    segw = pd.DataFrame([(SEG.PGE, "C", "Wareho", SEG.POOLED, 60.0)],
+                        columns=["utility_id", "cz_group", "industry", "size", "weight_sum"])
+    desc = pd.DataFrame([{"industry": "Wareho", "cz_group": "C", "size": SEG.POOLED,
+                          "basis": "raw"}])
+    return idx, hourly, segw, desc
+
+
+def test_day_of_week_levels_normalization_and_complete_days():
+    idx, hourly, segw, desc = _dow_inputs(0.5)
+    # CalMAC: flat 1 kWh/h, but one Monday (Jan 8) is a 23-hour transition day
+    tr = pd.DataFrame({"timestamp": idx, "value": 1.0})
+    tr = tr[tr["timestamp"] != pd.Timestamp("2018-01-08 02:00")]
+    truth = {("Wareho", "C", SEG.POOLED): tr}
+    out = CS.compare_day_of_week(hourly, segw, truth, desc, SEG.PGE, "electricity", "r")
+    assert out["day"].tolist() == CS.DOW_NAMES
+    o = out.set_index("day")
+    assert o.loc["Mon", "comstock_per_bldg"] == pytest.approx(48.0)      # 2 kWh/h x 24
+    assert o.loc["Sat", "comstock_per_bldg"] == pytest.approx(24.0)
+    assert o.loc["Mon", "calmac_per_premise"] == pytest.approx(24.0)     # partial day excluded
+    # 2018 has 53 Mondays; the 23-hour one leaves CalMAC with 52
+    assert (o.loc["Mon", "comstock_days"], o.loc["Mon", "calmac_days"]) == (53, 52)
+    avg = (5 * 48 + 2 * 24) / 7
+    assert o.loc["Mon", "comstock_norm"] == pytest.approx(48 / avg)
+    assert o.loc["Sun", "comstock_norm"] == pytest.approx(24 / avg)
+    assert np.allclose(o["calmac_norm"], 1.0)
+    assert o.loc["Sat", "diff_pct"] == pytest.approx(0.0)
+    assert o.loc["Mon", "diff_norm"] == pytest.approx(48 / avg - 1)
+    assert out["comstock_norm"].mean() == pytest.approx(1.0)
+
+
+def test_day_of_week_gas_is_daily_therms_on_each_sides_calendar():
+    idx, hourly, segw, desc = _dow_inputs(0.0)
+    # a 2025 daily truth series: weekdays 3 therms, weekends 1 -- grouped by 2025's weekdays
+    days = pd.date_range("2025-01-01", "2025-12-31", freq="D")
+    tr = pd.DataFrame({"timestamp": days, "value": np.where(days.dayofweek >= 5, 1.0, 3.0)})
+    out = CS.compare_day_of_week(hourly, segw, {("Wareho", "C", SEG.POOLED): tr}, desc,
+                                 SEG.PGE, "natural_gas", "r")
+    o = out.set_index("day")
+    assert o.loc["Wed", "comstock_per_bldg"] == pytest.approx(24.0)      # 1 therm/h x 24
+    assert o.loc["Sun", "comstock_per_bldg"] == pytest.approx(0.0)
+    assert o.loc["Wed", "calmac_per_premise"] == pytest.approx(3.0)
+    assert o.loc["Sat", "calmac_per_premise"] == pytest.approx(1.0)
+    assert o.loc["Sat", "calmac_norm"] == pytest.approx(1.0 / (17.0 / 7))
+    assert (o["calmac_days"].sum(), o["comstock_days"].sum()) == (365, 365)

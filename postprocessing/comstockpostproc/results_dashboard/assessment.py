@@ -1072,7 +1072,8 @@ def _calmac_leg(args, out: Path, runs, primary, ts_table, ts_dial, ts_usable, ts
             truth, desc = calmac_shapes.truth_segments(tr, util, fuel, cfg, ref_segw)
             desc.to_csv(m / f"calmac_segments_{slug}_{fuel}.csv", index=False)
             gp_inds = sorted(set(tr["industry"].astype(str)))
-            parts = {"prof": [], "met": [], "summ": [], "ldc": [], "mon": [], "daily": []}
+            parts = {"prof": [], "met": [], "summ": [], "ldc": [], "mon": [], "daily": [],
+                     "dow": []}
             for key, (hourly, segw, _) in results.items():
                 if fuel == "electricity":
                     p, mt, s, l, mo = calmac_shapes.compare_electricity(
@@ -1083,13 +1084,16 @@ def _calmac_leg(args, out: Path, runs, primary, ts_table, ts_dial, ts_usable, ts
                                                               cfg, key)
                     parts["daily"].append(dl)
                 parts["met"].append(mt); parts["summ"].append(s); parts["mon"].append(mo)
+                parts["dow"].append(calmac_shapes.compare_day_of_week(
+                    hourly, segw, truth, desc, util, fuel, key))
             cat = {k: pd.concat([x for x in v if x is not None and not x.empty], ignore_index=True)
                    if any(x is not None and not x.empty for x in v) else pd.DataFrame()
                    for k, v in parts.items()}
             tag = f"{slug}_{fuel}"
             for name, df in (("profiles", cat["prof"]), ("shape_metrics", cat["met"]),
                              ("summary", cat["summ"]), ("ldc", cat["ldc"]),
-                             ("monthly", cat["mon"]), ("daily", cat["daily"])):
+                             ("monthly", cat["mon"]), ("daily", cat["daily"]),
+                             ("dow", cat["dow"])):
                 if not df.empty:
                     df.to_csv(m / f"calmac_{name}_{tag}.csv", index=False)
             summ = cat["summ"]

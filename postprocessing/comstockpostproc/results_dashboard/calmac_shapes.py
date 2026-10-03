@@ -600,6 +600,63 @@ def compare_gas(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict, desc: 
     return cat(daily), pd.DataFrame(met), pd.DataFrame(summ), pd.DataFrame(mon)
 
 
+DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _daily_by_dow(ts: pd.Series, v: np.ndarray, hourly: bool) -> pd.DataFrame:
+    """Mean daily total per day of week (0 = Monday), on the series' OWN calendar.
+    Hourly series count only complete days (24 hours), so a daylight-saving
+    transition day -- one hour missing, one merged reading excluded -- does not read
+    as a low-use day."""
+    t = pd.to_datetime(pd.Series(ts).reset_index(drop=True))
+    df = pd.DataFrame({"date": t.dt.normalize(), "v": np.asarray(v, float)})
+    if hourly:
+        daily = df.groupby("date")["v"].agg(["sum", "count"])
+        daily = daily.loc[daily["count"] == 24, "sum"]
+    else:
+        daily = df.groupby("date")["v"].sum()
+    out = (pd.DataFrame({"v": daily.to_numpy(), "dow": pd.DatetimeIndex(daily.index).dayofweek})
+           .groupby("dow")["v"].agg(["mean", "count"]).reindex(range(7)))
+    return out
+
+
+def compare_day_of_week(cs_hourly: pd.DataFrame, segw: pd.DataFrame, truth: dict,
+                        desc: pd.DataFrame, utility: int, fuel: str, run_key: str) -> pd.DataFrame:
+    """Average daily use by day of week, ComStock per building against CalMAC per
+    premise, for every segment: the levels, each as a ratio to its own average day
+    (the mean of its seven day-of-week means, so a flat week reads 1.0 everywhere),
+    and both differences. Electricity is summed to days from the hourly series; gas
+    is daily already. Each side keeps its own calendar, so a raw 2025 CalMAC series
+    is grouped by its 2025 weekdays."""
+    h = _per_bldg(cs_hourly, segw, utility)
+    col = "kwh_per_bldg" if fuel == "electricity" else "gas_kwh_per_bldg"
+    scale = 1.0 if fuel == "electricity" else 1.0 / SEG.KWH_PER_THERM
+    rows = []
+    for d in desc.itertuples(index=False):
+        cs = h[(h["industry"] == d.industry) & (h["cz_group"] == d.cz_group) & (h["size"] == d.size)]
+        tr = truth.get((d.industry, d.cz_group, d.size))
+        if cs.empty or tr is None or tr.empty:
+            continue
+        c = _daily_by_dow(cs["hour_ts"], cs[col].to_numpy() * scale, hourly=True)
+        a = _daily_by_dow(tr["timestamp"], tr["value"].to_numpy(), hourly=(fuel == "electricity"))
+        c_avg, a_avg = c["mean"].mean(), a["mean"].mean()
+        for dow in range(7):
+            cm, am = c.loc[dow, "mean"], a.loc[dow, "mean"]
+            cn = cm / c_avg if c_avg else np.nan
+            an = am / a_avg if a_avg else np.nan
+            rows.append({
+                "run": run_key, "utility_id": int(utility), "industry": d.industry,
+                "cz_group": d.cz_group, "size": d.size, "dow": dow, "day": DOW_NAMES[dow],
+                "comstock_per_bldg": cm, "calmac_per_premise": am,
+                "diff_per_unit": cm - am,
+                "diff_pct": 100.0 * (cm - am) / am if am else np.nan,
+                "comstock_norm": cn, "calmac_norm": an, "diff_norm": cn - an,
+                "comstock_days": int(c.loc[dow, "count"]) if pd.notna(c.loc[dow, "count"]) else 0,
+                "calmac_days": int(a.loc[dow, "count"]) if pd.notna(a.loc[dow, "count"]) else 0,
+                "basis": d.basis})
+    return pd.DataFrame(rows)
+
+
 def composition(segw: pd.DataFrame, utility: int) -> pd.DataFrame:
     """ComStock's weighted building count by size within each industry x CZ group --
     the evidence for whether the size threshold is sensible. CalMAC publishes no

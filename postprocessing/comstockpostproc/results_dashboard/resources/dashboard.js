@@ -166,6 +166,7 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               // indicative size split, and the other runs drawn (none by default)
               calUtil: "", calFuel: "electricity", calCz: "", calSize: "pooled",
               calMode: "annual", calGasMode: "annual", calIndic: false, calRuns: [],
+              calGasRange: null,    // [first, last] day of year on the daily gas chart; null = whole year
               annualMetric: "electricity.total", annualDim: "vintage",
               /* Which breakdown to show. These tabs carried EVERY breakdown
                  stacked one after another - by vintage, census division, floor
@@ -2898,7 +2899,10 @@ function calLineChart(host, pts, lines, opts={}){
   const W=opts.width||660, H=opts.height||270, padR=14, padT=12, padB=44;
   const vals=pts.flatMap(p=>lines.map(l=>p[l.key])).filter(v=>v!==null&&v!==undefined&&isFinite(v));
   if(!vals.length){ host.innerHTML='<p class="note">No records for this selection.</p>'; return; }
-  const axY=niceAxis(Math.min(0,...vals), Math.max(...vals)>0?Math.max(...vals):1, 4);
+  // opts.zeroBase === false fits the y axis to the data (ratios near 1), else it starts at 0
+  const vLo=Math.min(...vals), vHi=Math.max(...vals), pad=0.08*((vHi-vLo)||Math.abs(vHi)||1);
+  const axY=opts.zeroBase===false ? niceAxis(vLo-pad, vHi+pad, 4)
+    : niceAxis(Math.min(0,vLo), vHi>0?vHi:1, 4);
   const dec=Math.max(axY.dec, Math.min(6,Math.max(0,1-Math.floor(Math.log10(axY.hi||1)))));
   const padL=axisPadL(axY.ticks.map(v=>v.toFixed(dec)), true);
   const plotW=W-padL-padR, plotH=H-padT-padB;
@@ -3120,6 +3124,7 @@ function calRenderElec(slug, ind, cz, size, s){
     the day's energy. Overnight share is hours 0–5's share of the day. Load factor is mean ÷ peak over that season and
     day type's hours. NMBE compares per-building with per-premise levels and is shown for completeness only.</p></div>`;
   h+=calSummaryPanel(slug,"electricity",ind,cz,size);
+  h+=calDowPanel(slug,"electricity",ind,cz,size);
   h+=`<div class="panel"><h2>Load duration curve — each divided by its own annual mean</h2>
       <div id="calLdc" style="max-width:700px"></div></div>
     <div class="panel"><h2>Share of annual electricity by month</h2><div id="calMon" style="max-width:700px"></div></div>`;
@@ -3168,8 +3173,84 @@ function calRenderElec(slug, ind, cz, size, s){
   calLineChart($("#calLdc"), ldcPts, ldcLines, {xLabel:"Hours equaled or exceeded", yLabel:"load ÷ annual mean",
     tipDec:2, copy:{title:`${ind} ${cz} ${size} — load duration curve`, legend:ldcLines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}))}});
   calMonthly(slug,"electricity",ind,cz,size,shown,"#calMon");
+  calDowCharts(slug,"electricity",ind,cz,size,shown);
   wireEnduseLegend(renderCalmac);
   wireGroups();
+}
+
+/* ---------- average day by day of week ----------
+   Each side's mean daily use on each weekday, from its own calendar (a raw 2025
+   CalMAC series is grouped by 2025's weekdays). Normalized = the day's mean over the
+   average of the seven day means, so the building-versus-premise level divides out
+   and only the weekly rhythm is compared. Hourly electricity counts only complete
+   days, so the daylight-saving transition days drop out. */
+const CAL_DOW_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+function calDowRows(slug, fuel, ind, cz, size, run){
+  const rows=calFrame(slug,fuel,"dow").filter(r=>r.run===run&&calSegMatch(r,ind,cz,size));
+  return CAL_DOW_NAMES.map((_,i)=>rows.find(r=>r.dow===i)||null);
+}
+function calDowPanel(slug, fuel, ind, cz, size){
+  const rows=calDowRows(slug,fuel,ind,cz,size,CAL_SUBJECT);
+  if(!rows.some(Boolean)) return "";
+  const unit=fuel==="electricity"?"kWh/day":"therms/day", dec=fuel==="electricity"?1:2;
+  const avg=(f, idx)=>{ const v=idx.map(i=>rows[i]&&f(rows[i])).filter(x=>x!==null&&x!==undefined&&isFinite(x));
+    return v.length===idx.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+  const line=(label, get, cls="")=>{
+    const cs=get(r=>r.comstock_per_bldg), tr=get(r=>r.calmac_per_premise);
+    const cn=get(r=>r.comstock_norm), tn=get(r=>r.calmac_norm);
+    const d=cs!==null&&tr!==null?cs-tr:null, dp=d!==null&&tr?100*d/tr:null;
+    const dn=cn!==null&&tn!==null?cn-tn:null;
+    const days=get(r=>r.comstock_days,true), tdays=get(r=>r.calmac_days,true);
+    return `<tr${cls?` class="${cls}"`:""}><td>${label}</td><td>${fmt(cs,dec)}</td><td>${fmt(tr,dec)}</td>
+      <td>${fmt(d,dec)}</td><td><span class="cell" style="background:${diffColor(dp)}">${pct(dp)}</span></td>
+      <td>${fmt(cn,3)}</td><td>${fmt(tn,3)}</td>
+      <td><span class="cell" style="background:${diffColor(dn===null?null:100*dn)}">${dn===null?fmt(null):(dn>0?"+":"")+dn.toFixed(3)}</span></td>
+      <td>${days===null?"":`${fmt(days,0)} / ${fmt(tdays,0)}`}</td></tr>`;
+  };
+  const one=i=>(f,isCount)=>rows[i]?f(rows[i]):null;
+  const group=idx=>(f,isCount)=>{ if(!isCount) return avg(f,idx);
+    const v=idx.map(i=>rows[i]&&f(rows[i])); return v.every(x=>x!==null&&x!==undefined)?v.reduce((a,b)=>a+b,0):null; };
+  const sameCal=((calRows(slug,fuel,"summ").find(r=>r.run===CAL_SUBJECT&&calSegMatch(r,ind,cz,size))||{}).same_calendar)!==false;
+  return `<div class="panel"><h2>Average day by day of week <span class="badge">${runShort(CAL_SUBJECT)}</span></h2>
+    <div class="ami-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+      <div class="chartbox"><div class="head"><h3>Normalized — day mean ÷ average day</h3></div><div class="chart" id="calDowNorm"></div></div>
+      <div class="chartbox"><div class="head"><h3>${unit==="kWh/day"?"kWh":"Therms"} per day — per building (ComStock), per premise (CalMAC)</h3></div><div class="chart" id="calDowAbs"></div></div>
+    </div>
+    <div class="ami-legend" id="calDowKey" style="position:static;width:auto;flex-direction:row;flex-wrap:wrap;gap:14px;margin:6px 0 10px"></div>
+    <div class="scroll"><table><thead><tr><th>Day</th><th>${runShort(CAL_SUBJECT)} per building (${unit})</th>
+      <th>CalMAC per premise (${unit})</th><th>Difference (${unit})</th><th>Difference %</th>
+      <th>Normalized ${runShort(CAL_SUBJECT)}</th><th>Normalized CalMAC</th><th>Normalized difference</th>
+      <th>Days averaged CS / CalMAC</th></tr></thead><tbody>
+      ${CAL_DOW_NAMES.map((n,i)=>line(n, one(i))).join("")}
+      ${line("<b>Weekday mean</b>", group([0,1,2,3,4]))}${line("<b>Weekend mean</b>", group([5,6]))}
+    </tbody></table></div>
+    <p class="note">Each day of week is the mean of that weekday's daily totals over the year. Normalized divides
+    each side by its own average day (the mean of its seven day-of-week means), so 1.0 is an average day on both
+    sides and the normalized difference is free of the building-versus-premise level gap; the per-unit difference is
+    not, so read it as indicative. ${fuel==="electricity"?"Electricity days are complete 24-hour Pacific standard time days; the two daylight-saving transition days are left out of the CalMAC average."
+      :"Gas days are CalMAC's metered days."}${sameCal?"":" <b>This CalMAC series is the raw 2025 profile</b>, so its weekdays are 2025's; the weekly rhythm still compares, the weather behind each weekday does not."}</p></div>`;
+}
+function calDowCharts(slug, fuel, ind, cz, size, shown){
+  const prim=calDowRows(slug,fuel,ind,cz,size,CAL_SUBJECT);
+  if(!prim.some(Boolean)) return;
+  const other=shown.map(r=>calDowRows(slug,fuel,ind,cz,size,r.key));
+  const unit=fuel==="electricity"?"kWh per day":"therms per day";
+  const lines=[{key:"cs",label:runShort(CAL_SUBJECT),color:safeColor(runColor(CAL_SUBJECT))},
+    {key:"tr",label:"CalMAC",color:"var(--ink)"},
+    ...shown.map((r,i)=>({key:`run${i}`,label:runShort(r.key),color:safeColor(runColor(r.key)),dash:"7 4"}))];
+  const legend=lines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}));
+  $("#calDowKey").innerHTML=lines.map(l=>`<span class="key"><span style="width:16px;height:0;border-top:2.5px ${
+    l.dash?"dashed":"solid"} ${l.color};display:inline-block;flex:none"></span>${esc(l.label)}</span>`).join("");
+  const pts=(cs, tr)=>CAL_DOW_NAMES.map((_,i)=>({x:i, cs:prim[i]?prim[i][cs]:null, tr:prim[i]?prim[i][tr]:null,
+    ...Object.fromEntries(other.map((o,j)=>[`run${j}`,o[i]?o[i][cs]:null]))}));
+  const base={xTicks:CAL_DOW_NAMES.map((n,i)=>[i,n]), xFmt:i=>CAL_DOW_NAMES[i], markers:true, xLabel:"Day of week",
+    width:480, height:240};
+  const fuelName=fuel==="electricity"?"electricity":"natural gas";
+  calLineChart($("#calDowNorm"), pts("comstock_norm","calmac_norm"), lines, {...base, yLabel:"day ÷ average day", tipDec:3, zeroBase:false,
+    copy:{title:`${ind} ${cz} ${size} — ${fuelName} by day of week, normalized`, legend}});
+  calLineChart($("#calDowAbs"), pts("comstock_per_bldg","calmac_per_premise"), lines.map(l=>
+    ({...l, label:l.key==="tr"?"CalMAC per premise":`${l.label} per building`})), {...base, yLabel:unit,
+    tipDec:fuel==="electricity"?1:2, copy:{title:`${ind} ${cz} ${size} — ${fuelName} per day by day of week`, legend}});
 }
 
 function calMonthly(slug, fuel, ind, cz, size, shown, hostSel){
@@ -3214,6 +3295,185 @@ function calSummaryPanel(slug, fuel, ind, cz, size){
     review's composition, so a comparison run is judged against the same meters.</p></div>`;
 }
 
+/* ---------- daily natural gas: a year of days with a zoomable, slidable range ----------
+   x is day of year. The axis ticks are months (and weeks when zoomed inside one);
+   the tooltip names the date and weekday. A range is chosen by dragging across the
+   plot, slid or resized in the overview strip under it (or with the buttons), and
+   reset with "Full year". The range lives in state.calGasRange, so it carries across
+   segments and into a shared link. */
+const CAL_DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const CAL_MIN_SPAN = 7;                       // days: the narrowest zoom
+function calDoyToIso(year, d){ return new Date(Date.UTC(year,0,d)).toISOString().slice(0,10); }
+function calDateLabel(iso){
+  const t=new Date(iso+"T00:00:00Z");
+  return `${CAL_DOW[t.getUTCDay()]} ${MONTH_ABBR[t.getUTCMonth()+1]} ${t.getUTCDate()}, ${t.getUTCFullYear()}`;
+}
+/* Month starts (and, inside a single month, week starts) within [lo, hi] for `year`. */
+function calDayTicks(year, lo, hi){
+  const months=[...Array(12).keys()].map(m=>{
+    const d=Math.round((Date.UTC(year,m,1)-Date.UTC(year,0,1))/864e5)+1;
+    return [d, MONTH_ABBR[m+1]]; }).filter(([d])=>d>=lo&&d<=hi);
+  if(months.length>=2) return {ticks:months, grid:months.map(t=>t[0])};
+  const weeks=[];
+  for(let d=Math.ceil(lo); d<=hi; d+=7){
+    const t=new Date(Date.UTC(year,0,d));
+    weeks.push([d, `${MONTH_ABBR[t.getUTCMonth()+1]} ${t.getUTCDate()}`]);
+  }
+  return {ticks:weeks, grid:months.map(t=>t[0])};
+}
+function calSetGasRange(lo, hi, full){
+  let span=Math.max(CAL_MIN_SPAN, hi-lo);
+  span=Math.min(span, full[1]-full[0]);
+  lo=Math.max(full[0], Math.min(lo, full[1]-span));
+  state.calGasRange = (lo<=full[0]&&lo+span>=full[1]) ? null : [Math.round(lo), Math.round(lo+span)];
+}
+function calDailyChart(host, pts, lines, opts={}){
+  if(!pts.length){ host.innerHTML='<p class="note">No records for this selection.</p>'; return; }
+  const full=[pts[0].x, pts[pts.length-1].x];
+  const year=opts.year, otherYear=opts.otherYear;
+  const range=()=>state.calGasRange||full;
+  const W=900, H=300, padR=14, padT=12, padB=46, NH=64;
+  host.innerHTML=`<div class="head chart-title-row" style="gap:6px;flex-wrap:wrap">
+      <span class="note" style="margin:0">Drag across the chart to zoom in; drag the shaded window in the strip below
+        to slide it, or its edges to resize it.</span><span class="spacer"></span>
+      <button class="btn-mini" data-gr="prev" title="Slide the range earlier">&#9664;</button>
+      <button class="btn-mini" data-gr="next" title="Slide the range later">&#9654;</button>
+      <button class="btn-mini" data-gr="in" title="Zoom in around the centre">Zoom in</button>
+      <button class="btn-mini" data-gr="out" title="Zoom out around the centre">Zoom out</button>
+      <button class="btn-mini" data-gr="full" title="Back to the whole year">Full year</button>
+      <span class="badge" data-gr-label></span></div>
+    <div data-gr-main></div><div data-gr-nav style="margin-top:4px"></div>`;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
+  const nav=el("svg",{viewBox:`0 0 ${W} ${NH}`, style:figStyle(W)+";cursor:pointer"});
+  let padL=60;
+  const xOf=(v,[a,b])=>padL+((v-a)/((b-a)||1))*(W-padL-padR);
+  const dayAt=(clientX,[a,b])=>{ const bb=svg.getBoundingClientRect();
+    return a+((clientX-bb.left)/bb.width*W-padL)/(W-padL-padR)*(b-a); };
+  function drawMain(){
+    const [lo,hi]=range();
+    const vis=pts.filter(p=>p.x>=lo&&p.x<=hi);
+    const vals=vis.flatMap(p=>lines.map(l=>p[l.key])).filter(v=>v!==null&&v!==undefined&&isFinite(v));
+    const axY=niceAxis(0, vals.length&&Math.max(...vals)>0?Math.max(...vals):1, 4);
+    const dec=Math.max(axY.dec, Math.min(6,Math.max(0,1-Math.floor(Math.log10(axY.hi||1)))));
+    padL=axisPadL(axY.ticks.map(v=>v.toFixed(dec)), true);
+    const plotW=W-padL-padR, plotH=H-padT-padB;
+    const x=v=>xOf(v,[lo,hi]), y=v=>padT+plotH-((v-axY.lo)/(axY.hi-axY.lo))*plotH;
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    axY.ticks.forEach(v=>{ const yy=y(v);
+      svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
+      const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"}); t.textContent=v.toFixed(dec); svg.appendChild(t); });
+    const {ticks,grid}=calDayTicks(year, lo, hi);
+    grid.forEach(d=>svg.appendChild(el("line",{x1:x(d),y1:padT,x2:x(d),y2:padT+plotH,class:"gl"})));
+    ticks.forEach(([d,lab])=>{
+      svg.appendChild(el("line",{x1:x(d),y1:padT+plotH,x2:x(d),y2:padT+plotH+5,stroke:"var(--ink-2)"}));
+      const t=el("text",{x:x(d),y:padT+plotH+18,class:"ax","text-anchor":"middle"}); t.textContent=lab; svg.appendChild(t); });
+    const xl=el("text",{x:padL+plotW/2,y:H-6,class:"axl","text-anchor":"middle"});
+    xl.textContent=`${year}${otherYear?` (CalMAC ${otherYear}, matched by day of year)`:""}`; svg.appendChild(xl);
+    const yl=el("text",{x:14,y:padT+plotH/2,class:"axl","text-anchor":"middle",transform:`rotate(-90 14 ${padT+plotH/2})`});
+    yl.textContent=opts.yLabel||""; svg.appendChild(yl);
+    const clip=`calgas-clip-${Math.random().toString(36).slice(2,8)}`;
+    const defs=el("defs"), cp=el("clipPath",{id:clip});
+    cp.appendChild(el("rect",{x:padL,y:padT,width:plotW,height:plotH})); defs.appendChild(cp); svg.appendChild(defs);
+    const g=el("g",{"clip-path":`url(#${clip})`});
+    lines.forEach(l=>{
+      const has=p=>p[l.key]!==null&&p[l.key]!==undefined&&isFinite(p[l.key]);
+      const d=vis.map((p,i)=>has(p)?`${i&&has(vis[i-1])?"L":"M"}${x(p.x).toFixed(1)},${y(p[l.key]).toFixed(1)}`:"").filter(Boolean).join(" ");
+      if(d) g.appendChild(el("path",{d,fill:"none",stroke:l.color,"stroke-width":(hi-lo)<120?2:(l.width||1.4),
+        "stroke-linejoin":"round",...(l.dash?{"stroke-dasharray":l.dash}:{})}));
+      if((hi-lo)<=45) vis.filter(has).forEach(p=>g.appendChild(el("circle",{cx:x(p.x),cy:y(p[l.key]),r:2.4,fill:l.color})));
+    });
+    svg.appendChild(g);
+    plotFrame(svg, padL, padT, plotW, plotH);
+    const cross=el("line",{x1:0,y1:padT,x2:0,y2:padT+plotH,stroke:"var(--ink-3)","stroke-width":1,opacity:0});
+    const brush=el("rect",{x:0,y:padT,width:0,height:plotH,fill:"var(--ink)",opacity:0.08,"pointer-events":"none"});
+    svg.appendChild(cross); svg.appendChild(brush);
+    const hit=el("rect",{x:padL,y:padT,width:plotW,height:plotH,fill:"transparent",style:"cursor:crosshair"});
+    let start=null;
+    hit.addEventListener("mousedown",ev=>{ start=dayAt(ev.clientX,[lo,hi]); ev.preventDefault(); });
+    hit.addEventListener("mousemove",ev=>{
+      const dd=dayAt(ev.clientX,[lo,hi]);
+      if(start!==null){
+        const a=Math.min(start,dd), b=Math.max(start,dd);
+        brush.setAttribute("x",x(a)); brush.setAttribute("width",Math.max(0,x(b)-x(a))); hideTip(); return;
+      }
+      let best=vis[0]; vis.forEach(p=>{ if(Math.abs(p.x-dd)<Math.abs(best.x-dd)) best=p; });
+      if(!best) return;
+      cross.setAttribute("x1",x(best.x)); cross.setAttribute("x2",x(best.x)); cross.setAttribute("opacity",1);
+      showTip(`<b>${esc(calDateLabel(best.date||calDoyToIso(year,best.x)))}</b>`
+        +(otherYear?`<div class="row"><span>CalMAC day</span><span>${esc(calDateLabel(calDoyToIso(otherYear,best.x)))}</span></div>`:"")
+        +lines.map(l=>best[l.key]===null||best[l.key]===undefined?""
+          :`<div class="row"><span>${esc(l.label)}</span><span>${fmt(best[l.key],opts.tipDec??2)}</span></div>`).join(""),ev);
+    });
+    const end=ev=>{
+      if(start===null) return;
+      const dd=dayAt(ev.clientX,[lo,hi]), a=Math.min(start,dd), b=Math.max(start,dd);
+      start=null; brush.setAttribute("width",0);
+      if(b-a>=1){ calSetGasRange(a,b,full); redraw(true); }
+    };
+    hit.addEventListener("mouseup",end);
+    hit.addEventListener("mouseleave",ev=>{ hideTip(); cross.setAttribute("opacity",0); if(start!==null) end(ev); });
+    svg.appendChild(hit);
+    const [a,b]=range();
+    host.querySelector("[data-gr-label]").textContent=state.calGasRange
+      ? `${calDateLabel(calDoyToIso(year,a)).slice(4)} – ${calDateLabel(calDoyToIso(year,b)).slice(4)} (${b-a+1} days)`
+      : "whole year";
+  }
+  function drawNav(){
+    while(nav.firstChild) nav.removeChild(nav.firstChild);
+    const plotW=W-padL-padR, top=4, nh=NH-22, x=v=>xOf(v,full);
+    const navLines=lines.slice(0,2);
+    const vals=pts.flatMap(p=>navLines.map(l=>p[l.key])).filter(v=>v!==null&&v!==undefined&&isFinite(v));
+    const mx=vals.length?Math.max(...vals):1, y=v=>top+nh-(v/(mx||1))*nh;
+    nav.appendChild(el("rect",{x:padL,y:top,width:plotW,height:nh,fill:"none",stroke:"var(--line)"}));
+    navLines.forEach(l=>{
+      const d=pts.filter(p=>p[l.key]!==null&&p[l.key]!==undefined).map((p,i)=>`${i?"L":"M"}${x(p.x).toFixed(1)},${y(p[l.key]).toFixed(1)}`).join(" ");
+      nav.appendChild(el("path",{d,fill:"none",stroke:l.color,"stroke-width":1,opacity:0.7}));
+    });
+    calDayTicks(year, full[0], full[1]).ticks.forEach(([d,lab])=>{
+      const t=el("text",{x:x(d),y:NH-6,class:"ax","text-anchor":"start",style:"font-size:10px"}); t.textContent=lab; nav.appendChild(t); });
+    const [a,b]=range();
+    nav.appendChild(el("rect",{x:padL,y:top,width:Math.max(0,x(a)-padL),height:nh,fill:"var(--surface)",opacity:0.6,"pointer-events":"none"}));
+    nav.appendChild(el("rect",{x:x(b),y:top,width:Math.max(0,W-padR-x(b)),height:nh,fill:"var(--surface)",opacity:0.6,"pointer-events":"none"}));
+    const win=el("rect",{x:x(a),y:top,width:Math.max(2,x(b)-x(a)),height:nh,fill:"var(--ink)",opacity:0.10,
+      stroke:"var(--ink-2)","stroke-width":1,style:"cursor:grab","data-part":"move"});
+    const hl=el("rect",{x:x(a)-4,y:top,width:8,height:nh,fill:"var(--ink-2)",opacity:0.35,style:"cursor:ew-resize","data-part":"lo"});
+    const hr=el("rect",{x:x(b)-4,y:top,width:8,height:nh,fill:"var(--ink-2)",opacity:0.35,style:"cursor:ew-resize","data-part":"hi"});
+    nav.appendChild(win); nav.appendChild(hl); nav.appendChild(hr);
+  }
+  /* The overview strip: drag the window to slide, its edges to resize, click
+     elsewhere to centre the window there. Document-level listeners so a drag that
+     leaves the strip keeps tracking until the button is released. */
+  const navDay=clientX=>{ const bb=nav.getBoundingClientRect();
+    return full[0]+((clientX-bb.left)/bb.width*W-padL)/(W-padL-padR)*(full[1]-full[0]); };
+  nav.addEventListener("mousedown",ev=>{
+    ev.preventDefault();
+    const part=(ev.target.getAttribute&&ev.target.getAttribute("data-part"))||"bg";
+    const [a0,b0]=range(), d0=navDay(ev.clientX);
+    if(part==="bg"){ const span=b0-a0; calSetGasRange(d0-span/2, d0+span/2, full); redraw(false); }
+    const [a1,b1]=range();
+    const move=e=>{
+      const dd=navDay(e.clientX)-d0;
+      if(part==="lo") calSetGasRange(Math.min(a1+dd, b1-CAL_MIN_SPAN), b1, full);
+      else if(part==="hi") calSetGasRange(a1, Math.max(b1+dd, a1+CAL_MIN_SPAN), full);
+      else calSetGasRange(a1+dd, b1+dd, full);
+      redraw(false);
+    };
+    const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); syncHash(); };
+    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
+  });
+  host.querySelectorAll("[data-gr]").forEach(btn=>btn.addEventListener("click",()=>{
+    const [a,b]=range(), span=b-a, mid=(a+b)/2;
+    ({prev:()=>calSetGasRange(a-span/2,b-span/2,full), next:()=>calSetGasRange(a+span/2,b+span/2,full),
+      in:()=>calSetGasRange(mid-span/4,mid+span/4,full), out:()=>calSetGasRange(mid-span,mid+span,full),
+      full:()=>{ state.calGasRange=null; }})[btn.dataset.gr]();
+    redraw(true);
+  }));
+  function redraw(sync){ drawMain(); drawNav(); if(sync) syncHash(); }
+  attachChart(host.querySelector("[data-gr-main]"), svg, opts.copy);
+  host.querySelector("[data-gr-nav]").appendChild(nav);
+  redraw(false);
+}
+
 function calRenderGas(slug, ind, cz, size, s){
   const daily=calFrame(slug,"natural_gas","daily").filter(r=>calSegMatch(r,ind,cz,size));
   const others=calOtherRuns(slug,"natural_gas");
@@ -3222,10 +3482,11 @@ function calRenderGas(slug, ind, cz, size, s){
   const doy=d=>{ const t=new Date(d+"T00:00:00Z"); return Math.floor((t-Date.UTC(t.getUTCFullYear(),0,1))/864e5)+1; };
   const series=k=>{ const rows=daily.filter(r=>r.run===k);
     const tot=rows.reduce((t,r)=>t+(r.therms_per_bldg||0),0), ttot=rows.reduce((t,r)=>t+(r.therms_per_premise||0),0);
-    const m={}; rows.forEach(r=>{ m[doy(String(r.date).slice(0,10))]={cs:mode==="annual"?(tot?r.therms_per_bldg/tot*100:null):r.therms_per_bldg,
+    const m={}; rows.forEach(r=>{ const iso=String(r.date).slice(0,10);
+      m[doy(iso)]={date:iso, cs:mode==="annual"?(tot?r.therms_per_bldg/tot*100:null):r.therms_per_bldg,
       tr:mode==="annual"?(ttot?r.therms_per_premise/ttot*100:null):r.therms_per_premise}; }); return m; };
   const P=series(CAL_SUBJECT), O=shown.map(r=>series(r.key));
-  const pts=Object.keys(P).map(Number).sort((a,b)=>a-b).map(d=>({x:d, cs:P[d].cs, tr:P[d].tr,
+  const pts=Object.keys(P).map(Number).sort((a,b)=>a-b).map(d=>({x:d, date:P[d].date, cs:P[d].cs, tr:P[d].tr,
     ...Object.fromEntries(O.map((m,i)=>[`run${i}`,(m[d]||{}).cs??null]))}));
   const lines=[{key:"cs",label:`${runShort(CAL_SUBJECT)} per building`,color:safeColor(runColor(CAL_SUBJECT)),width:1.4},
     {key:"tr",label:"CalMAC per premise",color:"var(--ink)",width:1.4},
@@ -3253,13 +3514,20 @@ function calRenderGas(slug, ind, cz, size, s){
       const tm=met.filter(r=>r.side==="calmac").reduce((a,r)=>a+r.mean_daily_therms,0)/Math.max(1,met.filter(r=>r.side==="calmac").length);
       return `<tr><td>${se}</td><td>${dy}</td><td>${fmt(c.mean_daily_therms,2)}</td><td>${fmt(t.mean_daily_therms,2)}</td>
         <td>${fmt(cm?c.mean_daily_therms/cm:null,2)} / ${fmt(tm?t.mean_daily_therms/tm:null,2)}</td></tr>`;})).join("")}
-    </tbody></table></div></div>
-    <div class="panel"><h2>Share of annual natural gas by month</h2><div id="calMon" style="max-width:700px"></div></div>`;
+    </tbody></table></div></div>`;
+  h+=calDowPanel(slug,"natural_gas",ind,cz,size);
+  h+=`<div class="panel"><h2>Share of annual natural gas by month</h2><div id="calMon" style="max-width:700px"></div></div>`;
   $("#calBody").innerHTML=h;
-  calLineChart($("#calDaily"), pts, lines, {xLabel:"Day of year", yLabel:mode==="annual"?"% of annual":"therms per day",
-    tipDec:mode==="annual"?3:2, width:900, height:280, xFmt:d=>`day ${d}`,
+  // The ComStock calendar sets the axis; a raw CalMAC series is another year,
+  // matched by day of year, and the tooltip names both dates.
+  const csYear=pts.length&&pts[0].date?+pts[0].date.slice(0,4):2018;
+  const truthYears=((((((D.coverage||{}).calmac||{}).utilities||{})[slug]||{}).fuels||{}).natural_gas||{}).years||[];
+  calDailyChart($("#calDaily"), pts, lines, {year:csYear,
+    otherYear:sameCal?null:(truthYears.find(y=>y!==csYear)||null),
+    yLabel:mode==="annual"?"% of annual":"therms per day", tipDec:mode==="annual"?3:2,
     copy:{title:`${ind} ${cz} ${size} — daily natural gas`, legend:lines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}))}});
   calMonthly(slug,"natural_gas",ind,cz,size,shown,"#calMon");
+  calDowCharts(slug,"natural_gas",ind,cz,size,shown);
   wireGroups();
 }
 
@@ -6169,7 +6437,8 @@ const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim
                  "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
                  "measDistGroup","measMulti","runsHidden","amiRuns","measBasis","measPop",
                  "measCatGroup","euHidden","feHidden","measHidden",
-                 "calUtil","calFuel","calCz","calSize","calMode","calGasMode","calIndic","calRuns"];
+                 "calUtil","calFuel","calCz","calSize","calMode","calGasMode","calIndic","calRuns",
+                 "calGasRange"];
 function syncHash(){
   const p=new URLSearchParams();
   // Unset state (e.g. amiRegion with no AMI regions) is left out rather than
@@ -6189,6 +6458,8 @@ function parseHash(){
       : k==="runsHidden" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="amiRuns" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="calRuns" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
+      : k==="calGasRange" ? (()=>{ const a=v.split(",").map(Number);
+          return a.length===2&&a.every(Number.isFinite)&&a[1]>a[0]?a:null; })()
       : k==="measMulti" ? v.split(",").filter(u=>MEAS_LIST.some(m=>m.up===u))
       : k==="euHidden" ? v.split(",").filter(x=>(D.enduseOrder||[]).includes(x))
       // "enduse|fuel"; validated against both halves so a stale link cannot

@@ -248,6 +248,8 @@ def _calmac_payload(m: Path, manifest: dict, coverage: dict) -> dict | None:
                 "summ": _read(m / f"calmac_summary_{e}.csv"),
                 "ldc": _pack_csv(m / f"calmac_ldc_{e}.csv", seg_keys, drop=("utility_id",), sig=4),
                 "mon": _pack_csv(m / f"calmac_monthly_{e}.csv", seg_keys, drop=("utility_id",), sig=4),
+                "dow": _pack_csv(m / f"calmac_dow_{e}.csv", seg_keys + ["day", "basis"],
+                                 drop=("utility_id",), sig=5),
                 "seg": _read(m / f"calmac_segments_{e}.csv"),
             },
             "gas": {
@@ -257,6 +259,8 @@ def _calmac_payload(m: Path, manifest: dict, coverage: dict) -> dict | None:
                                  seg_keys + ["season", "day_type", "side"], drop=("utility_id",)),
                 "summ": _read(m / f"calmac_summary_{g}.csv"),
                 "mon": _pack_csv(m / f"calmac_monthly_{g}.csv", seg_keys, drop=("utility_id",), sig=4),
+                "dow": _pack_csv(m / f"calmac_dow_{g}.csv", seg_keys + ["day", "basis"],
+                                 drop=("utility_id",), sig=5),
                 "seg": _read(m / f"calmac_segments_{g}.csv"),
             },
             "comp": _read(m / f"calmac_composition_{slug}.csv"),
