@@ -146,6 +146,8 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       next if UnoccupiedOAControls.air_loop_res?(air_loop_hvac)
       next if UnoccupiedOAControls.air_loop_evaporative_cooler?(air_loop_hvac)
       next if UnoccupiedOAControls.air_loop_doas?(air_loop_hvac)
+      # skip data center CRAC/CRAH loops: they run around the clock (a night-cycled CRAC overheated its zone in the 2026R1 run)
+      next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
       # skip outpatient healthcare, hospitals, and schools
       next if no_change_zones?(air_loop_hvac) # screen out space types this shouldn't be applied to
 

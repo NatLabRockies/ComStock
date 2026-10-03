@@ -212,8 +212,7 @@ class ExteriorWallInsulation < OpenStudio::Measure::ModelMeasure
 
       wall_construction = surface.construction.get
       wall_construction_plus_ins = old_to_new_construction_map[wall_construction]
-      # Walls whose construction was skipped above (metal building, already at the target R-value, thin
-      # insulation, no standards type) have no entry; typical models can carry several exterior wall
+      # Walls whose construction was skipped above have no entry; typical models carry several wall
       # constructions, and setConstruction(nil) raised for them.
       if wall_construction_plus_ins.nil?
         runner.registerInfo("Leaving #{surface.name} unchanged, #{wall_construction.name} was not selected for exterior insulation.")

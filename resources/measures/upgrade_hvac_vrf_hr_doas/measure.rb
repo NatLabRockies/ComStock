@@ -1340,6 +1340,18 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
           next
         end
 
+        # exclude CRAC/CRAH loops and loops serving data center zones: a VRF terminal cannot carry a data
+        # center's load (every such large office diverged in the 2026R1 run); na_air_loops zones keep their system
+        serves_data_center = air_loop_hvac.thermalZones.any? do |thermal_zone|
+          OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone)
+        end
+        if serves_data_center || air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i)
+          applicability_msg = "this air loop (#{air_loop_hvac.name}) is a CRAC/CRAH serving a data center zone. so, skipping this air loop system..."
+          applicability_msgs << applicability_msg
+          applicability << false
+          na_air_loops << air_loop_hvac
+          next
+        end
         # exclude if it is evaporative cooler
         if air_loop_hvac_include_evaporative_cooler?(air_loop_hvac)
           applicability_msg = 'this air loop is an evaporative cooler. so, skipping this air loop system...'

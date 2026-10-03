@@ -1,0 +1,87 @@
+# Upgrade subset for the small-sample rerun of sdr_2026r1_all_measure_10k (PLAN.md step 8).
+# Drop this list into the owner's run yml in place of the full 65-upgrade block; the upgrade
+# names, option strings and order are those of the 2026R1 yml (ids are its 1-based positions),
+# so results can be compared with the all-measure run by name. Suggested run settings:
+#   - a few hundred buildings (n_datapoints 300-500; the pulled failing ids below are worth
+#     forcing in if the sampler allows a buildstock.csv: 112, 148, 195, 345, 1062, 2419, 3145,
+#     3701, 4084, 5552, 6252, 7749),
+#   - keep_run_folders / the simulation_output tarballs, so each measure's not-applicable
+#     messages can be tallied for the applicability comparison (PLAN.md step 10),
+#   - buildstock_directory on the commit of ccaradon/spacetype_refactor_measure_failures.
+# The owner approves and submits the yml; this file is only the upgrade list.
+upgrades:
+  - upgrade_name: VRF_with_DOAS  # 2026R1 id 12
+    options:
+      - option: hvac_vrf_hr_doas|vrf_hr
+  - upgrade_name: VRF_with_25pct_Upsizing_Allowance  # 2026R1 id 13
+    options:
+      - option: hvac_vrf_hr_doas|vrf_25pct_upsizing
+  - upgrade_name: DOAS_HP_Minisplits  # 2026R1 id 14
+    options:
+      - option: hvac_add_doas_heat_pump_minisplit|hp_minisplit_default
+  - upgrade_name: Advanced_RTU_Controls  # 2026R1 id 22
+    options:
+      - option: hvac_advanced_rtu_controls|advanced_rtu_dcv_econ
+  - upgrade_name: Unoccupied_AHU_Control  # 2026R1 id 23
+    options:
+      - option: hvac_unocc_oa_control|unocc_oa_control
+  - upgrade_name: Pmp  # 2026R1 id 26
+    options:
+      - option: hvac_pump|upgrade_pump
+  - upgrade_name: Ideal_Thermal_Loads  # 2026R1 id 27
+    options:
+      - option: hvac_enable_ideal_air_loads|ideal_air_loads
+  - upgrade_name: Hydronic_GHP  # 2026R1 id 28
+    options:
+      - option: hvac_hydronic_geothermal_hp|hydronic_ghp
+  - upgrade_name: Packaged_GHP  # 2026R1 id 29
+    options:
+      - option: hvac_packaged_geothermal_hp|packaged_ghp_dcv_econ
+  - upgrade_name: Console_GHP  # 2026R1 id 30
+    options:
+      - option: hvac_console_geothermal_hp|console_ghp
+  - upgrade_name: Chiller_Replacement  # 2026R1 id 31
+    options:
+      - option: hvac_chiller|upgrade_chiller_pump_chwctrl_cwctrl
+  - upgrade_name: LED_Lighting  # 2026R1 id 43
+    options:
+      - option: light_led|lighting_technology_gen5
+  - upgrade_name: Add_PV_40pct_w_batt  # 2026R1 id 47
+    options:
+      - option: gen_pv|pv_40pct_w_batt
+  - upgrade_name: Wall_Insulation  # 2026R1 id 48
+    options:
+      - option: env_exterior_wall_insulation|exterior_wall_insulation
+  - upgrade_name: Package_2  # 2026R1 id 55
+    options:
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: Package_3  # 2026R1 id 56
+    options:
+      - option: env_exterior_wall_insulation|exterior_wall_insulation
+      - option: env_roof_insul_aedg|roof_insul_aedg
+      - option: env_new_aedg_windows|new_aedg_windows
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: Package_4  # 2026R1 id 57
+    options:
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|standard_performance
+  - upgrade_name: Package_6  # 2026R1 id 59
+    options:
+      - option: hvac_hydronic_geothermal_hp|hydronic_ghp
+      - option: hvac_packaged_geothermal_hp|packaged_ghp_dcv_econ
+      - option: hvac_console_geothermal_hp|console_ghp
+  - upgrade_name: Package_10  # 2026R1 id 63
+    options:
+      - option: hvac_hydronic_geothermal_hp_with_envelope|hydronic_ghp_envelope
+      - option: hvac_packaged_geothermal_hp_with_envelope|packaged_ghp_dcv_econ_envelope
+      - option: hvac_console_geothermal_hp_with_envelope|console_ghp_envelope
+  - upgrade_name: Package_11  # 2026R1 id 64
+    options:
+      - option: hvac_hydronic_geothermal_hp_with_envelope_lighting|hydronic_ghp_envelope_lighting
+      - option: hvac_packaged_geothermal_hp_with_envelope_lighting|packaged_ghp_dcv_econ_envelope_lighting
+      - option: hvac_console_geothermal_hp_with_envelope_lighting|console_ghp_envelope_lighting

@@ -440,9 +440,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
 
     # runner.registerInfo("looping thru unitary systems: #{Time.now} ")
     model.getAirLoopHVACUnitarySystems.each do |unit|
-      # The field is blank on some unitary systems in the typical models and .get on the empty optional raises;
-      # treat blank as '' so the branch below assigns a method.
-      flowmethod = unit.supplyAirFlowRateMethodDuringHeatingOperation.is_initialized ? unit.supplyAirFlowRateMethodDuringHeatingOperation.get : ''
+      # OpenStudio 3.7+ returns a String here (older SDKs an optional); .get raised on every model with a
+      # unitary system. Accept either shape; blank becomes '' so the branch below assigns a method.
+      flowmethod_raw = unit.supplyAirFlowRateMethodDuringHeatingOperation
+      flowmethod = if flowmethod_raw.respond_to?(:is_initialized)
+                     flowmethod_raw.is_initialized ? flowmethod_raw.get.to_s : ''
+                   else
+                     flowmethod_raw.to_s
+                   end
       # runner.registerInfo("flow method is #{flowmethod} ")
       if flowmethod == ''
         if model.version < OpenStudio::VersionString.new('3.7.0')

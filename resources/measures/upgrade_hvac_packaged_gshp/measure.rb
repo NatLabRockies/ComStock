@@ -281,11 +281,23 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
 
     # make list of zone equipment to delete
     equip_to_delete = []
+    # Data center zones keep their CRAC/CRAH (the typical builders give them their own unit): their loop is left
+    # out of the inventory, their equipment is kept and they are skipped below. Loop name is the fallback test.
+    data_center_zone_names = model.getThermalZones.select do |thermal_zone|
+      named_crac = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.name.to_s.match?(/(CRAC|CRAH)/i)
+      named_crac || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
+    end.map { |thermal_zone| thermal_zone.name.get }
+    runner.registerInfo("Data center zones kept on their CRAC/CRAH and not given a packaged GSHP: #{data_center_zone_names.join(', ')}") unless data_center_zone_names.empty?
     # if zone has baseboard electric (typically small, storage style space types), skip this zone and do not add GHP here
     zones_to_skip = []
     unconditioned_zones = []
     # check for baseboard electric and add to array of zone equipment to delete
     model.getThermalZones.each do |thermal_zone|
+      # data center zones keep everything they have
+      if data_center_zone_names.include?(thermal_zone.name.get)
+        zones_to_skip << thermal_zone.name.get
+        next
+      end
       # if original zone has no equipment (unconditioned), skip this zone entirely
       if thermal_zone.equipment.empty?
         unconditioned_zones << thermal_zone.name.get
@@ -313,6 +325,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     psz_air_loops = []
     pvav_air_loops = []
     all_air_loops.each do |air_loop_hvac|
+      # skip CRAC/CRAH loops serving data center zones; they stay as they are
+      next if air_loop_hvac.thermalZones.any? { |thermal_zone| data_center_zone_names.include?(thermal_zone.name.get) }
       # skip units that are not single zone
       if air_loop_hvac.thermalZones.length == 1
 
@@ -850,12 +864,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       object_to_remove.remove
     end
 
-    # Zones the inventories above did not capture are served by a loop skipped as DOAS, residential,
-    # no-outdoor-air or evaporative, or by zone equipment the measure does not replace (PTAC, PTHP, WSHP).
-    # Prototype models never mixed those with PSZ/PVAV loops; typical models do (a building otherwise on
-    # PTAC or DOAS plus a separate single-zone loop), and such zones reached setAvailabilitySchedule(nil) or
-    # a nil zone_data hash below. The measure replaces the whole HVAC system and removes the plant loops,
-    # so it cannot leave those zones on their existing equipment: register as not applicable instead.
+    # Zones not inventoried above sit on systems this measure does not replace (DOAS, residential, PTAC/PTHP,
+    # WSHP); typical models mix them with PSZ/PVAV loops. The whole system is replaced, so register NA.
     uninventoried_zones = model.getThermalZones.reject do |zone|
       zones_to_skip.include?(zone.name.get) || unconditioned_zones.include?(zone.name.get) ||
         (zone_data.key?("#{zone.name} schedule") && zone_data.key?(zone.name.to_s))
@@ -967,10 +977,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       fan.setFanPowerMinimumFlowRateInputMethod('Fraction')
       fan.setFanPowerMinimumFlowFraction(min_fan_flow_ratio) # need to add check for ventilation
       # set fan curve coefficients
-      # openstudio-standards 0.8.5 moved this to OpenstudioStandards::HVAC with a control_type keyword. The old string
-      # 'Single Zone VAV Fan ' matched no option, so through 2025R3 the call only warned and left the OpenStudio default
-      # coefficients in place; 'Single Zone VAV' applies the 90.1-2016 System 11 curve the comment above intends.
-      # For parity with 2025R3 results, delete the call instead.
+      # Module function since openstudio-standards 0.8.5. The old 'Single Zone VAV Fan ' string matched nothing
+      # (no-op through 2025R3); 'Single Zone VAV' applies the intended curve. Delete the call for 2025R3 parity.
       OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
       zone_data["#{thermal_zone.name} min_fan_flow_ratio"] = min_fan_flow_ratio
 

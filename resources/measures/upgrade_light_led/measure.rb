@@ -161,8 +161,7 @@ class LightLED < OpenStudio::Measure::ModelMeasure
   end
 
   # define what happens when the measure is run
-  # The gem's lighting space type data, located from the loaded gem so the measure never carries a copy.
-  # @return [Array<Hash>] rows of lighting_space_types.json, or nil (with an error registered) if not found
+  # The gem's lighting space type rows, read from the loaded gem (nil and an error if the file is missing).
   def load_gem_lighting_space_types(runner)
     source = OpenstudioStandards::InteriorLighting.method(:create_typical_interior_lighting).source_location.first
     path = File.join(File.dirname(source), 'data', 'lighting_space_types.json')
@@ -173,10 +172,8 @@ class LightLED < OpenStudio::Measure::ModelMeasure
     JSON.parse(File.read(path), symbolize_names: true)[:lighting_space_types]
   end
 
-  # Map a row of the gem's lighting_space_types.json onto the field names of the measure's
-  # prototype_lighting_space_type.csv so change_lighting_technology can use either source.
-  # The gem stores the target illuminance in lux; the CSV uses lumens per ft2 (footcandles).
-  # @return [Hash] properties keyed like the CSV rows
+  # Map a gem lighting space type row onto the CSV field names change_lighting_technology expects
+  # (the gem's target illuminance is in lux, the CSV's in footcandles).
   def gem_row_to_csv_fields(row)
     illuminance = row[:lighting_space_type_target_illuminance_setpoint].to_f
     units = row[:lighting_space_type_target_illuminance_units].to_s.downcase
@@ -273,10 +270,8 @@ class LightLED < OpenStudio::Measure::ModelMeasure
       # get number of people for lighting calculations
       space_type_number_of_people = space_type.getNumberOfPeople(space_type_floor_area)
 
-      # Lighting properties for the space type. Typical models (create_custom_building_from_spec) carry a
-      # 'lighting_space_type' property keyed to the gem's lighting_space_types.json, the data the baseline
-      # lighting was built from; prototype-era models carry 'prototype_lighting_space_type' and use the
-      # measure's CSV. Both are mapped onto the CSV field names so the LPD math below is shared.
+      # Typical models carry 'lighting_space_type' (the gem data the baseline lighting came from); prototype
+      # models carry 'prototype_lighting_space_type' (the measure's CSV). Both map onto the CSV fields.
       if space_type.additionalProperties.hasFeature('lighting_space_type')
         prototype_lighting_space_type = space_type.additionalProperties.getFeatureAsString('lighting_space_type').to_s
         row = gem_lighting_space_types.select { |r| r[:lighting_space_type_name] == prototype_lighting_space_type }
