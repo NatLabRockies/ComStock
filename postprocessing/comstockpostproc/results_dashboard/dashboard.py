@@ -16,6 +16,7 @@ import json
 import math
 from pathlib import Path, PurePath
 
+import numpy as np
 import pandas as pd
 
 from ._version import __version__
@@ -177,6 +178,101 @@ def _pack_frame(rows: list[dict], str_cols: list[str], num_cols: list[str]) -> d
             "dict": dicts, "s": s_out, "v": n_out}
 
 
+def _round_sig(df: pd.DataFrame, sig: int = 5) -> pd.DataFrame:
+    """Numbers to `sig` significant figures before packing: the profile frames are
+    the bulk of the California payload, and five figures is far beyond what any
+    chart or table shows."""
+    out = df.copy()
+    for c in out.columns:
+        if pd.api.types.is_float_dtype(out[c]):
+            v = out[c].to_numpy()
+            with np.errstate(divide="ignore", invalid="ignore"):
+                mag = np.where(np.isfinite(v) & (v != 0),
+                               np.floor(np.log10(np.abs(np.where(v == 0, 1, v)))), 0)
+            out[c] = np.round(v / 10 ** (mag - sig + 1)) * 10 ** (mag - sig + 1)
+    return out
+
+
+def _pack_csv(path: Path, str_cols: list[str], drop: tuple = (), sig: int = 5,
+              query: str | None = None) -> dict:
+    """A metrics CSV packed columnar (see _pack_frame), every non-string column
+    numeric. `query` filters rows first (pandas query syntax)."""
+    if not path.exists():
+        return {}
+    df = pd.read_csv(path)
+    if query:
+        df = df.query(query)
+    df = df.drop(columns=[c for c in drop if c in df.columns])
+    str_cols = [c for c in str_cols if c in df.columns]
+    num_cols = [c for c in df.columns if c not in str_cols]
+    df = _round_sig(df[str_cols + num_cols], sig)
+    return _pack_frame(_records(df), str_cols, num_cols)
+
+
+def _calmac_payload(m: Path, manifest: dict, coverage: dict) -> dict | None:
+    """Everything the California tab draws, per utility and fuel. None when the
+    leg did not run, so the tab can say why from coverage instead.
+
+    The tab's SUBJECT -- the run whose end-use stack it draws and whose rows its
+    tables read -- is the run under review when that run was compared, and
+    otherwise the run whose composition weighted the pooled truth series: a run
+    under review without a local California weight table (an 'athena' run
+    postprocessed on another machine) still gets a California tab about the runs
+    that could be compared."""
+    cfg = manifest.get("calmac_config")
+    if not cfg or not list(m.glob("calmac_summary_*.csv")):
+        return None
+    primary = ((coverage.get("calmac") or {}).get("composition_run")
+               or manifest.get("primary_run"))
+    seg_keys = ["run", "industry", "cz_group", "size"]
+    util = {}
+    for uid, slug in (cfg.get("utility_slugs") or {}).items():
+        e, g = f"{slug}_electricity", f"{slug}_natural_gas"
+        prof = m / f"calmac_profiles_{e}.csv"
+        # per-segment values repeated on every hourly row; the summary carries them once
+        per_seg = ("utility_id", "weight_sum", "model_count", "premise_count", "size_comparable",
+                   "comstock_annual_kwh_per_bldg", "calmac_annual_kwh_per_premise")
+        eu = tuple(c for c in pd.read_csv(prof, nrows=0).columns if c.startswith("eu_"))             if prof.exists() else ()
+        util[slug] = {
+            "id": uid,
+            "elec": {
+                # the run under review carries its end-use stack; every other run
+                # only the total line it is drawn as
+                "prof": _pack_csv(prof, seg_keys + ["season", "day_type", "basis"],
+                                  drop=per_seg, sig=4, query=f"run == {primary!r}"),
+                "profOther": _pack_csv(prof, seg_keys + ["season", "day_type"],
+                                       drop=per_seg + eu + ("basis", "calmac_kwh_per_premise"),
+                                       sig=4, query=f"run != {primary!r}"),
+                "met": _pack_csv(m / f"calmac_shape_metrics_{e}.csv",
+                                 seg_keys + ["season", "day_type"], drop=("utility_id",)),
+                "summ": _read(m / f"calmac_summary_{e}.csv"),
+                "ldc": _pack_csv(m / f"calmac_ldc_{e}.csv", seg_keys, drop=("utility_id",), sig=4),
+                "mon": _pack_csv(m / f"calmac_monthly_{e}.csv", seg_keys, drop=("utility_id",), sig=4),
+                "seg": _read(m / f"calmac_segments_{e}.csv"),
+            },
+            "gas": {
+                "daily": _pack_csv(m / f"calmac_daily_{g}.csv", seg_keys + ["date", "basis"],
+                                   drop=("utility_id",), sig=4),
+                "met": _pack_csv(m / f"calmac_shape_metrics_{g}.csv",
+                                 seg_keys + ["season", "day_type", "side"], drop=("utility_id",)),
+                "summ": _read(m / f"calmac_summary_{g}.csv"),
+                "mon": _pack_csv(m / f"calmac_monthly_{g}.csv", seg_keys, drop=("utility_id",), sig=4),
+                "seg": _read(m / f"calmac_segments_{g}.csv"),
+            },
+            "comp": _read(m / f"calmac_composition_{slug}.csv"),
+            "zones": _read(m / f"calmac_zones_{slug}.csv"),
+        }
+    return {
+        "config": cfg,
+        "subject": primary,
+        "util": util,
+        "agreement": _read(m / "calmac_segment_agreement.csv"),
+        "normalization": _read(m / "calmac_normalization.csv"),
+        "stations": _read(m / "calmac_stations.csv"),
+        "centroids": _read(m / "calmac_centroids.csv"),
+    }
+
+
 def build_payload(assess: Path) -> dict:
     m = assess / "metrics"
     manifest = json.loads((assess / "manifest.json").read_text(encoding="utf-8"))
@@ -283,6 +379,8 @@ def build_payload(assess: Path) -> dict:
             "tsMask": {p.stem.replace("measures_ts_mask_", ""): _records(pd.read_csv(p))
                        for p in sorted(m.glob("measures_ts_mask_*.csv"))},
         } if (m / "measures_summary.csv").exists() else None),
+        # California vs CalMAC granular profiles; None when that leg did not run
+        "calmac": _calmac_payload(m, manifest, coverage),
         "coverage": coverage,
         "headline": HEADLINE_METRICS,
         "endUses": ANNUAL_END_USES,
@@ -522,6 +620,7 @@ HTML = """<!doctype html>
       <button class="tab" role="tab" data-tab="annual">Annual vs CBECS</button>
       <button class="tab" role="tab" data-tab="dist">Distributions</button>
       <button class="tab" role="tab" data-tab="ami">Timeseries vs AMI</button>
+      <button class="tab" role="tab" data-tab="calmac">California vs CalMAC</button>
       <button class="tab" role="tab" data-tab="params" id="paramsTab">Design parameters</button>
     </div>
     <span id="typeWrap"><label for="type" style="font-size:13px;color:var(--ink-3);margin-right:6px">Building type</label>

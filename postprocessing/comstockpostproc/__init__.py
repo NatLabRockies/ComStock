@@ -12,7 +12,11 @@ from .comstock_to_eia_comparison import ComStockToEIAComparison
 from .comstock_to_ami_comparison import ComStockToAMIComparison
 from .comstock_to_eia_comparison import ComStockToEIAComparison
 from .resstock import ResStock
-from .results_dashboard import AthenaRunRef, ResultsDashboard, load_ami, load_cbecs, report_caches
+from .results_dashboard import (AthenaRunRef, ResultsDashboard, load_ami, load_calmac, load_cbecs,
+                                report_caches)
+# California: the CalMAC granular profiles and each run's local California weight table
+from .california import (CalMAC, california_weights_path, save_california_weights,
+                         save_release_california_weights)
 # S3 exports + Athena tables, built only when missing. One call per run in a
 # driver; the timeseries plots, the AMI comparison and the dashboard read them.
 from .athena_tables import prepare_athena_tables, required_geo_exports

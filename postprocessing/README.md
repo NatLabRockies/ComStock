@@ -169,6 +169,67 @@ and AMI files depend on no run and are always reused; Athena tables follow each 
     ```
 4. Look in the `/output` directory for results
 
+### Comparing California runs to the CalMAC granular profiles
+
+`compare_runs_california.py.template` builds a dashboard whose California tab compares
+one or more runs against the CalMAC non-residential **granular profiles** (GPs) that
+PG&E and SDG&E publish: the average per-premise hourly electricity and daily natural
+gas of ~200 metered premises per segment (industry x climate-zone group x size). Runs
+are declared exactly as in `compare_runs_mixed.py.template`.
+
+1. **Truth data, once per machine.** `truth_data/v01/calmac/` is fetched from
+   `s3://eulp/truth_data/v01/calmac/` when absent. To build it from the utilities'
+   files instead (a folder holding `pg&e/`, `sdg&e/` and `weather/` as CalMAC
+   distributes them):
+    ```
+    $ python -m comstockpostproc.california.prepare_truth_data <CalMAC data folder>
+    ```
+   It also scrapes the CALMAC weather-station table (each station's CEC Title 24 zone)
+   and downloads the 2025 weather the SDG&E normalization needs from calmac.org.
+   `cspp.load_calmac()` then writes `output/CalMAC v01/` (about 30 s, reused after).
+2. Copy `compare_runs_california.py.template` to `compare_runs_california.py`, fill in
+   `RUNS`, `REVIEW_RUN`, `DELTA_REF` and `COMPARISON_NAME`, and run it.
+
+How the comparison is made:
+
+* **Segments.** ComStock buildings are selected by electric utility
+  (`in.electric_utility_eia_code`: 14328 PG&E, 16609 SDG&E) and grouped by GP industry
+  (each ComStock type maps to one industry; eleven industries such as Government and
+  Manufacturing have no ComStock counterpart), CEC climate-zone group (PG&E Coastal
+  1/3/5, Inland 2/4, North Central Valley 11/12, South Central Valley 13; SDG&E Coastal
+  7, Inland 10) and size. Every mapping is a setting in the driver; the defaults live in
+  `comstockpostproc/california/segments.py`.
+* **Size.** CalMAC sizes are rate classes; ComStock has none, so annual peak demand
+  stands in (PG&E small below 75 kW, SDG&E below 20 kW). Retail and Office are compared
+  with sizes pooled: a strip mall or a multi-tenant office is one ComStock building but
+  many metered premises. `CALMAC_SIZE_RULE = 'none'` pools every size.
+* **Pooling.** CalMAC publishes each profile's sample, not the premise population, so
+  pooled truth series (sizes combined, and the "All mapped" segment) weight their
+  components by the run under review's own weighted building counts per cell
+  (`CALMAC_POOL_WEIGHTS = 'equal'` is the alternative).
+* **Weights stay local.** Utility and CEC zone are tract attributes that the Athena
+  aggregates drop, so each `process` run writes
+  `output/ComStock <run>/california_weights/california_weights_upgrade0.parquet` from
+  its own bills cache (`cspp.save_california_weights`), and the weights are passed
+  inline into the run's `<run>_timeseries` query. Nothing is exported or crawled for
+  this. A `release` builds the same table once from its published tract-level
+  (non-aggregate) metadata table in `buildstock_sdr` (`cspp.save_release_california_weights`;
+  name the table with `md_tract_table` if discovery cannot find it) and reads its
+  published `ts_by_state` timeseries. An `athena` run joins only if its weight file is
+  on this machine. Each compared run costs two or three reads of its timeseries table.
+* **Time.** CalMAC is published in local clock time with daylight saving (PG&E `hour`
+  0..23 hour-beginning, SDG&E 1..24 hour-ending); it is converted to Pacific standard
+  time, which ComStock's crawled timeseries already use. The fall-back hour that the
+  profiles record once for two clock hours is flagged and left out of the metrics.
+* **Weather.** PG&E profiles are 2018, ComStock's weather year. SDG&E's are 2025 and are
+  weather-normalized to 2018 per profile and season (hour-of-week and temperature model
+  for electricity, a change-point heating model for gas) at the nearest weather station
+  whose 2018 and 2025 records agree with their neighbours'. A profile whose fit exceeds
+  25% CV(RMSE) stays raw, and the page says so.
+* **Reading it.** ComStock is per weighted building and CalMAC per premise, so levels
+  are indicative; the normalized views (annual sum = 1, day sum = 1) are the
+  comparison.
+
 
 ### Results dashboard
 

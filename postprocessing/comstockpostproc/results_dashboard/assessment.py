@@ -38,7 +38,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from . import (ami_shapes, annual, athena, cbecs_ref, dashboard, design_params,
+from ..california import segments as calmac_segments
+from . import (ami_shapes, annual, athena, calmac_shapes, cbecs_ref, dashboard, design_params,
                distributions, failures, heating_fuel, measures, timeseries)
 from .metrics_def import DIMENSIONS, ORDERED_CATEGORIES
 from ._version import __version__
@@ -118,7 +119,7 @@ def _display_order(requested, runs) -> list[str]:
 
 
 def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
-                   ami_metrics, coverage, order=None, delta_ref=None) -> None:
+                   ami_metrics, coverage, order=None, delta_ref=None, calmac=None) -> None:
     # Every run-wise list below in the page's order (the driver's list), not the
     # internal one, which puts the run under review first for lookups.
     rank = {k: i for i, k in enumerate(order or [r.key for r in runs])}
@@ -246,9 +247,63 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
                   "the meters in kWh/ft² while still putting a larger share of its day into the "
                   "overnight hours."]
 
+    if calmac:
+        L += _calmac_findings(calmac, coverage)
+
     L += ["", "Full tables in `metrics/`; exact SQL in `queries/`; open `dashboard.html` for the "
               "interactive version."]
     (out / "findings.md").write_text("\n".join(L), encoding="utf-8")
+
+
+def _calmac_findings(calmac: dict, coverage: dict) -> list[str]:
+    """findings.md lines for the California leg: the All mapped segment per utility
+    and CZ group, then the industries whose shape departs most."""
+    cov = coverage.get("calmac") or {}
+    cfg = cov.get("config") or {}
+    labels = cfg.get("cz_group_labels", {})
+    L = ["", f"## California vs CalMAC granular profiles ({cov.get('composition_run', '')})", "",
+         "ComStock kWh per weighted building against CalMAC kWh per metered premise. Levels are "
+         "indicative only (a building can be many premises); the shape columns divide each "
+         "profile by its own day total and are the result. Seasons are CalTRACK's (summer "
+         "Jun-Sep, winter Nov-Feb); times are Pacific standard time on both sides."]
+    for (util, fuel), d in calmac.items():
+        if fuel != "electricity":
+            continue
+        uname = (cfg.get("utilities") or {}).get(str(util), str(util))
+        met, summ = d["metrics"], d["summary"]
+        if met is None or met.empty:
+            continue
+        L += ["", f"### {uname} electricity — All mapped segment", "",
+              "| CZ group | shape RMSE (pts) | correlation | overnight share CS vs CalMAC | "
+              "summer weekday peak hour CS / CalMAC | load factor CS / CalMAC | truth basis |",
+              "|---|---|---|---|---|---|---|"]
+        am = met[(met["industry"] == calmac_segments.ALL_MAPPED)
+                 & (met["size"] == calmac_segments.POOLED)]
+        for cz, g in am.groupby("cz_group"):
+            sw = g[(g["season"] == "Summer") & (g["day_type"] == "Weekday")]
+            sr = summ[(summ["industry"] == calmac_segments.ALL_MAPPED) & (summ["cz_group"] == cz)]
+            pk = (f"{int(sw['peak_hour_comstock'].iloc[0])} / {int(sw['peak_hour_calmac'].iloc[0])}"
+                  if len(sw) else "n/a")
+            lf = (f"{sr['load_factor_comstock'].iloc[0]:.2f} / {sr['load_factor_calmac'].iloc[0]:.2f}"
+                  if len(sr) else "n/a")
+            cz_label = (labels.get(str(util)) or {}).get(cz, cz)
+            basis = sr["basis"].iloc[0] if len(sr) else "n/a"
+            L.append(f"| {cz_label} | {_fmt(g['daytype_shape_rmse_pts'].mean(), 2)} "
+                     f"| {_fmt(g['shape_corr'].mean(), 3)} "
+                     f"| {_fmt(100 * g['overnight_share_comstock'].mean())}% vs "
+                     f"{_fmt(100 * g['overnight_share_calmac'].mean())}% | {pk} | {lf} | {basis} |")
+        per = met[(met["size"] == calmac_segments.POOLED)
+                  & (met["industry"] != calmac_segments.ALL_MAPPED)]
+        if not per.empty:
+            worst = (per.groupby("industry")["daytype_shape_rmse_pts"].mean()
+                     .sort_values(ascending=False).head(4))
+            L += ["", "Largest shape departures (pooled size, mean over CZ groups, seasons and day "
+                  "types): " + ", ".join(f"{i} {v:.2f} pts" for i, v in worst.items()) + "."]
+    skipped = cov.get("runs_skipped") or {}
+    if skipped:
+        L += ["", "Runs not compared to CalMAC: "
+              + "; ".join(f"`{k}` ({v})" for k, v in skipped.items()) + "."]
+    return L
 
 
 def _assess(args) -> None:
@@ -599,6 +654,22 @@ def _assess(args) -> None:
                 coverage["ami_runs_skipped"] = ami_runs_skipped
             ami_metrics = metrics_by_region.get(headline) if headline else None
 
+    # California: the CalMAC granular profiles (PG&E, SDG&E). Needs each run's
+    # LOCAL California weight table and its timeseries table; a run without either
+    # is skipped with the reason recorded, never silently.
+    calmac_findings = None
+    if getattr(args, "skip_calmac", True):
+        coverage["calmac_skipped_reason"] = (
+            "no CalMAC truth data was supplied to the assessment (pass "
+            "calmac=cspp.load_calmac(), as compare_runs_california.py does)")
+    else:
+        try:
+            calmac_findings = _calmac_leg(args, out, runs, primary, ts_table, ts_dial,
+                                          ts_usable, ts_problems, coverage)
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("CalMAC leg failed: %s", exc, exc_info=True)
+            coverage["calmac_skipped_reason"] = f"the CalMAC leg failed ({type(exc).__name__}: {exc})"
+
     # Design-parameter review: the modelling inputs behind the results. Runs for
     # every release, since the columns are shared, so the pane can compare them.
     if not args.skip_design_params:
@@ -877,13 +948,183 @@ def _assess(args) -> None:
         "dropped_runs": getattr(args, "dropped_runs", {}) or {},
         "references": refs,
         "region": args.region,
+        # The resolved California segmentation (industry map, size rule, CZ groups,
+        # seasons, pooling), so the page states what was compared with what.
+        "calmac_config": (calmac_segments.config_for_json(args.calmac_config)
+                          if getattr(args, "calmac_config", None) else None),
         "tool_version": __version__,
         "created": datetime.datetime.now().isoformat(timespec="seconds"),
     }, indent=2), encoding="utf-8")
 
     write_findings(out, runs, primary, comps, fuel_mixes, quantiles, ami_metrics, coverage,
-                   order=order, delta_ref=getattr(args, "delta_ref", None))
+                   order=order, delta_ref=getattr(args, "delta_ref", None),
+                   calmac=calmac_findings)
     logger.info("assessment written to %s", out)
+
+
+def _calmac_leg(args, out: Path, runs, primary, ts_table, ts_dial, ts_usable, ts_problems,
+                coverage: dict) -> dict:
+    """The California leg: every run with a local California weight table and a
+    usable timeseries table, against the CalMAC granular profiles.
+
+    Writes metrics/calmac_* and coverage['calmac']; returns the primary run's summary
+    tables per utility and fuel for findings.md. Shape metrics are computed for every
+    run (a comparison run is judged against the meters the same way), and pooled
+    truth series are weighted by the RUN UNDER REVIEW's composition, so every run is
+    measured against one truth line.
+    """
+    cfg = args.calmac_config
+    weights_paths = {k: Path(v) for k, v in (args.calmac_weights or {}).items() if v}
+    truth_all = pd.read_parquet(args.refs["calmac_v01_long"])
+    truth_dir = Path(args.refs["calmac_v01_long"]).parent
+    fuels = [f for f in ("electricity", "natural_gas") if f in set(truth_all["fuel"].astype(str))]
+    cov = {"config": calmac_segments.config_for_json(cfg), "runs_compared": [],
+           "runs_skipped": {}, "queries": {}, "membership_gap": {}, "timeseries_clock": {},
+           "utilities": {}}
+
+    # Which runs can take part, with the table each reads. The primary's timeseries
+    # was discovered and probed above; a comparison run is probed here, like the
+    # AMI leg does.
+    plan = []
+    for r in [primary] + [x for x in runs if x.key != primary.key]:
+        wpath = weights_paths.get(r.key)
+        if not wpath or not wpath.exists():
+            cov["runs_skipped"][r.key] = (
+                "no local California weight table (output/ComStock <run>/california_weights/): "
+                "a run postprocessed here gets one from its allocated-weights cache "
+                "(cspp.save_california_weights), a published release from its tract-level "
+                "Athena table (cspp.save_release_california_weights); an 'athena' run "
+                "postprocessed on another machine needs that folder copied here")
+            continue
+        if r.key == primary.key:
+            if not ts_usable:
+                cov["runs_skipped"][r.key] = ("no usable timeseries table"
+                                              + (f" ({'; '.join(ts_problems)})" if ts_problems else ""))
+                continue
+            plan.append((r, ts_table, ts_dial, wpath))
+            continue
+        stem = r.md_table.split(".")[-1].split("_md_agg_")[0]
+        r_ts = (_discover(r.ts_table, stem, require=("timeseries",), reject=("_vu",),
+                          database=r.database)
+                or _discover(r.ts_table, stem, require=("ts_by_state",), database=r.database))
+        if not r_ts:
+            cov["runs_skipped"][r.key] = "no timeseries table"
+            continue
+        r_ts = athena.qualify(r_ts, r.database)
+        d = timeseries.ts_dialect(r_ts, no_cache=args.no_cache)
+        problem = "; ".join(d["missing"]) or timeseries.check_no_duplicate_hours(
+            r_ts, d, no_cache=args.no_cache)
+        if problem:
+            cov["runs_skipped"][r.key] = f"timeseries table {r_ts} is not usable ({problem})"
+            continue
+        plan.append((r, r_ts, d, wpath))
+    for k, why in cov["runs_skipped"].items():
+        logger.info("CalMAC leg: %s skipped: %s", k, why)
+    if not plan:
+        coverage["calmac_skipped_reason"] = ("no run could be compared: " + "; ".join(
+            f"{k}: {v}" for k, v in cov["runs_skipped"].items()))
+        coverage["calmac"] = cov
+        return {}
+
+    results = {}          # run key -> (hourly, segw, info)
+    for r, tsn, d, wpath in plan:
+        logger.info("CalMAC leg: %s from %s with weights %s", r.key, tsn, wpath)
+        weights = pd.read_parquet(wpath)
+        hourly, segw, info = calmac_shapes.fetch_comstock_profiles(
+            tsn, weights, cfg, d, no_cache=args.no_cache, query_dir=out / "queries",
+            label=r.key)
+        results[r.key] = (hourly, segw, info)
+        cov["runs_compared"].append(r.key)
+        cov["queries"][r.key] = {"count": info["queries"], "sql_bytes": info["sql_bytes"],
+                                 "weight_rows": info["weight_rows"], "table": tsn,
+                                 "weights": wpath.name}
+        if info["membership_gap"]:
+            cov["membership_gap"][r.key] = info["membership_gap"]
+        cov["timeseries_clock"][r.key] = info["tz"]
+
+    # Pooled truth is weighted by the run under review's composition -- or, when the
+    # primary itself could not be compared, by the first run that was.
+    ref_key = primary.key if primary.key in results else next(iter(results))
+    ref_segw = results[ref_key][1]
+    cov["composition_run"] = ref_key
+    findings = {}
+    m = out / "metrics"
+    agreement_parts = []
+    for util, uname in cfg["utilities"].items():
+        slug = calmac_segments.UTILITY_SLUG.get(util, str(util))
+        ucov = {"name": uname, "slug": slug, "fuels": {}}
+        zones = results[ref_key][2]["zone_summary"]
+        zones = zones[zones["utility_id"] == util]
+        zones.to_csv(m / f"calmac_zones_{slug}.csv", index=False)
+        tot = float(zones["weight"].sum())
+        other = float(zones.loc[zones["cz_group"] == calmac_segments.OTHER_ZONE, "weight"].sum())
+        ucov["weight_total"] = round(tot, 1)
+        ucov["weight_outside_groups_pct"] = round(100.0 * other / tot, 2) if tot else None
+        ucov["zones_outside_groups"] = sorted(
+            zones.loc[zones["cz_group"] == calmac_segments.OTHER_ZONE, "in.cec_climate_zone"]
+            .astype(str).unique())
+        calmac_shapes.composition(ref_segw, util).to_csv(m / f"calmac_composition_{slug}.csv",
+                                                         index=False)
+        for fuel in fuels:
+            tr = truth_all[(truth_all["utility_id"] == util) & (truth_all["fuel"] == fuel)]
+            if tr.empty:
+                continue
+            truth, desc = calmac_shapes.truth_segments(tr, util, fuel, cfg, ref_segw)
+            desc.to_csv(m / f"calmac_segments_{slug}_{fuel}.csv", index=False)
+            gp_inds = sorted(set(tr["industry"].astype(str)))
+            parts = {"prof": [], "met": [], "summ": [], "ldc": [], "mon": [], "daily": []}
+            for key, (hourly, segw, _) in results.items():
+                if fuel == "electricity":
+                    p, mt, s, l, mo = calmac_shapes.compare_electricity(
+                        hourly, segw, truth, desc, util, cfg, key)
+                    parts["prof"].append(p); parts["ldc"].append(l)
+                else:
+                    dl, mt, s, mo = calmac_shapes.compare_gas(hourly, segw, truth, desc, util,
+                                                              cfg, key)
+                    parts["daily"].append(dl)
+                parts["met"].append(mt); parts["summ"].append(s); parts["mon"].append(mo)
+            cat = {k: pd.concat([x for x in v if x is not None and not x.empty], ignore_index=True)
+                   if any(x is not None and not x.empty for x in v) else pd.DataFrame()
+                   for k, v in parts.items()}
+            tag = f"{slug}_{fuel}"
+            for name, df in (("profiles", cat["prof"]), ("shape_metrics", cat["met"]),
+                             ("summary", cat["summ"]), ("ldc", cat["ldc"]),
+                             ("monthly", cat["mon"]), ("daily", cat["daily"])):
+                if not df.empty:
+                    df.to_csv(m / f"calmac_{name}_{tag}.csv", index=False)
+            summ = cat["summ"]
+            prim = summ[summ["run"] == ref_key] if not summ.empty else summ
+            thin = (prim[prim["thin_comstock"]][["industry", "cz_group", "size", "model_count"]]
+                    .to_dict("records") if not prim.empty else [])
+            ucov["fuels"][fuel] = {
+                "segments_compared": int(len(prim)),
+                "segments_by_size": (prim.groupby("size").size().to_dict() if not prim.empty else {}),
+                "industries_in_truth": gp_inds,
+                "industries_without_comstock": sorted(set(gp_inds) - set(cfg["industry_map"])),
+                "thin_comstock_cells": thin,
+                "bases": (desc.groupby("basis").size().to_dict() if not desc.empty else {}),
+                "years": sorted(int(y) for y in tr.loc[tr["basis"].astype(str) == "raw", "year"].unique()),
+            }
+            if fuel == "electricity" and not cat["met"].empty:
+                agreement_parts.append(calmac_shapes.cross_segment_agreement(
+                    cat["met"][cat["met"]["run"] == ref_key]))
+            findings[(util, fuel)] = {"summary": prim,
+                                      "metrics": (cat["met"][cat["met"]["run"] == ref_key]
+                                                  if not cat["met"].empty else cat["met"])}
+        cov["utilities"][slug] = ucov
+    agreement_parts = [a for a in agreement_parts if not a.empty]
+    if agreement_parts:
+        pd.concat(agreement_parts, ignore_index=True).to_csv(
+            m / "calmac_segment_agreement.csv", index=False)
+    # The truth data's own provenance: normalization fits, station checks, centroids.
+    for src, dst in (("CalMAC normalization.csv", "calmac_normalization.csv"),
+                     ("CalMAC weather stations.csv", "calmac_stations.csv"),
+                     ("CalMAC centroids.csv", "calmac_centroids.csv"),
+                     ("CalMAC segments.csv", "calmac_profiles_catalog.csv")):
+        if (truth_dir / src).exists():
+            pd.read_csv(truth_dir / src).to_csv(m / dst, index=False)
+    coverage["calmac"] = cov
+    return findings
 
 
 def _discover(assumed: str, stem: str, require=(), reject=(),
@@ -993,6 +1234,7 @@ class ResultsDashboard:
                  output_dir=None, region: str = "all", delta_ref: str | None = None,
                  display_order=None,
                  measure_states=None, include_measures=None,
+                 calmac=None, calmac_config: dict | None = None, calmac_weights=None,
                  skip_distributions: bool = False,
                  skip_design_params: bool = False,
                  skip_heating_fuel: bool = False,
@@ -1027,6 +1269,13 @@ class ResultsDashboard:
                 restrict; `include_upgrades=False` turns the measure legs off).
                 Pass a list of upgrade ids to restrict it further, or [] to
                 skip the measure legs.
+            calmac: a cspp.CalMAC (cspp.load_calmac()). Without it the California
+                leg skips.
+            calmac_config: overrides of comstockpostproc.california.segments
+                (industry_map, size_rule, cz_groups, pool_weights, truth_basis, ...).
+            calmac_weights: {run key: path} of each run's LOCAL California weight
+                table (cspp.save_california_weights). None derives the run under
+                review's from its output folder when it is a live ComStock object.
             run_now: False builds the object without running, for inspection.
         """
         self.comstock = comstock
@@ -1059,6 +1308,9 @@ class ResultsDashboard:
             measure_states if measure_states is not None
             else getattr(comstock, "timeseries_locations_to_plot", None))
         self.include_measures = include_measures
+        self.calmac = calmac
+        self.calmac_config = calmac_config
+        self.calmac_weights = calmac_weights
         self.skip_distributions = skip_distributions
         self.skip_design_params = skip_design_params
         self.skip_heating_fuel = skip_heating_fuel
@@ -1161,6 +1413,17 @@ class ResultsDashboard:
             return Path(str(out)) / self.OUTPUT_SUBDIR
         raise ValueError(
             "Cannot determine where to write: pass comparison=... or output_dir=...")
+
+    def _calmac_weights(self) -> dict:
+        """{run key: local California weight table}. The driver's mapping when given;
+        otherwise the run under review's own file, found from its output folder."""
+        if self.calmac_weights is not None:
+            return {str(k): str(v) for k, v in self.calmac_weights.items() if v}
+        if isinstance(self.comstock, AthenaRunRef):
+            return {}
+        from ..california.weights import california_weights_path
+        p = california_weights_path(getattr(self.comstock, "comstock_run_version", ""))
+        return {self.primary.key: str(p)} if p else {}
 
     def _upgrade_ids(self) -> list:
         """Upgrades to assess: `include_measures` if given, else the run's own
@@ -1282,6 +1545,10 @@ class ResultsDashboard:
             refs["cbecs_2018_wide"] = str(cbecs_csv)
         if ami_csv:
             refs["ami_v01_long"] = str(ami_csv)
+        from ..california.calmac import LONG_FILE as CALMAC_LONG
+        calmac_file = self._truth_file(self.calmac, CALMAC_LONG, "CalMAC")
+        if calmac_file:
+            refs["calmac_v01_long"] = str(calmac_file)
 
         measure_ids = self._upgrade_ids()
         args = SimpleNamespace(
@@ -1292,6 +1559,9 @@ class ResultsDashboard:
             delta_ref=self.delta_ref,
             display_order=self.display_order,
             skip_ami=ami_csv is None,
+            skip_calmac=calmac_file is None,
+            calmac_config=calmac_segments.resolve_config(self.calmac_config),
+            calmac_weights=self._calmac_weights(),
             measures=",".join(measure_ids),
             measure_states=self.measure_states,
             skip_distributions=self.skip_distributions or cbecs_csv is None,

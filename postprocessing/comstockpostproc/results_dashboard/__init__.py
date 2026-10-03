@@ -8,7 +8,7 @@ Deterministic throughout: SQL, pandas, and a hand-written JS bundle.
 """
 
 from .assessment import ResultsDashboard
-from .exports import load_ami, load_cbecs, report_caches
+from .exports import load_ami, load_calmac, load_cbecs, report_caches
 from .run_ref import AthenaRunRef
 
-__all__ = ["ResultsDashboard", "AthenaRunRef", "load_ami", "load_cbecs", "report_caches"]
+__all__ = ["ResultsDashboard", "AthenaRunRef", "load_ami", "load_calmac", "load_cbecs", "report_caches"]

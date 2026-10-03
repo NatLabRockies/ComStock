@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""California: one or more ComStock runs against the CalMAC granular profiles.
+
+The truth is the CalMAC non-residential GRANULAR PROFILES published by PG&E and SDG&E:
+average per-premise hourly electricity and daily natural gas of ~200 metered premises
+per segment (industry x climate-zone group x size). ComStock buildings are selected by
+electric utility (in.electric_utility_eia_code: 14328 PG&E, 16609 SDG&E), grouped into
+the same segments, aggregated to the same time grain on Pacific standard time, and
+compared per weighted building and shape-normalized. Details: README, "Comparing
+California runs to the CalMAC granular profiles"; the segmentation is
+comstockpostproc/california/segments.py.
+
+Runs are declared exactly as in compare_runs_mixed.py.template:
+
+    kind='process'   Postprocessed here: download, cache, apportion to the entry's own
+                     `estimate`, scale to CBECS, bills, national export and crawl. Its
+                     LOCAL California weight table is written beside its caches
+                     (output/ComStock <run>/california_weights/).
+    kind='athena'    Already crawled into its `database` by an earlier driver. It joins
+                     the California comparison only if its California weight table is
+                     on THIS machine (an earlier pass of this driver wrote it, or copy
+                     the run's output/ComStock <run>/california_weights/ folder here);
+                     otherwise the California tab says it was skipped and why.
+    kind='release'   A published OEDI release in buildstock_sdr. Its California weight
+                     table is built once from the release's tract-level (non-aggregate)
+                     metadata table -- discovered among its tables, or named with
+                     md_tract_table='<table>' -- and its published ts_by_state timeseries
+                     (Eastern standard time, converted) is read like any other run's.
+
+Nothing new is created in Athena or S3 for the California comparison: the weight
+table stays local and is passed inline into each run's timeseries query. Each run
+needs its <run>_timeseries table (buildstockbatch's own crawl) -- the same table the
+AMI comparison reads.
+
+TRUTH DATA. truth_data/v01/calmac/ (prepared once with
+`python -m comstockpostproc.california.prepare_truth_data <CalMAC data folder>`, and
+fetched from s3://eulp/truth_data/v01/calmac/ when absent). cspp.load_calmac() turns it
+into output/CalMAC v01/CalMAC long.parquet on the first pass (~30 s) and reuses it after.
+
+Launch it in the background and read the log:
+    mkdir -p logs; ( python compare_runs_california.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
+Success: EXIT=0, one "california weights: ..." line per 'process' run, one
+"CalMAC leg: <run> from <run>_timeseries" line per compared run, and
+"results dashboard: <path>". Each compared run costs two or three full reads of its
+timeseries table (~4 minutes for a 100k run); a rerun hits the query cache.
+"""
+import glob
+import logging
+import os
+import shutil
+
+import comstockpostproc as cspp
+from comstockpostproc.california import segments as calmac_segments
+
+# force=True: comstockpostproc.ami calls basicConfig at import, which would otherwise
+# leave this call a no-op and the log without timestamps.
+logging.basicConfig(level='INFO', format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+                    force=True)
+logger = logging.getLogger(__name__)
+
+# ---- Settings ---------------------------------------------------------------
+ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `database`
+MAKE_COMPARISON_PLOTS  = False     # the ComStock-vs-CBECS figures over the 'process' runs
+INCLUDE_AMI            = False     # the national AMI tab too (needs the county export)
+CALIFORNIA_ONLY        = True      # True: Overview, Annual vs CBECS, California and Coverage only --
+                                   # minutes. False: the full dashboard (distributions, design
+                                   # parameters, heating fuel) with the California tab added
+CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first
+REUSE_CACHES           = True      # as in compare_runs_mixed.py: False rebuilds the run-specific
+                                   # caches and DELETES cached_allocated_weights_plus_bills, which
+                                   # makes the California weight table rebuild as well
+COMPARISON_NAME        = 'california'   # the folder under output/ for everything this file writes
+REVIEW_RUN             = '<run_under_review>'  # the run under review; any entry of RUNS
+DELTA_REF              = '<existing_run_a>'    # the comparison run the annual delta arrows use
+
+# ---- California segmentation ------------------------------------------------
+# Defaults from comstockpostproc/california/segments.py, shown so they can be edited.
+CALMAC_UTILITIES     = dict(calmac_segments.UTILITIES)        # {14328: 'PG&E', 16609: 'SDG&E'}
+CALMAC_INDUSTRY_MAP  = dict(calmac_segments.INDUSTRY_MAP)     # GP industry -> ComStock types
+CALMAC_CZ_GROUPS     = dict(calmac_segments.CZ_GROUPS)        # utility -> group -> CEC zones
+CALMAC_SIZE_RULE     = dict(calmac_segments.SIZE_RULE)        # annual peak kW thresholds; set
+                                                              # 'none' to pool every size
+CALMAC_SIZE_NOT_COMPARABLE = dict(calmac_segments.SIZE_NOT_COMPARABLE)  # compared pooled
+CALMAC_POOL_WEIGHTS  = calmac_segments.POOL_WEIGHTS           # 'comstock' (composition-matched)
+                                                              # or 'equal'
+CALMAC_TRUTH_BASIS   = 'normalized_2018'                      # SDG&E: weather-normalized to
+                                                              # 2018, or 'raw' (published 2025)
+
+# ---- Runs -------------------------------------------------------------------
+# One entry per run, in the order every view draws them (after CBECS). The fields are
+# those of compare_runs_mixed.py.template: kind, run, s3_base_dir, estimate, database,
+# color; optional label, version (cache folder), rebuild=True, acceptable_failure_percentage.
+RUNS = [
+    dict(kind='process', run='<s3_run_name_a>', s3_base_dir='eulp/euss_com', estimate='2025R3',
+         database='enduse', color='#D55E00'),
+    dict(kind='athena',  run='<existing_run_a>', database='enduse', color='#E69F00'),
+    # dict(kind='release', key='r3_2025', database='buildstock_sdr', label='2025 R3', color='#999999',
+    #      md_table='comstock_amy2018_r3_2025_md_agg_national_parquet'),
+]
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TRUTH_DIR = os.path.join(HERE, 'truth_data', 'v01')
+
+
+def main():
+    check_declaration()
+    processed = [r for r in RUNS if r['kind'] == 'process']
+
+    # 1. Sample-to-estimate guard first: seconds per run, needs only buildstock.csv.
+    if CHECK_SAMPLE_PAIRING:
+        for r in processed:
+            assert_sample_matches_estimate(r['run'], buildstock_path(r), r['estimate'])
+
+    cspp.report_caches(run_versions=[cache_version(r) for r in processed],
+                       estimate_versions=sorted({r['estimate'] for r in processed}),
+                       reuse=REUSE_CACHES)
+
+    # 2. A ComStock object for every run postprocessed here (baseline only).
+    objects = {}
+    for r in processed:
+        have = sim_cache_exists(cache_version(r))
+        cached = REUSE_CACHES and have
+        logger.info('%s: simulation-output cache %s', r['run'],
+                    'found, reloading it' if cached
+                    else 'found but REUSE_CACHES=False, rebuilding it' if have
+                    else 'not found, first pass, building it')
+        objects[r['run']] = cspp.ComStock(
+            s3_base_dir=r['s3_base_dir'],
+            comstock_run_name=r['run'],
+            comstock_run_version=cache_version(r),
+            comstock_year=2018,
+            athena_table_name=None,
+            truth_data_version='v01',
+            buildstock_csv_name='buildstock.csv',
+            acceptable_failure_percentage=r.get('acceptable_failure_percentage', 0.25),
+            drop_failed_runs=True,
+            color_hex=r['color'],
+            skip_missing_columns=True,
+            reload_from_cache=cached,
+            include_upgrades=False,
+            )
+        if r.get('label'):
+            objects[r['run']].dataset_name = r['label']
+
+    # 3. One Apportion per distinct estimate; every run apportioned to its own.
+    estimates = {v: stock_estimate(v) for v in sorted({r['estimate'] for r in processed})}
+    for r in processed:
+        obj = objects[r['run']]
+        obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0),
+                                     reload_from_cache=False)
+
+    # 4. CBECS, the CBECS-scaled weights, and the bills -- whose cache carries each
+    #    building's tract, utility and CEC zone, which the California weights read.
+    cbecs = cspp.load_cbecs()
+    calmac_weights = {}
+    for r in processed:
+        obj = objects[r['run']]
+        obj.create_allocated_weights_scaled_to_cbecs(
+            cbecs, obj.get_sim_outs_for_upgrade(0), obj.get_allocated_weights(),
+            remove_non_comstock_bldg_types_from_cbecs=True)
+        if not REUSE_CACHES:
+            bills_dir = os.path.join(HERE, 'output', f'ComStock {obj.comstock_run_version}',
+                                     'cached_allocated_weights_plus_bills')
+            if os.path.isdir(bills_dir):
+                logger.warning("REUSE_CACHES=False: deleting %s so the bills are rebuilt from "
+                               "this pass's weights", bills_dir)
+                shutil.rmtree(bills_dir)
+        obj.create_allocated_weights_plus_util_bills_for_upgrade(0)
+        # 5. The run's LOCAL California weight table (utility x CEC zone, by building).
+        calmac_weights[r['run']] = str(cspp.save_california_weights(obj))
+    cbecs.export_to_csv_wide()
+    for r in RUNS:
+        if r['kind'] == 'athena':
+            path = cspp.california_weights_path(r.get('version', r['run']))
+            if path:
+                calmac_weights[r['run']] = str(path)
+            else:
+                logger.warning('%s: no California weight table on this machine '
+                               '(output/ComStock %s/california_weights/); the California tab '
+                               'will skip it', r['run'], r.get('version', r['run']))
+        elif r['kind'] == 'release':
+            # A release's weights come from its published tract-level metadata table
+            # (discovered, or named as md_tract_table); built once and reused.
+            try:
+                calmac_weights[r['key']] = str(cspp.save_release_california_weights(r))
+            except Exception as exc:                                  # noqa: BLE001
+                logger.warning('%s: could not build its California weights (%s); the '
+                               'California tab will skip it', r['key'], exc)
+
+    comparison = None
+    if objects:
+        comparison = cspp.ComStockToCBECSComparison(
+            cbecs_list=[cbecs], comstock_list=list(objects.values()),
+            name=COMPARISON_NAME, make_comparison_plots=MAKE_COMPARISON_PLOTS)
+        comparison.export_to_csv_wide()
+
+    # 6. Athena tables for the processed runs: the national export and crawl the annual
+    #    tabs read (plus the county export when INCLUDE_AMI). Nothing California-specific.
+    for r in processed:
+        ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
+                                        timeseries=False, ami=INCLUDE_AMI, upgrade_ids=[0],
+                                        rebuild=bool(r.get('rebuild')))
+        if not ok:
+            logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
+                           'dashboard will state what it could not read', r['run'])
+
+    # 7. The dashboard, about REVIEW_RUN, with the California tab.
+    review = review_entry()
+    primary = objects[review['run']] if review['kind'] == 'process' else reference(review)
+    comparisons = [
+        cspp.AthenaRunRef.from_comstock(objects[r['run']], database=r.get('database', ATHENA_DATABASE))
+        if r['kind'] == 'process' else reference(r)
+        for r in RUNS if r is not review]
+    dashboard = cspp.ResultsDashboard(
+        primary,
+        cbecs=cbecs,
+        ami=cspp.load_ami() if INCLUDE_AMI else None,
+        calmac=cspp.load_calmac(),
+        calmac_config=dict(utilities=CALMAC_UTILITIES, industry_map=CALMAC_INDUSTRY_MAP,
+                           cz_groups=CALMAC_CZ_GROUPS, size_rule=CALMAC_SIZE_RULE,
+                           size_not_comparable=CALMAC_SIZE_NOT_COMPARABLE,
+                           pool_weights=CALMAC_POOL_WEIGHTS, truth_basis=CALMAC_TRUTH_BASIS),
+        calmac_weights=calmac_weights,
+        comparison_runs=comparisons,
+        comparison=comparison,
+        output_dir=None if comparison else os.path.join(HERE, 'output', COMPARISON_NAME,
+                                                         'results_dashboard'),
+        database=review.get('database', ATHENA_DATABASE),
+        delta_ref=DELTA_REF if len(RUNS) > 1 else None,
+        display_order=[r.get('run') or r.get('key') for r in RUNS],
+        include_measures=[],
+        skip_distributions=CALIFORNIA_ONLY,
+        skip_design_params=CALIFORNIA_ONLY,
+        skip_heating_fuel=CALIFORNIA_ONLY,
+        )
+    if dashboard.skipped_reason:
+        logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
+    else:
+        if dashboard.dropped_runs:
+            logger.warning('comparison runs DROPPED (missing tables): %s', dashboard.dropped_runs)
+        logger.info('results dashboard: %s', dashboard.dashboard_path)
+
+
+# ---- Helpers (as in compare_runs_mixed.py.template) ---------------------------
+def check_declaration():
+    """Refuse a half-filled RUNS list now, not an hour in."""
+    kinds = {'process', 'athena', 'release'}
+    bad = [r for r in RUNS if r.get('kind') not in kinds]
+    if bad or not RUNS:
+        raise SystemExit(f'every RUNS entry needs kind in {sorted(kinds)}: {bad or "RUNS is empty"}')
+    names = [r.get('run') or r.get('key') for r in RUNS]
+    if any(not n or '<' in n for n in names) or '<' in REVIEW_RUN or ('<' in DELTA_REF and len(RUNS) > 1):
+        raise SystemExit(f'RUNS, REVIEW_RUN or DELTA_REF still has placeholder names: {names}, '
+                         f'{REVIEW_RUN!r}, {DELTA_REF!r}')
+    if REVIEW_RUN not in names:
+        raise SystemExit(f'REVIEW_RUN {REVIEW_RUN!r} must be one of the RUNS entries {names}')
+    if len(set(names)) != len(names):
+        raise SystemExit(f'RUNS lists a run twice: {names}')
+    for r in RUNS:
+        if r['kind'] == 'process' and not r.get('s3_base_dir'):
+            raise SystemExit(f"{r['run']}: a process entry needs s3_base_dir")
+        if r['kind'] == 'process' and not r.get('estimate'):
+            raise SystemExit(f"{r['run']}: a process entry needs estimate")
+        if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
+            raise SystemExit(f'release entries need key and md_table: {r}')
+    others = [n for n in names if n != REVIEW_RUN]
+    if others and DELTA_REF not in others:
+        raise SystemExit(f'DELTA_REF {DELTA_REF!r} must be one of the comparison runs {others}')
+    calmac_segments.resolve_config(dict(
+        utilities=CALMAC_UTILITIES, industry_map=CALMAC_INDUSTRY_MAP, cz_groups=CALMAC_CZ_GROUPS,
+        size_rule=CALMAC_SIZE_RULE, size_not_comparable=CALMAC_SIZE_NOT_COMPARABLE,
+        pool_weights=CALMAC_POOL_WEIGHTS, truth_basis=CALMAC_TRUTH_BASIS))   # validates
+
+
+def review_entry():
+    return next(r for r in RUNS if (r.get('run') or r.get('key')) == REVIEW_RUN)
+
+
+def cache_version(entry):
+    return entry.get('version', entry['run'])
+
+
+def sim_cache_exists(run_version):
+    pattern = os.path.join(HERE, 'output', f'ComStock {run_version}', 'cached_simulation_outputs',
+                           '**', 'cached_simulation_outputs_upgrade*.parquet')
+    return bool(glob.glob(pattern, recursive=True))
+
+
+def stock_estimate(version, truth_data_version='v01'):
+    cache = os.path.join(HERE, 'output', f'Stock Estimation {version}',
+                         'cached_ComStock_apportionment.parquet')
+    return cspp.Apportion(stock_estimation_version=version,
+                          truth_data_version=truth_data_version,
+                          reload_from_cache=REUSE_CACHES and os.path.exists(cache))
+
+
+def buildstock_path(entry):
+    path = os.path.join(HERE, 'comstock_data', cache_version(entry), 'buildstock.csv')
+    if not os.path.exists(path):
+        import boto3
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        bucket, _, prefix = entry['s3_base_dir'].strip('/').partition('/')
+        key = f"{prefix}/{entry['run']}/{entry['run']}/buildstock_csv/buildstock.csv"
+        logger.info('downloading s3://%s/%s', bucket, key)
+        boto3.resource('s3').Object(bucket, key).download_file(path)
+    return path
+
+
+def estimate_path(version, truth_data_version='v01'):
+    path = os.path.join(HERE, 'truth_data', truth_data_version, f'{version}_building_estimate.parquet')
+    if not os.path.exists(path):
+        import boto3
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        key = f'truth_data/{truth_data_version}/StockE/{version}_building_estimate.parquet'
+        logger.info('downloading s3://eulp/%s', key)
+        boto3.resource('s3').Object('eulp', key).download_file(path)
+    return path
+
+
+def assert_sample_matches_estimate(run_name, bs_path, version):
+    """Stop unless every (building type, tract) pair the run sampled exists in the
+    estimate -- see compare_runs_mixed.py.template for why."""
+    import polars as pl
+
+    bs = pl.read_csv(bs_path, columns=['building_type', 'tract'], infer_schema_length=0).unique()
+    est = pl.read_parquet(estimate_path(version), columns=['building_type', 'tract']).unique()
+    missing = bs.join(est, on=['building_type', 'tract'], how='anti')
+    if missing.height:
+        raise RuntimeError(
+            f'{run_name}: {missing.height:,} of {bs.height:,} sampled (building type, tract) pairs '
+            f'are ABSENT from the {version} estimate; set this entry\'s estimate to the one its '
+            'sample was drawn against.')
+    logger.info('%s: all %s sampled (building type, tract) pairs exist in the %s estimate '
+                '-- pairing OK', run_name, f'{bs.height:,}', version)
+
+
+def reference(entry):
+    if entry['kind'] == 'release':
+        return cspp.AthenaRunRef(**{k: v for k, v in entry.items() if k != 'kind'})
+    run = entry['run']
+    return cspp.AthenaRunRef(
+        key=run, label=entry.get('label', f'ComStock {run}'),
+        database=entry.get('database', ATHENA_DATABASE), color=entry['color'],
+        md_table=f'{run}_md_agg_national_by_state_parquet',
+        md_county_table=f'{run}_md_agg_by_state_and_county_parquet',
+        ts_table=f'{run}_timeseries')
+
+
+if __name__ == '__main__':
+    main()

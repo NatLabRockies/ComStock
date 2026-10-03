@@ -48,6 +48,21 @@ def load_ami(truth_data_version: str = "v01", **kwargs):
                download_truth_data=not have, **kwargs)
 
 
+def load_calmac(truth_data_version: str = "v01", **kwargs):
+    """A `cspp.CalMAC` that reuses its export if present and builds it if not.
+
+    The build reads truth_data/<v>/calmac/ (fetched from s3://eulp/truth_data/<v>/calmac/
+    when absent), converts both utilities' clock time to Pacific standard time and
+    weather-normalizes SDG&E's 2025 profiles to 2018 -- about half a minute -- so a
+    present 'CalMAC long.parquet' is reused rather than rebuilt.
+    """
+    from ..california.calmac import CalMAC, calmac_long_path
+
+    have = calmac_long_path(truth_data_version).exists()
+    logger.info("CalMAC: %s 'CalMAC long.parquet'", "reloading" if have else "building")
+    return CalMAC(truth_data_version=truth_data_version, reload_from_csv=have, **kwargs)
+
+
 def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
                color_hex: str = "#009E73", **kwargs):
     """A `cspp.CBECS` whose 'CBECS wide.csv' exists afterwards, whichever way.
@@ -142,6 +157,13 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
     add(f"CBECS {cbecs_year}", "CBECS wide.csv", [cb], cb, run_specific=False)
     ami = os.path.join(out, f"AMI {truth_data_version}", "AMI long.csv")
     add(f"AMI {truth_data_version}", "AMI long.csv", [ami], ami, run_specific=False)
+    cal = os.path.join(out, f"CalMAC {truth_data_version}", "CalMAC long.parquet")
+    add(f"CalMAC {truth_data_version}", "CalMAC long.parquet", [cal], cal, run_specific=False)
+    for v in run_versions:
+        cw = os.path.join(out, f"ComStock {v}", "california_weights",
+                          "california_weights_upgrade0.parquet")
+        add(v, "california weights", [cw], cw,
+            caveat="rebuilt whenever older than the bills cache it derives from")
 
     logger.info("caches on this machine (reuse=%s); each row is what this pass will do:", reuse)
     for r in rows:

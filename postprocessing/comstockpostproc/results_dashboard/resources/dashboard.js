@@ -162,6 +162,10 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               runsHidden: [],
               // other runs drawn on the AMI tab; none by default (see renderAmi)
               amiRuns: [],
+              // California tab: utility slug, fuel, CZ group, size, scales, the
+              // indicative size split, and the other runs drawn (none by default)
+              calUtil: "", calFuel: "electricity", calCz: "", calSize: "pooled",
+              calMode: "annual", calGasMode: "annual", calIndic: false, calRuns: [],
               annualMetric: "electricity.total", annualDim: "vintage",
               /* Which breakdown to show. These tabs carried EVERY breakdown
                  stacked one after another - by vintage, census division, floor
@@ -984,19 +988,22 @@ function profileChart(host, pts, opts={}){
     const h=Math.max(0,Math.min(23,Math.round((rel-padL)/plotW*23)));
     const p=pts.find(q=>q.hour===h); if(!p) return;
     cross.setAttribute("x1",x(h)); cross.setAttribute("x2",x(h)); cross.setAttribute("opacity",1);
-    const rel_=(p.rawComstock!==null&&p.rawAmi)?(p.rawComstock-p.rawAmi)/p.rawAmi*100:null;
+    // A per-building ComStock value and a per-premise truth (the CalMAC tab) have
+    // no meaningful level difference, so a caller can turn the row off.
+    const rel_=(!opts.hideLevelDiff&&p.rawComstock!==null&&p.rawAmi)?(p.rawComstock-p.rawAmi)/p.rawAmi*100:null;
+    const TL=opts.truthLabel||"AMI", RU=opts.rawUnit||"kWh/ft²";
     let html = `<b>${opts.title||""} · hour ${h}</b>`;
     if(opts.normalized){
       html += `<div class="row"><span>ComStock (norm)</span><span>${fmt(p.comstock,4)}</span></div>`+
-              `<div class="row"><span>AMI (norm)</span><span>${fmt(p.ami,4)}</span></div>`+
-              `<div class="row"><span>kWh/ft² ComStock</span><span>${fmt(p.rawComstock,4)}</span></div>`+
-              `<div class="row"><span>kWh/ft² AMI</span><span>${fmt(p.rawAmi,4)}</span></div>`;
+              `<div class="row"><span>${TL} (norm)</span><span>${fmt(p.ami,4)}</span></div>`+
+              `<div class="row"><span>${opts.rawUnitCs||RU} ComStock</span><span>${fmt(p.rawComstock,4)}</span></div>`+
+              `<div class="row"><span>${RU} ${TL}</span><span>${fmt(p.rawAmi,4)}</span></div>`;
       const top = opts.stackKeys.map(k=>[k,p.eu[k]||0]).sort((a,b)=>b[1]-a[1]).slice(0,3);
       html += top.map(([k,v])=>`<div class="row"><span>&nbsp;&nbsp;${k.replace(/_/g," ")}</span><span>${fmt(v,4)}</span></div>`).join("");
     } else {
       html += `<div class="row"><span>${opts.baseLabel||"ComStock total"}</span><span>${fmt(p.rawComstock,4)}</span></div>`;
       if(p.rawAmi!==null&&p.rawAmi!==undefined)
-        html += `<div class="row"><span>AMI metered</span><span>${fmt(p.rawAmi,4)}</span></div>`;
+        html += `<div class="row"><span>${opts.truthLabelAbs||"AMI metered"}</span><span>${fmt(p.rawAmi,4)}</span></div>`;
       if(stack){
         const top = opts.stackKeys.map(k=>[k,p.eu[k]||0]).sort((a,b)=>b[1]-a[1]).slice(0,3);
         html += top.map(([k,v])=>`<div class="row"><span>&nbsp;&nbsp;${k.replace(/_/g," ")}</span><span>${fmt(v,4)}</span></div>`).join("");
@@ -2076,7 +2083,7 @@ function renderAnnual(){
       who has gas, as distinct from how much gas is used. A large difference here is a
       prevalence question for the sampling, not an intensity question for the models.</p>
       <div class="scroll"><table><thead><tr><th>Dataset</th><th>floor area with no natural gas</th></tr></thead><tbody>
-        ${cb?`<tr><td style="text-align:left">${headChip(CBECS_COLOR,"CBECS 2018")}</td><td>${fmt(100*cb.cbecs_zero_gas_share,1)}%</td></tr>`:""}
+        ${cb?`<tr><td style="text-align:left">${headChip(D.cbecsColor,"CBECS 2018")}</td><td>${fmt(100*cb.cbecs_zero_gas_share,1)}%</td></tr>`:""}
         ${RUNS.map(r=>{ const m=fmRows.find(x=>x.run===r.key);
           const v=m&&m.comstock_zero_gas_share!==null&&m.comstock_zero_gas_share!==undefined?+m.comstock_zero_gas_share:null;
           return `<tr><td style="text-align:left">${runHead(r.key)}</td><td>${v===null?absentTag("noValue"):fmt(100*v,1)+"%"}</td></tr>`;}).join("")}
@@ -2836,6 +2843,547 @@ function renderAmi(){
   wireGroups();
   document.querySelectorAll("[data-ami]").forEach(b=>
     b.addEventListener("click",()=>{ state.amiMode=b.dataset.ami; renderAmi(); syncHash(); }));
+}
+
+/* ================= California vs CalMAC =================
+   ComStock against the CalMAC non-residential granular profiles (PG&E, SDG&E).
+   The truth is AVERAGE PER-PREMISE consumption of ~200 metered premises per
+   segment; ComStock is per WEIGHTED BUILDING. A building can be many premises, so
+   levels are shown but read as indicative, and the normalized views -- the
+   default -- are where the comparison lies. Segments are GP industry x CEC
+   climate-zone group x size; the header building type picks the industry it maps
+   to, and "All types" picks the All mapped segment. */
+const CAL = D.calmac || null;
+const CAL_CFG = (CAL && CAL.config) || null;
+const CAL_UTILS = CAL ? Object.keys(CAL.util) : [];
+/* The run this tab is about: the run under review when it was compared, else the
+   run whose composition weighted the pooled truth (see dashboard._calmac_payload). */
+const CAL_SUBJECT = (CAL && CAL.subject) || PRIMARY;
+const CAL_FK = {electricity:"elec", natural_gas:"gas"};
+const CAL_TRUTH_COLOR = "#1a1d1f";
+const calCache = {};
+function calFrame(slug, fuel, key){
+  const k=`${slug}|${fuel}|${key}`;
+  if(!(k in calCache)) calCache[k]=dpUnpack((((CAL.util[slug]||{})[CAL_FK[fuel]])||{})[key]);
+  return calCache[k];
+}
+const calRows = (slug, fuel, key) => (((CAL.util[slug]||{})[CAL_FK[fuel]])||{})[key] || [];
+const calUid = slug => String((CAL.util[slug]||{}).id);
+const calUtilName = slug => esc((CAL_CFG.utilities||{})[calUid(slug)] || slug);
+const calCzLabel = (slug, cz) => esc(((CAL_CFG.cz_group_labels||{})[calUid(slug)]||{})[cz] || cz);
+const calAll = () => (CAL_CFG && CAL_CFG.all_mapped) || "All mapped";
+const calIndName = ind => esc(ind===calAll() ? "All mapped industries"
+  : ((CAL_CFG.industry_names||{})[ind] || ind));
+function calIndustryOfType(t){
+  if(t===CROSS) return calAll();
+  for(const [ind, types] of Object.entries((CAL_CFG&&CAL_CFG.industry_map)||{}))
+    if(types.includes(t)) return ind;
+  return null;
+}
+const calSizeLabels = slug => (((CAL_CFG.size_rule||{}).labels)||{})[calUid(slug)] || ["S","M"];
+function calSizeName(slug, size){
+  if(size==="pooled") return "all sizes";
+  const thr=(((CAL_CFG.size_rule||{}).thresholds_kw)||{})[calUid(slug)];
+  return size===calSizeLabels(slug)[0] ? `small (peak < ${thr} kW)`
+    : `${size==="M"?"medium/large":"large"} (peak ≥ ${thr} kW)`;
+}
+const calSegMatch = (r, ind, cz, size) => r.industry===ind && r.cz_group===cz && r.size===size;
+const calCzs = slug => Object.keys(((CAL_CFG.cz_groups||{})[calUid(slug)])||{});
+const CAL_SEASONS = ["Summer","Winter","Shoulder"], CAL_DAYS = ["Weekday","Weekend"];
+const CAL_MONTHS = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+
+/* A plain multi-line chart for the load duration curve, the monthly shares and
+   the daily gas series. pts: [{x, <key>: value}], lines: [{key,label,color,dash}]. */
+function calLineChart(host, pts, lines, opts={}){
+  const W=opts.width||660, H=opts.height||270, padR=14, padT=12, padB=44;
+  const vals=pts.flatMap(p=>lines.map(l=>p[l.key])).filter(v=>v!==null&&v!==undefined&&isFinite(v));
+  if(!vals.length){ host.innerHTML='<p class="note">No records for this selection.</p>'; return; }
+  const axY=niceAxis(Math.min(0,...vals), Math.max(...vals)>0?Math.max(...vals):1, 4);
+  const dec=Math.max(axY.dec, Math.min(6,Math.max(0,1-Math.floor(Math.log10(axY.hi||1)))));
+  const padL=axisPadL(axY.ticks.map(v=>v.toFixed(dec)), true);
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const xs=pts.map(p=>p.x), xLo=Math.min(...xs), xHi=Math.max(...xs);
+  const x=v=>padL+((v-xLo)/((xHi-xLo)||1))*plotW, y=v=>padT+plotH-((v-axY.lo)/(axY.hi-axY.lo))*plotH;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
+  axY.ticks.forEach(v=>{
+    const yy=y(v);
+    svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
+    const t=el("text",{x:padL-8,y:yy+4,class:"ax","text-anchor":"end"});
+    t.textContent=v.toFixed(dec); svg.appendChild(t);
+  });
+  const xt=opts.xTicks || niceAxis(xLo, xHi, 5).ticks.filter(v=>v>=xLo&&v<=xHi).map(v=>[v, Math.round(v).toLocaleString()]);
+  xt.forEach(([v,lab])=>{
+    const t=el("text",{x:x(v),y:H-padB+16,class:"ax","text-anchor":"middle"});
+    t.textContent=lab; svg.appendChild(t);
+  });
+  const xl=el("text",{x:padL+plotW/2,y:H-8,class:"axl","text-anchor":"middle"});
+  xl.textContent=opts.xLabel||""; svg.appendChild(xl);
+  const yl=el("text",{x:14,y:padT+plotH/2,class:"axl","text-anchor":"middle",
+    transform:`rotate(-90 14 ${padT+plotH/2})`});
+  yl.textContent=opts.yLabel||""; svg.appendChild(yl);
+  lines.forEach(l=>{
+    const has=p=>p[l.key]!==null&&p[l.key]!==undefined&&isFinite(p[l.key]);
+    const d=pts.map((p,i)=>has(p)?`${i&&has(pts[i-1])?"L":"M"}${x(p.x).toFixed(1)},${y(p[l.key]).toFixed(1)}`:"")
+      .filter(Boolean).join(" ");
+    if(!d) return;
+    svg.appendChild(el("path",{d,fill:"none",stroke:l.color,"stroke-width":l.width||2,
+      "stroke-linejoin":"round",...(l.dash?{"stroke-dasharray":l.dash}:{})}));
+    if(opts.markers) pts.filter(has).forEach(p=>svg.appendChild(el("circle",
+      {cx:x(p.x),cy:y(p[l.key]),r:2.6,fill:l.color})));
+  });
+  plotFrame(svg, padL, padT, plotW, plotH);
+  const hit=el("rect",{x:padL,y:padT,width:plotW,height:plotH,fill:"transparent"});
+  hit.addEventListener("mousemove",ev=>{
+    const bb=svg.getBoundingClientRect();
+    const target=xLo+((ev.clientX-bb.left)/bb.width*W-padL)/plotW*(xHi-xLo);
+    let best=pts[0]; pts.forEach(p=>{ if(Math.abs(p.x-target)<Math.abs(best.x-target)) best=p; });
+    showTip(`<b>${esc(opts.xFmt?opts.xFmt(best.x):best.x)}</b>`+lines.map(l=>
+      best[l.key]===null||best[l.key]===undefined?""
+      :`<div class="row"><span>${esc(l.label)}</span><span>${fmt(best[l.key],opts.tipDec??3)}</span></div>`).join(""),ev);
+  });
+  hit.addEventListener("mouseleave",hideTip);
+  svg.appendChild(hit);
+  host.innerHTML=""; attachChart(host, svg, opts.copy);
+}
+
+function calSelectors(slug, fuel){
+  const utilSel=`<select id="calUtil" aria-label="Utility">${CAL_UTILS.map(u=>
+    `<option value="${esc(u)}" ${u===slug?"selected":""}>${calUtilName(u)}</option>`).join("")}</select>`;
+  const czSel=`<select id="calCz" aria-label="Climate-zone group">${calCzs(slug).map(c=>
+    `<option value="${esc(c)}" ${c===state.calCz?"selected":""}>${calCzLabel(slug,c)} (${esc(
+      (((CAL_CFG.cz_groups||{})[calUid(slug)]||{})[c]||[]).join(", "))})</option>`).join("")}</select>`;
+  const fuelTabs=`<div class="tabs" role="group" aria-label="Fuel">${[["electricity","Electricity (hourly)"],
+    ["natural_gas","Natural gas (daily)"]].map(([k,l])=>
+    `<button class="tab" data-calfuel="${k}" aria-selected="${fuel===k}">${l}</button>`).join("")}</div>`;
+  return utilSel+czSel+fuelTabs;
+}
+
+/* Which sizes this segment can show, and why one cannot. */
+function calSizeOptions(slug, fuel, ind, cz){
+  const summ=calRows(slug, fuel, "summ").filter(r=>r.run===CAL_SUBJECT&&r.industry===ind&&r.cz_group===cz);
+  const segs=calRows(slug, fuel, "seg").filter(r=>r.industry===ind&&r.cz_group===cz);
+  const sizes=["pooled",...calSizeLabels(slug)];
+  return sizes.map(sz=>{
+    const s=summ.find(r=>r.size===sz), sg=segs.find(r=>r.size===sz);
+    let why="";
+    if(ind===calAll()&&sz!=="pooled") why="the All mapped segment is pooled over sizes";
+    else if(!sg) why=sz==="pooled"?"no CalMAC profile":"CalMAC publishes this segment with sizes combined";
+    else if(!s) why="no ComStock buildings of this size in this segment";
+    else if(sz!=="pooled"&&!sg.size_comparable&&!state.calIndic)
+      why=((CAL_CFG.size_not_comparable||{})[ind]||"size split not comparable")+" — tick “indicative split” to show it";
+    return {size:sz, why, summ:s, seg:sg};
+  });
+}
+
+function renderCalmac(){
+  if(!CAL||!CAL_UTILS.length){
+    const why=(D.coverage||{}).calmac_skipped_reason;
+    $("#view").innerHTML=`<div class="panel"><h2>California vs CalMAC granular profiles — not computed</h2>
+      <p class="note">${why?esc(why):"This assessment has no CalMAC comparison."} The comparison is built by
+      <code>compare_runs_california.py</code>, which supplies the CalMAC truth data and each run's California
+      weight table.</p></div>`;
+    return;
+  }
+  if(!CAL_UTILS.includes(state.calUtil)) state.calUtil=CAL_UTILS[0];
+  const slug=state.calUtil;
+  if(!["electricity","natural_gas"].includes(state.calFuel)) state.calFuel="electricity";
+  const fuel=state.calFuel;
+  if(!calCzs(slug).includes(state.calCz)) state.calCz=calCzs(slug)[0];
+  const cz=state.calCz;
+  const ind=calIndustryOfType(state.type);
+  const types=ind===calAll()?Object.values(CAL_CFG.industry_map||{}).flat():((CAL_CFG.industry_map||{})[ind]||[]);
+  if(!ind){
+    $("#view").innerHTML=`<div class="panel"><h2>${esc(state.type)} — no CalMAC industry</h2>
+      <p class="note">This building type is not mapped to a granular-profile industry.</p></div>`;
+    return;
+  }
+  const opts=calSizeOptions(slug, fuel, ind, cz);
+  let cur=opts.find(o=>o.size===state.calSize&&!o.why);
+  if(!cur){ cur=opts.find(o=>o.size==="pooled"&&!o.why)||opts.find(o=>!o.why); if(cur) state.calSize=cur.size; }
+  const sizeTabs=`<div class="tabs" role="group" aria-label="Size">${opts.map(o=>
+    `<button class="tab" data-calsize="${esc(o.size)}" aria-selected="${cur&&o.size===cur.size}"
+      ${o.why?`disabled title="${esc(o.why)}" style="opacity:.4;cursor:default"`:""}>${
+      o.size==="pooled"?"All sizes":o.size===calSizeLabels(slug)[0]?"Small":(o.size==="M"?"Medium/large":"Large")}</button>`).join("")}</div>`;
+  const indicTog=(CAL_CFG.size_not_comparable||{})[ind]
+    ? `<label style="font-size:12.5px;color:var(--ink-2);display:inline-flex;gap:5px;align-items:center">
+        <input type="checkbox" id="calIndic" ${state.calIndic?"checked":""}>indicative split</label>` : "";
+  let h=`<div class="panel"><div class="head"><h2>California vs CalMAC: ${calUtilName(slug)} — ${calIndName(ind)}
+      — ${calCzLabel(slug,cz)} — ${cur?calSizeName(slug,cur.size):"no comparable size"}</h2></div>
+    <div class="head" style="gap:8px">${calSelectors(slug, fuel)}<span class="spacer"></span>${sizeTabs}${indicTog}</div>`;
+  if(!cur){
+    h+=`<p class="note">No comparable segment here: ${opts.map(o=>`<b>${esc(o.size)}</b> — ${esc(o.why)}`).join("; ")}.</p></div>`;
+    $("#view").innerHTML=h+calScoreboard(slug, fuel); calWire(); return;
+  }
+  const s=cur.summ, sg=cur.seg;
+  const sizeIndic=cur.size!=="pooled"&&!sg.size_comparable;
+  const basisTxt=sg.basis==="normalized_2018"
+    ? `SDG&E's 2025 profile${String(sg.components).includes("+")?"s":""}, weather-normalized to 2018 (the ComStock weather year)`
+    : (calUid(slug)==="16609" ? `<b style="color:var(--bad)">raw 2025</b> — the weather normalization did not pass its fit check for every component, so the published 2025 series is shown against ComStock's 2018 weather`
+      : "published 2018 series");
+  const poolTxt=String(sg.components).includes("+")
+    ? `pooled from ${esc(String(sg.components).replace(/\+/g," + "))} with weights ${esc(sg.pool_weights)} (${
+        CAL_CFG.pool_weights==="comstock"?"this run's weighted building counts per cell: CalMAC publishes each profile's ~200-premise sample, not the premise population":"equal weights"})`
+    : esc(sg.components);
+  h+=`<p class="note"><b>ComStock</b>: ${esc(types.join(", "))} buildings with ${esc(calUtilName(slug))} as their electric
+    utility, in CEC zones ${esc((((CAL_CFG.cz_groups||{})[calUid(slug)]||{})[cz]||[]).join(", "))}${
+    cur.size!=="pooled"?`, classed ${esc(calSizeName(slug,cur.size))} by annual peak demand`:""} —
+    <b>${fmt(s.model_count,0)} models</b> standing for ${fmt(s.weight_sum,0)} buildings${
+    s.thin_comstock?` <span class="badge" style="color:var(--bad)">thin: fewer than ${D.coverage.comstock_min_models_threshold||10} models</span>`:""}.
+    <b>CalMAC</b>: ${poolTxt}; ${fmt(sg.premises,0)} sampled premises; ${basisTxt}.
+    ${sizeIndic?`<br><b style="color:var(--bad)">Indicative only:</b> ${esc((CAL_CFG.size_not_comparable||{})[ind]||"")}.`:""}
+    Values are per <b>weighted building</b> (ComStock) and per <b>premise</b> (CalMAC): a building can be several
+    premises, so compare shapes, not levels.</p>
+    ${CAL_SUBJECT!==PRIMARY?`<p class="note"><b>${runShort(PRIMARY)}, the run under review, is not in this
+    comparison:</b> ${esc((((D.coverage||{}).calmac||{}).runs_skipped||{})[PRIMARY]||"it was not compared")}.
+    This tab shows ${runShort(CAL_SUBJECT)} instead.</p>`:""}</div>`;
+  $("#view").innerHTML=h+`<div id="calBody"></div>`+calScoreboard(slug, fuel)+calCoveragePanel(slug, fuel, ind, cz);
+  if(fuel==="electricity") calRenderElec(slug, ind, cz, cur.size, s);
+  else calRenderGas(slug, ind, cz, cur.size, s);
+  calWire();
+  syncHash();     // the defaults filled in above belong in a shared link too
+}
+
+function calOtherRuns(slug, fuel){
+  const have=new Set(calRows(slug, fuel, "summ").map(r=>r.run));
+  return RUNS.filter(r=>r.key!==CAL_SUBJECT&&have.has(r.key));
+}
+function calRunLegend(others){
+  const on=new Set(state.calRuns||[]);
+  return others.map(r=>`<span class="key" data-calrun="${esc(r.key)}" role="button" aria-pressed="${on.has(r.key)}"
+    title="click to show or hide this run" style="cursor:pointer"><span style="width:14px;height:0;border-top:2.5px dashed ${
+    safeColor(runColor(r.key))};display:inline-block;flex:none"></span>${runShort(r.key)}</span>`).join("");
+}
+
+function calRenderElec(slug, ind, cz, size, s){
+  const prof=calFrame(slug,"electricity","prof").filter(r=>calSegMatch(r,ind,cz,size));
+  const others=calOtherRuns(slug,"electricity");
+  const shown=others.filter(r=>(state.calRuns||[]).includes(r.key));
+  const otherProf=calFrame(slug,"electricity","profOther").filter(r=>calSegMatch(r,ind,cz,size));
+  const mode=["annual","daytype","abs"].includes(state.calMode)?state.calMode:"annual";
+  const NORM={annual:"Normalized (annual sum = 1)", daytype:"Normalized (day sum = 1)",
+              abs:"kWh per hour — per building (ComStock), per premise (CalMAC)"};
+  const stackKeys=euOrderVisible().filter(k=>prof.some(p=>p["eu_"+k]!==null&&p["eu_"+k]!==undefined));
+  // annual totals per run, for the annual-sum normalization (one per segment, in the summary)
+  const annual=k=>calRows(slug,"electricity","summ").find(r=>r.run===k&&calSegMatch(r,ind,cz,size))||{};
+  const legendItems=all=>{
+    const keys=all?(D.enduseOrder||[]):euOrderVisible();
+    const items=keys.filter(k=>prof.some(p=>p["eu_"+k]!==null&&p["eu_"+k]!==undefined)).slice().reverse()
+      .map(k=>({color:D.enduseColors[k]||"#888",label:k.replace(/_/g," "),euKey:k}));
+    items.push({color:runColor(CAL_SUBJECT),label:`${runShort(CAL_SUBJECT)} total (${fmt(s.model_count,0)} models)`,line:true});
+    items.push({color:CAL_TRUTH_COLOR,label:`CalMAC (${fmt(s.premise_count,0)} premises)`,line:true});
+    (all?others:shown).forEach(r=>items.push({color:runColor(r.key),label:`${runShort(r.key)} total`,line:true,dash:true,runKey:r.key}));
+    return items;
+  };
+  const legendHtml=()=>{
+    const hid=euHidden();
+    return legendItems(true).map(i=>{
+      if(i.runKey) return "";
+      const c=safeColor(i.color===CAL_TRUTH_COLOR?"var(--ink)":i.color);
+      const attrs=i.euKey?` data-eu="${i.euKey}" role="button" aria-pressed="${!hid.has(i.euKey)}"`:"";
+      return `<span class="key"${attrs}>${i.line?`<span style="width:14px;height:0;border-top:2.5px solid ${c};display:inline-block;flex:none"></span>`
+        :`<span class="sw" style="background:${safeColor(i.color)}"></span>`}${esc(i.label)}</span>`;
+    }).join("")+calRunLegend(others)
+    +((D.enduseOrder||[]).some(k=>hid.has(k))?`<span class="key" data-eu="__all__" role="button" aria-pressed="true" style="cursor:pointer;font-weight:600">show all</span>`:"");
+  };
+  let h=`<div class="panel"><div class="head"><h2>Mean hourly electricity by season and day type — ${
+      esc(mode==="abs"?NORM[mode]:NORM[mode].toLowerCase())}</h2><span class="spacer"></span>
+      <button class="btn-mini" data-gfs="gcal" title="Expand all panels">&#9134; all</button>
+      <div class="tabs" role="group" aria-label="Profile scale">
+        <button class="tab" data-calmode="annual" aria-selected="${mode==="annual"}">Annual sum = 1</button>
+        <button class="tab" data-calmode="daytype" aria-selected="${mode==="daytype"}">Day sum = 1</button>
+        <button class="tab" data-calmode="abs" aria-selected="${mode==="abs"}">kWh per building / premise</button>
+      </div></div>
+    <p class="note">${mode==="abs"
+      ? `ComStock kWh per weighted building (end uses stacked) on the same axis as CalMAC kWh per metered premise
+         (dark line). The gap is mostly how many premises make a building — read it as indicative.`
+      : `Each series is divided by one scalar — ${mode==="daytype"?"its own 24-hour sum, so each panel sums to 1":
+         "its own annual total, so the year sums to 1"} — so the level, and with it the building-versus-premise
+         difference, divides out; the end-use stack keeps its proportions.`}
+      Seasons are CalTRACK's: summer Jun–Sep, winter Nov–Feb, shoulder the rest. Times are Pacific standard time
+      on both sides; CalMAC's daylight-saving clock was converted.</p>
+    <div class="ami-wrap"><div class="ami-grid" id="calProf"></div>
+      <div class="ami-legend">${legendHtml()}</div></div></div>`;
+  const met=calFrame(slug,"electricity","met").filter(r=>r.run===CAL_SUBJECT&&calSegMatch(r,ind,cz,size));
+  h+=`<div class="panel"><h2>Profile agreement by season and day type <span class="badge">${runShort(CAL_SUBJECT)}</span></h2>
+    <div class="scroll"><table><thead><tr><th>Season</th><th>Day type</th><th>Shape RMSE (pts)</th><th>Correlation</th>
+      <th>Overnight share CS / CalMAC</th><th>Peak hour CS / CalMAC</th><th>Load factor CS / CalMAC</th>
+      <th>NMBE % (level, indicative)</th></tr></thead><tbody>
+    ${CAL_SEASONS.flatMap(se=>CAL_DAYS.map(dy=>met.find(r=>r.season===se&&r.day_type===dy))).filter(Boolean).map(r=>
+      `<tr><td>${r.season}</td><td>${r.day_type}</td><td>${fmt(r.daytype_shape_rmse_pts,2)}</td><td>${fmt(r.shape_corr,3)}</td>
+       <td>${fmt(100*r.overnight_share_comstock,1)}% / ${fmt(100*r.overnight_share_calmac,1)}%</td>
+       <td>${r.peak_hour_comstock} / ${r.peak_hour_calmac}${r.peak_hour_comstock!==r.peak_hour_calmac?
+         ` <b>(${r.peak_hour_comstock>r.peak_hour_calmac?"+":""}${r.peak_hour_comstock-r.peak_hour_calmac}h)</b>`:""}</td>
+       <td>${fmt(r.load_factor_comstock,2)} / ${fmt(r.load_factor_calmac,2)}</td>
+       <td><span class="cell" style="background:${diffColor(r.nmbe_pct)}">${pct(r.nmbe_pct)}</span></td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="note">Shape RMSE is the hour-by-hour distance between the two day-sum-normalized profiles, in points of
+    the day's energy. Overnight share is hours 0–5's share of the day. Load factor is mean ÷ peak over that season and
+    day type's hours. NMBE compares per-building with per-premise levels and is shown for completeness only.</p></div>`;
+  h+=calSummaryPanel(slug,"electricity",ind,cz,size);
+  h+=`<div class="panel"><h2>Load duration curve — each divided by its own annual mean</h2>
+      <div id="calLdc" style="max-width:700px"></div></div>
+    <div class="panel"><h2>Share of annual electricity by month</h2><div id="calMon" style="max-width:700px"></div></div>`;
+  $("#calBody").innerHTML=h;
+  // profile grid
+  const g=$("#calProf"), pending=[], figs=[];
+  CAL_SEASONS.forEach(se=>CAL_DAYS.forEach(dy=>{
+    const raw=prof.filter(p=>p.season===se&&p.day_type===dy).sort((a,b)=>a.hour-b.hour);
+    const box=document.createElement("div"); box.className="chartbox";
+    box.innerHTML=`<div class="head"><h3>${se} · ${dy}</h3></div><div class="chart"></div>`; g.appendChild(box);
+    if(raw.length<24){ box.querySelector(".chart").innerHTML='<p class="note">No data.</p>'; return; }
+    const csDiv=mode==="daytype"?raw.reduce((t,p)=>t+(p.comstock_kwh_per_bldg||0),0):mode==="annual"?annual(CAL_SUBJECT).comstock_annual_per_bldg:1;
+    const trDiv=mode==="daytype"?raw.reduce((t,p)=>t+(p.calmac_kwh_per_premise||0),0):mode==="annual"?annual(CAL_SUBJECT).calmac_annual_per_premise:1;
+    const runVals=shown.map(r=>{
+      const rr=otherProf.filter(p=>p.run===r.key&&p.season===se&&p.day_type===dy);
+      const div=mode==="daytype"?rr.reduce((t,p)=>t+(p.comstock_kwh_per_bldg||0),0):mode==="annual"?annual(r.key).comstock_annual_per_bldg:1;
+      const m={}; rr.forEach(p=>{ m[p.hour]=div?p.comstock_kwh_per_bldg/div:null; }); return m;
+    });
+    const sub=raw.map(p=>{
+      const eu={}; stackKeys.forEach(k=>eu[k]=csDiv?(p["eu_"+k]||0)/csDiv:0);
+      return {hour:p.hour, comstock:csDiv?p.comstock_kwh_per_bldg/csDiv:null,
+        ami:trDiv?p.calmac_kwh_per_premise/trDiv:null, rawComstock:p.comstock_kwh_per_bldg,
+        rawAmi:p.calmac_kwh_per_premise, eu, ...Object.fromEntries(runVals.map((m,i)=>[`run${i}`,m[p.hour]??null]))};
+    });
+    pending.push({box, sub, label:`${se} · ${dy}`, opts:{title:`${se} ${dy}`, normalized:mode!=="abs",
+      stack:true, stackKeys, showTotalLine:true, comstockColor:runColor(CAL_SUBJECT),
+      truthLabel:"CalMAC", truthLabelAbs:"CalMAC per premise", rawUnit:"kWh", rawUnitCs:"kWh/bldg",
+      hideLevelDiff:true, baseLabel:"ComStock per building",
+      extraLines:shown.map((r,i)=>({key:`run${i}`,color:safeColor(runColor(r.key)),dash:"7 4",width:2,label:runShort(r.key)})),
+      yLabel:mode==="abs"?"kWh per hour":NORM[mode],
+      copy:{title:`${(CAL_CFG.utilities||{})[calUid(slug)]} ${ind} ${cz} ${size} — ${se} ${dy}`, legend:legendItems()}}});
+  }));
+  const shared=sharedProfileMax(pending);
+  pending.forEach(p=>{ profileChart(p.box.querySelector(".chart"), p.sub, {...p.opts, yMax:shared});
+    figs.push({svg:p.box.querySelector(".chart svg"), label:p.label}); });
+  registerGroup("gcal", [], [], legendItems(), `CalMAC ${ind} ${cz}`, 2); GROUPS.gcal.charts=figs;
+  // load duration curve
+  const ldc=calFrame(slug,"electricity","ldc").filter(r=>calSegMatch(r,ind,cz,size));
+  const byRun=k=>{ const m={}; ldc.filter(r=>r.run===k).forEach(r=>{ m[r.hours]=r; }); return m; };
+  const prim=byRun(CAL_SUBJECT), otherM=shown.map(r=>byRun(r.key));
+  const ldcPts=Object.keys(prim).map(Number).sort((a,b)=>a-b).map(hh=>({x:hh, cs:prim[hh].comstock_rel,
+    tr:prim[hh].calmac_rel, ...Object.fromEntries(otherM.map((m,i)=>[`run${i}`,(m[hh]||{}).comstock_rel??null]))}));
+  const ldcLines=[{key:"cs",label:runShort(CAL_SUBJECT),color:safeColor(runColor(CAL_SUBJECT))},
+    {key:"tr",label:"CalMAC",color:"var(--ink)"},
+    ...shown.map((r,i)=>({key:`run${i}`,label:runShort(r.key),color:safeColor(runColor(r.key)),dash:"7 4"}))];
+  calLineChart($("#calLdc"), ldcPts, ldcLines, {xLabel:"Hours equaled or exceeded", yLabel:"load ÷ annual mean",
+    tipDec:2, copy:{title:`${ind} ${cz} ${size} — load duration curve`, legend:ldcLines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}))}});
+  calMonthly(slug,"electricity",ind,cz,size,shown,"#calMon");
+  wireEnduseLegend(renderCalmac);
+  wireGroups();
+}
+
+function calMonthly(slug, fuel, ind, cz, size, shown, hostSel){
+  const mon=calFrame(slug,fuel,"mon").filter(r=>calSegMatch(r,ind,cz,size));
+  const row=(k,mo)=>mon.find(r=>r.run===k&&r.month===mo)||{};
+  const pts=[...Array(12).keys()].map(i=>({x:i+1, cs:100*(row(CAL_SUBJECT,i+1).comstock_share??NaN),
+    tr:100*(row(CAL_SUBJECT,i+1).calmac_share??NaN),
+    ...Object.fromEntries(shown.map((r,j)=>[`run${j}`,100*(row(r.key,i+1).comstock_share??NaN)]))}));
+  const lines=[{key:"cs",label:runShort(CAL_SUBJECT),color:safeColor(runColor(CAL_SUBJECT))},{key:"tr",label:"CalMAC",color:"var(--ink)"},
+    ...shown.map((r,j)=>({key:`run${j}`,label:runShort(r.key),color:safeColor(runColor(r.key)),dash:"7 4"}))];
+  calLineChart($(hostSel), pts, lines, {xLabel:"Month", yLabel:"% of annual", markers:true, tipDec:1,
+    xTicks:CAL_MONTHS.map((m,i)=>[i+1,m]), xFmt:x=>MONTH_ABBR[x], width:560, height:240,
+    copy:{title:`${ind} ${cz} ${size} — monthly share of annual ${fuel==="electricity"?"electricity":"natural gas"}`,
+          legend:lines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}))}});
+}
+
+function calSummaryPanel(slug, fuel, ind, cz, size){
+  const rows=calRows(slug,fuel,"summ").filter(r=>calSegMatch(r,ind,cz,size));
+  if(!rows.length) return "";
+  const ordered=displayOrder(RUNS).map(r=>rows.find(x=>x.run===r.key)).filter(Boolean);
+  const unit=fuel==="electricity"?"kWh":"therms";
+  const first=ordered[0];
+  const truthCol=(label,f,dec)=>`<tr><td>${label}</td>${ordered.map(r=>`<td>${fmt(f(r,"comstock"),dec)}</td>`).join("")}<td>${fmt(f(first,"calmac"),dec)}</td></tr>`;
+  const metricRows = fuel==="electricity" ? [
+      ["Annual "+unit+" per building / premise (level, indicative)",(r,s)=>s==="comstock"?r.comstock_annual_per_bldg:r.calmac_annual_per_premise,0],
+      ["Load factor (mean ÷ peak hour)",(r,s)=>r[`load_factor_${s}`],2],
+      ["Summer ÷ winter mean",(r,s)=>r[`summer_to_winter_${s}`],2],
+      ["Weekend ÷ weekday daily energy",(r,s)=>r[`weekend_to_weekday_${s}`],2]]
+    : [["Annual "+unit+" per building / premise (level, indicative)",(r,s)=>s==="comstock"?r.comstock_annual_per_bldg:r.calmac_annual_per_premise,0],
+      ["Heating-season share (Nov–Mar)",(r,s)=>r[`heating_season_share_${s}`],2],
+      ["Summer ÷ winter mean",(r,s)=>r[`summer_to_winter_${s}`],2],
+      ["Weekend ÷ weekday daily use",(r,s)=>r[`weekend_to_weekday_${s}`],2]];
+  return `<div class="panel"><h2>Segment summary — every run against the same CalMAC series</h2>
+    <div class="scroll"><table><thead><tr><th></th>${ordered.map(r=>`<th>${runHead(r.run)}</th>`).join("")}
+      <th><span class="rh"><span class="sw" style="background:var(--ink)"></span>CalMAC</span></th></tr></thead><tbody>
+    ${metricRows.map(([l,f,d])=>truthCol(l,f,d)).join("")}
+    <tr><td>Monthly-share RMSE vs CalMAC (pts)</td>${ordered.map(r=>`<td>${fmt(r.monthly_share_rmse_pts,2)}</td>`).join("")}<td></td></tr>
+    ${fuel==="natural_gas"?`<tr><td>Daily shape CV(RMSE) vs CalMAC %</td>${ordered.map(r=>`<td>${r.same_calendar?fmt(r.daily_shape_cvrmse_pct,1):absentTag("notApplicable","CalMAC series is on the 2025 calendar")}</td>`).join("")}<td></td></tr>`:""}
+    <tr><td>Models / buildings represented</td>${ordered.map(r=>`<td>${fmt(r.model_count,0)} / ${fmt(r.weight_sum,0)}</td>`).join("")}<td>${fmt(first.premise_count,0)} premises</td></tr>
+    </tbody></table></div>
+    <p class="note">The CalMAC column is the same series for every run: pooled series are weighted by the run under
+    review's composition, so a comparison run is judged against the same meters.</p></div>`;
+}
+
+function calRenderGas(slug, ind, cz, size, s){
+  const daily=calFrame(slug,"natural_gas","daily").filter(r=>calSegMatch(r,ind,cz,size));
+  const others=calOtherRuns(slug,"natural_gas");
+  const shown=others.filter(r=>(state.calRuns||[]).includes(r.key));
+  const mode=state.calGasMode==="abs"?"abs":"annual";
+  const doy=d=>{ const t=new Date(d+"T00:00:00Z"); return Math.floor((t-Date.UTC(t.getUTCFullYear(),0,1))/864e5)+1; };
+  const series=k=>{ const rows=daily.filter(r=>r.run===k);
+    const tot=rows.reduce((t,r)=>t+(r.therms_per_bldg||0),0), ttot=rows.reduce((t,r)=>t+(r.therms_per_premise||0),0);
+    const m={}; rows.forEach(r=>{ m[doy(String(r.date).slice(0,10))]={cs:mode==="annual"?(tot?r.therms_per_bldg/tot*100:null):r.therms_per_bldg,
+      tr:mode==="annual"?(ttot?r.therms_per_premise/ttot*100:null):r.therms_per_premise}; }); return m; };
+  const P=series(CAL_SUBJECT), O=shown.map(r=>series(r.key));
+  const pts=Object.keys(P).map(Number).sort((a,b)=>a-b).map(d=>({x:d, cs:P[d].cs, tr:P[d].tr,
+    ...Object.fromEntries(O.map((m,i)=>[`run${i}`,(m[d]||{}).cs??null]))}));
+  const lines=[{key:"cs",label:`${runShort(CAL_SUBJECT)} per building`,color:safeColor(runColor(CAL_SUBJECT)),width:1.4},
+    {key:"tr",label:"CalMAC per premise",color:"var(--ink)",width:1.4},
+    ...shown.map((r,i)=>({key:`run${i}`,label:runShort(r.key),color:safeColor(runColor(r.key)),dash:"5 3",width:1.4}))];
+  const sameCal=daily.length?daily[0].same_calendar:true;
+  let h=`<div class="panel"><div class="head"><h2>Daily natural gas — ${mode==="annual"?"% of annual":"therms per day"}</h2>
+      <span class="spacer"></span><span class="ami-legend" style="position:static;width:auto;flex-direction:row;gap:12px">${calRunLegend(others)}</span>
+      <div class="tabs" role="group" aria-label="Gas scale">
+        <button class="tab" data-calgas="annual" aria-selected="${mode==="annual"}">% of annual</button>
+        <button class="tab" data-calgas="abs" aria-selected="${mode==="abs"}">therms per building / premise</button></div></div>
+    <p class="note">${sameCal?"Both series are on the 2018 calendar, so days line up."
+      :"<b>The CalMAC series is the raw 2025 profile</b> (its weather normalization did not pass the fit check), plotted by day of year against ComStock's 2018 — weekdays and weather do not line up day by day."}
+      The utility is the ELECTRIC utility of each ComStock building, which for gas is close for PG&E but not exact for
+      SDG&E, whose gas territory also covers some SCE-electric areas.</p>
+    <div id="calDaily"></div></div>`;
+  h+=calSummaryPanel(slug,"natural_gas",ind,cz,size);
+  const met=calFrame(slug,"natural_gas","met").filter(r=>r.run===CAL_SUBJECT&&calSegMatch(r,ind,cz,size));
+  h+=`<div class="panel"><h2>Mean daily natural gas by season and day type — therms</h2>
+    <div class="scroll"><table><thead><tr><th>Season</th><th>Day type</th><th>${runShort(CAL_SUBJECT)} per building</th><th>CalMAC per premise</th>
+    <th>Ratio to season mean (CS / CalMAC)</th></tr></thead><tbody>
+    ${CAL_SEASONS.flatMap(se=>CAL_DAYS.map(dy=>{
+      const c=met.find(r=>r.season===se&&r.day_type===dy&&r.side==="comstock"), t=met.find(r=>r.season===se&&r.day_type===dy&&r.side==="calmac");
+      if(!c||!t) return "";
+      const cm=met.filter(r=>r.side==="comstock").reduce((a,r)=>a+r.mean_daily_therms,0)/Math.max(1,met.filter(r=>r.side==="comstock").length);
+      const tm=met.filter(r=>r.side==="calmac").reduce((a,r)=>a+r.mean_daily_therms,0)/Math.max(1,met.filter(r=>r.side==="calmac").length);
+      return `<tr><td>${se}</td><td>${dy}</td><td>${fmt(c.mean_daily_therms,2)}</td><td>${fmt(t.mean_daily_therms,2)}</td>
+        <td>${fmt(cm?c.mean_daily_therms/cm:null,2)} / ${fmt(tm?t.mean_daily_therms/tm:null,2)}</td></tr>`;})).join("")}
+    </tbody></table></div></div>
+    <div class="panel"><h2>Share of annual natural gas by month</h2><div id="calMon" style="max-width:700px"></div></div>`;
+  $("#calBody").innerHTML=h;
+  calLineChart($("#calDaily"), pts, lines, {xLabel:"Day of year", yLabel:mode==="annual"?"% of annual":"therms per day",
+    tipDec:mode==="annual"?3:2, width:900, height:280, xFmt:d=>`day ${d}`,
+    copy:{title:`${ind} ${cz} ${size} — daily natural gas`, legend:lines.map(l=>({color:l.color==="var(--ink)"?CAL_TRUTH_COLOR:l.color,label:l.label,line:true,dash:!!l.dash}))}});
+  calMonthly(slug,"natural_gas",ind,cz,size,shown,"#calMon");
+  wireGroups();
+}
+
+/* Every segment of this utility and fuel at the chosen size, so a reader can find
+   the worst one without paging through them. Clicking a row picks its industry. */
+function calScoreboard(slug, fuel){
+  const size=state.calSize||"pooled";
+  const summ=calRows(slug,fuel,"summ").filter(r=>r.run===CAL_SUBJECT);
+  const met=calFrame(slug,fuel,"met").filter(r=>r.run===CAL_SUBJECT);
+  const inds=[calAll(),...Object.keys(CAL_CFG.industry_map||{})];
+  const czs=calCzs(slug);
+  const val=(ind,cz)=>{
+    if(fuel==="electricity"){
+      const m=met.filter(r=>r.industry===ind&&r.cz_group===cz&&r.size===(ind===calAll()?"pooled":size));
+      return m.length?m.reduce((t,r)=>t+r.daytype_shape_rmse_pts,0)/m.length:null;
+    }
+    const r=summ.find(r=>r.industry===ind&&r.cz_group===cz&&r.size===(ind===calAll()?"pooled":size));
+    return r?r.monthly_share_rmse_pts:null;
+  };
+  const ag=(CAL.agreement||[]).filter(r=>String(r.utility_id)===calUid(slug));
+  const firstType=ind=>ind===calAll()?CROSS:((CAL_CFG.industry_map||{})[ind]||[CROSS])[0];
+  const vals=inds.flatMap(i=>czs.map(c=>val(i,c))).filter(v=>v!==null);
+  const hi=Math.max(...vals,0.0001);
+  return `<div class="panel"><h2>Every segment — ${calUtilName(slug)} ${fuel==="electricity"?"electricity":"natural gas"}, ${
+      esc(size==="pooled"?"all sizes":calSizeName(slug,size))}
+    <span class="badge">${fuel==="electricity"?"mean shape RMSE, pts":"monthly-share RMSE, pts"}</span></h2>
+    <div class="scroll"><table><thead><tr><th>Industry</th>${czs.map(c=>`<th>${calCzLabel(slug,c)}</th>`).join("")}
+      ${fuel==="electricity"?"<th>Overnight bias across groups</th>":""}</tr></thead><tbody>
+    ${inds.map(ind=>`<tr class="clickable" data-caltype="${esc(firstType(ind))}"><td>${calIndName(ind)}</td>${czs.map(c=>{
+      const v=val(ind,c);
+      return `<td>${v===null?absentTag("noRecords"):`<span class="cell" style="background:rgba(213,94,0,${(0.08+0.45*v/hi).toFixed(2)})">${fmt(v,2)}</span>`}</td>`;}).join("")}
+      ${fuel==="electricity"?`<td>${esc(((ag.find(r=>r.industry===ind)||{}).consistency)||"")}</td>`:""}</tr>`).join("")}
+    </tbody></table></div>
+    <p class="note">Darker = further from the meters. ${fuel==="electricity"?`Overnight bias is "systematic" when ComStock puts
+    more (or less) of the day into hours 0–5 than CalMAC in at least two-thirds of the climate-zone groups — a model
+    property rather than a regional one.`:""} Click a row to open that industry.</p></div>`;
+}
+
+function calCoveragePanel(slug, fuel, ind, cz){
+  const zones=(CAL.util[slug]||{}).zones||[];
+  const tot=zones.reduce((t,r)=>t+r.weight,0);
+  const comp=((CAL.util[slug]||{}).comp||[]).filter(r=>r.industry===ind&&r.cz_group===cz);
+  const cent=(CAL.centroids||[]).filter(r=>String(r.utility_id)===calUid(slug)&&r.fuel===fuel);
+  const ct={}; cent.forEach(r=>{ const k=r.cz_group; (ct[k]=ct[k]||{}); ct[k][r.station_ctz]=(ct[k][r.station_ctz]||0)+1; });
+  const ctzs=[...new Set(cent.map(r=>r.station_ctz))].sort((a,b)=>a-b);
+  const segRow=calRows(slug,fuel,"seg").find(r=>calSegMatch(r,ind,cz,state.calSize||"pooled"));
+  const comps=segRow?String(segRow.components).split("+"):[];
+  const fits=(CAL.normalization||[]).filter(r=>String(r.utility_id)===calUid(slug)&&r.fuel===fuel&&r.season==="All"&&comps.includes(r.gp));
+  const st=CAL.stations||[];
+  return `<div class="panel"><h2>Where these numbers come from — ${calUtilName(slug)}</h2>
+    <h3>ComStock weight by CEC climate zone</h3>
+    <div class="scroll"><table><thead><tr><th>CEC zone</th><th>Group</th><th>Weighted buildings</th><th>Share</th><th>Models</th></tr></thead><tbody>
+    ${zones.map(r=>`<tr><td>${esc(r["in.cec_climate_zone"])}</td><td>${r.cz_group==="other"?"<b>not compared</b>":calCzLabel(slug,r.cz_group)}</td>
+      <td>${fmt(r.weight,0)}</td><td>${fmt(100*r.weight/(tot||1),1)}%</td><td>${fmt(r.models,0)}</td></tr>`).join("")}
+    </tbody></table></div>
+    ${comp.length?`<h3>Size composition of ${calIndName(ind)}, ${calCzLabel(slug,cz)} — ComStock</h3>
+    <div class="scroll"><table><thead><tr><th>Size class</th><th>Weighted buildings</th><th>Share</th><th>Models</th></tr></thead><tbody>
+    ${comp.map(r=>`<tr><td>${esc(calSizeName(slug,r.size))}</td><td>${fmt(r.weight_sum,0)}</td><td>${fmt(100*r.share_of_industry,1)}%</td><td>${fmt(r.model_count,0)}</td></tr>`).join("")}
+    </tbody></table></div><p class="note">CalMAC publishes no premise population to set beside this — its counts are each
+    profile's ~200-premise sample — so whether the peak-demand threshold reproduces the rate-class split cannot be checked
+    from these files.</p>`:""}
+    <h3>Centroid check — the CEC zone of the weather station nearest each CalMAC profile</h3>
+    <div class="scroll"><table><thead><tr><th>CalMAC group</th>${ctzs.map(z=>`<th>CTZ ${z}</th>`).join("")}</tr></thead><tbody>
+    ${Object.keys(ct).sort().map(k=>`<tr><td>${calCzLabel(slug,k)}</td>${ctzs.map(z=>`<td>${ct[k][z]||""}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <p class="note">A diagnostic, not the mapping: a compact group's profiles sit inside its zone (SDG&E Coastal in CTZ 7,
+    Inland in CTZ 10), while a group spanning several zones has its centroids land between them.</p>
+    ${fits.length?`<h3>Weather normalization of this segment's CalMAC profiles (2025 → 2018)</h3>
+    <div class="scroll"><table><thead><tr><th>Profile</th><th>Station</th><th>CV(RMSE) %</th><th>R²</th><th>Used</th>
+      <th>Annual change, normalized vs raw</th></tr></thead><tbody>
+    ${fits.map(r=>`<tr><td>${esc(r.gp)}</td><td>${esc(r.station)} (${fmt(r.distance_km,1)} km)</td><td>${fmt(r.cvrmse_pct,1)}</td>
+      <td>${fmt(r.r2,2)}</td><td>${r.normalized?"yes":"<b>no — raw 2025 used</b>"}</td>
+      <td>${r.normalized?pct(100*(r.normalized_2018_total/r.raw_2025_total-1)):absentTag("notApplicable")}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+    ${st.some(r=>r.excluded)?`<p class="note"><b>Weather stations excluded from the normalization:</b> ${
+      st.filter(r=>r.excluded).map(r=>`${esc(r.name)} — ${esc(r.reason)}`).join("; ")}.</p>`:""}</div>`;
+}
+
+function calWire(){
+  const on=(sel,ev,fn)=>{ const e=$(sel); if(e) e.addEventListener(ev,fn); };
+  on("#calUtil","change",e=>{ state.calUtil=e.target.value; state.calCz=calCzs(state.calUtil)[0]; renderCalmac(); syncHash(); });
+  on("#calCz","change",e=>{ state.calCz=e.target.value; renderCalmac(); syncHash(); });
+  on("#calIndic","change",e=>{ state.calIndic=e.target.checked; renderCalmac(); syncHash(); });
+  document.querySelectorAll("[data-calfuel]").forEach(b=>b.addEventListener("click",()=>{ state.calFuel=b.dataset.calfuel; renderCalmac(); syncHash(); }));
+  document.querySelectorAll("[data-calsize]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; state.calSize=b.dataset.calsize; renderCalmac(); syncHash(); }));
+  document.querySelectorAll("[data-calmode]").forEach(b=>b.addEventListener("click",()=>{ state.calMode=b.dataset.calmode; renderCalmac(); syncHash(); }));
+  document.querySelectorAll("[data-calgas]").forEach(b=>b.addEventListener("click",()=>{ state.calGasMode=b.dataset.calgas; renderCalmac(); syncHash(); }));
+  document.querySelectorAll("[data-calrun]").forEach(k=>k.addEventListener("click",()=>{
+    const key=k.dataset.calrun, s=new Set(state.calRuns||[]); if(s.has(key)) s.delete(key); else s.add(key);
+    state.calRuns=[...s]; renderCalmac(); syncHash(); }));
+  document.querySelectorAll("tr[data-caltype]").forEach(tr=>tr.addEventListener("click",()=>{
+    state.type=tr.dataset.caltype; if($("#type").value!==state.type&&[...$("#type").options].some(o=>o.value===state.type)) $("#type").value=state.type;
+    renderCalmac(); syncHash(); window.scrollTo({top:0, behavior:"instant"}); }));
+}
+
+/* Coverage tab: the California leg's runs, tables and gaps. */
+function calCoverageHtml(){
+  const c=(D.coverage||{}).calmac, why=(D.coverage||{}).calmac_skipped_reason;
+  if(!c&&!why) return "";
+  if(!c) return `<div class="panel"><h2>California vs CalMAC</h2><p class="note"><b>Skipped:</b> ${esc(why)}.</p></div>`;
+  const cfg=c.config||{};
+  const utils=Object.values(c.utilities||{});
+  return `<div class="panel"><h2>California vs CalMAC granular profiles — coverage</h2>
+    <table class="wrap-cells"><tbody>
+    <tr><td>Runs compared</td><td>${(c.runs_compared||[]).map(k=>`${runLabel(k)} — ${
+      ((c.queries||{})[k]||{}).count} quer${((c.queries||{})[k]||{}).count===1?"y":"ies"} of ${esc(((c.queries||{})[k]||{}).table||"")}, ${
+      fmt((((c.queries||{})[k]||{}).sql_bytes||[]).reduce((a,b)=>a+b,0)/1024,0)} KB of inline weights`).join("<br>")||"none"}</td></tr>
+    ${Object.keys(c.runs_skipped||{}).length?`<tr><td>Runs not compared</td><td>${Object.entries(c.runs_skipped).map(([k,v])=>`<b>${esc(k)}</b> — ${esc(v)}`).join("<br>")}</td></tr>`:""}
+    ${Object.keys(c.membership_gap||{}).length?`<tr><td>Timeseries coverage gaps</td><td>${Object.entries(c.membership_gap).map(([k,v])=>`<b>${esc(k)}</b> — ${esc(v.note)}`).join("<br>")}</td></tr>`:""}
+    <tr><td>Pooled truth weights</td><td>${cfg.pool_weights==="comstock"?`each CalMAC size (and, for All mapped, industry) weighted by
+      ${runLabel(c.composition_run)}'s weighted building count in the matching cell — CalMAC's files carry each profile's
+      ~200-premise sample, not the premise population`:"equal weights"}</td></tr>
+    <tr><td>Size classes</td><td>${(cfg.size_rule||{}).kind==="none"?"pooled (no size split)":`annual peak demand below ${
+      Object.entries((cfg.size_rule||{}).thresholds_kw||{}).map(([u,t])=>`${esc((cfg.utilities||{})[u]||u)} ${t} kW`).join(", ")} is small;
+      ${Object.keys(cfg.size_not_comparable||{}).map(esc).join(" and ")} are compared pooled (their CalMAC size is a property of
+      the premise, and a ComStock building is many premises)`}</td></tr>
+    ${utils.map(u=>`<tr><td>${esc(u.name)}</td><td>${fmt(u.weight_total,0)} weighted buildings; ${fmt(u.weight_outside_groups_pct,1)}%
+      in CEC zones outside the groups (${(u.zones_outside_groups||[]).map(esc).join(", ")||"none"}), not compared.
+      ${Object.entries(u.fuels||{}).map(([f,v])=>`<br>${f.replace("_"," ")}: ${v.segments_compared} segments
+        (${Object.entries(v.segments_by_size||{}).map(([s,n])=>`${esc(s)} ${n}`).join(", ")}); profiles on ${
+        Object.entries(v.bases||{}).map(([b,n])=>`${esc(b)} ${n}`).join(", ")}; industries without a ComStock counterpart:
+        ${(v.industries_without_comstock||[]).map(esc).join(", ")||"none"}${(v.thin_comstock_cells||[]).length?`; thin ComStock cells:
+        ${v.thin_comstock_cells.map(t=>`${esc(t.industry)} ${esc(t.cz_group)} ${esc(t.size)} (${t.model_count})`).join(", ")}`:""}`).join("")}</td></tr>`).join("")}
+    </tbody></table></div>`;
 }
 
 /* The season caption is generated from the same month lists that group the
@@ -5505,6 +6053,8 @@ function renderCoverage(){
       Standard Time; they were converted back to local standard time by state before comparison
       (split-zone states use their majority zone). AMI meters and crawled runs are already local.</p>`:""}</div>`;
 
+  h+=calCoverageHtml();
+
   // Every measure scenario in the assessment, named: the measure tabs show a
   // truncated label, and a reader needs the full upgrade name and its share of
   // stock to know what was actually run.
@@ -5618,7 +6168,8 @@ const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim
                  "dpGroup","dpDim","hfView",
                  "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
                  "measDistGroup","measMulti","runsHidden","amiRuns","measBasis","measPop",
-                 "measCatGroup","euHidden","feHidden","measHidden"];
+                 "measCatGroup","euHidden","feHidden","measHidden",
+                 "calUtil","calFuel","calCz","calSize","calMode","calGasMode","calIndic","calRuns"];
 function syncHash(){
   const p=new URLSearchParams();
   // Unset state (e.g. amiRegion with no AMI regions) is left out rather than
@@ -5632,11 +6183,12 @@ function parseHash(){
   HASH_KEYS.forEach(k=>{
     if(!p.has(k)) return;
     const v=p.get(k);
-    state[k]=(k==="dimSig"||k==="rankSig") ? v==="true"
+    state[k]=(k==="dimSig"||k==="rankSig"||k==="calIndic") ? v==="true"
       // validated against the real run list so a stale link cannot hide a
       // run that is not in this dashboard
       : k==="runsHidden" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="amiRuns" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
+      : k==="calRuns" ? v.split(",").filter(x=>ALL_RUNS.some(r=>r.key===x&&r.key!==PRIMARY))
       : k==="measMulti" ? v.split(",").filter(u=>MEAS_LIST.some(m=>m.up===u))
       : k==="euHidden" ? v.split(",").filter(x=>(D.enduseOrder||[]).includes(x))
       // "enduse|fuel"; validated against both halves so a stale link cannot
@@ -5709,7 +6261,7 @@ function setTab(t){
   $("#typeWrap").classList.toggle("hidden",
     t==="overview"||t==="coverage"||t==="measA"||t==="measT");
   ({overview:renderOverview, annual:renderAnnual, dist:renderDistributions,
-    ami:renderAmi, coverage:renderCoverage, params:renderDesignParams,
+    ami:renderAmi, calmac:renderCalmac, coverage:renderCoverage, params:renderDesignParams,
     measA:renderMeasuresAnnual, measT:renderMeasuresTs})[t]();
   syncRunToggle();
   window.scrollTo({top:0, behavior:"instant"});
@@ -5778,7 +6330,7 @@ function init(){
     document.querySelector(".controls").insertBefore(wrap, $("#theme"));
   }
   applyRunToggle();
-  const tabs=["overview","annual","dist","ami"];
+  const tabs=["overview","annual","dist","ami","calmac"];
   if(DP.length) tabs.push("params"); else { const b=$("#paramsTab"); if(b) b.remove(); }
   tabs.push("coverage");
   if(MEAS) tabs.push("measA","measT");
