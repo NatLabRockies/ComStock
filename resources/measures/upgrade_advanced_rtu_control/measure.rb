@@ -318,6 +318,8 @@ def run(model, runner, user_arguments)
 	  next if ((air_loop_hvac.name.to_s.include?("residential")) || (air_loop_hvac.name.to_s.include?("Residential")) || (sizing_system.allOutdoorAirinCooling && sizing_system.allOutdoorAirinHeating))
 	  #skip VAV systems
 	  next if ['VAV', 'PVAV'].any? { |word| (air_loop_hvac.name.get).include?(word) } || vav_terminals?(air_loop_hvac)
+	  # data center CRAC/CRAH units keep their controls (typical models give data centers their own unit)
+	  next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
 	  next if !(air_loop_hvac_unitary_system?(air_loop_hvac)) #select unitary systems only
 	  overall_sel_air_loops << air_loop_hvac
 	end

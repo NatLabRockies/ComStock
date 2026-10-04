@@ -223,6 +223,8 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
       next if (is_hp==true) | (((air_loop_hvac.name.to_s.include?("HP")) || (air_loop_hvac.name.to_s.include?("hp")) || (air_loop_hvac.name.to_s.include?("heat pump")) || (air_loop_hvac.name.to_s.include?("Heat Pump"))))
       # skip data centers
       next if ['Data Center', 'DataCenter', 'data center', 'datacenter', 'DATACENTER', 'DATA CENTER'].any? { |word| (air_loop_hvac.name.get).include?(word) }
+      # typical models put data centers on their own CRAC/CRAH; the fork helper also catches computer/server room names
+      next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
       # skip kitchens
       next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems

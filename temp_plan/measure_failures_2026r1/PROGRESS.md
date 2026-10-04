@@ -4,30 +4,30 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 
 ## Resume here
 
-1. Uncommitted in the worktree (owner commits): economizer, energy recovery and unoccupied OA
-   controls (CRAC skips), `upgrade_hvac_vrf_hr_doas/measure.rb` (CRAC /
-   data-center loop skip), `upgrade_hvac_hydronic_gshp/measure.rb` (String-safe flow-method
-   guard), `upgrade_hvac_packaged_gshp/measure.rb` (data-center zones kept on their CRAC, measure
-   proceeds), `measures/utility_bills/resources/calc_elec_bill.py` (zero-purchase guard, exception
-   text), PLAN.md and PROGRESS.md. Suggested commit message at the end of the 2026-10-03 log.
-2. Small-sample rerun: the upgrade subset is in `rerun_upgrades_subset.yml` (20 upgrades, 2026R1 names and options, with the suggested settings in its header); the owner drops it into their run yml, approves and submits it (PLAN.md step 8). Not submitted by me.
-3. Then the applicability tally (step 10) and the CRAC exclusion audit (step 11).
-4. Owner items still open: GSHP condenser-loop runaways (hydronic, console), unoccupied AHU
-   (see the 2026-10-03 entry for the reproduction result). Baseline failures 2537 and 7223 and the
-   5552 WSHP loop are parked (newer ComStock-Typical may fix them).
-5. Pulled models and logs: `C:/tmp/mf2026r1` (local), `/scratch/ccaradon/mf2026r1` and
-   `/home/ccaradon/mf2026r1/mf2026r1_extract.tar.gz` on Kestrel. Direct-run outputs in
-   `C:/tmp/typ_runs/<case>/out.osm`; runner `C:/tmp/adhoc_typical.rb`; variants `C:/tmp/make_variant.rb`.
+1. Uncommitted in the worktree (owner commits; suggested message at the end of the 2026-10-04 evening
+   entry): hydronic GSHP `:756`/`:848` fixes, ideal air loads naming, data-center skips in DOAS
+   minisplits and advanced RTU controls, the g-function column fix in packaged and console GSHP, docs, rerun tables and scripts (`rerun_compare.py`,
+   `rerun_applicability_tally.md`, `parse_osw.py`, `tally.py`, `compare_r3.py`, `extract_osw_rerun.sh`,
+   `r3_applicability_by_system.csv`, `rerun_baseline_chars.csv`), the yml / sample / id-map copies.
+2. Plan steps 1-11 are done. Open for owners: GSHP condenser-loop runaways (hydronic 24, console 2,
+   packaged 8 in the rerun), Package_3 fan-coil heating-coil UA sizing (heat-pump boiler measure),
+   GHEDesigner errors registered as NA (15 datapoints), the marginal unoccupied-AHU case 8613,
+   console GSHP on mixed PTAC + unitary buildings. Parked: baseline 2537/7223, the 5552 WSHP loop.
+3. If the owner wants a confirmation run after the hydronic and naming fixes: the same 500 sample
+   yml with the new commit (hydronic 31 offices and ideal air loads 4 warehouses are the cases).
+4. Pulled models and logs: `C:/tmp/mf2026r1`, `C:/tmp/mf2026r1_rerun` (local); `/scratch/ccaradon/mf2026r1*`
+   and `/home/ccaradon/mf2026r1_rerun` (Kestrel, incl. `apply_upgrade_messages.tsv`); direct-run
+   outputs `C:/tmp/typ_runs`; runner `C:/tmp/adhoc_typical.rb`; variants `C:/tmp/make_variant.rb`.
 
 ## Status by upgrade
 
 | id | measure | class | diagnosis | S3 evidence | fix | tested | rerun |
 |---|---|---|---|---|---|---|---|
-| 14 | upgrade_hvac_doas_hp_minisplits | A | done | confirmed :339 (1,896 Fail) | `ad147d38` | direct run on a prototype PSZ model: Success | |
-| 22 | upgrade_advanced_rtu_control | A | done | confirmed :391 (4,145 Fail) | `ad147d38` (fan curve now applied) | suite 3/3 | |
+| 14 | upgrade_hvac_doas_hp_minisplits | A | done; data-center skip added (uncommitted) | confirmed :339 (1,896 Fail) | `ad147d38` | prototype PSZ model, pulled PSZ-AC 1 and 195: Success; 6252 NA | rerun: Fail only on the parked baselines |
+| 22 | upgrade_advanced_rtu_control | A | done; data-center skip added (uncommitted) | confirmed :391 (4,145 Fail) | `ad147d38` (fan curve now applied) | suite 3/3; pulled 1 and 195 Success, 6252 NA | rerun: Fail only on the parked baselines |
 | 26 | upgrade_hvac_pump | A | done (was wrongly "all invalid") | confirmed :144 (2,512 Fail) | `ad147d38` | suite 11/11 | |
 | 27 | upgrade_hvac_enable_ideal_air_loads | A | done | confirmed :86 (8,632 Fail) | `ad147d38` | suite 5/5 (EPW substituted) | |
-| 29 | upgrade_hvac_packaged_gshp | A + D | done | confirmed :956 (5,407), :866 (51), :874 (32), :941 (2) | `ad147d38` (port, fan curve, NA guard for mixed systems) | direct runs: PSZ-HP and PVAV Success with GHEDesigner; pulled mixed-system models 112 and 345 NA via the guard | |
+| 29 | upgrade_hvac_packaged_gshp | A + D | done; g-function column fixed (uncommitted): all 56 g values were 0 | confirmed :956 (5,407), :866 (51), :874 (32), :941 (2) | `ad147d38` (port, fan curve, NA guard for mixed systems) | direct runs: PSZ-HP and PVAV Success with GHEDesigner; pulled mixed-system models 112 and 345 NA via the guard | |
 | 31 | upgrade_hvac_chiller | A | done (was wrongly "all invalid") | confirmed :159 (1,161 Fail) | `ad147d38` | suite 3/3 | |
 | 43 | upgrade_light_led | C | done | confirmed (8,632 Fail) | `ad147d38` (gem data lookup) | suite 8/8; pulled typical model 1: Success, 2,248 to 1,315 W | |
 | 47 | upgrade_add_pvwatts (+ utility_bills) | D | done; PySAM needs Kestrel | 601 battery JSON, 16 PySAM | `ad147d38` (JSON spelling); PySAM open | | |
@@ -35,12 +35,119 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 | 55, 56, 57 | Packages 2-4 (light_led) | C | done | confirmed | via 43 | | |
 | 59, 63 | Package_6, Package_10 (gshp x3), missed by the summary | A + D | done | 5,577 and 5,572 Fail | via 29, 28; simulation-side open | | |
 | 64 | Package_11 (gshp x3 + envelope + light_led) | A + C + D | done | 8,040 Fail | via 29, 28, 43, 48 | | |
-| 28 | upgrade_hvac_hydronic_gshp | D | done: :443 is the String return type; 32 simulation-side are the measure's condenser loop (owner) | 69 + 32 | guard revised (uncommitted) | suite 7/7; pulled 1062 model Success with GHEDesigner | |
+| 28 | upgrade_hvac_hydronic_gshp | D | :443 fixed; rerun exposed :756 (nil chw_loop) and :848 (coils inside CRAH / fan coil units), both fixed uncommitted; 24 condenser-loop runaways remain (owner) | 69 + 32 | String guard, chw_loop reuse, CRAC skips, coil-loop guards | suite 7/7; pulled 1544, 1585, 2419, 1062 all Success | 7 of 61 targeted fixed; 31 at :756 now pass locally |
 | 12, 13 | upgrade_hvac_vrf_hr_doas | sim | done: CRAC loops of data-center zones replaced by VRF terminals | 11 + 11 | CRAC / data-center skip (uncommitted) | pulled 3145 model Success, 6 CRAC loops kept; annual EnergyPlus run completes with 0 severe | |
-| 30 | upgrade_hvac_console_gshp | sim | done: the measure's condenser loop runs away (too hot or too cold) | 4 | owner | | |
+| 30 | upgrade_hvac_console_gshp | sim | done: the measure's condenser loop runs away (too hot or too cold); g-function column fixed (uncommitted): all 56 g values were 0 | 4 | owner | | |
 | 23 | upgrade_unoccupied_oa_controls | sim | done: numerical divergence at the first unoccupied night; optimum start + night cycle lead | 2 | owner | | |
 
 ## Log
+
+### 2026-10-04, evening (owner items assessed, g-function bug)
+
+- Owner asked for a summary and hypotheses on the three open items and whether the applicability
+  differences exist in the 10k run. Evidence and hypotheses are in PLAN.md ("Owner items: evidence
+  and hypotheses"); applicability: no shift (the R3 reference values were county-replicated rows;
+  `rerun_applicability_tally.md` section 5).
+- New bug: `upgrade_hvac_packaged_gshp` and `upgrade_hvac_console_gshp` read GHEDesigner's
+  g-function column by the hard-coded name `H:79.59`; GHEDesigner names it after the borehole
+  length, so every g value was 0.0 (local packaged run on 6252: 0 of 56 nonzero; hydronic correct).
+  Fixed (uncommitted) by taking the first `H:` header that is not `_bhw`. Retest: unit check on a fresh GHEDesigner output (hotel 1046, header `H:98.72`): the new lookup reads 57 of 57 nonzero g values, the old key reads nil (0.0). Console retest on 1046 stopped earlier at a local-only GHEDesigner quirk (NaN in `SimulationSummary.json`, which Ruby's JSON rejects; the three production summaries at hand have no NaN and no such failure appears in the 10,000 rerun datapoints). Packaged end-to-end retest on 6252: Success in 32 min, 3 PVAVs replaced, the 6 CRAC loops unchanged, and the ground heat exchanger now holds 56 of 56 nonzero g values (the same building before the fix: 0 of 56).
+- Package_3 UA failure verified: the pulled 48 `in.idf` fails in sizing as-is and completes once the
+  hot water loop's `Sizing:Plant` delta T is 5.6 K instead of 11.1 K (sizing-only EnergyPlus 25.1
+  runs in `C:/tmp/typ_runs/pkg3_48`, `control` vs `dt556`). Fix belongs in the heat-pump boiler measure.
+- Suggested commit message for everything uncommitted:
+  `Fix GSHP g-function reads and hydronic loop guards, bound ideal air loads names, skip data centers in minisplits and advanced RTU; rerun analysis`
+  body: packaged and console GSHP read the GHEDesigner g-function column by name (was 'H:79.59',
+  so all g values were 0); hydronic GSHP reuses the existing chilled water loop, skips CRAC units and
+  guards the coil conversions; ideal air loads names indexed; minisplits and advanced RTU skip
+  data-center loops; rerun scoring, not-applicable tally and the R3 comparison (no applicability shift).
+
+### 2026-10-04, later (applicability tally, CRAC audit)
+
+- Step 10 done. Pulled every `out.osw` from the rerun tarballs (Slurm 18904795, 2 min, 10,500 files),
+  parsed the ApplyUpgrade step (`parse_osw.py` -> `apply_upgrade_messages.tsv`, 10,000 datapoints,
+  kept in `/home/ccaradon/mf2026r1_rerun`), tallied each measure's own not-applicable message
+  (`tally.py`) and compared applicability by `hvac_system_type` and floor-area bin with the published
+  2025 R3 metadata via Athena (`compare_r3.py`). Write-up: `rerun_applicability_tally.md`.
+  Result: no shift. The R3 reference percentages were county-replicated row fractions of the
+  published table (7.7M rows, 91,464 distinct buildings); by distinct building R3 and the 10k run
+  have the same HVAC mix and agree within 3 points on every measure (minisplits 19% vs 22%, advanced
+  RTU 46% vs 48%, pumps 27% vs 29%), the 500 sample within sampling noise. Per system type and size
+  bin the typical and prototype models
+  agree. Second-order: VRF zoning tests, minisplits partial applicability at 20-50k sf (35% R3, 7-16%
+  now), GHEDesigner errors registered as NA (9 hydronic, 5 console, 1 packaged), console GSHP NA on
+  mixed PTAC/residential + unitary buildings.
+- Step 11 done. The fork's CRAC loops are OA system + DX coil + humidifier + constant-volume fan with no
+  unitary system, so advanced RTU controls never selected them and minisplits skipped them by the
+  'datacenter' name only; both measures now skip CRAC/CRAH loops and data-center zones (fork helper,
+  which also covers computer/server room names). Regression: minisplits and advanced RTU Success on
+  pulled PSZ-AC 1 (retail) and 195 (warehouse), NA unchanged on 6252/3145. Console GSHP left alone
+  (see PLAN.md step 11).
+- Hydronic GSHP: 1544 Success (28 min, 111 heat pump water heaters), 1585, 2419, 1062 Success with
+  the `:756` and `:848` fixes (details in the entry below).
+- Suggested commit message for everything uncommitted:
+  `Fix hydronic GSHP loop reuse and coil guards, bound ideal air loads names, skip data centers in minisplits and advanced RTU; applicability tally vs R3`
+  body: hydronic GSHP reuses the existing chilled water loop, skips CRAC units and guards the unitary
+  and chilled-water coil conversions (31 offices); ideal air loads names are indexed so EnergyPlus
+  node names stay unique (4 warehouses); DOAS minisplits and advanced RTU controls skip data-center
+  CRAC/CRAH loops; rerun scoring and the applicability analysis (all shifts vs R3 are sample mix).
+
+### 2026-10-04 (rerun landed)
+
+- `sdr_2026r1_measure_fixes_500` finished and uploaded (baseline + 20 upgrades, 500 buildings each).
+  Tables: `rerun_all_upgrades_scan.md` (per-upgrade status) and `rerun_compare.md` (targeted
+  buildings scored against their original failure, applicability on the 325 random buildings).
+- Fixed, failing only on the two parked baseline buildings: VRF (both variants), DOAS minisplits,
+  advanced RTU controls, pump, chiller, LED, PV with battery (PySAM), Package_2, Package_4. The
+  unoccupied-AHU building with CRAC loops (4084) now runs; 8613 still diverges (the marginal case).
+  Wall insulation: the three nil-construction buildings run; 5552 (WSHP loop, parked) still fails.
+  LED applicability on the random buildings is 65%, the R3 value.
+- Applicability on the 325 random buildings, first real numbers for the typical models (R3 in
+  brackets): DOAS minisplits 14% (51), advanced RTU 42% (66), VRF 44% (63), pumps 29% (11), ideal
+  air loads 100% (100), hydronic GSHP 11% (0.7), packaged GSHP 57% (73), console GSHP 19% (25),
+  chiller 16% (0.7), LED 65% (65), PV with battery 100% (100), wall insulation 98% (99.5),
+  Package_2/4 84% (86), Package_3 99% (100), Package_6/10/11 86-87% (98-99). The tally of
+  not-applicable messages (step 10) explains these.
+- New crash exposed by the line-443 fix: hydronic GSHP measure.rb:756
+  `chw_loop.addDemandBranchForComponent` on nil (31 buildings, all large and medium offices with
+  chillers): the measure only assigned `chw_loop` when it created a chilled-water loop, and its
+  unitary-system conversion assumed PSZ-style units. Fixed (uncommitted): reuse the existing
+  'Chilled Water Loop', skip CRAC/data-center units, guard the coil assumptions; regression on
+  pulled 2419 and 1062 and a test on pulled 1544 (rerun id 47) pending.
+- New simulation-side failures (buildings that never simulated before, so not regressions): ideal
+  air loads 4 (warehouses on PVAV/PSZ), packaged GSHP 8 (PSZ/PVAV retail, grocery, strip mall,
+  warehouse, office), Package_3 7 (all DOAS fan coil chiller + boiler; Package_2 without the
+  envelope upgrades has none). Known: hydronic 24 and console 2 condenser-loop runaways, console
+  sizing run 1. Pulled two datapoints of each new cluster from the rerun's tarballs (Slurm job
+  18904771, local copy `C:/tmp/mf2026r1_rerun`, triage in `C:/tmp/kestrel_jobs/triage_rerun.txt`):
+  - ideal air loads: `ZoneHVAC:IdealLoadsAirSystem ... duplicate node names found`. The gem names
+    the object `<zone> Ideal Loads Air System`; the typical warehouse zone names push that past
+    EnergyPlus's 100-character limit, and the node names built from it truncate to the same string.
+    Fixed (uncommitted): the measure renames each object `Ideal Loads <n> <zone name>[0,55]`, index
+    first so uniqueness survives truncation (a first attempt with the index at the end still
+    collided). Test on the pulled warehouse 1652 (rerun id 49): measure Success (30 ideal loads objects, longest name 81 characters) and the annual EnergyPlus run completes with 0 severe errors, where the production run failed before simulation.
+  - packaged GSHP: `Plant temperatures are getting far too cold` on the measure's condenser loop,
+    the same runaway as hydronic and console; now fatal for 8 of 228 applicable (owner item).
+  - Package_3: `Autosizing of heating coil UA failed for Coil:Heating:Water "... FCU HEATING COIL"`
+    on corridor fan-coil coils: the envelope upgrades plus the heat-pump boiler's lower hot water
+    setpoint (140 F, autosized coils) leave almost no design heating load, and EnergyPlus cannot
+    size the UA. Owner item for the heat-pump boiler measure (a minimum coil capacity or keeping
+    the setpoint for fan-coil systems); Package_2 without the envelope upgrades has none.
+  - 8613 diverges exactly as before (marginal case); 48/1585's baseline sizing run logs non-fatal
+    CRAH controller severes.
+- Hydronic `:756` fix: regression on pulled 2419 (Success, 22 heat pump water heaters) and 1062
+  (Success); test on the pulled offices 1544 and 1585 (rerun ids 47, 48): after the chw_loop fix both stopped at measure.rb:848, where a hot-water coil is added behind every CoilCoolingWater in the model, including the coils inside the fork's data-center CRAH units and fan-coil units; that loop now skips coils inside zone equipment or coil systems, coils on CRAC/CRAH or data-center loops, and coils without a node outlet. With both fixes: 1544 Success (28 min, 111 heat pump water heaters), 1585 Success (3 min); regressions on 2419 and 1062 unchanged.
+
+### 2026-10-03, night (rerun submitted)
+
+- Owner committed all fixes as `a5822969` and pushed; checked the branch out at
+  `/kfs2/projects/eusscom/repos/comstock_chris_2/ComStock`.
+- Rerun yml, 500-building precomputed sample (175 targeted + 325 random, renumbered) and id map
+  placed next to the original yml in `ymls/sdr_fy26/0_production_runs_2026R1/all_measure_10k/`.
+  A line-ending cleanup run through the PowerShell-to-ssh path had stripped a trailing "r" from
+  lines (`vrf_hr` became `vrf_h`, caught by buildstockbatch validation); the files were re-uploaded
+  byte for byte and verified by checksum. Submitted by the owner; sampling was running at 17:00.
+- Wrote `rerun_compare.py` for the post-run scoring.
 
 ### 2026-10-03, evening (comments trimmed, local-only testing)
 

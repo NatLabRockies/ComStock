@@ -129,6 +129,13 @@ class UpgradeHvacEnableIdealAirLoads < OpenStudio::Measure::ModelMeasure
                                                         heat_recovery_sensible_eff: 0.7,
                                                         heat_recovery_latent_eff: 0.65,
                                                         add_output_meters: false)
+    # EnergyPlus truncates names and the node names built from them to 100 characters; with the typical
+    # warehouse zone names the gem's '<zone> Ideal Loads Air System' collapsed to duplicate node names.
+    # A short name with a leading index stays unique after truncation.
+    ideal_loads_objects.each_with_index do |ideal_loads, i|
+      zone_name = ideal_loads.respond_to?(:thermalZone) && ideal_loads.thermalZone.is_initialized ? ideal_loads.thermalZone.get.name.to_s : ''
+      ideal_loads.setName("Ideal Loads #{i + 1} #{zone_name[0, 55]}".strip)
+    end
 
 
     # remove any EMS objects tied to ground HX; these will fail model since HVAC has been removed

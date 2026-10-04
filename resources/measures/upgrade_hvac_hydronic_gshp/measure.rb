@@ -707,6 +707,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       # pump_clg_intermed_loop.setRatedPumpHead(44834.7) # 15 ftf for primary pump for a primary-secondary system based on Appendix G
       pump_chw_loop.addToNode(chw_loop.supplyInletNode)
 
+    else
+      # the coil conversion below needs the loop; the typical models have one and unitary systems
+      chw_loop = chw_loops.first
     end
 
     # go thru air loops and replace DX coils with chw coils
@@ -728,18 +731,19 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     if no_unit_sys == false
       # iterate thru unitary sys
       model.getAirLoopHVACUnitarySystems.each do |sys|
-        # get sizes of existing equipmetn
-        # create CHW and HHW coils and add to loop
-        coil = sys.coolingCoil.get
-        coil = coil.to_CoilCoolingDXSingleSpeed.get
-        # runner.registerInfo("unitary coil class: #{coil.class}")
-        # runner.registerInfo("unitary coil: #{coil}")
-        # get supplemental htg coil if there is one
-        sup_htg_coil = sys.supplementalHeatingCoil.get
-        # runner.registerInfo("sup heating coil : #{sup_htg_coil}")
-        sup_htg_coil = sup_htg_coil.to_CoilHeatingElectric.get
-        sys.resetSupplementalHeatingCoil
-        sup_htg_coil.remove
+        # data center CRAC/CRAH units stay as they are (same test as the other HVAC measures)
+        if sys.airLoopHVAC.is_initialized
+          crac_loop = sys.airLoopHVAC.get
+          next if crac_loop.name.to_s.match?(/(CRAC|CRAH)/i) || crac_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        end
+        # only single-speed DX units are converted; the typical models also carry other unitary types
+        next unless sys.coolingCoil.is_initialized && sys.coolingCoil.get.to_CoilCoolingDXSingleSpeed.is_initialized
+        coil = sys.coolingCoil.get.to_CoilCoolingDXSingleSpeed.get
+        if sys.supplementalHeatingCoil.is_initialized && sys.supplementalHeatingCoil.get.to_CoilHeatingElectric.is_initialized
+          sup_htg_coil = sys.supplementalHeatingCoil.get.to_CoilHeatingElectric.get
+          sys.resetSupplementalHeatingCoil
+          sup_htg_coil.remove
+        end
         # deal with clg coil
         if coil.to_CoilCoolingDXSingleSpeed.is_initialized # check for autosized capacity, too--should this be autosized?
           unitary_cap += coil.ratedTotalCoolingCapacity.get.to_f if coil.ratedTotalCoolingCapacity.is_initialized
@@ -835,12 +839,16 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       htg_loop_sizing.setLoopDesignTemperatureDifference(11.1) # AA updated this 9/14
       # create HHW coils in main air loops
       model.getCoilCoolingWaters.each do |coil|
-        # get sizes of existing equipmetn
-        # create CHW and HHW coils and add to loop
+        # only coils sitting directly on an air loop get a hot water coil behind them; coils inside fan coil
+        # units, coil systems or data center CRAH units, and coils without a node outlet, are left alone
+        next if coil.containingZoneHVACComponent.is_initialized || coil.containingHVACComponent.is_initialized
+        next unless coil.airLoopHVAC.is_initialized
+        coil_loop = coil.airLoopHVAC.get
+        next if coil_loop.name.to_s.match?(/(CRAC|CRAH)/i) || coil_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        next unless coil.airOutletModelObject.is_initialized && coil.airOutletModelObject.get.to_Node.is_initialized
         # autosize water and air flow rates
         coil.autosizeDesignWaterFlowRate
         coil.autosizeDesignAirFlowRate
-        # runner.registerInfo("coil  #{coil}")
         outlet_node = coil.airOutletModelObject.get.to_Node.get
         # runner.registerInfo("coil outlet node #{outlet_node}")
         hhw_coil = OpenStudio::Model::CoilHeatingWater.new(model)

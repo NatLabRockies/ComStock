@@ -1405,8 +1405,10 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     # G function
     ghx.removeAllGFunctions # Rempve the default gfunction inputs
     gfunc_data = CSV.read("#{ghedesigner_run_dir}/Gfunction.csv", headers: true)
+    # GHEDesigner names the g-function column after the borehole length (H:118.85); the fixed 'H:79.59' key read nil, so every g value was 0
+    g_col = gfunc_data.headers.find { |h| h.to_s.start_with?('H:') && !h.to_s.end_with?('_bhw') } || gfunc_data.headers[1]
     gfunc_data.each do |r|
-      ghx.addGFunction(r['ln(t/ts)'].to_f, r['H:79.59'].to_f) # addGFunction(double gFunctionLN, double gFunctionGValue)
+      ghx.addGFunction(r['ln(t/ts)'].to_f, r[g_col].to_f) # addGFunction(double gFunctionLN, double gFunctionGValue)
     end
 
     # Replace temperature source with ground heat exchanger
