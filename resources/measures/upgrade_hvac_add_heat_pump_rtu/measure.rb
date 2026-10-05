@@ -40,7 +40,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     args = OpenStudio::Measure::OSArgumentVector.new
 
     # make list of backup heat options
-    li_backup_heat_options = %w[match_original_primary_heating_fuel electric_resistance_backup]
+    li_backup_heat_options = %w[match_original_primary_heating_fuel electric_resistance_backup dual_fuel_gas_furnace_backup]
     v_backup_heat_options = OpenStudio::StringVector.new
     li_backup_heat_options.each do |option|
       v_backup_heat_options << option
@@ -49,7 +49,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     backup_ht_fuel_scheme = OpenStudio::Measure::OSArgument.makeChoiceArgument('backup_ht_fuel_scheme',
                                                                                v_backup_heat_options, true)
     backup_ht_fuel_scheme.setDisplayName('Backup Heat Type')
-    backup_ht_fuel_scheme.setDescription('Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup.')
+    backup_ht_fuel_scheme.setDescription('Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.')
     backup_ht_fuel_scheme.setDefaultValue('electric_resistance_backup')
     args << backup_ht_fuel_scheme
 
@@ -1157,9 +1157,12 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     # ---------------------------------------------------------
     # determine which compressor lockout temperature applies
     # ---------------------------------------------------------
-    # backup heat is only gas when the original primary heating fuel is gas and the user asked to match it;
+    # backup heat is electric when requested, or when matching an original primary heating fuel that is electric;
+    # dual fuel always gets gas backup regardless of the original fuel.
     # this mirrors the backup heating coil selection made for each air loop below.
-    if (prim_ht_fuel_type == 'electric') || (backup_ht_fuel_scheme == 'electric_resistance_backup')
+    backup_ht_is_electric = (backup_ht_fuel_scheme == 'electric_resistance_backup') ||
+                            ((backup_ht_fuel_scheme == 'match_original_primary_heating_fuel') && (prim_ht_fuel_type == 'electric'))
+    if backup_ht_is_electric
       hp_min_comp_lockout_temp_f = hp_min_comp_lockout_temp_elec_backup_f
       runner.registerInfo("Backup heat will be electric resistance; using electric backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
     else
@@ -2467,24 +2470,31 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # add new supplemental heating coil
       new_backup_heating_coil = nil
       # define backup heat source TODO: set capacity to equal full heating capacity
-      if (prim_ht_fuel_type == 'electric') || (backup_ht_fuel_scheme == 'electric_resistance_backup')
+      if backup_ht_is_electric
         new_backup_heating_coil = OpenStudio::Model::CoilHeatingElectric.new(model)
         new_backup_heating_coil.setEfficiency(1.0)
         new_backup_heating_coil.setName("#{air_loop_hvac.name} electric resistance backup coil")
       else
         new_backup_heating_coil = OpenStudio::Model::CoilHeatingGas.new(model)
         new_backup_heating_coil.setGasBurnerEfficiency(0.80)
-        # Match the building's original combustion fuel rather than defaulting to
-        # natural gas, so a fuel oil or propane building keeps burning its own
-        # fuel as backup instead of being silently switched to gas.
-        if orig_htg_coil_fuel_type.nil? || orig_htg_coil_fuel_type.to_s.empty?
-          runner.registerWarning("Could not determine the original combustion fuel for #{air_loop_hvac.name}; backup coil defaults to #{new_backup_heating_coil.fuelType}.")
+        if backup_ht_fuel_scheme == 'dual_fuel_gas_furnace_backup'
+          # dual fuel RTU: natural gas backup regardless of the original heating fuel
+          new_backup_heating_coil.setFuelType('NaturalGas')
+          backup_fuel_note = 'for dual fuel RTU'
         else
-          new_backup_heating_coil.setFuelType(orig_htg_coil_fuel_type)
+          # Match the building's original combustion fuel rather than defaulting to
+          # natural gas, so a fuel oil or propane building keeps burning its own
+          # fuel as backup instead of being silently switched to gas.
+          if orig_htg_coil_fuel_type.nil? || orig_htg_coil_fuel_type.to_s.empty?
+            runner.registerWarning("Could not determine the original combustion fuel for #{air_loop_hvac.name}; backup coil defaults to #{new_backup_heating_coil.fuelType}.")
+          else
+            new_backup_heating_coil.setFuelType(orig_htg_coil_fuel_type)
+          end
+          backup_fuel_note = 'matching the original heating fuel'
         end
         backup_fuel_label = new_backup_heating_coil.fuelType.to_s
         new_backup_heating_coil.setName("#{air_loop_hvac.name} #{backup_fuel_label} backup coil")
-        runner.registerInfo("Backup heat for #{air_loop_hvac.name} set to #{backup_fuel_label}, matching the original heating fuel.")
+        runner.registerInfo("Backup heat for #{air_loop_hvac.name} set to #{backup_fuel_label}, #{backup_fuel_note}.")
       end
       # set availability schedule
       new_backup_heating_coil.setAvailabilitySchedule(always_on)

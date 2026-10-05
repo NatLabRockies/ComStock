@@ -2810,4 +2810,60 @@ TEST:test_fan_data_records_are_present_and_sane
       end
     end
   end
+
+  # Verifies dual fuel backup is always a natural gas coil, regardless of the original heating fuel,
+  # and that the gas backup compressor lockout temperature is used.
+  def test_dual_fuel_backup_is_natural_gas
+    puts "\n######\nTEST:test_dual_fuel_backup_is_natural_gas\n######\n"
+    gas_backup_lockout_temp_f = 30.0
+    cases = [
+      { name: 'FuelOilNo2', osm: '380_small_office_psz_gas_coil_7A.osm', relabel_fuel: 'FuelOilNo2' },
+      { name: 'Propane', osm: '380_small_office_psz_gas_coil_7A.osm', relabel_fuel: 'Propane' },
+      { name: 'electric', osm: '310_PSZ-AC with electric coil.osm', relabel_fuel: nil }
+    ]
+    cases.each do |c|
+      test_name = "test_dual_fuel_backup_#{c[:name]}"
+      osm_path = model_input_path(c[:osm])
+      epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
+
+      model = load_model(osm_path)
+      model.getCoilHeatingGass.each { |coil| coil.setFuelType(c[:relabel_fuel]) } unless c[:relabel_fuel].nil?
+
+      measure = AddHeatPumpRtu.new
+      arguments = measure.arguments(model)
+      argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+      args = { 'hprtu_scenario' => 'two_speed_standard_eff',
+               'backup_ht_fuel_scheme' => 'dual_fuel_gas_furnace_backup',
+               'hp_min_comp_lockout_temp_elec_backup_f' => 0.0,
+               'hp_min_comp_lockout_temp_gas_backup_f' => gas_backup_lockout_temp_f }
+      arguments.each_with_index do |arg, idx|
+        if args.key?(arg.name)
+          cloned = arguments[idx].clone
+          cloned.setValue(args[arg.name])
+          argument_map[arg.name] = cloned
+        else
+          argument_map[arg.name] = arg.clone
+        end
+      end
+
+      set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                            run_model: false, apply: true, model: model)
+      applied = load_model(model_output_path(test_name))
+      unitary_systems = applied.getAirLoopHVACUnitarySystems
+      refute_empty(unitary_systems, "no unitary systems after applying dual fuel to #{c[:name]} model")
+      expected_lockout_temp_c = OpenStudio.convert(gas_backup_lockout_temp_f, 'F', 'C').get
+      unitary_systems.each do |system|
+        sup_htg_coil = system.supplementalHeatingCoil.get
+        assert(sup_htg_coil.to_CoilHeatingGas.is_initialized,
+               "expected a gas backup coil for #{system.name} (original fuel #{c[:name]})")
+        assert_equal('NaturalGas', sup_htg_coil.to_CoilHeatingGas.get.fuelType,
+                     "dual fuel backup coil for #{system.name} should burn natural gas (original fuel #{c[:name]})")
+
+        htg_coil = system.heatingCoil.get
+        htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized ? htg_coil.to_CoilHeatingDXMultiSpeed.get : htg_coil.to_CoilHeatingDXSingleSpeed.get
+        assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
+                        "dual fuel compressor lockout for #{system.name} should use the gas backup temperature")
+      end
+    end
+  end
 end
