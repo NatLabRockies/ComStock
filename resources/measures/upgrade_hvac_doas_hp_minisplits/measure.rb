@@ -560,22 +560,9 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
         # get zone design people
         num_people = thermal_zone.numberOfPeople * thermal_zone.multiplier
 
-        dsn_oa_m3_per_s= 0
-        if space.designSpecificationOutdoorAir.is_initialized
-          dsn_spec_oa = space.designSpecificationOutdoorAir.get
-
-          # add floor area component
-          oa_area = dsn_spec_oa.outdoorAirFlowperFloorArea
-          dsn_oa_m3_per_s = oa_area * fa
-
-          # add per person component
-          oa_person = dsn_spec_oa.outdoorAirFlowperPerson
-          dsn_oa_m3_per_s += oa_person * num_people
-
-          # add air change component
-          oa_ach = dsn_spec_oa.outdoorAirFlowAirChangesperHour
-          dsn_oa_m3_per_s += (oa_ach * vol) / 60
-        end
+        # design OA via the standards helper: it honours the Maximum method (Title 24 zones) and divides air changes
+        # per hour by 3600; the old hand sum always added per-area and per-person and divided air changes by 60
+        dsn_oa_m3_per_s = OpenstudioStandards::ThermalZone.thermal_zone_get_outdoor_airflow_rate(thermal_zone) * thermal_zone.multiplier
         # delete air loop if less than minimum flow rate
         next unless dsn_oa_m3_per_s < 1.0000E-003
         runner.registerWarning("#{air_loop_hvac.name} has an outdoor air flow rate of #{dsn_oa_m3_per_s.round(3)} m3/s which is less than the required 0.001 m3/s. This DOAS will be deleted, but these zone equipment will remain.")

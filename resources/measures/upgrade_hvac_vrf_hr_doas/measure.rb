@@ -1054,6 +1054,59 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
   end
 
   # define what happens when the measure is run
+  # Real energy recovery units stop the wheel and open bypass dampers when recovery would not help (90.1 section 6.5.6.1),
+  # which removes the wheel's added fan pressure; EnergyPlus charges Nominal Electric Power whenever the HX is available.
+  # An EMS program keeps the HX available only when it would warm or cool the outdoor air toward its outlet setpoint.
+  # @param model [OpenStudio::Model::Model]
+  # @param hx [OpenStudio::Model::HeatExchangerAirToAirSensibleAndLatent] HX in the air loop's outdoor air system
+  # @param oa_sys [OpenStudio::Model::AirLoopHVACOutdoorAirSystem] the outdoor air system holding the HX
+  # @param deadband_c [Double] temperature margin before the wheel runs, deg C
+  # @return [Boolean] true if the bypass control was added
+  def add_erv_bypass_control(model, hx, oa_sys, deadband_c = 0.5)
+    oa_node = oa_sys.outboardOANode
+    ra_node = oa_sys.returnAirModelObject
+    hx_out = hx.primaryAirOutletModelObject
+    return false unless oa_node.is_initialized && ra_node.is_initialized && hx_out.is_initialized
+
+    avail = OpenStudio::Model::ScheduleConstant.new(model)
+    avail.setName("#{hx.name} Bypass Control")
+    avail.setValue(1.0)
+    hx.setAvailabilitySchedule(avail)
+
+    tag = "erv_bypass_#{model.getEnergyManagementSystemPrograms.size + 1}"
+    sensors = { 'toa' => ['System Node Temperature', oa_node.get.name.to_s],
+                'tra' => ['System Node Temperature', ra_node.get.name.to_s],
+                'tsp' => ['System Node Setpoint Temperature', hx_out.get.name.to_s] }
+    sensors.each do |var, (output, key)|
+      sensor = OpenStudio::Model::EnergyManagementSystemSensor.new(model, output)
+      sensor.setName("#{tag}_#{var}")
+      sensor.setKeyName(key)
+    end
+    actuator = OpenStudio::Model::EnergyManagementSystemActuator.new(avail, 'Schedule:Constant', 'Schedule Value')
+    actuator.setName("#{tag}_avail")
+
+    # heating: outdoor air below both the return air and the HX outlet setpoint; cooling: above both
+    program = OpenStudio::Model::EnergyManagementSystemProgram.new(model)
+    program.setName("#{tag}_program")
+    program.setBody(<<~ERL)
+      IF (#{tag}_toa < (#{tag}_tra - #{deadband_c})) && (#{tag}_toa < (#{tag}_tsp - #{deadband_c}))
+        SET #{tag}_avail = 1
+      ELSEIF (#{tag}_toa > (#{tag}_tra + #{deadband_c})) && (#{tag}_toa > (#{tag}_tsp + #{deadband_c}))
+        SET #{tag}_avail = 1
+      ELSE
+        SET #{tag}_avail = 0
+      ENDIF
+    ERL
+    manager = model.getEnergyManagementSystemProgramCallingManagers.find { |m| m.name.to_s == 'ERV Bypass Control' }
+    if manager.nil?
+      manager = OpenStudio::Model::EnergyManagementSystemProgramCallingManager.new(model)
+      manager.setName('ERV Bypass Control')
+      manager.setCallingPoint('AfterPredictorAfterHVACManagers')
+    end
+    manager.addProgram(program)
+    true
+  end
+
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
 
@@ -2275,33 +2328,15 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
       # get design outdoor air flow rate
       # this is used to estimate wheel "fan" power
       # loop through thermal zones
-      doas_oa_flow_m3_per_s = 0
-      air_loop_hvac.thermalZones.each do |thermal_zone|
-        space = thermal_zone.spaces[0]
-        # get zone area
-        fa = thermal_zone.floorArea * thermal_zone.multiplier
-        # get zone volume
-        vol = thermal_zone.airVolume * thermal_zone.multiplier
-        # get zone design people
-        num_people = thermal_zone.numberOfPeople * thermal_zone.multiplier
-        next unless space.designSpecificationOutdoorAir.is_initialized
-
-        dsn_spec_oa = space.designSpecificationOutdoorAir.get
-        # add floor area component
-        oa_area = dsn_spec_oa.outdoorAirFlowperFloorArea
-        doas_oa_flow_m3_per_s += oa_area * fa
-        # add per person component
-        oa_person = dsn_spec_oa.outdoorAirFlowperPerson
-        doas_oa_flow_m3_per_s += oa_person * num_people
-        # add air change component
-        oa_ach = dsn_spec_oa.outdoorAirFlowAirChangesperHour
-        doas_oa_flow_m3_per_s += (oa_ach * vol) / 60
-      end
+      # design OA via the standards helper: it honours the Maximum method (Title 24 zones) and divides air changes
+      # per hour by 3600; the old hand sum always added per-area and per-person and divided air changes by 60
+      doas_oa_flow_m3_per_s = air_loop_hvac.thermalZones.sum { |z| OpenstudioStandards::ThermalZone.thermal_zone_get_outdoor_airflow_rate(z) * z.multiplier }
 
       # fan efficiency ranges from 40-60% (Energy Modeling Guide for Very High Efficiency DOAS Final Report)
       default_fan_efficiency = 0.55
       power = (doas_oa_flow_m3_per_s * 174.188 / default_fan_efficiency) + (doas_oa_flow_m3_per_s * 0.9 * 124.42 / default_fan_efficiency)
       erv.setNominalElectricPower(power)
+      add_erv_bypass_control(model, erv, air_loop_hvac.airLoopHVACOutdoorAirSystem.get) if air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
       # set fan and cooling efficiencies with sizing run data
       air_loop_hvac.supplyComponents.each do |component|
         if component.to_CoilCoolingDXSingleSpeed.is_initialized
