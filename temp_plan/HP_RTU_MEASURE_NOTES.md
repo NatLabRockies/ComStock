@@ -10,13 +10,48 @@ measure and to serve as the starting point for further work.
 Running log of changes, thoughts and brainstorming for this measure. Newest entries go at the
 bottom of each section. Kept here rather than in the measure folder to avoid growing it.
 
+## 1. Scope: measure scenarios
+
+All four scenarios use the same measure (`resources/measures/upgrade_hvac_add_heat_pump_rtu`).
+Their configurations differ, but changes are made consistently so all four go through the same
+measure workflow; scenario differences should come from arguments and performance data only.
+Update this table as items are confirmed.
+
+Items marked **TBC** are not confirmed yet.
+
+### 1.1 Configuration
+
+| Measure scenario | Performance category | Compressor lockout temp | Backup heating source | Oversizing factor | Heating sizing temp | Gas heating control strategy |
+|---|---|---|---|---|---|---|
+| Dual Fuel RTU with standard performance | Standard performance (`two_speed_standard_eff`) | 30 F | Gas | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
+| Cold Climate Heat Pump Challenge: challenge specification dual fuel RTU | Challenge specification performance (`cchpc_2027_spec`) | -10 F | Gas | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
+| Cold Climate Heat Pump Challenge: typical dual fuel RTU **or** HP RTU | **TBC:** typical market performance (new performance curve) | -10 F | **TBC** | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
+| IMPACT: Dual Fuel | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
+
+### 1.2 Status
+
+| Measure scenario | Measure doc | 10K run | Full run |
+|---|---|---|---|
+| Dual Fuel RTU with standard performance | Created | Done | Not started |
+| CCHPC: challenge specification dual fuel RTU | Not started | Not started | Not started |
+| CCHPC: typical dual fuel RTU or HP RTU | Created | Not started | Not started |
+| IMPACT: Dual Fuel | Not started | Not started | Not started |
+
+### 1.3 To confirm
+
+- [ ] Oversizing: confirm "no oversizing" for the standard and both CCHPC scenarios.
+- [ ] CCHPC typical: performance curve for typical market equipment (new curve needed).
+- [ ] CCHPC typical: backup heating source (and whether this is dual fuel or HP RTU).
+- [ ] IMPACT: performance category, compressor lockout temp, oversizing factor, heating sizing temp.
+- [ ] Gas heating control: how the measure will support both simultaneous and sequential (IMPACT).
+
 ---
 
-## 1. Baseline: what `ccaradon/dual_fuel_rtus` changes vs `main`
+## 2. Baseline: what `ccaradon/dual_fuel_rtus` changes vs `main`
 
 `measure.rb` only: +192 / -28 lines. Not verified by running the measure or tests.
 
-### 1.1 Two compressor lockout temperatures (replaces one)
+### 2.1 Two compressor lockout temperatures (replaces one)
 - Removed argument `hp_min_comp_lockout_temp_f` (default 0 F).
 - Added `hp_min_comp_lockout_temp_elec_backup_f` (default 0 F).
 - Added `hp_min_comp_lockout_temp_gas_backup_f` (default 25 F).
@@ -26,14 +61,14 @@ bottom of each section. Kept here rather than in the measure folder to avoid gro
 - **Breaking:** anything passing `hp_min_comp_lockout_temp_f` (workflows, buildstock inputs,
   tests) must be updated.
 
-### 1.2 Gas backup coil keeps the original fuel
+### 2.2 Gas backup coil keeps the original fuel
 - Before old equipment is deleted, read `fuelType` from the existing `CoilHeatingGas`
   (directly, or inside an `AirLoopHVACUnitarySystem`) into `orig_htg_coil_fuel_type`.
 - New backup `CoilHeatingGas` gets that fuel type, so fuel oil / propane are no longer silently
   switched to natural gas. Warns and uses the OpenStudio default if the fuel can't be found.
 - Coil name changes: `"<loop> gas backup coil"` -> `"<loop> <fuel> backup coil"`.
 
-### 1.3 Supply fan data from the scenario JSON
+### 2.3 Supply fan data from the scenario JSON
 - New helper `assign_fan_data(fan_data_json, std)` reads a `fan_data` record
   (`fan_type`, `fan_power_coefficients`, `impeller_efficiency`) from the scenario performance json.
 - Fallback if missing/incomplete: warning, `two_speed` curve
@@ -44,14 +79,14 @@ bottom of each section. Kept here rather than in the measure folder to avoid gro
 - Fan renamed `"<loop> VFD Fan"` -> `"<loop> Supply Fan"`; pressure rise now set at creation.
 - **Open:** confirm the `fan_data` records exist in the scenario JSONs on this branch.
 
-### 1.4 Fan motor efficiency sized, not assumed
+### 2.4 Fan motor efficiency sized, not assumed
 - bhp = `fan_static_pressure * design_airflow / (impeller_eff * 745.7)`.
 - Nominal motor hp = bhp * 1.1 with the same rounding nudge as openstudio-standards baseline fans.
 - Motor eff from `std.fan_standard_minimum_motor_efficiency_and_size`;
   total eff = impeller eff * motor eff.
 - Replaces the `fan_mot_eff` literal and the `fan_change_motor_efficiency` call.
 
-### 1.5 Fan minimum flow fraction
+### 2.5 Fan minimum flow fraction
 - Before: max(0.40, min_airflow_ratio).
 - Now: min(1.0, max(lowest stage flow / design airflow, `specified_min_flow_fraction`,
   `current_min_oa_flow_ratio`)).
@@ -59,14 +94,14 @@ bottom of each section. Kept here rather than in the measure folder to avoid gro
   stage fractions, so the cfm/ton guard cannot lower the fan's claimed turndown.
 - New `fan summary` info line under `debug_verbose`.
 
-### 1.6 Expected impact (hypothesis, not measured)
+### 2.6 Expected impact (hypothesis, not measured)
 - Lockout temp now depends on backup fuel (gas-backup buildings lock out at 25 F by default).
 - Fuel oil / propane buildings keep their fuel as backup.
 - Two-speed scenarios likely see higher fan energy than before (no variable-speed credit).
 
 ---
 
-## 2. Open questions
+## 3. Open questions
 
 - [ ] Do all four scenario JSONs (`two_speed_standard_eff`, `two_speed_lab_data`,
       `variable_speed_high_eff`, `cchpc_2027_spec`) carry `fan_data`?
@@ -74,13 +109,14 @@ bottom of each section. Kept here rather than in the measure folder to avoid gro
 - [ ] Anything matching on the old coil/fan names (`gas backup coil`, `VFD Fan`)?
 - [ ] Is 25 F the right default for the gas-backup lockout?
 
-## 3. Change log (this branch)
+## 4. Change log (this branch)
 
-- 2026-10-02: branch created; section 1 baseline written.
+- 2026-10-02: branch created; section 2 baseline written (originally numbered section 1).
 - 2026-10-02: created `jkim/dual_fuel_rtus_notes` off `origin/ccaradon/dual_fuel_rtus` to capture the
   latest changes to this measure and to use as the starting point for further work. Upstream tracking
   was removed so pushes don't go to the `ccaradon/` branch.
+- 2026-10-05: added section 1 (scope table for the four measure scenarios); renumbered later sections.
 
-## 4. Thoughts / brainstorming
+## 5. Thoughts / brainstorming
 
 _(empty)_
