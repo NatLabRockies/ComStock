@@ -79,6 +79,34 @@ Instead, `comstock_sensitivity_reports` calculates it from standard output varia
   where the EMS variable equals the DX load while gas stage 1 is on.
 - **Missing data:** if either series is missing, the system is skipped with a warning (not an error).
 
+**Models with many DX + gas coil pairs:** each pair is calculated on its own, then the results are added.
+
+```text
+total = 0
+for each unitary system with a DX heating coil + gas supplemental coil:
+  dx  = that system's DX coil heating energy, one value per zone timestep (J)
+  gas = that system's gas coil heating energy, one value per zone timestep (J)
+  for each timestep i:
+    if gas[i] > 0: total += dx[i]
+```
+
+- **Pairs stay separate.** A DX coil's energy counts only when its own system's gas coil is heating.
+  If RTU A runs DX with gas while RTU B runs DX alone, only A's DX energy is added. Another
+  system's gas coil never triggers a count.
+- **Timesteps line up within a pair.** Both series come from the same simulation at the same
+  reporting frequency, so `dx[i]` and `gas[i]` cover the same period. The code also checks that
+  the two series have the same length.
+- **Adding across pairs is a plain sum.** Each value is already energy in J, so no capacity or
+  airflow weighting is needed. A building with 10 RTUs gets the sum of 10 independent per-RTU totals.
+- **A pair with missing data is skipped, and the rest still count.** The registered total then
+  covers only the pairs that could be read, so a warning means the total is partial.
+- **Cost grows with the number of pairs.** Each pair adds two timestep output variables to the SQL
+  file. With 4 timesteps per hour, that's 35,040 values per variable. That should be fine even for
+  buildings with dozens of RTUs, but it's the main cost of this approach.
+
+The result is one building-level number: the DX heat delivered while that same unit's gas coil
+was also on, summed over all dual fuel units.
+
 **Caveats:**
 - **Resolution:** we use zone timestep rather than hourly. With hourly averages, any hour with a
   few minutes of gas would count all of that hour's DX heat. A zone timestep where the gas coil
