@@ -457,6 +457,9 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     condenser_loop_sizing = condenser_loop.sizingPlant
     condenser_loop_sizing.setLoopType('Condenser')
     condenser_loop_sizing.setDesignLoopExitTemperature(cond_loop_setpoint_c)
+    # the heat pumps pull this loop below 0 C in cold climates; use the ground loop's 20% propylene glycol
+    condenser_loop.setFluidType('PropyleneGlycol')
+    condenser_loop.setGlycolConcentration(20)
 
     # Create a scheduled setpoint manager
     # TODO determine if a schedule that follows the monthly ground temperature
@@ -505,6 +508,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     fluid_fluid_heat_exchanger.setHeatExchangeModelType('Ideal')
     fluid_fluid_heat_exchanger.setControlType('UncontrolledOn')
     fluid_fluid_heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
+    # OpenStudio's 0 C default is the water freeze limit; it switches the HX off and the condenser loop runs away
+    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-6.0) # C, above 20% propylene glycol's -7 C freeze point
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 
@@ -1394,6 +1399,9 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     ghx.setGroundThermalConductivity(soil_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setGroundThermalHeatCapacity(soil_volumetric_heat_capacity_j_per_m3_k) # J/m3-K
     ghx.setGroundTemperature(soil_undisturbed_ground_temp_c) # C
+    # setGroundTemperature only fills a legacy field; EnergyPlus reads the undisturbed ground temperature model
+    kusuda = ghx.undisturbedGroundTemperatureModel.to_SiteGroundTemperatureUndisturbedKusudaAchenbach
+    kusuda.get.setAverageSoilSurfaceTemperature(soil_undisturbed_ground_temp_c) if kusuda.is_initialized
     ghx.setGroutThermalConductivity(grout_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeThermalConductivity(pipe_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeOutDiameter(pipe_outer_diameter_m) # m
@@ -1414,6 +1422,9 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     # Replace temperature source with ground heat exchanger
     ground_loop.addSupplyBranchForComponent(ghx)
     ground_loop.removeSupplyBranchWithComponent(ground_temp_source)
+    # adding the vertical ground heat exchanger resets the loop fluid to Water; restore the 20% propylene glycol
+    ground_loop.setFluidType('PropyleneGlycol')
+    ground_loop.setGlycolConcentration(20)
     runner.registerInfo("Replaced temporary ground temperature source with vertical ground heat exchanger #{ghx}.")
 
     # report final condition
