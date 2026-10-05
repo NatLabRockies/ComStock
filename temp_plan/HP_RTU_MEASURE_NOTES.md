@@ -45,6 +45,9 @@ Items marked **TBC** are not confirmed yet.
 - [ ] IMPACT: performance category, compressor lockout temp, oversizing factor, heating sizing temp.
 - [ ] Gas heating control: how the measure will support both simultaneous and sequential (IMPACT).
       See 1.4.
+- [ ] Performance category for the `std_orig_backup_lockout_*` options: they use
+      `two_speed_standard_eff` for now. #446 also added a `carrier_48qe_dualfuel` category that we
+      haven't confirmed we want. See 1.5.
 
 ### 1.4 Reporting needed for scenario 4 (IMPACT: Dual Fuel)
 
@@ -121,6 +124,34 @@ was also on, summed over all dual fuel units.
 
 - [ ] Run a dual fuel model end to end and sanity-check the value against the DX and gas coil totals.
 - [ ] Decide how the measure switches between simultaneous and sequential control (a new argument?).
+
+### 1.5 Options lookup rows ported from #446
+
+Added to both `resources/options_lookup.tsv` and `national/housing_characteristics/options_lookup.tsv`,
+after `orig_fuel_backup_std_perf_gas_lockout_0F`:
+
+| Option | `backup_ht_fuel_scheme` | elec backup lockout | gas backup lockout | `hprtu_scenario` |
+|---|---|---|---|---|
+| `std_orig_backup_lockout_30F` | `match_original_primary_heating_fuel` | 0 F | 30 F | `two_speed_standard_eff` |
+| `std_orig_backup_lockout_17F` | `match_original_primary_heating_fuel` | 0 F | 17 F | `two_speed_standard_eff` |
+| `std_orig_backup_lockout_0F` | `match_original_primary_heating_fuel` | 0 F | 0 F | `two_speed_standard_eff` |
+| `std_orig_backup_lockout_neg10F` | `match_original_primary_heating_fuel` | 0 F | -10 F | `two_speed_standard_eff` |
+
+Other arguments are the same as #446 (no oversizing, `htg_sizing_option=0F`, no hr/dcv/econ/roof/window).
+
+**What changed from #446, and why:**
+- #446's single `hp_min_comp_lockout_temp_f` became the two arguments from 2.1. The #446 value
+  goes to `hp_min_comp_lockout_temp_gas_backup_f`, and `hp_min_comp_lockout_temp_elec_backup_f`
+  is set to 0 F. This matches the existing `orig_fuel_backup_std_perf_gas_lockout_*` rows, so
+  only gas-backup buildings vary by option. (In #446, one lockout applied to all buildings.)
+- #446's `dual_fuel_hybrid_heating_{30,17,0,neg10}F` rows were **not** ported. They need
+  `backup_ht_fuel_scheme=dual_fuel_gas_furnace_backup`, which came with the #446 EMS gas coil and
+  doesn't exist in our measure. They also use `hprtu_scenario=carrier_48qe_dualfuel`. Changed to
+  our measure's arguments, they would be identical to `std_orig_backup_lockout_*`.
+
+**Overlap:** `std_orig_backup_lockout_30F` and `_0F` give the same arguments as the existing
+`orig_fuel_backup_std_perf_gas_lockout_30F` and `_0F`. Kept for now so the #446 lockout sweep
+(30/17/0/-10 F) is in one set; consolidate later if not needed.
 
 ---
 
@@ -199,6 +230,8 @@ was also on, summed over all dual fuel units.
 - 2026-10-05: replaced the EMS-based calculation with a report-side one that uses zone timestep
   `Heating Coil Heating Energy` for DX + gas supplemental coil pairs, so the #446 EMS change is not
   needed. Rewrote 1.4 accordingly.
+- 2026-10-05: ported `std_orig_backup_lockout_{30,17,0,neg10}F` options from #446 with the split
+  lockout arguments and `two_speed_standard_eff`; skipped `dual_fuel_hybrid_heating_*`. Added 1.5.
 
 ## 5. Thoughts / brainstorming
 
