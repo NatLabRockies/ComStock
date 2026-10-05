@@ -56,29 +56,42 @@ To quantify the difference, we need the DX heating load delivered *while the gas
 That is the load that shifts from DX to gas under sequential control. Existing outputs don't
 separate it out, so it has to be reported explicitly.
 
-**Source:** closed PR [#446](https://github.com/NatLabRockies/ComStock/pull/446) (`jk/duelfuelrtu`,
-"HPRTU measure: carrier's dual fuel RTU option"). It has two halves:
-- **Reporting side (ported into this branch):**
-  - `measures/comstock_sensitivity_reports/measure.rb` sums every EMS output variable whose name
-    contains `_dx_load_during_hybrid_heating`. It reads the hourly series for the annual run period,
-    converts Wh to J, and registers `com_report_hvac_dx_heating_load_during_hybrid_heating_j`.
-  - `comstock_column_definitions.csv` maps that value to `out.params.dx_heating_load_during_hybrid_heating`.
-  - The `measure.xml` checksum bump from #446 was not copied. Regenerate it with the measure updater.
-- **Measure side (NOT ported yet):** in #446 the HPRTU measure builds an EMS-controlled two-stage
-  gas backup coil (`<airloop>_p_two_stage_gas_coil`). When the gas coil is on, it sets the global
-  `<airloop>_g_dx_load_during_hybrid_heating_w` to the DX heating coil load. It exposes that value
-  as the EMS output variable `<airloop>_dx_load_during_hybrid_heating` (W, averaged, reported hourly).
+**Approach: report-side, no EMS.** Closed PR [#446](https://github.com/NatLabRockies/ComStock/pull/446)
+(`jk/duelfuelrtu`) got this value from an EMS variable set by an EMS-controlled two-stage gas
+backup coil in the HPRTU measure. We are **not** porting that EMS change. When it was tested, the
+two-stage EMS gas coil gave results close to the measure's existing non-EMS gas coil, so the
+extra complexity isn't justified.
 
-**Coupling to watch:**
-- The report hard-codes both the `_dx_load_during_hybrid_heating` suffix and the `Hourly` frequency.
-  If the measure-side naming or reporting frequency changes, the report must change with it.
-- Until the measure side is ported, our HPRTU measure creates no such EMS variable, so the report
-  registers 0 J for every model. If an EMS variable matches but has no hourly series, the report
-  registers an error.
-- #446 predates the lockout split (2.1): its EMS program uses `hp_min_comp_lockout_temp_f`. When
-  porting the measure side, use the gas-backup lockout argument instead.
+Instead, `comstock_sensitivity_reports` calculates it from standard output variables:
+- **Why it works without EMS:** the HPRTU measure puts the DX coil in an
+  `AirLoopHVACUnitarySystem` as the heating coil and the gas coil as the supplemental coil.
+  EnergyPlus fires the supplemental coil when the DX coil can't meet the load, or when the
+  compressor is locked out. So the current model already runs as "simultaneous" above the lockout.
+- **Which systems:** `hybrid_heating_coil_pairs(model)` finds unitary systems with a DX heating coil
+  (single, multi or variable speed) and a `CoilHeatingGas` or `CoilHeatingGasMultiStage`
+  supplemental coil.
+- **Output requests:** `Heating Coil Heating Energy` at `Timestep` frequency, keyed to just those
+  coils to keep output size down.
+- **Calculation:** for each pair, sum the DX coil heating energy over the zone timesteps where the
+  gas coil heating energy is above 0. The total is registered as
+  `com_report_hvac_dx_heating_load_during_hybrid_heating_j`, which `comstock_column_definitions.csv`
+  maps to `out.params.dx_heating_load_during_hybrid_heating`. This is the same definition as #446,
+  where the EMS variable equals the DX load while gas stage 1 is on.
+- **Missing data:** if either series is missing, the system is skipped with a warning (not an error).
 
-- [ ] Port the measure-side EMS variable (and the two-stage gas coil, or an equivalent) from #446.
+**Caveats:**
+- **Resolution:** we use zone timestep rather than hourly. With hourly averages, any hour with a
+  few minutes of gas would count all of that hour's DX heat. A zone timestep where the gas coil
+  fires during only some HVAC system sub-timesteps still counts that timestep's full DX energy.
+  This error should be small. The EMS approach in #446 worked at the system timestep and had no
+  such error.
+- **Below the lockout,** the DX coil delivers 0, so those timesteps add nothing. That is correct:
+  the DX heat that shifts to gas under sequential control only happens above the lockout.
+- **The `measure.xml` checksum** for `comstock_sensitivity_reports` was not updated. Regenerate it
+  with the measure updater.
+- **Not yet verified** in a simulation (helper checked on a small test model only).
+
+- [ ] Run a dual fuel model end to end and sanity-check the value against the DX and gas coil totals.
 - [ ] Decide how the measure switches between simultaneous and sequential control (a new argument?).
 
 ---
@@ -155,6 +168,9 @@ separate it out, so it has to be reported explicitly.
 - 2026-10-05: added 1.4. Ported the reporting side of closed PR #446 into this branch
   (`com_report_hvac_dx_heating_load_during_hybrid_heating_j` in `comstock_sensitivity_reports`,
   plus a column definition) to support the simultaneous vs sequential comparison for IMPACT.
+- 2026-10-05: replaced the EMS-based calculation with a report-side one that uses zone timestep
+  `Heating Coil Heating Energy` for DX + gas supplemental coil pairs, so the #446 EMS change is not
+  needed. Rewrote 1.4 accordingly.
 
 ## 5. Thoughts / brainstorming
 
