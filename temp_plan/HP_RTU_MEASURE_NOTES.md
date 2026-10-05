@@ -44,6 +44,42 @@ Items marked **TBC** are not confirmed yet.
 - [ ] CCHPC typical: backup heating source (and whether this is dual fuel or HP RTU).
 - [ ] IMPACT: performance category, compressor lockout temp, oversizing factor, heating sizing temp.
 - [ ] Gas heating control: how the measure will support both simultaneous and sequential (IMPACT).
+      See 1.4.
+
+### 1.4 Reporting needed for scenario 4 (IMPACT: Dual Fuel)
+
+IMPACT compares two gas heating control strategies for a dual fuel RTU:
+1. **Simultaneous:** DX heating and the gas coil run together.
+2. **Sequential:** gas coil only, with the DX compressor locked out.
+
+To quantify the difference, we need the DX heating load delivered *while the gas coil is also on*.
+That is the load that shifts from DX to gas under sequential control. Existing outputs don't
+separate it out, so it has to be reported explicitly.
+
+**Source:** closed PR [#446](https://github.com/NatLabRockies/ComStock/pull/446) (`jk/duelfuelrtu`,
+"HPRTU measure: carrier's dual fuel RTU option"). It has two halves:
+- **Reporting side (ported into this branch):**
+  - `measures/comstock_sensitivity_reports/measure.rb` sums every EMS output variable whose name
+    contains `_dx_load_during_hybrid_heating`. It reads the hourly series for the annual run period,
+    converts Wh to J, and registers `com_report_hvac_dx_heating_load_during_hybrid_heating_j`.
+  - `comstock_column_definitions.csv` maps that value to `out.params.dx_heating_load_during_hybrid_heating`.
+  - The `measure.xml` checksum bump from #446 was not copied. Regenerate it with the measure updater.
+- **Measure side (NOT ported yet):** in #446 the HPRTU measure builds an EMS-controlled two-stage
+  gas backup coil (`<airloop>_p_two_stage_gas_coil`). When the gas coil is on, it sets the global
+  `<airloop>_g_dx_load_during_hybrid_heating_w` to the DX heating coil load. It exposes that value
+  as the EMS output variable `<airloop>_dx_load_during_hybrid_heating` (W, averaged, reported hourly).
+
+**Coupling to watch:**
+- The report hard-codes both the `_dx_load_during_hybrid_heating` suffix and the `Hourly` frequency.
+  If the measure-side naming or reporting frequency changes, the report must change with it.
+- Until the measure side is ported, our HPRTU measure creates no such EMS variable, so the report
+  registers 0 J for every model. If an EMS variable matches but has no hourly series, the report
+  registers an error.
+- #446 predates the lockout split (2.1): its EMS program uses `hp_min_comp_lockout_temp_f`. When
+  porting the measure side, use the gas-backup lockout argument instead.
+
+- [ ] Port the measure-side EMS variable (and the two-stage gas coil, or an equivalent) from #446.
+- [ ] Decide how the measure switches between simultaneous and sequential control (a new argument?).
 
 ---
 
@@ -116,6 +152,9 @@ Items marked **TBC** are not confirmed yet.
   latest changes to this measure and to use as the starting point for further work. Upstream tracking
   was removed so pushes don't go to the `ccaradon/` branch.
 - 2026-10-05: added section 1 (scope table for the four measure scenarios); renumbered later sections.
+- 2026-10-05: added 1.4. Ported the reporting side of closed PR #446 into this branch
+  (`com_report_hvac_dx_heating_load_during_hybrid_heating_j` in `comstock_sensitivity_reports`,
+  plus a column definition) to support the simultaneous vs sequential comparison for IMPACT.
 
 ## 5. Thoughts / brainstorming
 

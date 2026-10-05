@@ -2997,6 +2997,31 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     runner.registerValue('com_report_unitary_sys_cycling_excess_electricity_heating_pcnt',
                          com_report_unitary_sys_cycling_excess_electricity_heating_pcnt)
 
+    # calculate DX heating load during hybrid heating from EMS output variables
+    # this only gets a value when HPRTU measure is applied in the model
+    # which creates an EMS variable to report this value
+    # this variable is to support the difference between two operating scenarios
+    #  1) simulataneous DX heating and gas coil heating
+    #  2) gas coil heating only and DX compressor locked out
+    # suffix used below is hard-coded in HPRTU measure
+    # timestep of 'Hourly' is also hard-coded in HPRTU measure
+    suffix = "_dx_load_during_hybrid_heating"
+    com_report_hvac_dx_heating_load_during_hybrid_heating_j = 0.0
+    model.getEnergyManagementSystemOutputVariables.each do |ems_var|
+      name = ems_var.name.to_s
+      next unless name.downcase.include?(suffix)
+      ts_opt = sql.timeSeries(ann_env_pd, 'Hourly', name, 'EMS')
+      if ts_opt.is_initialized
+        ts = ts_opt.get
+        values = ts.values
+        annual_j = values.sum * 3600  # Convert from Wh to J (Wh * 3600 s/h)
+        com_report_hvac_dx_heating_load_during_hybrid_heating_j += annual_j
+      else
+        runner.registerError("No time series found for EMS variable #{name} for calculating DX heating load during hybrid heating.")
+      end
+    end
+    runner.registerValue('com_report_hvac_dx_heating_load_during_hybrid_heating_j', com_report_hvac_dx_heating_load_during_hybrid_heating_j)
+
     # Get the outdoor air temp timeseries and calculate heating and cooling degree days
     # Per ISO 15927-6, "Accumulated hourly temperature differences shall be calculated according to 4.4 when hourly data are available. When hourly data are not available, the approximate method given in 4.5, based on the maximum and minimum temperatures each day, may be used."
     # Method 4.4 is used here, summing hour values over/under a threshold and then dividing by 24
