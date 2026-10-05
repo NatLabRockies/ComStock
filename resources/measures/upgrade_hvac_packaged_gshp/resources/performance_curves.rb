@@ -217,44 +217,47 @@ module MakePerformanceCurves
     table_ind_var
   end
 
-  def create_table_lookup(model, name, hvac_system_type, curve_type, divisor, path, air_flow_scaling_factor,
-                          water_flow_scaling_factor, runner)
+  def create_table_lookup(model, name, hvac_system_type, curve_type, divisor, path, rated_air_flow_rate,
+                          rated_water_flow_rate, runner)
     # create curve lookup
     data = read_performance_curve_data(path, runner)
 
     if ['packaged_gshp', 'console_gshp'].include?(hvac_system_type)
+      # EnergyPlus looks these tables up at (T + 273.15) / 283.15 and at flow / rated flow (Engineering Reference,
+      # single speed equation-fit model), so the axes are built as those ratios from the Kelvin and m3/s data
+      t_ref_k = 283.15
       # get wb data values
       if ['sen_clg_cap', 'tot_clg_cap', 'clg_pow'].include?(curve_type) && data['wb_data'].empty?
         runner.registerError("No WB temp performance curve data at path (#{path})")
         return false
       end
-      wb_values = data['wb_data'].uniq.sort
+      wb_values = data['wb_data'].uniq.sort.map { |t| t / t_ref_k }
       # get db data values if relevant
       if ['sen_clg_cap', 'htg_cap', 'htg_pow'].include?(curve_type)
         if data['db_data'].empty?
           runner.registerError("No DB temp performance curve data at path (#{path})")
           return false
         end
-        db_values = data['db_data'].uniq.sort
+        db_values = data['db_data'].uniq.sort.map { |t| t / t_ref_k }
       end
       # get ewt data values
       if data['ewt_data'].empty?
         runner.registerError("No EWT performance curve data at path (#{path})")
         return false
       end
-      ewt_values = data['ewt_data'].uniq.sort
+      ewt_values = data['ewt_data'].uniq.sort.map { |t| t / t_ref_k }
       # get air flow data values
       if data['vdot_air_data'].empty?
         runner.registerError("No air flow rate performance curve data at path (#{path})")
         return false
       end
-      vdot_air_values = data['vdot_air_data'].uniq.sort.map { |i| i * air_flow_scaling_factor }
+      vdot_air_values = data['vdot_air_data'].uniq.sort.map { |v| v / rated_air_flow_rate }
       # get water flow data values
       if data['vdot_water_data'].empty?
         runner.registerError("No water flow rate performance curve data at path (#{path})")
         return false
       end
-      vdot_water_values = data['vdot_water_data'].uniq.sort.map { |i| i * water_flow_scaling_factor }
+      vdot_water_values = data['vdot_water_data'].uniq.sort.map { |v| v / rated_water_flow_rate }
       # data length check
       case curve_type
       when 'sen_clg_cap'
@@ -316,20 +319,20 @@ module MakePerformanceCurves
       table_independent_variables = []
       if ['sen_clg_cap', 'htg_cap', 'htg_pow'].include?(curve_type)
         table_independent_variables << create_table_independent_variable(model, "#{curve_type}_db_var", db_values,
-                                                                         'Cubic', 'Constant', 'Temperature', runner)
+                                                                         'Cubic', 'Constant', 'Dimensionless', runner)
       end
 
       if ['sen_clg_cap', 'tot_clg_cap', 'clg_pow'].include?(curve_type)
         table_independent_variables << create_table_independent_variable(model, "#{curve_type}_wb_var", wb_values,
-                                                                         'Cubic', 'Constant', 'Temperature', runner)
+                                                                         'Cubic', 'Constant', 'Dimensionless', runner)
       end
 
       table_independent_variables << create_table_independent_variable(model, "#{curve_type}_ewt_var", ewt_values,
-                                                                       'Cubic', 'Constant', 'Temperature', runner)
+                                                                       'Cubic', 'Constant', 'Dimensionless', runner)
       table_independent_variables << create_table_independent_variable(model, "#{curve_type}_vdot_air_var",
-                                                                       vdot_air_values, 'Cubic', 'Constant', 'VolumetricFlow', runner)
+                                                                       vdot_air_values, 'Cubic', 'Constant', 'Dimensionless', runner)
       table_independent_variables << create_table_independent_variable(model, "#{curve_type}_vdot_water_var",
-                                                                       vdot_water_values, 'Cubic', 'Constant', 'VolumetricFlow', runner)
+                                                                       vdot_water_values, 'Cubic', 'Constant', 'Dimensionless', runner)
 
       # create lookup table
       table_lookup = OpenStudio::Model::TableLookup.new(model)
@@ -454,8 +457,7 @@ module MakePerformanceCurves
   end
 
   # add lookup table performance data to relevant HVAC objects
-  def add_lookup_performance_data(model, hvac_object, hvac_system_type, data_set_name, autosized_air_flow_rate,
-                                  autosized_water_flow_rate, runner)
+  def add_lookup_performance_data(model, hvac_object, hvac_system_type, data_set_name, runner)
     supported_hvac_system_types = ['hydronic_gshp', 'packaged_gshp', 'console_gshp']
     available_data_sets = {}
     available_data_sets['hydronic_gshp'] = ['Carrier_30WG_90kW', 'Carrier_61WG_Glycol_90kW']
@@ -503,8 +505,6 @@ module MakePerformanceCurves
       rated_wb_clg = (66.2 - 32) / 1.8
       rated_ewt_clg = (75 - 32) / 1.8
       rated_ewt_htg = (32 - 32) / 1.8
-      air_flow_scaling_factor = autosized_air_flow_rate / rated_air_flow_rate
-      water_flow_scaling_factor = autosized_water_flow_rate / rated_water_flow_rate
 
     when 'Trane_3_ton_GWSC036H'
       valid_object_types = ['OS_Coil_Cooling_WaterToAirHeatPump_EquationFit', 'OS_Coil_Heating_WaterToAirHeatPump_EquationFit']
@@ -528,8 +528,6 @@ module MakePerformanceCurves
       rated_water_flow_rate = 9 / 15_850.323
       rated_ewt_clg = (75 - 32) / 1.8
       rated_ewt_htg = (32 - 32) / 1.8
-      air_flow_scaling_factor = autosized_air_flow_rate / rated_air_flow_rate
-      water_flow_scaling_factor = autosized_water_flow_rate / rated_water_flow_rate
 
     when 'Carrier_30WG_90kW'
       valid_object_types = ['OS_HeatPump_PlantLoop_EIR_Cooling']
@@ -542,8 +540,6 @@ module MakePerformanceCurves
       # basic data set info
       rated_cooling_capacity_watts = 94.1 * 1000
       rated_cooling_eir = 0.21505 # 5K delta # 5k delta (same delta t and same working fluid, so same flow rate)
-      air_flow_scaling_factor = 1
-      water_flow_scaling_factor = 1
 
     when 'Carrier_61WG_Glycol_90kW'
       valid_object_types = ['OS_HeatPump_PlantLoop_EIR_Heating']
@@ -558,8 +554,6 @@ module MakePerformanceCurves
       rated_heating_eir = 0.23419 # J/kgK # J/kgK at 0 C # K # K # m3/s # kg/m3 # kg/m3
 
 
-      air_flow_scaling_factor = 1
-      water_flow_scaling_factor = 1
 
     else
       runner.registerError("#{data_set_name} is not supported by add_lookup_performance_data method")
@@ -574,11 +568,11 @@ module MakePerformanceCurves
       cooling_power_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_clg_pow.csv"
       # create lookup tables and supporting objects
       table_lookup_tot_clg_cap = create_table_lookup(model, 'table_lookup_tot_clg_cap', 'packaged_gshp', 'tot_clg_cap',
-                                                     rated_total_cooling_capacity_watts, total_cooling_capacity_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                     rated_total_cooling_capacity_watts, total_cooling_capacity_data_path, rated_air_flow_rate, rated_water_flow_rate, runner)
       table_lookup_sen_clg_cap = create_table_lookup(model, 'table_lookup_sen_clg_cap', 'packaged_gshp', 'sen_clg_cap',
-                                                     rated_sensible_cooling_capacity_watts, sensible_cooling_capacity_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                     rated_sensible_cooling_capacity_watts, sensible_cooling_capacity_data_path, rated_air_flow_rate, rated_water_flow_rate, runner)
       table_lookup_clg_pow = create_table_lookup(model, 'table_lookup_clg_pow', 'packaged_gshp', 'clg_pow',
-                                                 rated_cooling_power_watts, cooling_power_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_cooling_power_watts, cooling_power_data_path, rated_air_flow_rate, rated_water_flow_rate, runner)
       # assign lookup tables
       hvac_object.setTotalCoolingCapacityCurve(table_lookup_tot_clg_cap)
       hvac_object.setSensibleCoolingCapacityCurve(table_lookup_sen_clg_cap)
@@ -595,9 +589,9 @@ module MakePerformanceCurves
       heating_power_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_htg_pow.csv"
       # create lookup tables and supporting objects
       table_lookup_htg_cap = create_table_lookup(model, 'table_lookup_htg_cap', 'packaged_gshp', 'htg_cap',
-                                                 rated_heating_capacity_watts, heating_capacity_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_heating_capacity_watts, heating_capacity_data_path, rated_air_flow_rate, rated_water_flow_rate, runner)
       table_lookup_htg_pow = create_table_lookup(model, 'table_lookup_htg_pow', 'packaged_gshp', 'htg_pow',
-                                                 rated_heating_power_watts, heating_power_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_heating_power_watts, heating_power_data_path, rated_air_flow_rate, rated_water_flow_rate, runner)
       # assign lookup tables
       hvac_object.setHeatingCapacityCurve(table_lookup_htg_cap)
       hvac_object.setHeatingPowerConsumptionCurve(table_lookup_htg_pow)
@@ -605,15 +599,18 @@ module MakePerformanceCurves
       hvac_object.setRatedHeatingCoefficientofPerformance(rated_heating_capacity_watts / rated_heating_power_watts)
       hvac_object.setRatedEnteringWaterTemperature(rated_ewt_htg)
       hvac_object.setRatedEnteringAirDryBulbTemperature(rated_db_htg)
+      # EnergyPlus sizes the heating coil as the cooling capacity times this ratio (and upsizes both for a larger
+      # heating load), so use the catalog's: the default 1.0 with OpenStudio's default curves gave heating = cooling / 3.8
+      hvac_object.setRatioofRatedHeatingCapacitytoRatedCoolingCapacity(rated_heating_capacity_watts / rated_total_cooling_capacity_watts)
 
     when 'OS_HeatPump_PlantLoop_EIR_Cooling'
       # read in csv data
       cooling_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_clg.csv"
       # create lookup tables and supporting objects
       table_lookup_clg_cap = create_table_lookup(model, 'table_lookup_clg_cap', 'hydronic_gshp', 'clg_cap',
-                                                 rated_cooling_capacity_watts, cooling_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_cooling_capacity_watts, cooling_data_path, nil, nil, runner)
       table_lookup_clg_eir = create_table_lookup(model, 'table_lookup_clg_eir', 'hydronic_gshp', 'clg_eir',
-                                                 rated_cooling_eir, cooling_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_cooling_eir, cooling_data_path, nil, nil, runner)
       # assign lookup tables
       hvac_object.setCapacityModifierFunctionofTemperatureCurve(table_lookup_clg_cap)
       hvac_object.setElectricInputtoOutputRatioModifierFunctionofTemperatureCurve(table_lookup_clg_eir)
@@ -625,9 +622,9 @@ module MakePerformanceCurves
       heating_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_htg.csv"
       # create lookup tables and supporting objects
       table_lookup_htg_cap = create_table_lookup(model, 'table_lookup_htg_cap', 'hydronic_gshp', 'htg_cap',
-                                                 rated_heating_capacity_watts, heating_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_heating_capacity_watts, heating_data_path, nil, nil, runner)
       table_lookup_htg_eir = create_table_lookup(model, 'table_lookup_htg_eir', 'hydronic_gshp', 'htg_eir',
-                                                 rated_heating_eir, heating_data_path, air_flow_scaling_factor, water_flow_scaling_factor, runner)
+                                                 rated_heating_eir, heating_data_path, nil, nil, runner)
       # assign lookup tables
       hvac_object.setCapacityModifierFunctionofTemperatureCurve(table_lookup_htg_cap)
       hvac_object.setElectricInputtoOutputRatioModifierFunctionofTemperatureCurve(table_lookup_htg_eir)

@@ -380,6 +380,9 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     condenser_loop_sizing = condenser_loop.sizingPlant
     condenser_loop_sizing.setLoopType('Condenser')
     condenser_loop_sizing.setDesignLoopExitTemperature(cond_loop_setpoint_c)
+    # EnergyPlus sizes the heat pump water flow as heating capacity / (delta T rho cp); 4.0 K gives the Trane rated
+    # flow (9 gpm at 31.3 kBtu/h, 20% propylene glycol), where OpenStudio's 11 K default gave a third of it
+    condenser_loop_sizing.setLoopDesignTemperatureDifference(4.0)
     # the heat pumps pull this loop below 0 C in cold climates; use the ground loop's 20% propylene glycol
     condenser_loop.setFluidType('PropyleneGlycol')
     condenser_loop.setGlycolConcentration(20)
@@ -504,9 +507,11 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
       # using 10 ton units for packaged unit performance data
       # using 1 ton units for console
-      # add new single speed cooling coil
+      # add new single speed cooling and heating coils with the catalog performance tables and rating conditions;
+      # they go on before the sizing run so EnergyPlus sizes the coils with them instead of OpenStudio's default curves
       new_cooling_coil = OpenStudio::Model::CoilCoolingWaterToAirHeatPumpEquationFit.new(model)
       new_cooling_coil.setName("#{thermal_zone.name} Heat Pump Cooling Coil")
+      add_lookup_performance_data(model, new_cooling_coil, 'console_gshp', 'Trane_3_ton_GWSC036H', runner)
       # new_cooling_coil.setRatedCoolingCoefficientofPerformance(3.4)
       # new_cooling_coil.setTotalCoolingCapacityCoefficient1(-4.30266987344639)
       # new_cooling_coil.setTotalCoolingCapacityCoefficient2(7.18536990534372)
@@ -526,9 +531,9 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       # new_cooling_coil.setCoolingPowerConsumptionCoefficient5(-0.168727936032429)
       condenser_loop.addDemandBranchForComponent(new_cooling_coil)
 
-      # add new single speed heating coil
       new_heating_coil = OpenStudio::Model::CoilHeatingWaterToAirHeatPumpEquationFit.new(model)
       new_heating_coil.setName("#{thermal_zone.name} Heat Pump Heating Coil")
+      add_lookup_performance_data(model, new_heating_coil, 'console_gshp', 'Trane_3_ton_GWSC036H', runner)
       # new_heating_coil.setRatedHeatingCoefficientofPerformance(4.2)
       # new_heating_coil.setHeatingCapacityCoefficient1(0.237847462869254)
       # new_heating_coil.setHeatingCapacityCoefficient2(-3.35823796081626)
@@ -679,90 +684,12 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     # apply sizing values
     model.applySizingValues
 
-    # scale coil performance data and assign lookup tables
+    # finish the heat pump systems after sizing
     model.getAirLoopHVACUnitarySystems.each do |unitary_sys|
-      # puts "*************************************"
-      # puts "*************************************"
-      # puts "Assigning performance curve data for unitary system (#{unitary_sys.name})"
-      # get cooling coil
-      # get heating coil
-      # get fan
-      heating_air_flow = 0
-      heating_water_flow = 0
-      cooling_air_flow = 0
-      cooling_water_flow = 0
-
-      # heating coil
-      if unitary_sys.heatingCoil.is_initialized
-        if unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized
-          coil = unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.get
-          # capacity
-          if coil.ratedHeatingCapacity.is_initialized
-            coil.ratedHeatingCapacity.get
-          else
-            runner.registerError("Unable to retrieve reference capacity for coil (#{coil.name})")
-            return false
-          end
-          # air flow
-          if coil.ratedAirFlowRate.is_initialized
-            heating_air_flow = coil.ratedAirFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference air flow for coil (#{coil.name})")
-            return false
-          end
-          # water flow
-          if coil.ratedWaterFlowRate.is_initialized
-            heating_water_flow = coil.ratedWaterFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference water flow for coil (#{coil.name})")
-            return false
-          end
-          # add performance data
-          add_lookup_performance_data(model, coil, 'console_gshp', 'Trane_3_ton_GWSC036H', heating_air_flow,
-                                      heating_water_flow, runner)
-        else
-          runner.registerError("Expecting heating coil of type CoilHeatingWaterToAirHeatPumpEquationFits for (#{unitary_sys.name})")
-          return false
-        end
-      else
-        runner.registerError("Could not find heating coil for unitary system (#{unitary_sys.name})")
-        return false
-      end
-
-      # cooling coil
-      if unitary_sys.coolingCoil.is_initialized
-        if unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.is_initialized
-          coil = unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.get
-          # capacity
-          if coil.ratedTotalCoolingCapacity.is_initialized
-            coil.ratedTotalCoolingCapacity.get
-          else
-            runner.registerError("Unable to retrieve reference capacity for coil (#{coil.name})")
-            return false
-          end
-          # air flow
-          if coil.ratedAirFlowRate.is_initialized
-            cooling_air_flow = coil.ratedAirFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference air flow for coil (#{coil.name})")
-            return false
-          end
-          # water flow
-          if coil.ratedWaterFlowRate.is_initialized
-            cooling_water_flow = coil.ratedWaterFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference water flow for coil (#{coil.name})")
-            return false
-          end
-          # add performance data
-          add_lookup_performance_data(model, coil, 'console_gshp', 'Trane_3_ton_GWSC036H', cooling_air_flow,
-                                      cooling_water_flow, runner)
-        else
-          runner.registerError("Expecting cooling coil of type CoilCoolingWaterToAirHeatPumpEquationFits for (#{unitary_sys.name})")
-          return false
-        end
-      else
-        runner.registerError("Could not find cooling coil for unitary system (#{unitary_sys.name})")
+      # the catalog performance tables were assigned at coil creation, before the sizing run
+      unless unitary_sys.heatingCoil.is_initialized && unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized &&
+             unitary_sys.coolingCoil.is_initialized && unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.is_initialized
+        runner.registerError("Expecting water-to-air heat pump heating and cooling coils for unitary system (#{unitary_sys.name})")
         return false
       end
 

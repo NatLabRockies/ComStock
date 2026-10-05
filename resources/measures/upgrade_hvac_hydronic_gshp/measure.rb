@@ -512,7 +512,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ground_pump.setName('Ground loop circulation pump')
     ground_pump.setRatedPumpHead(66_955.1) # #Set this based on modified version of example in Table 6.15 in ASHRAE geothermal design guide (subtracted out heat pumps and headers to them)
     ground_pump.addToNode(ground_loop.supplyInletNode)
-    ground_pump.setPumpControlType('Continuous')
+    # run only while the heat pumps draw water, as water-loop heat pump systems shut flow off with the compressors
+    # (as in the console measure); 'Continuous' ran this constant speed pump at full flow all year
+    ground_pump.setPumpControlType('Intermittent')
 
     # Create a scheduled setpoint manager
     # TODO determine if a schedule that follows the monthly ground temperature
@@ -904,13 +906,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       # calculate # of hps required
       working_des_cap_htg = [hp_des_cap_htg * 1000, elec_htg_cap].max
 
-      if working_des_cap_htg > hp_des_cap_htg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_htg
+      if working_des_cap_htg > hp_des_cap_htg * 1000
         no_hps = (working_des_cap_htg / (hp_des_cap_htg * 1000)).to_f.ceil
         # no_hps = (working_des_cap/(hp_des_cap_htg*1000)).round(0)
         working_hp_cap_htg = hp_des_cap_htg * 1000
       else
         no_hps = 1
-        working_hp_cap_htg = elec_htg_cap
+        working_hp_cap_htg = elec_htg_cap.positive? ? elec_htg_cap : hp_des_cap_htg * 1000
       end
 
 
@@ -984,14 +987,15 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     working_des_cap_clg = [hp_des_cap_clg * 1000, cap_coils_comb].max
     # runner.registerInfo("cap coils comb: #{cap_coils_comb}")
 
-    if working_des_cap_clg > hp_des_cap_clg
+    # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_clg
+    if working_des_cap_clg > hp_des_cap_clg * 1000
       no_hps = (working_des_cap_clg / (hp_des_cap_clg * 1000)).to_f.ceil
       # runner.registerInfo("no. hps: #{no_hps}")
       # no_hps = (working_des_cap_clg/(hp_des_cap_clg*1000)).round(0)
       working_hp_cap_clg = hp_des_cap_clg * 1000
     else
       no_hps = 1
-      working_hp_cap_clg = cap_coils_comb
+      working_hp_cap_clg = cap_coils_comb.positive? ? cap_coils_comb : hp_des_cap_clg * 1000
     end
 
     # runner.registerInfo("working_hp_cap_clg: #{working_hp_cap_clg}")
@@ -1079,14 +1083,15 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       working_des_cap_clg = [hp_des_cap_clg * 1000, cap_chiller].max
       # runner.registerInfo("cap chiller: #{cap_chiller}")
 
-      if working_des_cap_clg > hp_des_cap_clg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_clg
+      if working_des_cap_clg > hp_des_cap_clg * 1000
         no_hps = (working_des_cap_clg / (hp_des_cap_clg * 1000)).to_f.ceil
         # runner.registerInfo("no. hps: #{no_hps}")
         # no_hps = (working_des_cap_clg/(hp_des_cap_clg*1000)).round(0)
         working_hp_cap_clg = hp_des_cap_clg * 1000
       else
         no_hps = 1
-        working_hp_cap_clg = cap_chiller
+        working_hp_cap_clg = cap_chiller.positive? ? cap_chiller : hp_des_cap_clg * 1000
       end
       (1..no_hps).each do |hp| # adding heat pumps to the loop
         # create water source heat pump object
@@ -1175,13 +1180,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
 
       working_des_cap_htg = [hp_des_cap_htg * 1000, cap_boiler].max
 
-      if working_des_cap_htg > hp_des_cap_htg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_htg
+      if working_des_cap_htg > hp_des_cap_htg * 1000
         no_hps = (working_des_cap_htg / (hp_des_cap_htg * 1000)).to_f.ceil
         # no_hps = (working_des_cap/(hp_des_cap_htg*1000)).round(0)
         working_hp_cap_htg = hp_des_cap_htg * 1000
       else
         no_hps = 1
-        working_hp_cap_htg = cap_boiler
+        working_hp_cap_htg = cap_boiler.positive? ? cap_boiler : hp_des_cap_htg * 1000
       end
 
       # no_hps = 1 ##AA setting it this way for now
@@ -1301,6 +1307,19 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     end
     # runner.registerInfo("end of autosizing #{Time.now} ")
     # END HARDWARE ----------------------------------------------------------------------------------------------------
+
+    # EnergyPlus registers each EIR heat pump's source flow twice for loop sizing ('/ 0.5' where its comment says half,
+    # PlantLoopHeatPumpEIR.cc), so set the condenser and ground side design flows to the heat pumps' total
+    heat_pumps = cond_loop.demandComponents(OpenStudio::Model::HeatPumpPlantLoopEIRHeating.iddObjectType).map { |c| c.to_HeatPumpPlantLoopEIRHeating.get } +
+                 cond_loop.demandComponents(OpenStudio::Model::HeatPumpPlantLoopEIRCooling.iddObjectType).map { |c| c.to_HeatPumpPlantLoopEIRCooling.get }
+    src_flows = heat_pumps.map(&:sourceSideReferenceFlowRate)
+    if !src_flows.empty? && src_flows.all?(&:is_initialized)
+      total_src_flow = src_flows.sum(&:get)
+      cond_loop.setMaximumLoopFlowRate(total_src_flow)
+      cond_loop.supplyComponents(OpenStudio::Model::PumpVariableSpeed.iddObjectType).each { |p| p.to_PumpVariableSpeed.get.setRatedFlowRate(total_src_flow) }
+      heat_exchanger.setLoopSupplySideDesignFlowRate(total_src_flow)
+      heat_exchanger.setLoopDemandSideDesignFlowRate(total_src_flow)
+    end
 
     # Register final condition
     # move down
