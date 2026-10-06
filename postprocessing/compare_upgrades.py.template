@@ -15,6 +15,10 @@ EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Ta
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = False     # True also writes the measure comparison figures (slow); False leaves them to
+                                   # the dashboard's Measures tabs
+MAKE_TIMESERIES_PLOTS  = False     # True also writes the measure timeseries figures at timeseries_locations_to_plot
+                                   # below (slow); the locations still feed the Athena tables the dashboard reads
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
@@ -43,7 +47,8 @@ def main():
         reload_from_cache=False, # True if CSV already made and want faster reload times
         include_upgrades=True,  # False if not looking at upgrades
         upgrade_ids_to_skip=[], # Use [1, 3] etc. to exclude certain upgrades
-        make_timeseries_plots=True,
+        make_comparison_plots=MAKE_COMPARISON_PLOTS,  # settings at the top
+        make_timeseries_plots=MAKE_TIMESERIES_PLOTS,
         timeseries_locations_to_plot={
                                         'MN': 'Minnesota',  # specify location (either county ID or state ID) and corresponding name for plots and folders.
                                         #'MA':'Massachusetts',
@@ -73,7 +78,7 @@ def main():
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
-    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
 
     # CBECS
     cbecs = cspp.CBECS(

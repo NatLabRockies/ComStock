@@ -16,6 +16,8 @@ EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Ta
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False writes only
+                                   # the wide CSVs and the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
@@ -57,7 +59,7 @@ def main():
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
-    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
 
     # CBECS
     cbecs = cspp.CBECS(
@@ -109,7 +111,7 @@ def main():
     comp = cspp.ComStockToCBECSComparison(cbecs_list=[cbecs],
                                         comstock_list=[comstock],
                                         upgrade_id='All',
-                                        make_comparison_plots=True,
+                                        make_comparison_plots=MAKE_COMPARISON_PLOTS,
                                         make_hvac_plots=False)
     comp.export_to_csv_wide()  # May comment this out after run once
 

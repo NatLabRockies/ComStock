@@ -58,6 +58,12 @@ class AthenaRunRef:
                needed only for the AMI and measure-timeseries legs. Absent means
                those legs skip, which is a coverage gap and is reported as one,
                not an error.
+    allocation the stock allocation (apportionment draw) the run's weights come
+               from -- ComStock.allocation_summary: its id, the run it was drawn
+               for, when, and how its models reconcile with this run's -- so the
+               page can say whether two runs share one draw. None when unknown
+               (a published release, a run processed before draws carried
+               provenance).
     """
 
     key: str
@@ -67,6 +73,7 @@ class AthenaRunRef:
     md_county_table: str = ""
     ts_table: str = ""
     color: str = "#0072B2"
+    allocation: dict | None = None
 
     @property
     def has_timeseries(self) -> bool:
@@ -93,4 +100,5 @@ class AthenaRunRef:
             md_county_table=f"{run}{MD_COUNTY_SUFFIX}",
             ts_table=f"{run}{TS_SUFFIX}",
             color=getattr(comstock, "color", None) or "#0072B2",
+            allocation=getattr(comstock, "allocation_summary", None),
         )

@@ -1892,7 +1892,7 @@ function renderCross(){
   const shownDims=dimsToShow(availDims, state.xDim);
   // the index lists what is actually on the page, so it can never point at a
   // section the breakdown selector has hidden
-  const SECTIONS=[["sec-fuels","By fuel"],["sec-gasfree","No natural gas"],["sec-enduse","By end use"]]
+  const SECTIONS=[["sec-fuels","By fuel"],["sec-enduse","By end use"]]
     .concat(shownDims.map(d=>
       ["sec-"+d,(D.dimensions[d]||{label:d}).label.replace(/,.*$/,"")]))
     .concat([["sec-gap","End-use gap waterfalls"]]);
@@ -1903,18 +1903,6 @@ function renderCross(){
   h+=`<div class="panel" id="sec-fuels"><h2 style="margin-top:0">Annual consumption by fuel — TBtu
       <span class="badge">whole stock, national</span></h2>
       <div class="scroll" id="all-fuels"></div></div>`;
-  /* Who uses gas at all, by building type, before how much. The gas EUI boxes
-     cannot separate a stock that gives every restaurant a gas line from one
-     that gives too much gas to the restaurants that have it; this can.
-     Computed by the pipeline since the first version and never drawn. */
-  h+=`<div class="panel" id="sec-gasfree"><h2 style="margin-top:0">Buildings with no natural gas
-      — % of floor area, by building type
-      <span class="badge">CBECS 2018 vs ${RUNS.map(r=>runShort(r.key)).join(" vs ")}</span></h2>
-      <p class="note">Share of weighted floor area whose annual natural-gas use is exactly zero.
-      A large difference is a prevalence question for the sampling — which buildings get a gas
-      line — not an intensity question for the models, and it is what the gas EUI
-      distributions inherit.</p>
-      <div class="scroll" id="all-gasfree"></div></div>`;
   /* This chart hatches its CBECS bars, so it needs the hatch key — and it cannot
      borrow the legend at the top of the tab, which sits above the by-fuel chart
      and correctly omits the hatch. Keying "the hatch belongs only on charts that
@@ -1969,25 +1957,6 @@ function renderCross(){
   groupedBar($("#all-fuels"), allRows(D.fuelTotals), annualSeries(),
     {height:245, copy:{title:"All building types — fuel totals (TBtu)",
                        legend:runLegendItems(false)}});
-  {
-    const fm=D.fuelByDim.building_type||[];
-    const order=(D.ordered&&D.ordered.building_type)||[];
-    const cats=[...new Set(fm.map(r=>r.category))].filter(c=>c!=="All")
-      .sort((a,b)=>(order.indexOf(a)+1||99)-(order.indexOf(b)+1||99));
-    const num=v=>(v===null||v===undefined||v===""||Number.isNaN(+v))?null:100*+v;
-    const rows=cats.map(c=>{
-      const values={};
-      const cb=fm.find(r=>r.category===c&&num(r.cbecs_zero_gas_share)!==null);
-      if(cb) values.cbecs=num(cb.cbecs_zero_gas_share);
-      RUNS.forEach(r=>{ const m=fm.find(x=>x.category===c&&x.run===r.key);
-        values[r.key]=m?num(m.comstock_zero_gas_share):null; });
-      return {label:c, values, ciLow:null, ciHigh:null, hatched:false};
-    }).filter(r=>Object.values(r.values).some(v=>v!==null));
-    groupedBar($("#all-gasfree"), rows, annualSeries(),
-      {height:245, yLabel:"% of floor area",
-       copy:{title:"All building types — floor area with no natural gas (%)",
-             legend:runLegendItems(false)}});
-  }
   groupedBar($("#all-enduse"), allRows(D.endUses), annualSeries(),
     {height:265, copy:{title:"All building types — end uses by fuel (TBtu)",
                        legend:runLegendItems(true)}});
@@ -2063,25 +2032,6 @@ function renderAnnual(){
       ${annualLegend()}<div class="scroll" id="c-enduse"></div>
       <p class="note">Hatched CBECS bars are EIA statistical disaggregations, not metered values —
       a difference against them is weaker evidence than one against a metered fuel total.</p></div>`;
-  /* Who uses gas at all, before how much: the gas EUI boxes cannot separate a
-     stock that gives every restaurant a gas line from one that gives too much
-     gas to the restaurants that have it. Computed by the pipeline and, until
-     now, never shown. */
-  const fmRows=(D.fuelByDim.building_type||[]).filter(r=>r.category===bt);
-  if(fmRows.length){
-    const cb=fmRows.find(r=>r.cbecs_zero_gas_share!==null&&r.cbecs_zero_gas_share!==undefined);
-    h+=`<div class="panel"><h2>${bt}: buildings with no natural gas — % of floor area
-        <span class="badge">CBECS 2018 vs ${RUNS.map(r=>runShort(r.key)).join(" vs ")}</span></h2>
-      <p class="note">Share of weighted floor area whose annual natural-gas use is exactly zero —
-      who has gas, as distinct from how much gas is used. A large difference here is a
-      prevalence question for the sampling, not an intensity question for the models.</p>
-      <div class="scroll"><table><thead><tr><th>Dataset</th><th>floor area with no natural gas</th></tr></thead><tbody>
-        ${cb?`<tr><td style="text-align:left">${headChip(CBECS_COLOR,"CBECS 2018")}</td><td>${fmt(100*cb.cbecs_zero_gas_share,1)}%</td></tr>`:""}
-        ${RUNS.map(r=>{ const m=fmRows.find(x=>x.run===r.key);
-          const v=m&&m.comstock_zero_gas_share!==null&&m.comstock_zero_gas_share!==undefined?+m.comstock_zero_gas_share:null;
-          return `<tr><td style="text-align:left">${runHead(r.key)}</td><td>${v===null?absentTag("noValue"):fmt(100*v,1)+"%"}</td></tr>`;}).join("")}
-      </tbody></table></div></div>`;
-  }
   const pairDims=Object.keys(D.byPair);
   const shownPairDims=dimsToShow(pairDims, state.xDim);
   h+=`<div class="panel"><div class="head" style="margin:0">
@@ -5242,6 +5192,33 @@ function renderHeatingFuel(host){
   wireGroups();
 }
 
+/* Whether two runs' weights come from ONE stock allocation (apportionment draw)
+   or two. Apportionment draws a model at random for every building in the
+   estimate, so two draws differ model by model and anything averaged over
+   models moves with the draw; two runs on one sample share a draw when the
+   driver arranged it (compare_runs_mixed, STOCK ALLOCATION). Read from the
+   manifest's per-run allocation record, so the sentence states what was done,
+   not what is assumed; a run without the record (a published release, a run
+   processed before draws carried provenance) says so. */
+function allocationNote(a, b){
+  const rec = k => (ALL_RUNS.find(r=>r.key===k)||{}).allocation || null;
+  const A=rec(a), B=rec(b);
+  if(A && B && A.allocation_id && A.allocation_id===B.allocation_id){
+    const when = String(A.created||"").slice(0,10);
+    return `${runShort(a)} and ${runShort(b)} share one stock allocation (the apportionment draw
+    made for ${A.drawn_for||runShort(a)}${when?` on ${when}`:""}), so a difference between them is
+    a change in the models, not a different draw.`;
+  }
+  if(A && B && A.allocation_id && B.allocation_id){
+    return `${runShort(a)} and ${runShort(b)} were apportioned separately (two random draws of
+    models for the stock), so part of a small difference on an input nobody changed is the draw,
+    not the model.`;
+  }
+  return `Whether ${runShort(a)} and ${runShort(b)} share one stock allocation is not recorded for
+  both; runs apportioned separately differ a little on inputs nobody changed, because each is a
+  different random draw of models for the stock.`;
+}
+
 function renderDesignParams(){
   /* Groups offered on this tab, plus the heating-fuel comparison when that leg
      ran. It is a group rather than an extra section so the tab does not grow a
@@ -5270,8 +5247,7 @@ function renderDesignParams(){
     ${runShort(PRIMARY)} only and are <b>unweighted</b> — one vote per model in the apportioned
     table, not per building represented — so they will not agree with the weighted mean and are
     not the median building in the stock.${other?` The difference column is ${runShort(PRIMARY)}
-    − ${runShort(other)} of the two weighted means; where the two runs share a sample, part of a
-    small difference is their separate apportionment draws rather than a change in the model.`:""}</p>
+    − ${runShort(other)} of the two weighted means. ${allocationNote(PRIMARY, other)}`:""}</p>
     <div class="head" style="margin:10px 0 0"><span class="legend-title"
         style="margin:0 8px 0 0">Group</span>
       <div class="tabs" role="group" aria-label="Parameter group" id="dpGroupCtl">

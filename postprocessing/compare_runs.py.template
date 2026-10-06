@@ -22,6 +22,8 @@ COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # the comparison fo
                                    # On Windows keep it short: the deepest plot path beneath it must stay under
                                    # 260 characters, and the plot filenames alone take about 100 of those
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False writes only
+                                   # the wide CSVs and the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
@@ -80,9 +82,9 @@ def main():
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock_a.get_sim_outs_for_upgrade(0)
-    comstock_a.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock_a.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
     base_sim_outs = comstock_b.get_sim_outs_for_upgrade(0)
-    comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
 
     # CBECS
     cbecs = cspp.CBECS(
@@ -117,7 +119,7 @@ def main():
         cbecs_list=[cbecs],
         comstock_list = [comstock_a, comstock_b],
         name=COMPARISON_NAME,
-        make_comparison_plots=True
+        make_comparison_plots=MAKE_COMPARISON_PLOTS
     )
 
     # Export the comparison data to wide format for Tableau

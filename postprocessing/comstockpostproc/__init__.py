@@ -16,6 +16,9 @@ from .results_dashboard import AthenaRunRef, ResultsDashboard, load_ami, load_cb
 # S3 exports + Athena tables, built only when missing. One call per run in a
 # driver; the timeseries plots, the AMI comparison and the dashboard read them.
 from .athena_tables import prepare_athena_tables, required_geo_exports
+# The stock allocation (apportionment draw) as a portable file: fingerprint,
+# provenance, the sharing plan a driver follows.
+from . import allocation
 from .utils.hpc import *
 
 from .__version__ import (

@@ -8,6 +8,7 @@ to crawl, and whether to create views. These pin that logic so a driver's
 county files per upgrade, or into skipping a view something reads.
 """
 
+import os
 import types
 
 from comstockpostproc import athena_tables as at
@@ -39,6 +40,69 @@ def test_empty_run_exports_national_only_unless_county_wanted():
 def test_county_is_not_re_exported_when_present():
     p = at.plan({NATIONAL, COUNTY}, RUN, "enduse", county=True)
     assert p.nothing_to_do
+
+
+class _Stub:
+    """A ComStock stand-in: a local draw file, and a local folder playing the S3 prefix."""
+
+    def __init__(self, tmp_path, allocation_id):
+        import polars as pl
+        from fsspec.implementations.local import LocalFileSystem
+        from comstockpostproc import allocation as al
+        self.comstock_run_name = RUN
+        self.allocation_id = allocation_id
+        self.output_dir = {"fs": LocalFileSystem(), "fs_path": str(tmp_path / "local")}
+        self.remote = str(tmp_path / "remote")
+        for d in (self.output_dir["fs_path"], self.remote):
+            os.makedirs(d, exist_ok=True)
+        self.allocation_path = f"{self.output_dir['fs_path']}/{al.FILE_NAME}"
+        prov = al.new_provenance(drawn_for=RUN, drawn_for_version=RUN, estimate_version="2026R1",
+                                 bootstrap_coefficient=3, sample_hash="s" * 64, sample_rows=1,
+                                 n_models_drawn=1, n_models_available=1, n_rows=1)
+        prov.allocation_id = allocation_id
+        al.write_allocation(pl.DataFrame({"bldg_id": [1], "weight": [1.0]}), self.allocation_path, prov)
+
+    def setup_fsspec_filesystem(self, s3_dir, aws_profile_name=None):
+        from fsspec.implementations.local import LocalFileSystem
+        return {"fs": LocalFileSystem(), "fs_path": self.remote}
+
+
+def test_export_record_decides_staleness_and_publishes_the_draw(tmp_path):
+    from comstockpostproc import allocation as al
+    c = _Stub(tmp_path, "a" * 32)
+    # no record beside the export: the tables cannot be the current draw
+    assert "no record of their stock allocation" in at._stale_allocation_reason(c, "s3://x/r/r")
+    assert at._remote_allocation_id(c, "s3://x/r/r") is None
+    # after an export the record and the draw file sit beside it, and nothing is stale
+    assert at._record_allocation(c, "s3://x/r/r") == "a" * 32
+    assert at._remote_allocation_id(c, "s3://x/r/r") == "a" * 32
+    assert at._stale_allocation_reason(c, "s3://x/r/r") == ""
+    published = f"{c.remote}/{al.FILE_NAME}"
+    assert al.read_provenance(published).allocation_id == "a" * 32
+    assert al.published_draw_url("eulp/euss_com/", RUN) == f"s3://eulp/euss_com/{RUN}/{RUN}/{al.FILE_NAME}"
+    # the run moves to another draw: the record names the old one
+    c.allocation_id = "b" * 32
+    assert "exported from stock allocation aaaaaaaa; the run now uses bbbbbbbb" in \
+        at._stale_allocation_reason(c, "s3://x/r/r")
+    # a legacy draw (no id) compares nothing
+    c.allocation_id = None
+    assert at._stale_allocation_reason(c, "s3://x/r/r") == ""
+
+
+def test_tables_from_another_stock_allocation_are_re_exported():
+    # Every table exists, but the marker beside the export names another draw:
+    # existence is not weight freshness.
+    names = {NATIONAL, COUNTY, TS, NATIONAL.replace("_parquet", "_vu"),
+             COUNTY.replace("_parquet", "_vu"), f"{TS}_vu"}
+    why = "exported from stock allocation 1234abcd; the run now uses 9876fedc"
+    p = at.plan(names, RUN, "enduse", county=True, views=True, stale=why)
+    assert p.export == [at.NATIONAL_EXPORT, at.COUNTY_EXPORT] and p.crawl and p.views
+    assert why in p.describe()
+    # national only when the county aggregate is not wanted
+    p = at.plan({NATIONAL}, RUN, "enduse", stale=why)
+    assert p.export == [at.NATIONAL_EXPORT]
+    # no reason: unchanged behaviour
+    assert at.plan(names, RUN, "enduse", county=True, views=True).nothing_to_do
 
 
 def test_views_alone_are_created_without_an_export():

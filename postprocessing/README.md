@@ -130,16 +130,35 @@ on another sample gets its own, so the samples may differ, and a guard checks ev
 `process` run's sample against its stated estimate before anything expensive starts.
 With no `process` entries it is the Athena-only case below and finishes in minutes.
 
+**One stock allocation per sample.** Apportionment draws a model at random for every
+building in the stock estimate, so two draws differ model by model (two draws of one
+100k sample: 0.2% of models kept their weight, the median model's weight moved 18%) and
+anything averaged over models moves a little with the draw even where no model changed.
+`process` runs on one sample and estimate therefore share ONE draw: the run under review's
+when it is among them, else the first listed; the others copy it, and the log says so
+("SHARE <run>'s draw"). The draw file, `output/ComStock <v>/cached_ComStock_alloc_wts.parquet`,
+carries its provenance in the parquet metadata -- the run, estimate and sample (a fingerprint
+of `buildstock.csv`) it was drawn for -- and is reused only when that matches the run; a run
+whose draw changed gets its bills and its Athena tables rebuilt. The export publishes the
+draw beside the run's tables (`s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet`,
+with `postprocessing_allocation.json` naming it), and a `process` entry adopts that published
+draw by itself when it fits, so everyone who postprocesses or plots the run gets exactly the
+published weights; `allocation='<path or s3://...>'` names another file instead. The library
+checks any adopted file fits the run and reports how many models it weights. Tables whose
+record names a different draw are replaced only when this machine processed the run before
+or the entry says `rebuild=True`, so a teammate never overwrites a published run by accident.
+`comstockpostproc/allocation.py` has the details.
+
 Every cache the run will touch is listed in the log before anything expensive starts --
-simulation outputs, apportionment, bills, `CBECS wide.csv`, `AMI long.csv` -- with what
-this pass will do (reuse or build), when the cache was written and where it is
-(`cspp.report_caches`). Caches are detected, never assumed: one that exists is reused,
-one that does not is built. `REUSE_CACHES = False` is the override for the case the disk
-cannot show, an estimate, export or weight code that changed while the files stayed: it
-rebuilds the run-specific caches and deletes each `process` run's
-`cached_allocated_weights_plus_bills` folder, the one cache nothing else refreshes. CBECS
-and AMI files depend on no run and are always reused; Athena tables follow each entry's
-`rebuild` flag.
+simulation outputs, apportionment, the stock allocation, bills, `CBECS wide.csv`,
+`AMI long.csv` -- with what this pass will do (reuse, build, draw, share), when the cache
+was written and where it is (`cspp.report_caches`). Caches are detected, never assumed: one
+that exists is reused, one that does not is built. `REUSE_CACHES = False` is the override
+for the case the disk cannot show, an estimate, export or weight code that changed while
+the files stayed: it rebuilds the run-specific caches -- the draw is redrawn -- and deletes
+each `process` run's `cached_allocated_weights_plus_bills` folder. CBECS and AMI files
+depend on no run and are always reused; Athena tables are re-exported when a run's draw
+changed, and otherwise follow each entry's `rebuild` flag.
 
 1. Copy `compare_runs_mixed.py.template` to `compare_runs_mixed.py`
 2. Fill in `RUNS` (in the order you want them drawn), `REVIEW_RUN`, `COMPARISON_NAME` and
@@ -195,12 +214,19 @@ COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # multi-run drivers
                                    # output/ (plots, CSVs, results_dashboard/). Name it yourself; the class's
                                    # default is built for one run and its upgrades. Keep it short on Windows
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = False     # True also writes the comparison figures (slow); False writes only the
+                                   # CSVs and the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
 #   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
 #         database='buildstock_sdr', color='#E69F00')]
 ```
+
+Every template writes the dashboard and skips the figures by default. Set
+`MAKE_COMPARISON_PLOTS = True` to get the figures as well, and in `compare_upgrades.py` also
+`MAKE_TIMESERIES_PLOTS = True` for the measure timeseries figures; the Athena tables the
+dashboard reads are prepared either way.
 
 The dashboard reads the same Athena tables the timeseries plots and the AMI
 comparison do, and every driver gets them the same way: one

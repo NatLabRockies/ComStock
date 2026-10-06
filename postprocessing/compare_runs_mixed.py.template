@@ -41,6 +41,22 @@ building types. Without the check a wrong pairing is silent: floor areas still m
 CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the weights
 they were exported with.
 
+STOCK ALLOCATION. Apportionment draws a model at random for every building in the estimate,
+so two draws differ model by model (two draws of one sample: 0.2% of models kept their weight,
+the median model's weight moved 18%) and anything averaged over models moves with the draw.
+Runs on one sample and estimate therefore share ONE draw: the run under review's when it is
+among them, else the first listed; the others copy it, and the log says so. A draw file
+(output/ComStock <v>/cached_ComStock_alloc_wts.parquet) carries its provenance -- the run,
+estimate and sample (a fingerprint of buildstock.csv) it was drawn for -- and is reused only
+when that matches this run; the bills and the Athena tables are rebuilt when a run's draw
+changes. The export publishes each run's draw beside its tables
+(s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet, with a record naming it) and
+a 'process' entry adopts that published draw by itself when it fits, so everyone who
+postprocesses or plots the run gets the published weights; allocation='<path or s3://...>'
+names another file. Tables whose record names a different draw are replaced only when this
+machine processed the run before or the entry says rebuild=True, so a teammate never
+overwrites a published run by accident. See comstockpostproc/allocation.py.
+
 Launch it in the background and read the log:
     mkdir -p logs; ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
 Success: EXIT=0, one "athena tables: <run> ..." line per 'process' run, and
@@ -66,8 +82,8 @@ ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `data
                                    # for processed runs: the timeseries plots and the AMI comparison
                                    # elsewhere in the package hard-code it
 MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = True      # the ComStock-vs-CBECS figures over the 'process' runs; False writes
-                                   # only their wide CSVs and the dashboard, which is faster
+MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures over the 'process' runs
+                                   # (slow); False writes only their wide CSVs and the dashboard
 INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
 MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
@@ -81,14 +97,16 @@ COUNTY_TABLES_FOR_MEASURES = False # True: the county export covers every measur
 CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
                                    # every sampled (building type, tract) pair must exist in it
 REUSE_CACHES           = True      # True: every cache found on disk is reused -- simulation outputs,
-                                   # apportionment, bills -- and the log lists each one before anything
-                                   # expensive starts (what it is, reuse or build, when it was written).
-                                   # False: those run-specific caches are rebuilt regardless, which
-                                   # DELETES output/ComStock <v>/cached_allocated_weights_plus_bills for
-                                   # every 'process' run. Set False after changing an estimate, a results
-                                   # export, or the code that computes weights. CBECS and AMI files depend
-                                   # on no run and are always reused; Athena tables follow each entry's
-                                   # rebuild flag
+                                   # apportionment, a run's own stock allocation (when it fits the run),
+                                   # bills -- and the log lists each one before anything expensive
+                                   # starts (what it is, reuse or build, when it was written).
+                                   # False: those run-specific caches are rebuilt regardless: the draw is
+                                   # redrawn, and output/ComStock <v>/cached_allocated_weights_plus_bills
+                                   # is DELETED for every 'process' run. Set False after changing an
+                                   # estimate, a results export, or the code that computes weights. CBECS
+                                   # and AMI files depend on no run and are always reused; Athena tables
+                                   # are re-exported when a run's draw changed, and otherwise follow each
+                                   # entry's rebuild flag
 COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
                                             # Keep it short on Windows: the deepest plot path beneath
                                             # it must stay under 260 characters
@@ -110,8 +128,11 @@ DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrow
 #                   database     where its tables are crawled to and read from
 #                   color        hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
 #                   optional     label (display name), version (cache folder), rebuild=True
-#                                (re-export and re-crawl: table existence is not weight freshness,
-#                                so set it when the apportionment changed),
+#                                (re-export and re-crawl regardless: table existence is not weight
+#                                freshness; a changed stock allocation triggers this by itself),
+#                                allocation='<path>' (a draw file this run must carry, local or s3://;
+#                                without it the run adopts its own published draw when one fits, and
+#                                runs on one sample share a draw, see STOCK ALLOCATION),
 #                                acceptable_failure_percentage (default 0.25; only 'Fail' counts,
 #                                not a measure's not-applicable models), measures=True (the
 #                                REVIEW_RUN entry only: postprocess its measure scenarios, see MEASURES),
@@ -144,16 +165,24 @@ def main():
         for r in processed:
             assert_sample_matches_estimate(r['run'], buildstock_path(r), r['estimate'])
 
+    # 1b. The stock-allocation plan: who draws, who reuses its own draw, who shares whose,
+    #     who uses a given file. Decided from the disk alone (each run's buildstock.csv
+    #     fingerprint, the provenance in its draw file), so it can be read before anything
+    #     expensive starts. Step 3 executes it.
+    plan = allocation_plan(processed)
+
     # What is on this disk and what this pass will do with it, before anything
     # expensive starts: one line per cache, with its date (REUSE_CACHES above).
     cspp.report_caches(run_versions=[cache_version(r) for r in processed],
                        estimate_versions=sorted({r['estimate'] for r in processed}),
-                       reuse=REUSE_CACHES)
+                       reuse=REUSE_CACHES,
+                       allocations={cache_version(entry_for(d.run)): d.describe() for d in plan})
 
     # 2. A ComStock object for every run postprocessed here.
-    objects, construct = {}, {}
+    objects, construct, first_pass = {}, {}, {}
     for r in processed:
         have = sim_cache_exists(cache_version(r))
+        first_pass[r['run']] = not have    # step 6: tables this machine did not make are kept
         cached = REUSE_CACHES and have
         logger.info('%s: simulation-output cache %s', r['run'],
                     'found, reloading it' if cached
@@ -190,17 +219,36 @@ def main():
         if r.get('label'):
             objects[r['run']].dataset_name = r['label']
 
-    # 3. One Apportion per distinct estimate; every run apportioned to its own. Recomputed
-    #    on every pass (minutes): a reloaded apportionment is the kind of cache that goes
-    #    stale silently.
+    # 3. One Apportion per distinct estimate. One STOCK ALLOCATION (the random draw of a model
+    #    for every building in the estimate, with weights) per estimate and sample: runs on one
+    #    sample share the run under review's draw, so a difference between them is a model
+    #    change, not a different draw. The plan from step 1b says what each run does; the
+    #    library checks every reused draw against the run (estimate, bootstrap coefficient,
+    #    sample fingerprint) and logs how its models reconcile with the run's.
     estimates = {v: stock_estimate(v) for v in sorted({r['estimate'] for r in processed})}
     if len(estimates) > 1:
         logger.warning('mixed stock estimates in this comparison: %s',
                        {r['run']: r['estimate'] for r in processed})
-    for r in processed:
-        obj = objects[r['run']]
-        obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0),
-                                     reload_from_cache=False)
+    before = {r['run']: objects[r['run']].allocation_id for r in processed}
+    for d in plan:                       # owners come before the runs that share their draw
+        r, obj = entry_for(d.run), objects[d.run]
+        logger.info('%s: stock allocation: %s', d.run, d.describe())
+        how = {}
+        if d.action == 'reuse':
+            how = dict(reload_from_cache=True)
+        elif d.action == 'share':
+            how = dict(allocation_path=objects[d.source].allocation_path)
+        elif d.action == 'use':
+            how = dict(allocation_path=d.source)
+        obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0), **how)
+    # A run whose draw changed in this pass has stale bills (the library rebuilds them in
+    # step 4, from each folder's marker) and, unless they already carry this draw, stale
+    # Athena tables (step 6, from the record beside the export).
+    for run in before:
+        if objects[run].allocation_id != before[run]:
+            logger.info('%s: stock allocation changed in this pass (%s -> %s); bills and Athena '
+                        'tables built from another draw will be rebuilt', run,
+                        (before[run] or 'none')[:8], (objects[run].allocation_id or 'none')[:8])
 
     # 4. CBECS, then scale every processed run to CBECS floor area and add utility bills.
     #    load_cbecs reads 'CBECS wide.csv' when it exists and builds it otherwise.
@@ -209,12 +257,13 @@ def main():
         obj.create_allocated_weights_scaled_to_cbecs(
             cbecs, obj.get_sim_outs_for_upgrade(0), obj.get_allocated_weights(),
             remove_non_comstock_bldg_types_from_cbecs=True)
-        # No reload flag: short-circuits whenever output/ComStock <v>/
-        # cached_allocated_weights_plus_bills/ exists, and the S3 export reads from it,
-        # so it is not refreshed when the apportionment changes. REUSE_CACHES=False
-        # deletes it here so this pass's weights are the ones billed. One per upgrade
-        # LOADED: the baseline, plus every measure of a measures=True run. Not
-        # upgrade_ids_to_process, which lists every results file on disk.
+        # No reload flag: short-circuits when output/ComStock <v>/
+        # cached_allocated_weights_plus_bills/ holds the upgrade AND was built from the
+        # run's current stock allocation (its _allocation.json marker); a folder from
+        # another draw is rebuilt by the library, since the S3 export reads from it.
+        # REUSE_CACHES=False deletes it outright. One per upgrade LOADED: the baseline,
+        # plus every measure of a measures=True run. Not upgrade_ids_to_process, which
+        # lists every results file on disk.
         if not REUSE_CACHES:
             bills_dir = os.path.join(HERE, 'output', f'ComStock {obj.comstock_run_version}',
                                      'cached_allocated_weights_plus_bills')
@@ -250,11 +299,17 @@ def main():
         # asked for or when a measure location is a county.
         county_all = measures and (COUNTY_TABLES_FOR_MEASURES
                                    or has_county_location(MEASURE_TIMESERIES_LOCATIONS))
+        # Table existence is not weight freshness: prepare_athena_tables re-exports tables
+        # whose record beside the export names another stock allocation than the run uses,
+        # or none at all -- but only when this machine processed the run before or the entry
+        # says rebuild=True. On a first pass here the tables may be someone else's (a
+        # published run), so they are kept and the log says how to proceed.
         rebuild = bool(r.get('rebuild')) or (measures and national_lacks_measures(r, objects[r['run']]))
         ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
                                         timeseries=measures, ami=INCLUDE_AMI,
                                         upgrade_ids=None if county_all else [0],
-                                        rebuild=rebuild)
+                                        rebuild=rebuild,
+                                        replace_stale=bool(r.get('rebuild')) or not first_pass[r['run']])
         if not ok:
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
@@ -318,6 +373,10 @@ def check_declaration():
                              'version its sample was drawn against)')
         if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
             raise SystemExit(f'release entries need key and md_table: {r}')
+        if r.get('allocation') and r['kind'] != 'process':
+            raise SystemExit(f"{r.get('run') or r.get('key')}: allocation= names the draw file a "
+                             "'process' run must carry; an 'athena' or 'release' run keeps the "
+                             'weights it was exported with')
     carry = [r.get('run') or r.get('key') for r in RUNS if r.get('measures')]
     if carry and (carry != [REVIEW_RUN] or review_entry()['kind'] != 'process'):
         raise SystemExit(f'measures=True belongs on the REVIEW_RUN entry ({REVIEW_RUN}), and it '
@@ -382,6 +441,54 @@ def has_county_location(locations):
 def cache_version(entry):
     """The cache folder name for a 'process' run: comstock_data/<v>, output/ComStock <v>."""
     return entry.get('version', entry['run'])
+
+
+def entry_for(run):
+    """The 'process' RUNS entry with this run name."""
+    return next(r for r in RUNS if r.get('run') == run)
+
+
+def allocation_plan(entries):
+    """What this pass does with each 'process' run's stock allocation, from the disk alone:
+    the run's sample fingerprint (its buildstock.csv, fetched if absent) and the provenance
+    of the draw file in its output folder. The rules are in
+    comstockpostproc.allocation.plan_allocations. The bootstrap coefficient is Apportion's
+    default, which stock_estimate() leaves alone."""
+    import inspect
+    bootstrap = inspect.signature(cspp.Apportion.__init__).parameters['bootstrap_coefficient'].default
+    runs = []
+    for r in entries:
+        own = os.path.join(HERE, 'output', f'ComStock {cache_version(r)}', cspp.allocation.FILE_NAME)
+        sample_hash, _ = cspp.allocation.sample_fingerprint(buildstock_path(r))
+        use, use_id = r.get('allocation'), None
+        if not use and REUSE_CACHES and not r.get('rebuild'):
+            use, use_id = published_draw(r, sample_hash, bootstrap)
+        runs.append(dict(run=r['run'], estimate=r['estimate'], sample_hash=sample_hash,
+                         allocation=use, allocation_id=use_id,
+                         status=cspp.allocation.status_of(
+                             own, estimate_version=r['estimate'], bootstrap_coefficient=bootstrap,
+                             sample_hash=sample_hash)))
+    return cspp.allocation.plan_allocations(runs, review_run=REVIEW_RUN, reuse=REUSE_CACHES)
+
+
+def published_draw(entry, sample_hash, bootstrap):
+    """(url, id) of the draw a run's export published beside its tables, when it exists and
+    fits this entry; (None, None) otherwise. Adopting it is what makes every machine's weights
+    the published ones. Skipped under REUSE_CACHES=False or rebuild=True: a new draw is wanted."""
+    url = cspp.allocation.published_draw_url(entry['s3_base_dir'], entry['run'])
+    try:
+        st = cspp.allocation.status_of(url, estimate_version=entry['estimate'],
+                                       bootstrap_coefficient=bootstrap, sample_hash=sample_hash)
+    except Exception as exc:                  # noqa: BLE001
+        logger.warning('%s: could not look for a published draw at %s (%s)', entry['run'], url, exc)
+        return None, None
+    if st.state == 'valid':
+        logger.info('%s: published draw found beside its export, adopting it: %s', entry['run'],
+                    st.provenance.describe())
+        return url, st.provenance.allocation_id
+    if st.state != 'missing':
+        logger.warning('%s: the published draw at %s is %s; not used', entry['run'], url, st.describe())
+    return None, None
 
 
 def sim_cache_exists(run_version):

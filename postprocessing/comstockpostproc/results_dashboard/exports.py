@@ -75,11 +75,47 @@ def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
     return cbecs
 
 
+def _stale_bills(upgrade_dirs, alloc_path, decision):
+    """Which cached bills upgrades the library will rebuild because of the draw.
+
+    Returns a list of upgrade ids (empty: none), or None when it cannot be told
+    from the disk -- the run adopts another run's draw (SHARE / USE), whose id
+    the report does not know. DRAW / REDRAW: every folder, the draw changes.
+    REUSE or no decision: the folders whose marker is not the own draw's id.
+    """
+    import os
+    import re
+    from comstockpostproc import allocation
+    ids = sorted({int(m.group(1)) for d in upgrade_dirs
+                  for m in [re.search(r"upgrade=(\d+)", os.path.basename(d))] if m})
+    action = str(decision or "").split(" ")[0]
+    if action in ("DRAW", "REDRAW"):
+        return ids
+    if action in ("SHARE", "USE"):
+        return None
+    try:
+        own = allocation.read_provenance(alloc_path) if os.path.exists(alloc_path) else None
+    except Exception:                                             # noqa: BLE001
+        own = None
+    current = own.allocation_id if own else None
+    stale = []
+    for d in upgrade_dirs:
+        m = re.search(r"upgrade=(\d+)", os.path.basename(d))
+        if m and not allocation.derived_is_current(allocation.read_marker(d), current):
+            stale.append(int(m.group(1)))
+    return sorted(stale)
+
+
 def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
                   truth_data_version: str = "v01", reuse: bool = True,
-                  output_dir: str | None = None) -> list[dict]:
+                  output_dir: str | None = None, allocations: dict | None = None) -> list[dict]:
     """Log one line per cache a driver will touch -- what it is, whether it will be
     REUSED or BUILT, when it was written and where -- and return the rows.
+
+    `allocations` maps a run version to what the driver decided about its stock
+    allocation (a `Decision.describe()` from comstockpostproc.allocation: "REUSE own
+    draw", "SHARE <run>'s draw", ...); the allocated-weights row then shows that
+    decision instead of the old "recomputed on every pass".
 
     The drivers decide each cache from the disk (a cache that exists is reused,
     one that does not is built), so nobody has to remember what a machine holds;
@@ -101,7 +137,7 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
     rows: list[dict] = []
 
     def add(scope, cache, paths, folder, run_specific=True, detail="", caveat="",
-            recompute=False):
+            recompute=False, action_override=None):
         found = [p for p in paths if os.path.exists(p)]
         newest = max((os.path.getmtime(p) for p in found), default=None)
         if recompute:
@@ -110,6 +146,8 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
             action = "BUILD"
         elif run_specific and not reuse:
             action = "REBUILD"
+        elif action_override:
+            action = action_override
         else:
             action = "REUSE"
         rows.append({"scope": scope, "cache": cache, "action": action,
@@ -128,13 +166,34 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
                         recursive=True)
         add(v, "simulation outputs", sim, sim_dir, detail=upgrades_in(sim, r"upgrade(\d+)"))
         alloc = os.path.join(base, "cached_ComStock_alloc_wts.parquet")
-        add(v, "allocated weights", [alloc], alloc, recompute=True,
-            caveat="recomputed from the apportionment on every pass")
+        if allocations and v in allocations:
+            # The driver's allocation plan (comstockpostproc.allocation.plan_allocations):
+            # REUSE / DRAW / REDRAW <why> / SHARE <run>'s draw / USE <file>.
+            action, _, rest = str(allocations[v]).partition(" ")
+            found = [p for p in [alloc] if os.path.exists(p)]
+            rows.append({"scope": v, "cache": "stock allocation", "action": action,
+                         "path": os.path.normpath(alloc),
+                         "newest": max((os.path.getmtime(p) for p in found), default=None),
+                         "detail": rest, "caveat": ""})
+        else:
+            add(v, "allocated weights", [alloc], alloc, recompute=True,
+                caveat="recomputed from the apportionment on every pass")
         bills_dir = os.path.join(base, "cached_allocated_weights_plus_bills")
         bills = glob.glob(os.path.join(bills_dir, "upgrade=*"))
+        # The bills follow the draw: each upgrade folder carries the id of the draw it
+        # was built from, and the library rebuilds a folder whose id differs from the
+        # run's draw (or that has none while the draw has an id). Say so here, per
+        # upgrade, instead of promising a reuse that step 4 will not honour.
+        stale = _stale_bills(bills, alloc, (allocations or {}).get(v))
+        if bills and stale is None:
+            caveat = "rebuilt in step 4 unless built from the draw this run adopts"
+        elif bills and stale:
+            caveat = f"upgrades {', '.join(map(str, stale))} were built from another draw: rebuilt in step 4"
+        else:
+            caveat = "reuse=False deletes it"
         add(v, "bills", bills, bills_dir, detail=upgrades_in(bills, r"upgrade=(\d+)"),
-            caveat="reused whenever present, so not refreshed when the apportionment "
-                   "changes; reuse=False deletes it")
+            caveat=caveat, recompute=False,
+            action_override=("REBUILD" if (bills and stale) else "CHECK" if (bills and stale is None) else None))
     for e in estimate_versions:
         app = os.path.join(out, f"Stock Estimation {e}", "cached_ComStock_apportionment.parquet")
         add(e, "apportionment", [app], app)

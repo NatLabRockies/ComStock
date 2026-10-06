@@ -132,6 +132,7 @@ class Plan:
     unknown: bool = False                              # could not list Glue
     wants_timeseries: bool = False                     # views/timeseries were asked for
     county_skipped: bool = False                       # county wanted, but no timeseries table
+    stale: str = ""                                    # why existing tables are re-exported
 
     @property
     def nothing_to_do(self) -> bool:
@@ -152,6 +153,8 @@ class Plan:
             if self.views:
                 steps.append("create views")
             s = f"{self.run} in {self.database}: " + ", ".join(steps)
+            if self.stale:
+                s += f" (the tables up there were {self.stale})"
         if self.timeseries_missing and (self.wants_timeseries or self.county_skipped):
             s += (f". Note: {self.run}_timeseries is absent -- that table comes "
                   "from buildstockbatch's crawl, not from here, so timeseries "
@@ -162,15 +165,20 @@ class Plan:
 
 
 def plan(names: set[str] | None, run: str, database: str, county: bool = False,
-         views: bool = False) -> Plan:
+         views: bool = False, stale: str = "") -> Plan:
     """Decide what a run is missing. Pure: `names` is what Glue listed.
 
     Args:
         names: table and view names present for the run, or None if unknown.
         county: the county aggregate is wanted.
         views: the `_vu` views are wanted (timeseries plots, AMI).
+        stale: non-empty when the tables up there are known to carry another
+            stock allocation than the run now uses (the marker beside the
+            export says which); the text is the reason. Existing tables are
+            then re-exported and crawled, since table existence is not weight
+            freshness.
     """
-    p = Plan(run=run, database=database, wants_timeseries=views)
+    p = Plan(run=run, database=database, wants_timeseries=views, stale=stale)
     if names is None:
         p.unknown = True
         p.export = [NATIONAL_EXPORT] + ([COUNTY_EXPORT] if county else [])
@@ -182,7 +190,7 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
     # "county" nor a PUMA aggregate crawled alongside may change the answer.
     nat = f"{run}_md_agg_{NATIONAL_EXPORT}_parquet"
     cty = f"{run}_md_agg_{COUNTY_EXPORT}_parquet"
-    if nat not in names:
+    if nat not in names or stale:
         p.export.append(NATIONAL_EXPORT)
     ts_table = f"{run}_timeseries"
     p.timeseries_missing = ts_table not in names
@@ -196,6 +204,9 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
             p.county_skipped = True
         else:
             p.export.append(COUNTY_EXPORT)
+    elif county and stale:
+        # It exists, and it carries the old weights too.
+        p.export.append(COUNTY_EXPORT)
     p.crawl = bool(p.export)
     if views:
         # Only the views something reads: national always, county only when
@@ -239,7 +250,8 @@ def _run_upgrade_ids(comstock) -> list:
 def prepare_athena_tables(comstock, database: str = "enduse",
                           timeseries: bool = False, ami: bool = False,
                           rebuild: bool = False, upgrade_ids=None,
-                          glue_service_role: str = DEFAULT_GLUE_ROLE) -> bool:
+                          glue_service_role: str = DEFAULT_GLUE_ROLE,
+                          replace_stale: bool = True) -> bool:
     """Make sure this run's S3 exports and Athena tables exist. One call per run.
 
     Checks Glue first and does only what is missing: export the aggregates to
@@ -267,6 +279,16 @@ def prepare_athena_tables(comstock, database: str = "enduse",
             because every annual and measure leg reads it. Presence is checked
             per table, not per upgrade, so a county table exported for [0]
             counts as present afterwards -- use rebuild=True to extend it.
+        replace_stale: the tables up there record the stock allocation they
+            were exported from (`postprocessing_allocation.json` beside the
+            crawled prefix, written here after every export together with the
+            draw file itself). When that record is missing, or names another
+            draw than the run now uses, the tables carry other weights. True
+            re-exports them -- the owner's case: this machine processed the run
+            before, or the driver was told to rebuild. False keeps them, logs
+            why, and records which allocation they carry in
+            `comstock.tables_allocation_id`, so a teammate reproducing a
+            published run never overwrites it by accident.
 
     Returns True when the tables are in place, False otherwise -- including
     when timeseries or AMI was asked for and the run has no `<run>_timeseries`
@@ -285,13 +307,28 @@ def prepare_athena_tables(comstock, database: str = "enduse",
         county = ami or (timeseries and _plots_county_location(comstock))
         views = timeseries or ami
         ts_needed = timeseries or ami
+        s3_dir = f"s3://{comstock.s3_base_dir}/{run}/{run}"
+        try:
+            comstock.tables_allocation_id = _remote_allocation_id(comstock, s3_dir)
+        except Exception as exc:                                  # noqa: BLE001
+            logger.info("athena tables: could not read the allocation marker at %s (%s)", s3_dir, exc)
         if rebuild:
             p = plan(None, run, database, county=county, views=views)
             p.unknown = False
             logger.info("athena tables: REBUILD requested; %s", p.describe())
         else:
+            stale = _stale_allocation_reason(comstock, s3_dir)
+            if stale and not replace_stale:
+                logger.warning(
+                    "athena tables: %s's tables in %s were %s. They are KEPT: this machine has "
+                    "not processed the run before, so they may be someone else's (a published "
+                    "run). To replace them with this pass's draw, set rebuild=True on the entry. "
+                    "To match them instead, adopt the draw they were exported with -- the mixed "
+                    "template does that by itself when the draw file sits beside the export.",
+                    run, database, stale)
+                stale = ""
             p = plan(existing_tables(run, database), run, database,
-                     county=county, views=views)
+                     county=county, views=views, stale=stale)
             logger.info("athena tables: %s", p.describe())
             if p.unknown:
                 logger.warning(
@@ -301,7 +338,6 @@ def prepare_athena_tables(comstock, database: str = "enduse",
                 return False
         ts_absent = p.timeseries_missing
         if not p.nothing_to_do:
-            s3_dir = f"s3://{comstock.s3_base_dir}/{run}/{run}"
             if p.export:
                 step = "exporting to S3"
                 # Only the resolutions that are missing, always as parquet -- the
@@ -347,6 +383,11 @@ def prepare_athena_tables(comstock, database: str = "enduse",
                 # metadata tables so joins work; create_views builds every _vu.
                 comstock.fix_timeseries_tables(run, database)
                 comstock.create_views(run, database, ATHENA_WORKGROUP)
+            if p.export:
+                # Only once everything is up there: the record and the draw file, so
+                # a pass that dies halfway leaves no record and is redone.
+                step = "recording the stock allocation beside the export"
+                comstock.tables_allocation_id = _record_allocation(comstock, s3_dir)
             # The tables changed under every cached query that read them.
             _forget_cached_queries(run)
         if ts_needed and ts_absent:
@@ -364,6 +405,60 @@ def prepare_athena_tables(comstock, database: str = "enduse",
             "legs whose tables are missing and says so; the timeseries plots and "
             "the AMI comparison need them.", run, step, exc)
         return False
+
+
+def _remote_allocation_id(comstock, s3_dir: str) -> str | None:
+    """The stock allocation the tables up there were exported from, per the marker
+    beside the export (comstockpostproc.allocation.EXPORT_MARKER_NAME); None when
+    there is no marker. Raises when the location cannot be read."""
+    from . import allocation
+    out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
+    return allocation.read_marker(out["fs_path"], out["fs"], name=allocation.EXPORT_MARKER_NAME)
+
+
+def _stale_allocation_reason(comstock, s3_dir: str) -> str:
+    """Why the tables up there are stale, or "" when they match the run's draw or
+    nothing can be compared.
+
+    A run whose draw has an id expects the marker beside its export to name the
+    same id. Another id: the tables carry another draw's weights. No marker: they
+    were exported before draws carried an id, by an older template, or by a pass
+    that did not get as far as the record; none of those is the current draw. No
+    current id (a legacy draw), or a marker that cannot be read: nothing to
+    compare, the tables are used as they are.
+    """
+    current = getattr(comstock, "allocation_id", None)
+    if not current:
+        return ""
+    try:
+        remote = _remote_allocation_id(comstock, s3_dir)
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("athena tables: could not read the allocation marker at %s (%s)", s3_dir, exc)
+        return ""
+    if remote == current:
+        return ""
+    if remote:
+        return f"exported from stock allocation {remote[:8]}; the run now uses {current[:8]}"
+    return f"exported with no record of their stock allocation; the run now uses {current[:8]}"
+
+
+def _record_allocation(comstock, s3_dir: str) -> str | None:
+    """After an export: the draw file and the marker naming it, beside the crawled
+    prefix (never inside it: the crawler would read them as data).
+
+    The file is what lets anyone else postprocess or plot the run with exactly
+    these weights -- the mixed template adopts a run's published draw by itself.
+    Returns the recorded id."""
+    from . import allocation
+    current = getattr(comstock, "allocation_id", None)
+    if not current:
+        return None
+    out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
+    allocation.publish_draw(comstock.allocation_path, comstock.output_dir["fs"], out["fs_path"], out["fs"])
+    allocation.write_marker(out["fs_path"], current, out["fs"], name=allocation.EXPORT_MARKER_NAME)
+    logger.info("athena tables: recorded stock allocation %s beside %s's export, with its draw file",
+                current[:8], getattr(comstock, "comstock_run_name", "?"))
+    return current
 
 
 def _forget_cached_queries(run: str) -> None:

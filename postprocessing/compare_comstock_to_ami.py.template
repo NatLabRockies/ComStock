@@ -17,6 +17,8 @@ EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Ta
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-AMI figures (slow); False leaves them to
+                                   # the dashboard's AMI tab
 INCLUDE_AMI            = True      # metered load-shape tab. False only drops the tab: the county export
                                    # still runs (ami=True below) because the AMI comparison needs it
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
@@ -57,7 +59,7 @@ def main():
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
-    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache=False)
+    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
 
     # CBECS. load_cbecs reads 'CBECS wide.csv' when it exists and builds and exports
     # it when it does not; CBECS(reload_from_csv=True) raised on any machine that had
@@ -122,7 +124,7 @@ def main():
     comstock.download_timeseries_data_for_ami_comparison(ami, reload_from_csv=False, save_individual_regions=False)
 
     # comparison
-    comparison = cspp.ComStockToAMIComparison(comstock, ami, make_comparison_plots=True)
+    comparison = cspp.ComStockToAMIComparison(comstock, ami, make_comparison_plots=MAKE_COMPARISON_PLOTS)
     #comparison.export_plot_data_to_csv_wide()
 
     # ---- Results dashboard --------------------------------------

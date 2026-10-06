@@ -81,6 +81,44 @@ def _weight_basis_sentence(comps, primary) -> str:
                 "export, not for the model.")
 
 
+def _allocation_sentence(runs) -> str:
+    """Which runs share one stock allocation (apportionment draw), from the
+    per-run record `AthenaRunRef.allocation` carries; nothing is assumed.
+
+    Apportionment draws a model at random for every building in the estimate,
+    so two draws differ model by model and anything averaged over models moves
+    with the draw. Runs on one sample share a draw when the driver arranged it;
+    the record says whether it did."""
+    recs = {r.key: getattr(r, "allocation", None) for r in runs}
+    known = {k: a for k, a in recs.items() if a and a.get("allocation_id")}
+    if len(runs) < 2:
+        return ""
+    if len(known) < len(runs):
+        missing = [k for k in recs if k not in known]
+        return (" Whether every run shares one stock allocation is not recorded "
+                f"({', '.join(f'`{k}`' for k in missing)} carry no record); runs apportioned "
+                "separately differ a little on inputs nobody changed, each being a different "
+                "random draw of models for the stock.")
+    by_id: dict[str, list[str]] = {}
+    for k, a in known.items():
+        by_id.setdefault(a["allocation_id"], []).append(k)
+    groups = [v for v in by_id.values() if len(v) > 1]
+    if not groups:
+        return (" Each run was apportioned separately (its own random draw of models for the "
+                "stock), so part of a small run-vs-run difference on an input nobody changed is "
+                "the draw, not the model.")
+    parts = []
+    for keys in groups:
+        a = known[keys[0]]
+        when = str(a.get("created") or "")[:10]
+        parts.append(f"{', '.join(f'`{k}`' for k in keys)} share one stock allocation (the "
+                     f"apportionment draw made for `{a.get('drawn_for')}`"
+                     + (f" on {when}" if when else "") + ")")
+    return (" " + "; ".join(parts) + ", so a difference between them is a change in the models, "
+            "not a different draw." + (" The other runs have their own draws." if len(known) >
+                                       sum(len(g) for g in groups) else ""))
+
+
 def _ami_scope_sentence(coverage) -> str:
     """Which metered regions were assessed and which one the headline shows."""
     regions = coverage.get("ami_regions_compared") or []
@@ -132,6 +170,7 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
         "",
         "ComStock side is queried from the Athena metadata tables. "
         + _weight_basis_sentence(comps, primary)
+        + _allocation_sentence(runs)
         + " CBECS side is comstockpostproc's `CBECS wide.csv` restricted to ComStock "
         "building types, with jackknife 95% confidence intervals computed from its 151 replicate "
         "weights.",
@@ -857,7 +896,10 @@ def _assess(args) -> None:
     (out / "manifest.json").write_text(json.dumps({
         "runs": [{"key": r.key, "label": r.label, "md_table": r.md_table,
                   "md_county_table": r.md_county_table, "ts_table": r.ts_table,
-                  "color": r.color} for r in runs],
+                  "color": r.color,
+                  # the stock allocation the weights come from (None when unknown),
+                  # so the page can say whether compared runs share one draw
+                  "allocation": getattr(r, "allocation", None)} for r in runs],
         "primary_run": primary.key,
         # The order every view draws the runs in, left to right after CBECS: the
         # driver's list order. `runs` above stays run-under-review first, which
