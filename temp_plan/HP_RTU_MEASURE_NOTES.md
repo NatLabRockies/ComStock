@@ -1,90 +1,105 @@
 # upgrade_hvac_add_heat_pump_rtu — working notes
 
 **Measure:** `resources/measures/upgrade_hvac_add_heat_pump_rtu/measure.rb`
-**This branch:** `jkim/dual_fuel_rtus_notes` (off `origin/ccaradon/dual_fuel_rtus` @ `b3e9b751`)
-**Compared against:** `origin/main` (merge base `f25ac375`; main has no changes to measure.rb since)
+**This branch:** `jkim/dual_fuel_rtus_notes`, branched from `origin/ccaradon/dual_fuel_rtus` at `b3e9b751`
+**Compared against:** `origin/main` (merge base `f25ac375`; `measure.rb` hasn't changed on main since)
 
-**Purpose of this branch:** branched off `dual_fuel_rtus` to capture the latest changes to this
-measure and to serve as the starting point for further work.
+This branch picks up the latest work on the measure from `dual_fuel_rtus` and is the starting
+point for what comes next. This file is my running log: what changed, what's planned, what's still
+open, and how to run it. Newest entries go at the bottom of each section. It lives here rather than
+in the measure folder so the measure folder doesn't grow.
 
-Running log of changes, thoughts and brainstorming for this measure. Newest entries go at the
-bottom of each section. Kept here rather than in the measure folder to avoid growing it.
+**Contents**
+1. Scope: the four scenarios
+2. Starting point: what `dual_fuel_rtus` changed
+3. Plan: all four scenarios in one run
+4. How to run ComStock on Kestrel
+5. Open questions
+6. Thoughts and brainstorming
+7. Change log
 
-## 1. Scope: measure scenarios
+**Terms used below**
+- **HP RTU:** a rooftop unit with a heat pump. Its compressor heats and cools through a **DX coil**.
+- **Dual fuel RTU:** a heat pump RTU with a **gas** backup coil.
+- **Backup (supplemental) coil:** the second heating coil that helps when the heat pump can't keep up.
+- **Compressor lockout temperature:** the outdoor temperature below which the heat pump stops and
+  only the backup coil heats.
+- **Options lookup:** `resources/options_lookup.tsv`. Each row ties an option name in a yml to a
+  set of measure arguments. `national/housing_characteristics/options_lookup.tsv` is an identical copy.
+- **10K run / full run:** a ComStock run on a 10,000-building sample, or on the full sample.
 
-All four scenarios use the same measure (`resources/measures/upgrade_hvac_add_heat_pump_rtu`).
-Their configurations differ, but changes are made consistently so all four go through the same
-measure workflow; scenario differences should come from arguments and performance data only.
-Update this table as items are confirmed.
+---
 
-Items marked **TBC** are not confirmed yet. The options lookup column names the row in
-`resources/options_lookup.tsv` (same in `national/housing_characteristics/options_lookup.tsv`) that
-runs each scenario.
+## 1. Scope: the four scenarios
+
+All four scenarios use the same measure. They should differ only in arguments and performance
+data, not in code paths, so every scenario goes through the same workflow. Update these tables as
+things get confirmed. **TBC** means not confirmed yet.
 
 ### 1.1 Configuration
 
-| Measure scenario | Options lookup option | Performance category | Compressor lockout temp | Backup heating source | Oversizing factor | Heating sizing temp | Gas heating control strategy |
+| Scenario | Options lookup option | Performance category | Compressor lockout | Backup heat | Oversizing | Heating sizing temp | Gas heating control |
 |---|---|---|---|---|---|---|---|
-| Dual Fuel RTU with standard performance | `dual_fuel_std_perf_lockout_30F` | Standard performance (`two_speed_standard_eff`) | 30 F | Gas | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
-| Cold Climate Heat Pump Challenge: challenge specification dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. Existing `cchpc_2027_spec` uses electric backup | Challenge specification performance (`cchpc_2027_spec`) | -10 F | Gas | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
-| Cold Climate Heat Pump Challenge: typical dual fuel RTU **or** HP RTU | **None yet.** Needs a new performance category first | **TBC:** typical market performance (new performance curve) | -10 F | **TBC** | **TBC:** no oversizing considered | N/A if no oversizing | Simultaneous |
-| IMPACT: Dual Fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
+| 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | **TBC:** none | N/A if no oversizing | Simultaneous |
+| 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. (The existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | **TBC:** none | N/A if no oversizing | Simultaneous |
+| 3. CCHPC: typical dual fuel RTU **or** HP RTU | **None yet.** Needs a new performance category first | **TBC:** typical market equipment (new curve) | -10 F | **TBC** | **TBC:** none | N/A if no oversizing | Simultaneous |
+| 4. IMPACT: dual fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
 
 ### 1.2 Status
 
-| Measure scenario | Measure doc | 10K run | Full run |
+| Scenario | Measure doc | 10K run | Full run |
 |---|---|---|---|
-| Dual Fuel RTU with standard performance | Created | Done | Not started |
-| CCHPC: challenge specification dual fuel RTU | Not started | Not started | Not started |
-| CCHPC: typical dual fuel RTU or HP RTU | Created | Not started | Not started |
-| IMPACT: Dual Fuel | Not started | Not started | Not started |
+| 1. Dual fuel RTU, standard performance | Created | Done | Not started |
+| 2. CCHPC: challenge spec dual fuel RTU | Not started | Not started | Not started |
+| 3. CCHPC: typical dual fuel RTU or HP RTU | Created | Not started | Not started |
+| 4. IMPACT: dual fuel | Not started | Not started | Not started |
 
-### 1.3 To confirm
+### 1.3 Still to confirm
 
-- [ ] Oversizing: confirm "no oversizing" for the standard and both CCHPC scenarios.
-- [ ] CCHPC typical: performance curve for typical market equipment (new curve needed).
-- [ ] CCHPC typical: backup heating source (and whether this is dual fuel or HP RTU).
-- [ ] IMPACT: performance category, compressor lockout temp, oversizing factor, heating sizing temp.
-- [ ] Gas heating control: how the measure will support both simultaneous and sequential (IMPACT).
-      See 1.4.
-- [ ] Performance category for the `dual_fuel_std_perf_lockout_*` options: they use
-      `two_speed_standard_eff` for now. #446 also added a `carrier_48qe_dualfuel` category that we
-      haven't confirmed we want. See 1.5.
+- [ ] Oversizing: is it really "none" for scenario 1 and both CCHPC scenarios?
+- [ ] Scenario 3: the performance curve for typical market equipment (a new curve is needed).
+- [ ] Scenario 3: the backup heat source, and whether it's a dual fuel RTU or an HP RTU.
+- [ ] Scenario 4: performance category, compressor lockout, oversizing, and heating sizing temp.
+- [ ] Scenario 4: how the measure will support both simultaneous and sequential gas heating (1.4, 3.3).
+- [ ] Performance category for the `dual_fuel_std_perf_lockout_*` options. They use
+      `two_speed_standard_eff` for now. #446 also added a `carrier_48qe_dualfuel` category; we haven't
+      decided whether we want it (1.5).
 
-### 1.4 Reporting needed for scenario 4 (IMPACT: Dual Fuel)
+### 1.4 New output for scenario 4 (IMPACT)
 
-IMPACT compares two gas heating control strategies for a dual fuel RTU:
-1. **Simultaneous:** DX heating and the gas coil run together.
-2. **Sequential:** gas coil only, with the DX compressor locked out.
+IMPACT compares two ways to run the gas coil in a dual fuel RTU:
+1. **Simultaneous:** the heat pump and the gas coil heat at the same time.
+2. **Sequential:** the gas coil heats alone and the heat pump compressor is off.
 
-To quantify the difference, we need the DX heating load delivered *while the gas coil is also on*.
-That is the load that shifts from DX to gas under sequential control. Existing outputs don't
-separate it out, so it has to be reported explicitly.
+The difference between the two is the heat the heat pump delivers *while the gas coil is also on*.
+Under sequential control, gas would supply that heat instead. No existing output isolates it, so
+we report it directly.
 
-**Approach: report-side, no EMS.** Closed PR [#446](https://github.com/NatLabRockies/ComStock/pull/446)
-(`jk/duelfuelrtu`) got this value from an EMS variable set by an EMS-controlled two-stage gas
-backup coil in the HPRTU measure. We are **not** porting that EMS change. When it was tested, the
-two-stage EMS gas coil gave results close to the measure's existing non-EMS gas coil, so the
-extra complexity isn't justified.
+**How we get it: from standard outputs, not EMS.** Closed PR
+[#446](https://github.com/NatLabRockies/ComStock/pull/446) (`jk/duelfuelrtu`) got this number from
+an EMS variable tied to an EMS-controlled two-stage gas coil. We're **not** bringing that EMS change
+over. In testing, the two-stage EMS coil gave results close to the measure's existing (non-EMS) gas
+coil, so the added complexity isn't worth it.
 
-Instead, `comstock_sensitivity_reports` calculates it from standard output variables:
-- **Why it works without EMS:** the HPRTU measure puts the DX coil in an
-  `AirLoopHVACUnitarySystem` as the heating coil and the gas coil as the supplemental coil.
-  EnergyPlus fires the supplemental coil when the DX coil can't meet the load, or when the
-  compressor is locked out. So the current model already runs as "simultaneous" above the lockout.
-- **Which systems:** `hybrid_heating_coil_pairs(model)` finds unitary systems with a DX heating coil
-  (single, multi or variable speed) and a `CoilHeatingGas` or `CoilHeatingGasMultiStage`
-  supplemental coil.
-- **Output requests:** `Heating Coil Heating Energy` at `Timestep` frequency, keyed to just those
-  coils to keep output size down.
-- **Calculation:** for each pair, sum the DX coil heating energy over the zone timesteps where the
-  gas coil heating energy is above 0. The total is registered as
+Instead, the `comstock_sensitivity_reports` measure calculates it:
+- **Why no EMS is needed.** The measure builds each RTU as an `AirLoopHVACUnitarySystem` with the
+  DX coil as the main heating coil and the gas coil as the supplemental coil. EnergyPlus turns on
+  the supplemental coil when the DX coil can't meet the load or the compressor is locked out. So
+  above the lockout, the model already runs as "simultaneous."
+- **Which systems count.** `hybrid_heating_coil_pairs(model)` finds unitary systems that have a DX
+  heating coil (single, multi, or variable speed) and a `CoilHeatingGas` or
+  `CoilHeatingGasMultiStage` supplemental coil.
+- **Which outputs it requests.** `Heating Coil Heating Energy` at each timestep, for those coils only,
+  to keep output files small.
+- **The calculation.** For each pair, add up the DX coil's heating energy in every timestep where
+  the gas coil's heating energy is above zero. The result is reported as
   `com_report_hvac_dx_heating_load_during_hybrid_heating_j`, which `comstock_column_definitions.csv`
-  maps to `out.params.dx_heating_load_during_hybrid_heating`. This is the same definition as #446,
-  where the EMS variable equals the DX load while gas stage 1 is on.
-- **Missing data:** if either series is missing, the system is skipped with a warning (not an error).
+  maps to `out.params.dx_heating_load_during_hybrid_heating`. This matches #446's definition (DX
+  heat delivered while gas stage 1 is on).
+- **Missing data.** If either series is missing, that system is skipped with a warning, not an error.
 
-**Models with many DX + gas coil pairs:** each pair is calculated on its own, then the results are added.
+**Buildings with many RTUs.** Each RTU's DX + gas pair is calculated on its own, then the results
+are added:
 
 ```text
 total = 0
@@ -95,254 +110,364 @@ for each unitary system with a DX heating coil + gas supplemental coil:
     if gas[i] > 0: total += dx[i]
 ```
 
-- **Pairs stay separate.** A DX coil's energy counts only when its own system's gas coil is heating.
-  If RTU A runs DX with gas while RTU B runs DX alone, only A's DX energy is added. Another
-  system's gas coil never triggers a count.
-- **Timesteps line up within a pair.** Both series come from the same simulation at the same
-  reporting frequency, so `dx[i]` and `gas[i]` cover the same period. The code also checks that
-  the two series have the same length.
-- **Adding across pairs is a plain sum.** Each value is already energy in J, so no capacity or
-  airflow weighting is needed. A building with 10 RTUs gets the sum of 10 independent per-RTU totals.
-- **A pair with missing data is skipped, and the rest still count.** The registered total then
-  covers only the pairs that could be read, so a warning means the total is partial.
-- **Cost grows with the number of pairs.** Each pair adds two timestep output variables to the SQL
-  file. With 4 timesteps per hour, that's 35,040 values per variable. That should be fine even for
-  buildings with dozens of RTUs, but it's the main cost of this approach.
+- **Each RTU is judged by its own gas coil.** If RTU A runs DX and gas together while RTU B runs DX
+  alone, only A's DX heat counts. Another unit's gas coil never triggers a count.
+- **The two series line up.** Both come from the same simulation at the same frequency, so `dx[i]`
+  and `gas[i]` cover the same period. The code also checks that they're the same length.
+- **Adding RTUs together is a plain sum.** Each value is already energy in joules, so there's no
+  weighting by size or airflow. A building with 10 RTUs gets the sum of 10 separate totals.
+- **One unreadable RTU doesn't block the rest.** It's skipped, and the total covers only the units
+  that could be read. A warning therefore means the total is partial.
+- **The cost is output size.** Each RTU adds two timestep outputs to the SQL file: 35,040 values each
+  at 4 timesteps per hour. That should be fine even with dozens of RTUs.
 
-The result is one building-level number: the DX heat delivered while that same unit's gas coil
+The result is one number per building: heat pump heat delivered while that same unit's gas coil
 was also on, summed over all dual fuel units.
 
 **Caveats:**
-- **Resolution:** we use zone timestep rather than hourly. With hourly averages, any hour with a
-  few minutes of gas would count all of that hour's DX heat. A zone timestep where the gas coil
-  fires during only some HVAC system sub-timesteps still counts that timestep's full DX energy.
-  This error should be small. The EMS approach in #446 worked at the system timestep and had no
-  such error.
-- **Below the lockout,** the DX coil delivers 0, so those timesteps add nothing. That is correct:
-  the DX heat that shifts to gas under sequential control only happens above the lockout.
-- **The `measure.xml` checksum** for `comstock_sensitivity_reports` was not updated. Regenerate it
+- **Timestep resolution.** We use the zone timestep, not hourly values. With hourly values, an hour
+  with a few minutes of gas would count all of that hour's DX heat. There's still a small version
+  of this error: if the gas coil runs for only part of a zone timestep, that timestep's full DX heat
+  counts. The EMS approach in #446 worked at a finer timestep and didn't have this error.
+- **Below the lockout,** the DX coil delivers nothing, so those timesteps add zero. That's correct:
+  heat only shifts from DX to gas under sequential control when it's above the lockout.
+- **`measure.xml` checksum** for `comstock_sensitivity_reports` hasn't been updated yet. Regenerate it
   with the measure updater.
-- **Not yet verified** in a simulation (helper checked on a small test model only).
+- **Not yet checked in a full simulation.** The helper has only been tried on a small test model.
 
-- [ ] Run a dual fuel model end to end and sanity-check the value against the DX and gas coil totals.
-- [ ] Decide how the measure switches between simultaneous and sequential control (a new argument?).
+- [ ] Run a dual fuel model end to end and compare the value against the DX and gas coil totals.
+- [ ] Decide how the measure switches between simultaneous and sequential (a new argument?). See 3.3.
 
 ### 1.5 Dual fuel options (adapted from #446)
 
-These options model a **dual fuel RTU**: the backup heat is always natural gas, whatever the
-building's original heating fuel. They sweep the compressor lockout temperature.
+These options model a **dual fuel RTU**: backup heat is always natural gas, whatever fuel the
+building used before. The four options differ only in compressor lockout temperature.
 
-Added to both `resources/options_lookup.tsv` and `national/housing_characteristics/options_lookup.tsv`,
-after `orig_fuel_backup_std_perf_gas_lockout_0F`:
+They're in both copies of the options lookup, right after `orig_fuel_backup_std_perf_gas_lockout_0F`:
 
-| Option | `backup_ht_fuel_scheme` | elec backup lockout | gas backup lockout | `hprtu_scenario` |
+| Option | `backup_ht_fuel_scheme` | Electric backup lockout | Gas backup lockout | `hprtu_scenario` |
 |---|---|---|---|---|
-| `dual_fuel_std_perf_lockout_30F` | `dual_fuel_gas_furnace_backup` | 0 F (unused) | 30 F | `two_speed_standard_eff` |
-| `dual_fuel_std_perf_lockout_17F` | `dual_fuel_gas_furnace_backup` | 0 F (unused) | 17 F | `two_speed_standard_eff` |
-| `dual_fuel_std_perf_lockout_0F` | `dual_fuel_gas_furnace_backup` | 0 F (unused) | 0 F | `two_speed_standard_eff` |
-| `dual_fuel_std_perf_lockout_neg10F` | `dual_fuel_gas_furnace_backup` | 0 F (unused) | -10 F | `two_speed_standard_eff` |
+| `dual_fuel_std_perf_lockout_30F` | `dual_fuel_gas_furnace_backup` | 0 F (not used) | 30 F | `two_speed_standard_eff` |
+| `dual_fuel_std_perf_lockout_17F` | `dual_fuel_gas_furnace_backup` | 0 F (not used) | 17 F | `two_speed_standard_eff` |
+| `dual_fuel_std_perf_lockout_0F` | `dual_fuel_gas_furnace_backup` | 0 F (not used) | 0 F | `two_speed_standard_eff` |
+| `dual_fuel_std_perf_lockout_neg10F` | `dual_fuel_gas_furnace_backup` | 0 F (not used) | -10 F | `two_speed_standard_eff` |
 
-Other arguments are the same as #446 (no oversizing, `htg_sizing_option=0F`, no hr/dcv/econ/roof/window).
+All other arguments match #446: no oversizing, `htg_sizing_option=0F`, and no heat recovery, DCV,
+economizer, roof, or window changes.
 
-**New measure choice `backup_ht_fuel_scheme=dual_fuel_gas_furnace_backup`** (reuses #446's name, no EMS):
-- **Backup coil:** always a `CoilHeatingGas` with fuel `NaturalGas`. Fuel oil, propane and
-  electric-heated buildings all get natural gas backup.
-- **Lockout:** always `hp_min_comp_lockout_temp_gas_backup_f`, so the elec backup lockout in these
-  rows is never used.
-- **Existing choices unchanged:**
-  - `match_original_primary_heating_fuel`: electric-heated buildings still get electric backup,
-    and combustion buildings keep their original fuel (2.2).
+**New measure choice: `backup_ht_fuel_scheme=dual_fuel_gas_furnace_backup`.** It reuses #446's name
+but has no EMS.
+- **Backup coil:** always a natural gas `CoilHeatingGas`. Buildings that heated with fuel oil,
+  propane, or electricity all get natural gas backup.
+- **Lockout:** always uses `hp_min_comp_lockout_temp_gas_backup_f`, so the electric backup lockout
+  in these rows is never used.
+- **Other choices are unchanged:**
+  - `match_original_primary_heating_fuel`: electric-heated buildings still get electric backup, and
+    buildings that burned a fuel keep that fuel (2.2).
   - `electric_resistance_backup`: unchanged.
-- **Test:** `test_dual_fuel_backup_is_natural_gas` covers fuel oil, propane (the 7A gas model
-  relabeled) and an electric coil model.
-- **Note for electric-heated buildings:** this adds gas backup to buildings that may not have
-  gas service today. Revisit whether applicability should exclude them.
+- **Test:** `test_dual_fuel_backup_is_natural_gas` covers fuel oil, propane (the 7A gas model with
+  its fuel relabeled), and an electric coil model.
+- **Watch out:** this gives gas backup to electric-heated buildings that may not have a gas line
+  today. Revisit whether they should be excluded.
 
 **What changed from #446, and why:**
-- **Lockout arguments:** #446's single `hp_min_comp_lockout_temp_f` became the gas backup lockout
-  from 2.1.
-- **Performance category:** `carrier_48qe_dualfuel` became `two_speed_standard_eff` until we
+- **Lockout arguments.** #446's single `hp_min_comp_lockout_temp_f` is now the gas backup lockout
+  (2.1).
+- **Performance category.** `carrier_48qe_dualfuel` is replaced by `two_speed_standard_eff` until we
   decide whether we want the Carrier category.
-- **Option names:** #446 had two sets, `dual_fuel_hybrid_heating_*` and `std_orig_backup_lockout_*`.
-  With the same performance category, they would differ only in backup scheme. We keep one set,
-  named `dual_fuel_std_perf_lockout_*` so the dual fuel intent and the performance category are
-  both visible.
-- **No EMS two-stage gas coil.** The backup is the measure's existing single-stage
-  supplemental gas coil (see 1.4).
+- **Option names.** #446 had two sets, `dual_fuel_hybrid_heating_*` and `std_orig_backup_lockout_*`.
+  With the same performance category, they'd differ only in backup scheme, so we kept one set and
+  named it `dual_fuel_std_perf_lockout_*` to show both the dual fuel intent and the performance
+  category.
+- **No EMS two-stage gas coil.** The backup is the measure's existing single-stage gas coil (1.4).
 
 ---
 
-## 2. Baseline: what `ccaradon/dual_fuel_rtus` changes vs `main`
+## 2. Starting point: what `dual_fuel_rtus` changed
 
-`measure.rb` only: +192 / -28 lines. Not verified by running the measure or tests.
+Compared with `main`, the `ccaradon/dual_fuel_rtus` branch changed only `measure.rb` (+192 / -28
+lines). This section was written from reading the code, before any tests were run.
 
-### 2.1 Two compressor lockout temperatures (replaces one)
-- Removed argument `hp_min_comp_lockout_temp_f` (default 0 F).
-- Added `hp_min_comp_lockout_temp_elec_backup_f` (default 0 F).
-- Added `hp_min_comp_lockout_temp_gas_backup_f` (default 25 F).
-- In `run`, one is chosen: electric if `prim_ht_fuel_type == 'electric'` or
-  `backup_ht_fuel_scheme == 'electric_resistance_backup'`, otherwise gas. The chosen value is
-  assigned to the old variable name `hp_min_comp_lockout_temp_f`, so downstream code is unchanged.
-- **Breaking:** anything passing `hp_min_comp_lockout_temp_f` (workflows, buildstock inputs,
-  tests) must be updated.
+### 2.1 Two compressor lockout temperatures instead of one
+- Removed `hp_min_comp_lockout_temp_f` (default 0 F).
+- Added `hp_min_comp_lockout_temp_elec_backup_f` (default 0 F) and
+  `hp_min_comp_lockout_temp_gas_backup_f` (default 25 F).
+- The measure picks one at run time: the electric one if the building heats with electricity
+  (`prim_ht_fuel_type == 'electric'`) or the backup is electric (`electric_resistance_backup`);
+  otherwise the gas one. The chosen value goes into the old variable name, so the rest of the code
+  didn't change.
+- **Breaking change:** anything that still passes `hp_min_comp_lockout_temp_f` (workflows, inputs,
+  tests) has to be updated.
 
-### 2.2 Gas backup coil keeps the original fuel
-- Before old equipment is deleted, read `fuelType` from the existing `CoilHeatingGas`
-  (directly, or inside an `AirLoopHVACUnitarySystem`) into `orig_htg_coil_fuel_type`.
-- New backup `CoilHeatingGas` gets that fuel type, so fuel oil / propane are no longer silently
-  switched to natural gas. Warns and uses the OpenStudio default if the fuel can't be found.
-- Coil name changes: `"<loop> gas backup coil"` -> `"<loop> <fuel> backup coil"`.
+### 2.2 The gas backup coil keeps the building's original fuel
+- Before the old equipment is removed, the measure reads the fuel of the existing `CoilHeatingGas`
+  (on its own or inside an `AirLoopHVACUnitarySystem`).
+- The new backup coil uses that fuel, so fuel oil and propane buildings are no longer quietly
+  switched to natural gas. If the fuel can't be found, it warns and uses the OpenStudio default.
+- Coil name changed from `"<loop> gas backup coil"` to `"<loop> <fuel> backup coil"`.
 
-### 2.3 Supply fan data from the scenario JSON
-- New helper `assign_fan_data(fan_data_json, std)` reads a `fan_data` record
-  (`fan_type`, `fan_power_coefficients`, `impeller_efficiency`) from the scenario performance json.
-- Fallback if missing/incomplete: warning, `two_speed` curve
-  `[0.005131596, -0.061344439, 0.870911024, 0.221907644, -0.036605825]`, baseline impeller
+### 2.3 Supply fan data now comes from the scenario JSON
+- New helper `assign_fan_data(fan_data_json, std)` reads a `fan_data` entry (`fan_type`,
+  `fan_power_coefficients`, `impeller_efficiency`) from the scenario's performance JSON.
+- If the entry is missing or incomplete, it warns and falls back to a two-speed fan curve
+  `[0.005131596, -0.061344439, 0.870911024, 0.221907644, -0.036605825]` and the baseline impeller
   efficiency from `std.fan_baseline_impeller_efficiency`.
-- Before: every scenario used the Daikin Rebel variable-speed curve; non-high-eff scenarios got a
-  fixed total efficiency of 0.63.
-- Fan renamed `"<loop> VFD Fan"` -> `"<loop> Supply Fan"`; pressure rise now set at creation.
-- **Open:** confirm the `fan_data` records exist in the scenario JSONs on this branch.
+- Before: every scenario used the Daikin Rebel variable-speed fan curve, and scenarios other than
+  high efficiency got a fixed fan efficiency of 0.63.
+- Fan renamed from `"<loop> VFD Fan"` to `"<loop> Supply Fan"`. Its pressure rise is now set when
+  it's created.
+- **Open:** confirm the scenario JSONs on this branch have `fan_data` (section 5).
 
-### 2.4 Fan motor efficiency sized, not assumed
-- bhp = `fan_static_pressure * design_airflow / (impeller_eff * 745.7)`.
-- Nominal motor hp = bhp * 1.1 with the same rounding nudge as openstudio-standards baseline fans.
-- Motor eff from `std.fan_standard_minimum_motor_efficiency_and_size`;
-  total eff = impeller eff * motor eff.
-- Replaces the `fan_mot_eff` literal and the `fan_change_motor_efficiency` call.
+### 2.4 Fan motor efficiency is now calculated
+- Brake horsepower = `fan_static_pressure × design_airflow / (impeller_eff × 745.7)`.
+- Motor size = brake horsepower × 1.1, rounded the same way openstudio-standards rounds baseline fans.
+- Motor efficiency comes from `std.fan_standard_minimum_motor_efficiency_and_size`. Total fan
+  efficiency = impeller efficiency × motor efficiency.
+- This replaces the hard-coded `fan_mot_eff` and the `fan_change_motor_efficiency` call.
 
-### 2.5 Fan minimum flow fraction
-- Before: max(0.40, min_airflow_ratio).
-- Now: min(1.0, max(lowest stage flow / design airflow, `specified_min_flow_fraction`,
-  `current_min_oa_flow_ratio`)).
-- `specified_min_flow_fraction` is captured before `adjust_cfm_per_ton_per_limits` mutates the
-  stage fractions, so the cfm/ton guard cannot lower the fan's claimed turndown.
-- New `fan summary` info line under `debug_verbose`.
+### 2.5 Fan minimum airflow
+- Before: the larger of 0.40 and `min_airflow_ratio`.
+- Now: the largest of (lowest stage airflow ÷ design airflow), `specified_min_flow_fraction`, and
+  `current_min_oa_flow_ratio`, capped at 1.0.
+- `specified_min_flow_fraction` is read before `adjust_cfm_per_ton_per_limits` changes the stage
+  airflows, so that adjustment can't make the fan look like it turns down further than it does.
+- With `debug_verbose` on, the measure logs a new `fan summary` line.
 
-### 2.6 Expected impact (hypothesis, not measured)
-- Lockout temp now depends on backup fuel (gas-backup buildings lock out at 25 F by default).
-- Fuel oil / propane buildings keep their fuel as backup.
-- Two-speed scenarios likely see higher fan energy than before (no variable-speed credit).
+### 2.6 Expected effects (not yet measured)
+- The lockout now depends on the backup fuel; gas-backup buildings lock out at 25 F by default.
+- Fuel oil and propane buildings keep their fuel for backup.
+- Two-speed scenarios will probably use more fan energy than before, since they no longer get the
+  variable-speed fan curve.
 
-## 3. Plan: all four scenarios in one ComStock run
+---
 
-**Goal:** a single ComStock run whose yml has one upgrade per scenario. IMPACT may need two
-upgrades, one per control strategy. All upgrades use `upgrade_hvac_add_heat_pump_rtu` and differ
-only by options lookup arguments.
+## 3. Plan: all four scenarios in one run
 
-**Approach:** get each scenario working and tested on its own first, then combine. A scenario is
-ready to combine when it has (a) an options lookup row, (b) passing unit tests for what makes it
-different, and (c) a clean 10K run.
+**Goal:** one ComStock run with one upgrade per scenario in the yml (scenario 4 may need two, one
+per control strategy). Every upgrade uses this measure; they differ only in their options lookup
+arguments.
 
-### 3.1 Readiness by scenario
+**Approach:** get each scenario working and tested on its own, then combine them. A scenario is
+ready to combine when it has:
+1. an options lookup row,
+2. passing unit tests for whatever makes it different, and
+3. a clean 10K run.
+
+### 3.1 Where each scenario stands
 
 | # | Scenario | Measure changes needed | Options lookup | Tests | Next step |
 |---|---|---|---|---|---|
-| 1 | Dual Fuel RTU, standard performance | None (dual fuel backup scheme added, 1.5) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Confirm which option the existing 10K used (see 3.2). Rerun the 10K with this option if it differs, then do a full run |
-| 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Covered by existing fan/JSON tests plus the dual fuel test; add a `cchpc_2027_spec` case if cheap | Add the row, then a 10K run |
-| 3 | CCHPC typical dual fuel or HP RTU | **New performance category:** performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and branches in the scenario `case` statements | New row once the category exists; backup scheme depends on dual fuel vs HP RTU | JSON format and `fan_data` tests should cover the new JSON (confirm they loop over all scenarios); one apply-only test for the new choice | Get the performance data; decide dual fuel vs HP RTU and the backup |
-| 4 | IMPACT dual fuel | **Sequential control** (see 3.3) and the TBC items in 1.3 | Two rows (simultaneous, sequential) once the arguments exist | One apply-only test per strategy; one simulation check of `com_report_hvac_dx_heating_load_during_hybrid_heating_j` | Confirm IMPACT parameters; choose a sequential approach |
+| 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 1.5) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Confirm which option the earlier 10K used (3.2). If it was different, rerun the 10K, then do a full run |
+| 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | Add the row, then a 10K run |
+| 3 | CCHPC typical dual fuel RTU or HP RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. The backup depends on dual fuel vs HP RTU | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Get the performance data. Decide dual fuel vs HP RTU, and the backup |
+| 4 | IMPACT dual fuel | **Sequential control** (3.3) and the TBC items in 1.3 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (1.4) | Confirm IMPACT's parameters. Choose how to do sequential |
 
-Scenarios 1 and 2 can go ahead now. Scenarios 3 and 4 are blocked on decisions (performance data,
-IMPACT parameters, sequential approach) before the measure work starts.
+Scenarios 1 and 2 can go ahead now. Scenarios 3 and 4 are waiting on decisions (performance data,
+IMPACT parameters, and the sequential approach) before any measure work.
 
 ### 3.2 Steps
 
-1. **Map scope to options.** Keep the 1.1 "Options lookup option" column current, and add the
-   scenario 2 row. Confirm which option the scenario 1 10K used: it ran before
-   `dual_fuel_gas_furnace_backup` existed, so it was probably `orig_fuel_backup_std_perf_gas_lockout_30F`
-   (`match_original_primary_heating_fuel`). That option gives electric backup to electric-heated
-   buildings and keeps fuel oil or propane, so it isn't a pure dual fuel run.
-2. **Run scenarios 1 and 2 individually** (10K each). Check that the backup coils are natural gas,
-   that the lockout is applied, and that the hybrid heating DX load (1.4) is non-zero and plausible.
+1. **Match each scenario to an option.** Keep the options column in 1.1 up to date and add the
+   scenario 2 row. Find out which option the scenario 1 10K used. It ran before
+   `dual_fuel_gas_furnace_backup` existed, so it was probably
+   `orig_fuel_backup_std_perf_gas_lockout_30F` (`match_original_primary_heating_fuel`). That option
+   gives electric backup to electric-heated buildings and keeps fuel oil or propane, so it isn't a
+   true dual fuel run.
+2. **Run scenarios 1 and 2 separately** (10K each). Check that backup coils are natural gas, that the
+   lockout is applied, and that the new output (1.4) is above zero and reasonable.
 3. **Scenario 3:** add the performance category and its tests, add the options row, then a 10K run.
-4. **Scenario 4:** implement sequential control (3.3) and its tests, add the two option rows, then
-   a 10K run for each.
-5. **Revisit unit tests** (3.4). This can run alongside steps 2–4, but finish it before adding the
-   scenario 3 and 4 tests so the new tests follow the new structure.
-6. **Combine:** one yml with all upgrades, a 10K smoke run, then the full run.
+4. **Scenario 4:** add sequential control (3.3) and its tests, add the two options rows, then a 10K
+   run for each.
+5. **Rework the unit tests** (3.4). This can happen alongside steps 2–4, but finish it before
+   writing the scenario 3 and 4 tests so those follow the new layout.
+6. **Combine:** one yml with every upgrade, a 10K check run, then the full run (section 4).
 
 ### 3.3 Sequential control for IMPACT (open)
 
-"Sequential" means the gas coil heats alone with the DX compressor locked out. Today the measure
-only models simultaneous operation: the supplemental gas coil adds heat when DX can't meet the
-load. Candidates, avoiding EMS (1.4):
-- **(a) Post-processing estimate.** Use the simultaneous run and treat
-  `com_report_hvac_dx_heating_load_during_hybrid_heating_j` as heat that moves from DX to gas under
-  sequential control. No measure change and one run. It's an estimate: it ignores how the
-  equipment's behavior would change under sequential control.
-- **(b) Native changeover.** Set the DX compressor lockout and the unitary system's supplemental
-  heater maximum outdoor temperature to the same switchover temperature. Below it, gas only; above
-  it, DX only. No EMS, but above the switchover there is no gas help when DX falls short, so check
-  unmet hours.
-- **(c) EMS control** as in #446. Rejected for now (1.4).
+"Sequential" means the gas coil heats alone while the heat pump compressor is off. Today the
+measure only models simultaneous operation: the gas coil adds heat when the heat pump can't keep up.
+Options, all avoiding EMS (1.4):
+- **(a) Estimate it afterwards.** Run simultaneous only, and treat the new output (1.4) as the heat
+  that would move from the heat pump to gas. No measure change and only one run, but it's an
+  estimate: it ignores how the equipment would actually behave under sequential control.
+- **(b) Use a built-in switchover.** Set the compressor lockout and the unitary system's maximum
+  outdoor temperature for the supplemental heater to the same value. Below it, only gas heats;
+  above it, only the heat pump. No EMS, but above the switchover there's no gas help when the heat
+  pump falls short, so check unmet hours.
+- **(c) EMS control,** as in #446. Ruled out for now (1.4).
 
-Decide after confirming IMPACT's definition of sequential. If (b), add an argument such as
-`gas_heating_control_strategy` (`simultaneous` / `sequential`) and tests for both values.
+Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), add an argument such as
+`gas_heating_control_strategy` (`simultaneous` / `sequential`) and test both values.
 
 ### 3.4 Unit tests
 
-**Current state** (`tests/measure_test.rb`): 29 tests.
-- **Slowest:** 7 call `verify_hp_rtu`, which runs two sizing runs each (before/after). 4 more run
-  full simulations.
-- **Example:** in one sizing run, `test_elec_backup_lockout_7A` took over 20 minutes, because the
+**Where things stand** (`tests/measure_test.rb`, 29 tests):
+- **The slow ones:** 7 tests call `verify_hp_rtu`, which does two sizing runs each (before and
+  after the measure). 4 more run full simulations.
+- **Example:** `test_elec_backup_lockout_7A` spent over 20 minutes in one sizing run because the
   HVAC loops didn't converge on the cooling design day ("Maximum iterations (20) exceeded").
-- **Cheap tests do exist:** apply-only tests like `test_backup_coil_matches_original_fuel` (26 s)
-  and `test_dual_fuel_backup_is_natural_gas` (19 s) finish in under a minute.
-- **Measured 2026-10-05:** four tests (argument names, two `*_lockout_7A` tests and the backup
-  fuel test) took 46 minutes together. Nearly all of that was the two lockout tests' sizing runs.
+- **Fast ones exist too:** apply-only tests such as `test_backup_coil_matches_original_fuel` (26 s)
+  and `test_dual_fuel_backup_is_natural_gas` (19 s) take under a minute.
+- **Measured 2026-10-05:** four tests (argument names, the two `*_lockout_7A` tests, and the backup
+  fuel test) took 46 minutes together, almost all of it the two lockout tests' sizing runs.
 
 **Proposed:**
-- [ ] **Time every test.** Run minitest `--verbose` for per-test times, and record them here.
-- [ ] **Split into two tiers:**
-  - *Fast:* argument, JSON and apply-only checks, run on every change.
-  - *Slow:* sizing and simulation checks, run before a 10K or a PR.
-  - Make the split explicit, e.g. by name prefix or an env var that skips slow tests.
-- [ ] **Remove redundant slow tests.** Three `verify_hp_rtu` tests (`test_380_small_office_psz_gas_coil_7A`,
-  `test_gas_backup_lockout_7A`, `test_elec_backup_lockout_7A`) do before/after sizing runs on the
-  same `380_small_office_psz_gas_coil_7A.osm` and differ only in arguments. The lockout checks
-  could be apply-only. Keep one sizing-run test per behavior and move the rest to apply-only.
-- [ ] **Look into the non-convergence** in the 7A sizing run. It may be a model problem, or it may
-  be related to the fan changes in 2.3–2.5. If it's the fan changes, it also matters for real runs.
-- [ ] **One fast test per scenario** that applies the scenario's options lookup arguments and checks
-  that they reach the model (backup coil fuel, lockout, performance curves, fan, control strategy).
-  Ideally the arguments are read straight from the options lookup row, so the test and the
-  lookup can't drift apart.
-- [ ] **One simulation test** (slow tier) for the hybrid heating DX load report (1.4), on a small
-  dual fuel model.
+- [ ] **Time every test.** Run minitest with `--verbose` to get per-test times, and record them here.
+- [ ] **Split the tests in two:**
+  - *Fast:* argument, JSON, and apply-only checks. Run on every change.
+  - *Slow:* sizing and simulation checks. Run before a 10K run or a PR.
+  - Make the split explicit, e.g. a name prefix or an environment variable that skips slow tests.
+- [ ] **Drop duplicate slow tests.** Three `verify_hp_rtu` tests (`test_380_small_office_psz_gas_coil_7A`,
+  `test_gas_backup_lockout_7A`, `test_elec_backup_lockout_7A`) do the same before/after sizing runs
+  on `380_small_office_psz_gas_coil_7A.osm` and differ only in arguments. The lockout checks could
+  be apply-only. Keep one sizing test per behavior and make the rest apply-only.
+- [ ] **Find out why the 7A sizing run doesn't converge.** It may be the model, or the fan changes in
+  2.3–2.5. If it's the fan changes, real runs are affected too.
+- [ ] **One fast test per scenario** that applies its options lookup arguments and checks that they
+  show up in the model (backup coil fuel, lockout, performance curves, fan, control strategy).
+  Ideally the test reads the arguments straight from the options lookup row, so the two can't drift
+  apart.
+- [ ] **One simulation test** (slow group) for the new output (1.4), on a small dual fuel model.
 
 ---
 
-## 4. Open questions
+## 4. How to run ComStock on Kestrel
+
+Pieced together from memory and `comstock_hpc_training.md` at the repo root, which is the full
+reference (yml fields, monitoring, stopping stuck jobs, reading results). My OneNote page "ComStock
+workflow: executing ComStock run" (EUSS notebook) has the exact commands I used; copy anything
+missing from there into this section. Fill in each `TODO` the next time I run.
+
+**What you need:**
+- **This branch,** with the measure, the options lookup, and
+  `postprocessing/comstockpostproc/resources/comstock_column_definitions.csv` up to date.
+- **The latest yml.** It's not in the repo (`ymls/` only has examples). The team keeps the current
+  ymls on Kestrel under `/kfs2/projects/<allocation>/ymls/<project>/`; ask which one is current.
+  TODO: record its path and who confirmed it. Until then, my last yml (4.1) shows the layout.
+
+**Steps:**
+
+1. **Push the branch.** Commit and push everything the run needs. Both copies of the options lookup
+   (`resources/` and `national/housing_characteristics/`) must match; they do as of 2026-10-06.
+2. **Log in:** `ssh <user>@kestrel.hpc.nrel.gov`. Use WinSCP to move files.
+3. **Check out the branch in my own clone,** not the shared `comstock` one, so other people's runs
+   aren't affected:
+   ```
+   cd /kfs2/projects/eusscom/repos
+   git clone https://github.com/NatLabRockies/ComStock.git ComStock_janghyun   # first time only
+   cd ComStock_janghyun
+   git fetch && git checkout jkim/dual_fuel_rtus_notes && git pull
+   ```
+   My 2025 R4 yml pointed to `ComStock_janghyun`, so it probably already exists. Run `git status`
+   first so nothing local is lost.
+4. **Copy the latest yml** into my own folder (e.g. `/kfs2/projects/eusscom/ymls/<project>/`) and
+   edit it:
+   - `buildstock_directory:` → my clone from step 3.
+   - `output_directory:` → a new folder under `/kfs2/projects/eusscom/runs/<project>/`. Change
+     `postprocessing.aws.s3.prefix` to match.
+   - `sampler.args.sample_file:` → the right sample (10K or full). Set
+     `baseline.n_buildings_represented` to its building count.
+   - `upgrades:` → one entry per scenario, each `option: <parameter>|<option name>` matching a row
+     in the options lookup (e.g. `dual_fuel_std_perf_lockout_30F`; see 1.5 and 3.1).
+   - `os_version` / `os_sha` → the current image in `/kfs2/shared-projects/buildstock/apptainer_images/`.
+   - `kestrel.account` and `n_jobs` → set both. `n_jobs` ≈ number of simulations ÷ 5,000–6,000.
+5. **Turn on buildstockbatch:**
+   ```
+   module load python
+   source /kfs2/shared-projects/buildstock/envs/<current-bsb-env>/bin/activate
+   ```
+   TODO: record the environment name. The training doc's example, `bsb-2024.01.0-ry`, may be out
+   of date.
+6. **Submit from the yml's folder:**
+   ```
+   buildstock_kestrel <name>.yml                     # normal run
+   buildstock_kestrel --hipri <name>.yml             # small, quick runs only
+   buildstock_kestrel --postprocessonly <name>.yml   # redo postprocessing only
+   ```
+7. **Watch it:** `squeue -u <user>`, plus the `job.out*` and `postprocessing.out` files in the
+   output folder.
+8. **Check results** in `<output_directory>/results/results_csvs/`. `up00` is the baseline; the
+   upgrades follow in yml order. Look at `housing_characteristics/options_lookup.tsv` in the output
+   folder to confirm the run used my options lookup.
+
+**Run log** (one line per run: date, yml path, branch @ commit, sample, upgrades, output folder, result):
+
+- _(none yet)_
+
+### 4.1 My last yml (2025 R4 dual fuel, full run)
+
+Possibly out of date; kept as a template. The settings worth reusing:
+
+| Field | Value | Note |
+|---|---|---|
+| `schema_version` | `'0.5'` | The repo's examples in `ymls/` say `'0.3'`. Use whatever the team's current yml has |
+| `buildstock_directory` | `/kfs2/projects/eusscom/repos/ComStock_janghyun` | My clone (section 4, step 3) |
+| `output_directory` | `/kfs2/projects/eusscom/runs/euss_fy25/production_runs/2025_r4/full/dual_fuel_r4_combined_103224_v0` | Use a new folder for every run |
+| `weather_files_path` | `/kfs2/projects/eusscom/weather/BuildStock_2018_FIPS_HI.zip` | |
+| `sample_file` | `/kfs2/projects/eusscom/samples/euss_fy25/2025_r4/buildstock_20250917-0909_v30_2018_ltaylor2_103224_hardsize.csv` | 103,224 buildings (full R4). For a 10K run, use a 10K sample and update `n_buildings_represented` |
+| `kestrel.account` | `cscore` | Billed to `cscore` even though the files are under `eusscom` |
+| `kestrel.n_jobs` / `minutes_per_sim` | `216` / `120` | 103,224 buildings × (baseline + 4 upgrades) ≈ 516K simulations, about 2,400 per job |
+| `kestrel.postprocessing.time` | `2000` | |
+| `s3.bucket` / `athena.database_name` | `com-sdr` / `enduse` | |
+| `os_version` / `os_sha` | `os_3_10_0_stds_0_8_3` / `86d7e215a1` | **Probably stale.** `ymls/national.yml` on main uses `os_3_10_0_stds_0_8_6`. Check `/kfs2/shared-projects/buildstock/apptainer_images/` |
+| `max_minutes_per_sim` | `480` | |
+| `workflow_generator` | `commercial_default`, version `'2024.07.18'` | Reporting measures: SimulationOutputReport, comstock_sensitivity_reports, qoi_report, simulation_settings_check (`run_sim_settings_checks: true`), emissions_reporting, utility_bills, run_directory_cleanup. Timestep CSV export with `inc_output_variables: false` |
+
+**Its upgrades won't work on this branch.** They used
+`hvac_add_heat_pump_rtu|dual_fuel_hybrid_heating_{30F,17F,0F,neg10F}`, #446 options this branch
+didn't bring over (1.5). The equivalents here are `dual_fuel_std_perf_lockout_{30F,17F,0F,neg10F}`.
+For the four-scenario run (section 3), list one upgrade per scenario instead:
+
+```yaml
+upgrades:
+  - upgrade_name: DualFuel_StdPerf_30F
+    options:
+      - option: hvac_add_heat_pump_rtu|dual_fuel_std_perf_lockout_30F
+  - upgrade_name: DualFuel_CCHPC_spec_neg10F           # once the scenario 2 row exists
+    options:
+      - option: hvac_add_heat_pump_rtu|dual_fuel_cchpc_spec_lockout_neg10F
+  # scenarios 3 and 4: add once their options exist (3.1)
+```
+
+Always change `output_directory` and `s3.prefix` together. If the old ones are reused, the new
+results land under the 2025 R4 production prefix.
+
+---
+
+## 5. Open questions
 
 - [ ] Do all four scenario JSONs (`two_speed_standard_eff`, `two_speed_lab_data`,
-      `variable_speed_high_eff`, `cchpc_2027_spec`) carry `fan_data`?
-- [ ] Who else passes `hp_min_comp_lockout_temp_f`? (grep ymls, workflows, tests)
-- [ ] Anything matching on the old coil/fan names (`gas backup coil`, `VFD Fan`)?
-- [ ] Is 25 F the right default for the gas-backup lockout?
+      `variable_speed_high_eff`, `cchpc_2027_spec`) include `fan_data`?
+- [ ] What else still passes `hp_min_comp_lockout_temp_f`? (Search ymls, workflows, and tests.)
+- [ ] Does anything look for the old coil or fan names (`gas backup coil`, `VFD Fan`)?
+- [ ] Is 25 F the right default lockout for gas backup?
 
-## 5. Change log (this branch)
-
-- 2026-10-02: branch created; section 2 baseline written (originally numbered section 1).
-- 2026-10-02: created `jkim/dual_fuel_rtus_notes` off `origin/ccaradon/dual_fuel_rtus` to capture the
-  latest changes to this measure and to use as the starting point for further work. Upstream tracking
-  was removed so pushes don't go to the `ccaradon/` branch.
-- 2026-10-05: added section 1 (scope table for the four measure scenarios); renumbered later sections.
-- 2026-10-05: added 1.4. Ported the reporting side of closed PR #446 into this branch
-  (`com_report_hvac_dx_heating_load_during_hybrid_heating_j` in `comstock_sensitivity_reports`,
-  plus a column definition) to support the simultaneous vs sequential comparison for IMPACT.
-- 2026-10-05: replaced the EMS-based calculation with a report-side one that uses zone timestep
-  `Heating Coil Heating Energy` for DX + gas supplemental coil pairs, so the #446 EMS change is not
-  needed. Rewrote 1.4 accordingly.
-- 2026-10-05: ported `std_orig_backup_lockout_{30,17,0,neg10}F` options from #446 with the split
-  lockout arguments and `two_speed_standard_eff`; skipped `dual_fuel_hybrid_heating_*`. Added 1.5.
-- 2026-10-05: renamed those options to `dual_fuel_std_perf_lockout_*` and switched them to a new measure
-  choice `backup_ht_fuel_scheme=dual_fuel_gas_furnace_backup` (always natural gas backup, gas
-  lockout). Rewrote 1.5. Regenerated the HPRTU `measure.xml`, which also fixes checksums left stale by
-  `b3e9b751`.
-- 2026-10-05: added section 3 (plan for running all four scenarios) and an options lookup column in
-  1.1; renumbered later sections.
-
-## 6. Thoughts / brainstorming
+## 6. Thoughts and brainstorming
 
 _(empty)_
+
+## 7. Change log
+
+Section numbers in older entries are the numbers at the time.
+
+- 2026-10-02: Created `jkim/dual_fuel_rtus_notes` from `origin/ccaradon/dual_fuel_rtus` to pick up
+  the latest measure changes and build on them. Removed upstream tracking so pushes don't go to the
+  `ccaradon/` branch. Wrote the baseline notes (now section 2).
+- 2026-10-05: Added the scope tables for the four scenarios (section 1) and renumbered the rest.
+- 2026-10-05: Added 1.4. Brought over the reporting side of closed PR #446:
+  `com_report_hvac_dx_heating_load_during_hybrid_heating_j` in `comstock_sensitivity_reports`, plus a
+  column definition, for IMPACT's simultaneous vs sequential comparison.
+- 2026-10-05: Replaced the EMS-based calculation with one that reads timestep
+  `Heating Coil Heating Energy` for each DX + gas coil pair, so #446's EMS change isn't needed.
+  Rewrote 1.4.
+- 2026-10-05: Brought over the `std_orig_backup_lockout_{30,17,0,neg10}F` options from #446, using
+  the split lockout arguments and `two_speed_standard_eff`. Skipped `dual_fuel_hybrid_heating_*`.
+  Added 1.5.
+- 2026-10-05: Renamed those options to `dual_fuel_std_perf_lockout_*` and pointed them at a new
+  measure choice, `backup_ht_fuel_scheme=dual_fuel_gas_furnace_backup` (always natural gas backup,
+  gas lockout). Rewrote 1.5. Regenerated the measure's `measure.xml`, which also fixed checksums left
+  stale by `b3e9b751`.
+- 2026-10-05: Added the four-scenario plan (section 3) and the options column in 1.1. Renumbered.
+- 2026-10-06: Added the Kestrel run instructions and my last yml (then sections 7 and 7.1).
+- 2026-10-06: Rewrote the whole file in plainer language. Added a contents list and a terms list.
+  Moved the run instructions to section 4 (my last yml is now 4.1) and the change log to the end.
