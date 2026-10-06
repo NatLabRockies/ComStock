@@ -407,6 +407,12 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     condenser_pump.setName('Condenser loop circulation pump')
     condenser_pump.setPumpControlType('Intermittent')
     condenser_pump.setRatedPumpHead(44_834.7) # 15 ft for primary pump for a primary-secondary system based on Appendix G; does this need to change?
+    # openstudio-standards 'VSD DP Reset' curve (18.5% power at 50% flow; 90.1 6.5.4.5.2 allows at most 30% for water-loop
+    # heat pumps); the default linear curve gave 50%
+    condenser_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+    condenser_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+    condenser_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+    condenser_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
     condenser_pump.addToNode(condenser_loop.supplyInletNode)
 
     # Create new loop connecting heat pump and ground heat exchanger.
@@ -794,6 +800,15 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     end
     if !undisturbed_ground_temp.empty?
       borefield_defaults['soil']['undisturbed_temp'] = undisturbed_ground_temp.to_f.round(2)
+    end
+
+    # design the borefield for the flow the heat pumps circulate; at 0.2 L/s per borehole it carried a quarter to a
+    # third of it, and the heat exchanger starved the condenser loop until it ran away in cold weather
+    ghx_design_flow = condenser_loop.maximumLoopFlowRate
+    ghx_design_flow = condenser_loop.autosizedMaximumLoopFlowRate if ghx_design_flow.empty?
+    if ghx_design_flow.is_initialized && ghx_design_flow.get.positive?
+      borefield_defaults['design']['flow_rate'] = (ghx_design_flow.get * 1000.0).round(4) # L/s
+      borefield_defaults['design']['flow_type'] = 'SYSTEM'
     end
 
     borefield_defaults['loads'] = {}

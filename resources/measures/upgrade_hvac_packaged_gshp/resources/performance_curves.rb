@@ -599,9 +599,6 @@ module MakePerformanceCurves
       hvac_object.setRatedHeatingCoefficientofPerformance(rated_heating_capacity_watts / rated_heating_power_watts)
       hvac_object.setRatedEnteringWaterTemperature(rated_ewt_htg)
       hvac_object.setRatedEnteringAirDryBulbTemperature(rated_db_htg)
-      # EnergyPlus sizes the heating coil as the cooling capacity times this ratio (and upsizes both for a larger
-      # heating load), so use the catalog's: the default 1.0 with OpenStudio's default curves gave heating = cooling / 3.8
-      hvac_object.setRatioofRatedHeatingCapacitytoRatedCoolingCapacity(rated_heating_capacity_watts / rated_total_cooling_capacity_watts)
 
     when 'OS_HeatPump_PlantLoop_EIR_Cooling'
       # read in csv data

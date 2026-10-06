@@ -1316,9 +1316,35 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     if !src_flows.empty? && src_flows.all?(&:is_initialized)
       total_src_flow = src_flows.sum(&:get)
       cond_loop.setMaximumLoopFlowRate(total_src_flow)
-      cond_loop.supplyComponents(OpenStudio::Model::PumpVariableSpeed.iddObjectType).each { |p| p.to_PumpVariableSpeed.get.setRatedFlowRate(total_src_flow) }
       heat_exchanger.setLoopSupplySideDesignFlowRate(total_src_flow)
       heat_exchanger.setLoopDemandSideDesignFlowRate(total_src_flow)
+
+      # a source pump per heat pump, as documented; EnergyPlus floors an EIR heat pump's source flow only at a pump on its
+      # own branch (without one it fell to ~1% and the loop ran away) and allows no pumps on both loop sides
+      cond_loop.supplyComponents(OpenStudio::Model::PumpVariableSpeed.iddObjectType).each { |p| p.to_PumpVariableSpeed.get.remove }
+      heat_pumps.each do |hp|
+        src_flow = hp.sourceSideReferenceFlowRate.get
+        hp_pump = OpenStudio::Model::PumpVariableSpeed.new(model)
+        hp_pump.setName("#{hp.name} Source Pump")
+        hp_pump.addToNode(hp.sourceSideWaterInletNode.get)
+        hp_pump.setRatedFlowRate(src_flow)
+        hp_pump.setMinimumFlowRate(0.3 * src_flow) # within the Carrier 30WG/61WG minimums and above the 90.1 25% floor
+        hp_pump.setRatedPumpHead(44_834.7) # the removed loop pump's 15 ft
+        hp_pump.setPumpControlType('Intermittent')
+        # openstudio-standards 'VSD DP Reset' curve (18.5% power at 50% flow; 90.1 allows at most 30%)
+        hp_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+        hp_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+        hp_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+        hp_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
+      end
+
+      # EnergyPlus 25.1 updates an EIR heating heat pump's source outlet with the wrong sign (fixed in 26.1); at the default
+      # 2-8 plant iterations 9-51% of the condenser loop's heat went unbalanced, at 10-20 it closes within the pump heat
+      convergence = model.getConvergenceLimits
+      convergence.setMinimumSystemTimestep(1) # blank would mean the zone timestep and switch off HVAC sub-stepping
+      convergence.setMaximumHVACIterations(20)
+      convergence.setMinimumPlantIterations(10)
+      convergence.setMaximumPlantIterations(20)
     end
 
     # Register final condition
@@ -1422,6 +1448,15 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     end
     if !undisturbed_ground_temp.empty?
       borefield_defaults['soil']['undisturbed_temp'] = undisturbed_ground_temp.to_f.round(2)
+    end
+
+    # design the borefield for the flow the heat pumps circulate; at 0.2 L/s per borehole it carried a quarter to a
+    # third of it, and the heat exchanger starved the condenser loop until it ran away in cold weather
+    ghx_design_flow = cond_loop.maximumLoopFlowRate
+    ghx_design_flow = cond_loop.autosizedMaximumLoopFlowRate if ghx_design_flow.empty?
+    if ghx_design_flow.is_initialized && ghx_design_flow.get.positive?
+      borefield_defaults['design']['flow_rate'] = (ghx_design_flow.get * 1000.0).round(4) # L/s
+      borefield_defaults['design']['flow_type'] = 'SYSTEM'
     end
 
     # add timeseries ground loads to json file
