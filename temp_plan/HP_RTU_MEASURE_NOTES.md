@@ -40,9 +40,9 @@ things get confirmed. **TBC** means not confirmed yet.
 
 | Scenario | Options lookup option | Performance category | Compressor lockout | Backup heat | Oversizing | Heating sizing temp | Gas heating control |
 |---|---|---|---|---|---|---|---|
-| 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | **TBC:** none | N/A if no oversizing | Simultaneous |
-| 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. (The existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | **TBC:** none | N/A if no oversizing | Simultaneous |
-| 3. CCHPC: typical dual fuel RTU **or** HP RTU | **None yet.** Needs a new performance category first | **TBC:** typical market equipment (new curve) | -10 F | **TBC** | **TBC:** none | N/A if no oversizing | Simultaneous |
+| 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
+| 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. (The existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
+| 3. CCHPC: typical dual fuel RTU | **None yet.** Needs a new performance category first | **TBC:** typical market equipment (new curve) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 4. IMPACT: dual fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
 
 ### 1.2 Status
@@ -51,14 +51,13 @@ things get confirmed. **TBC** means not confirmed yet.
 |---|---|---|---|
 | 1. Dual fuel RTU, standard performance | Created | Done | Not started |
 | 2. CCHPC: challenge spec dual fuel RTU | Not started | Not started | Not started |
-| 3. CCHPC: typical dual fuel RTU or HP RTU | Created | Not started | Not started |
+| 3. CCHPC: typical dual fuel RTU | Created | Not started | Not started |
 | 4. IMPACT: dual fuel | Not started | Not started | Not started |
 
 ### 1.3 Still to confirm
 
-- [ ] Oversizing: is it really "none" for scenario 1 and both CCHPC scenarios?
-- [ ] Scenario 3: the performance curve for typical market equipment (a new curve is needed).
-- [ ] Scenario 3: the backup heat source, and whether it's a dual fuel RTU or an HP RTU.
+- [ ] Scenario 3: the performance curve for typical market equipment (a new curve is needed). Plan
+      and data sources are in 1.6.
 - [ ] Scenario 4: performance category, compressor lockout, oversizing, and heating sizing temp.
 - [ ] Scenario 4: how the measure will support both simultaneous and sequential gas heating (1.4, 3.3).
 - [ ] Performance category for the `dual_fuel_std_perf_lockout_*` options. They use
@@ -181,6 +180,41 @@ but has no EMS.
   category.
 - **No EMS two-stage gas coil.** The backup is the measure's existing single-stage gas coil (1.4).
 
+### 1.6 Scenario 3 data plan and references (from the meeting on 2026-10-06)
+
+**Experimental data.** Parveen has experimental data for a typical dual fuel RTU, which is what
+scenario 3 needs. We compare it against the existing curves in
+`resources/measures/upgrade_hvac_add_heat_pump_rtu/resources/performance_maps_hprtu_lab_data.json`.
+(That file is the `two_speed_lab_data` category.)
+
+| Case | What we do |
+|---|---|
+| The existing curves match the experimental points well | Use Parveen's data to validate the existing curves. Show that they're already well structured. No new curves |
+| They don't match well | Build new curves from Parveen's data points (see below) |
+
+**If we build new curves:**
+- The experimental data has **no indoor temperature variation**. We'd quantify the indoor
+  temperature effect on capacity ratio and EIR from existing curves, probably the lab data curves in
+  the JSON above.
+- The indoor temperature effect would be a consistent % change on capacity ratio and EIR.
+
+**Other data:**
+- **Fan:** Parveen also has fan data. Next step: look at what it contains.
+- **Defrost:** no defrost data, so we keep the existing defrost data.
+
+**References we can use:**
+
+| Reference | Location | Use |
+|---|---|---|
+| Challenge RTU Technical Support Document (DOE review, reviewed by Sam Petty; unpublished) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\Challenge RTU Technical Support Document- DOE Review.docx` | Background to reuse for scenarios 2 (CCHPC challenge spec dual fuel RTU) and 3 (CCHPC typical dual fuel RTU) |
+| Standard performance dual fuel RTU measure doc (`dual_fuel_hp_rtu_measure_doc_v5.docx`) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\` | The measure doc for scenario 1 |
+| Lab tested data HPRTU measure doc | **Not received yet** | Explains how `performance_maps_hprtu_lab_data.json` was created |
+| Lab tested data on many actual dual fuel RTU units | **Not received yet** | Reference to cite for scenario 3 |
+
+- [ ] Compare Parveen's experimental points with the existing curves and decide which case applies.
+- [ ] Look at Parveen's fan data.
+- [ ] Get the two documents we haven't received.
+
 ---
 
 ## 2. Starting point: what `dual_fuel_rtus` changed
@@ -259,7 +293,7 @@ ready to combine when it has:
 |---|---|---|---|---|---|
 | 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 1.5) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Confirm which option the earlier 10K used (3.2). If it was different, rerun the 10K, then do a full run |
 | 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | Add the row, then a 10K run |
-| 3 | CCHPC typical dual fuel RTU or HP RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. The backup depends on dual fuel vs HP RTU | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Get the performance data. Decide dual fuel vs HP RTU, and the backup |
+| 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Compare Parveen's experimental data with the existing curves (1.6). Then add the options row |
 | 4 | IMPACT dual fuel | **Sequential control** (3.3) and the TBC items in 1.3 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (1.4) | Confirm IMPACT's parameters. Choose how to do sequential |
 
 Scenarios 1 and 2 can go ahead now. Scenarios 3 and 4 are waiting on decisions (performance data,
@@ -471,3 +505,7 @@ Section numbers in older entries are the numbers at the time.
 - 2026-10-06: Added the Kestrel run instructions and my last yml (then sections 7 and 7.1).
 - 2026-10-06: Rewrote the whole file in plainer language. Added a contents list and a terms list.
   Moved the run instructions to section 4 (my last yml is now 4.1) and the change log to the end.
+- 2026-10-07: Added 1.6 with the scenario 3 data plan (Parveen's experimental data, validate vs.
+  rebuild curves, fan and defrost data) and the list of references, from the meeting on 2026-10-06.
+- 2026-10-07: Scenario 3 is now "CCHPC: typical dual fuel RTU" (HP RTU dropped), with gas backup.
+  Set oversizing to "Oversizing not considered" for scenarios 1-3 and removed the related open items.
