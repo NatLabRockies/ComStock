@@ -197,8 +197,166 @@ non-fatal `CheckAirLoopFlowBalance` severe on its PVAV loop.
 |---|---|---|
 | GSHP condenser-loop runaways (hydronic 24, packaged 8, console 2 in the rerun) | Every fatal is EnergyPlus's `CheckForRunawayPlantTemps` on the measure's own `CONDENSER LOOP` / `GROUND LOOP`, which fires only when the loop outlet is more than 100 K beyond the loop limit the measure sets (10 C minimum), i.e. a collapse, not a few degrees of undershoot. GHEDesigner's own 20-year simulation of the same hourly loads (`SimulationSummary.json`) says the fields it sized are fine: minimum heat pump entering temperature 5.0 C (packaged 8, 12 boreholes; hydronic 2552, 1,156 boreholes), 11-17 C (packaged 183, console 1046). The loads are heating-dominated (extraction 1.0-26x rejection). The loops are coupled by an `Ideal`, `UncontrolledOn` fluid-to-fluid heat exchanger, so both loops fall together; the water-to-air / water-to-water equation-fit coils have no low source temperature cutoff and extrapolate below the fitted range | The borefield size is not the problem; the plant model is. First step (EnergyPlus's own advice): rerun one case to the day before the fatal with node reports on both loops (temperatures, flows, HX heat transfer, heat pump source-side flow) and see whether the decline is gradual (loads above what the loads run fed GHEDesigner, e.g. because that run used a fixed-temperature source) or a step (flow or control). Robustness either way: a hybrid backup on the condenser loop (boiler at the low setpoint, fluid cooler at the high one, standard practice for imbalanced loads) bounds the loop and turns fatals into reported backup energy; a low-temperature cutoff on the heat pumps would mask it. Packaged and console must be re-judged after the g-function fix below, which changes their ground response entirely |
 | Packaged and console GSHP g-functions all zero (new, fixed uncommitted) | both measures read GHEDesigner's `Gfunction.csv` with `r['H:79.59']`, a column name from one test run; GHEDesigner names the column after the borehole length (`H:118.85`), so the lookup was nil and `nil.to_f` wrote 0.0 into all 56 pairs of `GroundHeatExchanger:Vertical` (local packaged run on 6252: 0 of 56 nonzero; hydronic, patched to `r[1]`, 56 of 56). With g = 0 the borehole wall never leaves the undisturbed ground temperature: the ground loop was an infinite source/sink in every packaged and console GSHP result, 2025R3 included | fixed: pick the first `H:` header that is not `_bhw`, the column the hydronic measure already reads (`r[1]`); retest on 6252 Success with 56 of 56 nonzero g values. The container's GHEDesigner also writes an `H:<length>_bhw` column (near zero at short times, so a borehole-wall g-function), which the local GHEDesigner 1.0 does not; owners to confirm which one EnergyPlus should get, for all three GSHP measures. Owners: the published packaged and console GSHP savings are optimistic; the runaway counts for those two measures will change with a real ground response |
-| Package_3, 7 DOAS fan-coil buildings | `Coil:Heating:Water ... FCU HEATING COIL`: design coil load 102 W, design coil capacity 0 W, "Inadequate water side capacity in Plant Sizing for this hot water loop: increase design loop exit temperature and/or decrease design loop delta T" (exit 60 C, delta T 11.1 K). The heat-pump boiler measure lowers the hot water `Sizing:Plant` exit temperature to 60 C but keeps the gas boiler loop's 11.1 K design delta T, so the design return water (49 C) is below what the fan-coil coils must deliver; the envelope upgrades shrink the corridor loads to ~100 W and the UA solve fails | verified locally: the pulled 48 (rerun id; original 1585) `in.idf` fails in 1.4 s as-is (sizing periods only) and completes with the hot water loop delta T set to 5.6 K, no UA error (`C:/tmp/typ_runs/pkg3_48`). Fix for the heat-pump boiler measure: set the hot water `Sizing:Plant` delta T to ~5.6 K (10 F) when it lowers the supply temperature |
+| Package_3, 7 DOAS fan-coil buildings | `Coil:Heating:Water ... FCU HEATING COIL`: design coil load 102 W, "Inadequate water side capacity" (exit 60 C, delta T 11.1 K). Root cause: the heat-pump boiler measure autosizes the coils and the VAV reheat flows after lowering the supply to 140 F, but the fan coils' Maximum Hot Water Flow Rate stays hard-sized from the baseline run at 180 F. EnergyPlus sizes the coil's design load as that flow times the loop delta T (2.23e-6 m3/s x 11.1 K = 102 W), and after the envelope upgrades the corridor's heating airflow (2.3 g/s from 18.9 C) cannot absorb 102 W below 60 C water. Halving the delta T only halved that load | fixed (uncommitted) in the heat-pump boiler measure: autosize the hot water flow of fan coils, unit heaters, induction units and constant-volume / PIU / VAV heat-and-cool reheat terminals whose coil is a hot water coil, as it already did for VAV reheat. Verified: both pulled failures (rerun 48 and 318) size cleanly with the fan coil flows autosized and the 11.1 K delta T kept; Package_3 rebuilt measure by measure on 48's baseline with the fixed measure: all 41 fan coil flows autosized, EnergyPlus sizing completes, no UA failure (`C:/tmp/typ_runs/pkg3_chain`) | applied (uncommitted) |
 | Unoccupied AHU control, 8613 | fails at 01/08 00:00 in `ZONE OFFICE A - STORY TOP` with `DualSetPointWithDeadBand: heating set-point higher than cooling set-point` and setpoints of 6e+161 / 1.5e-154: uninitialised numbers, not a thermal divergence. The zone's thermostat schedules are complete (Schedule:Year, two week rules covering the year), no EMS touches setpoints (the fork's three `DamperStuckOverride` programs act on OA fractions); the loops carry the fork's `AvailabilityManager:OptimumStart` managers (8) whose applicability schedule is now the measure's `_night_fancycle_novent_schedule`. EnergyPlus's optimum start overrides a zone's setpoints with the "occupied" setpoints it looked up when it decides a pre-start period is active; with the measure's night fan-cycling schedule the manager can set the flag without a valid lookup, which is exactly a garbage setpoint at midnight. Same IDF completes locally: uninitialised memory behaves differently per machine, which also explains why 4084 "passed" after unrelated changes | in the unoccupied measure, when the loop availability becomes the night-cycling schedule, leave optimum start on the original occupied schedule or remove the optimum-start managers from those loops; report the IDF to EnergyPlus (deterministic in the container) |
+
+### Heat recovery check: HPRTU+ER (upgrade 3) vs HPRTU_E_Backup (upgrade 1), 2026-10-04
+
+The two options differ only in `hr=true`. In the 10k run both apply to the same 3,417 buildings; HPRTU+ER saved
+17.4% site energy against 17.6% and was worse in 18% of buildings (`hr_vs_nohr_compare.py`,
+`hr_vs_nohr_buildings.csv`). Energy recovery cut heating electricity 21% and cooling 4%, but its own electricity
+(`electricity_heat_recovery_kwh`, the wheel "fan" power the measure puts on the heat exchanger) rose 88 GWh, more
+than both savings. In 2025R3 published results HPRTU+ER beat HPRTU in every building type (29.7% vs 27.7%).
+
+| cause | evidence | fix |
+|---|---|---|
+| the measure estimates the outdoor air behind that fan power with a hand sum that divides air changes per hour by 60 instead of 3600 | outpatient and hospital (ASHRAE 170 spaces specify 2-15 ACH in the typical data): 10.5 and 14.4 kWh/sf/yr of recovery electricity against 0.2-0.3 elsewhere; HPRTU+ER saved 1.6% (outpatient) and -6.8% (hospital) against 17.6% / 16.3%. The standalone Energy_Recovery upgrade makes outpatients use 22% and hospitals 11% more energy | the five measures with that hand sum (heat pump RTU, Energy_Recovery, VRF DOAS, advanced RTU, minisplit DOAS) now call `OpenstudioStandards::ThermalZone.thermal_zone_get_outdoor_airflow_rate` (x zone multiplier), which converts ACH with 3600 and honours the Maximum method (uncommitted) |
+| the same sum always adds per-area and per-person outdoor air, while the typical California models use the Maximum method (Title 24: greater of 0.15 cfm/sf or 15 cfm/person) | California buildings show twice the recovery electricity per design cfm (equivalent full-power hours ~9,700/yr vs ~4,700 elsewhere); HPRTU+ER worse in 45% of them | same fix; verified on the pulled California warehouse 195 (office zone 16.6 W -> 9.9 W, matching the helper) and unchanged on the Indiana retail 1 (Sum method) |
+| EnergyPlus charges `HeatExchanger:AirToAir:SensibleAndLatent` Nominal Electric Power whenever outdoor air flows; the measures' comment expects the rotary setting to cut it during bypass, it does not | annual run of the pulled retail 1 with hourly HX outputs: power at nominal in all 8,610 hours with outdoor air, including the ~2,400 hours at 15-25 C where effectiveness is 0.04-0.13 | applied (uncommitted) in the four measures that add a wheel: an EMS program per wheel keeps it available only when it would recover heat or coolth (outdoor air below return and wheel outlet setpoint, or above both, 0.5 C margin), which mirrors EnergyPlus's own recovery decision and models the wheel stopping with bypass dampers open (90.1 section 6.5.6.1 requires a bypass or control for economizer operation). The heat pump RTU, Energy_Recovery and advanced RTU measures also size the wheel to the design outdoor air instead of the supply flow (4.6x). Tested on one retail in Detroit, Los Angeles and Honolulu: wheel fan energy -27/-45/-58%, energy recovered -0.4 to -1.3%, loads and unmet hours unchanged; energy recovery now saves HVAC energy in all three, where it lost in Los Angeles before; the other three measures cut wheel fan energy 43-84% in Los Angeles. `erv_bypass/README.md` and figures |
+
+Expected result with the two bugs fixed (estimate: California recovery electricity scaled to the operating hours of
+the same building type elsewhere, healthcare capped at the correct fan power for 8,760 h): HPRTU+ER 18.9% vs HPRTU
+17.6% overall; outside California and healthcare, where neither bug applies, the run itself shows 19.0% vs 17.5% and
+energy recovery worse in 1% of buildings. What remained after the two bug fixes was energy recovery losing in about a quarter (3B) to a half (3C) of the
+mild-climate buildings, largely the third cause above; the bypass control (applied) removes most of it. No climate
+zone limit was added: with bypass the wheel only costs energy when it recovers some.
+
+### Run `sdr_2026r1_measure_fixes_500_2` (commit `24ceb77f`), 2026-10-05
+
+Same 500 buildings and yml as the first rerun; contains the hydronic, ideal air loads, g-function and CRAC-skip
+fixes, not the Package_3, outdoor air or bypass fixes. Failures per upgrade (`failure_summary_aggregated_sdr_2026r1_measure_fixes_500_2.csv`):
+ideal air loads 6 -> 2 and hydronic GSHP 57 -> 29 (27 offices fixed, 3 hospitals newly fail); packaged GSHP 10 -> 53,
+console GSHP 5 -> 14, Packages 6/10/11 +27/+35/+37; everything else unchanged (Package_3 still 9). All new failures
+are EnergyPlus `CheckForRunawayPlantTemps ... too cold`, mostly in 4A/5A. The g-function fix is correct (the same
+IDF completes with the g-function zeroed and fails with it); it removed an infinite ground source that hid these:
+
+| bug in the GSHP measures | evidence | fix |
+|---|---|---|
+| EnergyPlus gets OpenStudio's default ground temperature model (Kusuda, 13.4 C average) in every building; `ghx.setGroundTemperature` writes a legacy field EnergyPlus ignores, while GHEDesigner sizes the field for 9.0-20.9 C by location | all 13 pulled models: 13.375 C; Texas warehouse 10 sized for 20.9 C ground runs away on Jan 2; with the Kusuda average set to 20.9 C it completes the year (condenser loop min 4.9 C) | set the GHX's `undisturbedGroundTemperatureModel` (Kusuda) average surface temperature to GHEDesigner's `undisturbed_temp` |
+| OpenStudio resets a plant loop to Water when a GroundHeatExchangerVertical is added; the measures set 20% propylene glycol before adding it, so every ground and condenser loop is plain water | fresh-model test; every pulled model; in warehouse 10 the heat pump return water hits 0 C and the fluid-to-fluid HX switches off (status 0), then the loop falls ~16 C per 15 min | set the fluid after adding the GHX, on both the ground and the condenser loop (GHEDesigner already assumes 20% PG) |
+| water-to-air heat pump lookup tables have absolute axes (Kelvin, m3/s) while EnergyPlus passes ratios to rated conditions, so every lookup clamps to a table corner: heating always at the coldest table EWT and air temperature, cooling at the coldest table EWT (7 C); performance never responds to the loop | EnergyPlus rated-curve warnings in every model (heating capacity 0.876, power 0.778, cooling power 0.696 at rated conditions); identical annual energy with zero and real g-functions in all 185/60/46 buildings that succeeded in both runs | rebuild the axes as ratios (T_K / 283.15, V / V_rated) with the rated-output divisors kept; packaged and console `resources/performance_curves.rb` (since Feb 2024) |
+| hydronic plant-loop EIR heat pumps: heating table source-EWT axis spans only -5 to 0 C (clamped above), minimum source inlet temperature -100 C (no low-source shutoff) | hospital 136 IDF | owner: check the data set; set a realistic minimum source inlet temperature |
+| fluid-to-fluid HX between the ground and condenser loops keeps OpenStudio's 0 C Operation Minimum Temperature Limit; EnergyPlus switches it off when either inlet is below it (`PlantHeatExchangerFluidToFluid.cc` L932-941) and the cut-off condenser loop runs away | strip mall 1 (5A) completes once both loops are glycol and the limit is -6 C | applied 2026-10-05 (below) |
+| heat pump source flow sized at OpenStudio's 11 K `Sizing:Plant` default (the measures set the loop type and exit temperature only): 0.022 L/s per kW against the catalog's 0.070, 8-9 K across the heat pumps | strip mall with ratio tables: the 10:00 warmup start drives the heat pump return to -7.2 C and trips the HX; at a 5.6 K design delta T it completes | owner (sizing change), below |
+
+### GSHP plant fixes applied and item 2 assessed, 2026-10-05
+
+Applied, uncommitted, in the packaged, console and hydronic GSHP measures (three blocks each, reversible together):
+the GHX's Kusuda average soil surface temperature set to GHEDesigner's `undisturbed_temp`; 20% propylene glycol
+restored on the ground loop after the GHX is added and set on the condenser loop; 'HX for heat pump' Operation
+Minimum Temperature Limit -6 C (was OpenStudio's 0 C). Per-model, per-fix results in `gshp_fix/README.md` (8 run _2
+datapoints, IDF emulation): every tested failure now completes, and annual energy moves less than 0.03% where the
+run already completed, because the clamped tables make the heat pumps blind to loop temperature. Console
+`test_pthp` and hydronic `test_vav_air_cooled_chiller_with_gas_boiler_reheat` pass with the edited measures and
+carry the expected fluids, HX limit and Kusuda temperature; packaged: the edited measure applied directly to the PSZ-HP test model with New York weather returns Success with the same settings, and its annual run completes with no severe errors.
+
+Open for the owner:
+
+- Source flow sizing (table above): `setLoopDesignTemperatureDifference(5.6)` on the condenser loops would roughly
+  double the heat pump flows; it keeps the strip mall above 0 C and lets the ratio-table prototype complete there.
+- Heat pump capacities: every packaged and console heat pump pulled has heating capacity = 0.263 x cooling capacity
+  (catalog 0.74), from the sizing run the measures do before the Trane tables are assigned. EnergyPlus sizes both
+  coils' water flow from the heating capacity, so cooling-mode return water reaches 78 C (TX warehouse, 44 K across
+  the heat pump); every unmet hour in these models is a heating hour (MO console hotel 6,277 h, IA console
+  warehouse 2,974 h). Detail in `gshp_fix/README.md`.
+- Item 2, heat pump tables. Packaged and console can be fixed with the data in the repo (temperature axes / 283.15,
+  flow axes / catalog rated flow, rated-output divisors kept, autosized flow scaling dropped); the prototype cleared
+  every rated-curve warning. Hydronic EIR heat pumps use Celsius correctly but their heating data cover only -5 to
+  0 C source water (clamped above) and the minimum source inlet temperature is EnergyPlus's -100 C default, so a
+  proper fix needs new data. Evidence:
+  - CSV axes in Kelvin and m3/s: [Trane_10_ton_GWSC120E_htg_cap.csv](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_packaged_gshp/resources/Trane_10_ton_GWSC120E_htg_cap.csv?plain=1#L1),
+    [Trane_3_ton_GWSC036H_htg_cap.csv](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_console_gshp/resources/Trane_3_ton_GWSC036H_htg_cap.csv?plain=1#L1)
+  - axis values taken from the CSV, flows scaled to the autosized unit: packaged
+    [performance_curves.rb L231-L257](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_packaged_gshp/resources/performance_curves.rb#L231-L257),
+    independent variables [L315-L332](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_packaged_gshp/resources/performance_curves.rb#L315-L332),
+    divisor [L335-L338](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_packaged_gshp/resources/performance_curves.rb#L335-L338), rated point
+    [L489-L507](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_packaged_gshp/resources/performance_curves.rb#L489-L507); console the same at
+    [L231-L257](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_console_gshp/resources/performance_curves.rb#L231-L257),
+    [L315-L338](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_console_gshp/resources/performance_curves.rb#L315-L338), 3-ton rated point
+    [L512-L539](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_console_gshp/resources/performance_curves.rb#L512-L539)
+  - EnergyPlus inputs are ratios: Engineering Reference
+    [Single Speed Equation-Fit Model](https://bigladdersoftware.com/epx/docs/25-1/engineering-reference/air-system-compound-component-groups.html#single-speed-equation-fit-model)
+    ([source L2173-L2241](https://github.com/NatLabRockies/EnergyPlus/blob/v25.1.0/doc/engineering-reference/src/simulation-models-encyclopedic-reference-002/air-system-compound-component-groups.tex#L2173-L2241)),
+    referenced from the coil fields in the
+    [Input Output Reference](https://bigladdersoftware.com/epx/docs/25-1/input-output-reference/group-heating-and-cooling-coils.html#field-total-cooling-capacity-curve-name);
+    code [WaterToAirHeatPumpSimple.cc L3020](https://github.com/NatLabRockies/EnergyPlus/blob/v25.1.0/src/EnergyPlus/WaterToAirHeatPumpSimple.cc#L3020) (Tref 283.15),
+    [L3159-L3180](https://github.com/NatLabRockies/EnergyPlus/blob/v25.1.0/src/EnergyPlus/WaterToAirHeatPumpSimple.cc#L3159-L3180) (cooling),
+    [L3419-L3437](https://github.com/NatLabRockies/EnergyPlus/blob/v25.1.0/src/EnergyPlus/WaterToAirHeatPumpSimple.cc#L3419-L3437) (heating)
+  - hydronic: [Carrier_61WG_Glycol_90kW_htg.csv](https://github.com/NatLabRockies/ComStock/blob/24ceb77ff5b27ebc67fd7ef6b42c096429fcd74d/resources/measures/upgrade_hvac_hydronic_gshp/resources/Carrier_61WG_Glycol_90kW_htg.csv?plain=1);
+    EIR curves take Celsius ([I/O reference](https://bigladdersoftware.com/epx/docs/25-1/input-output-reference/group-plant-equipment.html#plhp_eir_heating_inputs_capft)),
+    minimum source inlet default -100 C ([I/O reference](https://bigladdersoftware.com/epx/docs/25-1/input-output-reference/group-plant-equipment.html#plhp_eir_heating_inputs_minimum_source_inlet_temperature))
+
+### GSHP round 2: catalog sizing, ratio tables, hydronic fixes (2026-10-05, uncommitted)
+
+On top of `0bc41637` (round 1). Packaged and console: the Trane tables are built in EnergyPlus's ratio form and
+assigned at coil creation, before the measures' sizing run, with the catalog heating-to-cooling capacity ratio and a
+3.6 / 4.0 K condenser loop design delta T (catalog water flow); the packaged ground pump runs intermittent. Hydronic:
+the heat pump count test compared W to kW (every heat pump 200 kW); source flows from the catalog; Carrier tables
+extended to the loop's source temperatures by a lift fit (`*_extended.csv`); EIR flow mode VariableSpeedPumping
+(ConstantFlow created source heat, 85 MWh/yr in a small hotel); condenser and ground loop design flows set to the heat
+pumps' total (EnergyPlus registers each EIR source flow twice, `/ 0.5` in `PlantLoopHeatPumpEIR.cc` L1369, still on
+develop; worth an upstream issue); ground pump intermittent. End-to-end results on the 8 pulled baselines, committed
+vs working tree, in `gshp_fix/README.md` ("Round 2"); console `test_pthp`, hydronic
+`test_vav_air_cooled_chiller_with_gas_boiler_reheat` and the packaged PSZ-HP direct run pass.
+
+Open for the owner: console unmet heating hours (top-floor hotel guest rooms, not capacity); hospital heating unmet
+hours 995 -> 1,158 with VariableSpeedPumping (a minimum part load ratio would fix it but breaks EnergyPlus's cycling
+path); constant-speed ground pumps at full design flow whenever any heat pump runs (large plants); GHEDesigner's
+0.2 L/s per borehole vs the EnergyPlus ground loop flow.
+
+### GSHP round 3: borefield flow, hydronic source pumping, convergence (2026-10-06, uncommitted)
+
+Run `_500_3` (`30a6bc92`) left 65 upgrade-only failures; 63 are GSHP (the other two are the owner items), from two
+mechanisms. (a) Hydronic: with VariableSpeedPumping the EIR source flow is design x the last part load ratio and fell
+to ~1%; the next step's heat hit the +-100 K clamp and the condenser loop ran away (11 loads runs, plus 412 in the
+final run). (b) GHEDesigner designed the borefield at 0.2 L/s per borehole, a quarter to a third of the condenser loop
+flow, so the isolation heat exchanger starved the loop in cold weather (packaged 185/424, hydronic 92/354, Package_10
+103/163). Changes, all three measures unless noted:
+- GHEDesigner `flow_type` SYSTEM at the condenser loop design flow (the docs size the ground loop at 3 gpm/ton with a
+  5-10 F heat exchanger delta T; Table C-1 names no borehole flow).
+- Hydronic: one variable-speed source pump per heat pump (30% minimum, Intermittent, 15 ft) and no supply-side loop
+  pump; EnergyPlus applies a minimum source flow only from a pump on the heat pump's own branch and rejects pumps on
+  both loop sides without a common pipe. Plus ConvergenceLimits 1/20/10/20: EnergyPlus 25.1 writes the EIR heating
+  source outlet with the wrong sign on the first HVAC iteration (issue #11339, fixed in 26.1), which left 9-51% of
+  the loop heat unbalanced in final runs; with 10-20 plant iterations it closes within pump heat (runtime 1.6-1.9x).
+- openstudio-standards 'VSD DP Reset' part-load curve on the variable-speed pumps these measures add (90.1 limits
+  part-load pump power to 30% at 50% flow; the default linear curve gave 50%).
+- Carrier table extension limited to 10 C heating source (Carrier's 61WG-090 ratings at 10/7 C sit 0-6% above the
+  table's capacities, COP -9..+2%) and 15 C cooling source (below that the 30WG needs head pressure control).
+- Packaged/console: catalog heating-to-cooling capacity ratio dropped, back to EnergyPlus's 1.0 (console doc: coils
+  sized to the same capacity). Seven end-to-end pairs: unmet hours equal or lower, energy within about 1%; the catalog
+  ratio made EnergyPlus upsize cooling coils in heating-dominated buildings.
+Tests: Kestrel's own run _3 models of all 16 hydronic and both packaged failures complete with the fixes; nine
+hydronic buildings also end to end with the fixed measure; bldg 185 fails on HEAD and completes on the fix in the
+local harness. The local harness needs GHEDesigner reporting soil heat capacity in kJ (1.0 reports J under a kJ
+label; production builds a later commit). Details: `gshp_fix/README.md`, "Round 3".
+
+Open for the owner: hydronic runtime; branch pumps run at 30% flow all year (EnergyPlus cannot stop them; +1.2%
+electricity in the hotel); bldg 77 kitchen cooling unmet hours (2,540 h vs 700 baseline in two zones, not ground
+related); per-borehole flow in buildings with few bores (1.56 kg/s in bldg 163); the hydronic doc's chilled water
+reset (Table 3) and variable-speed ground pump are not in the code (pre-existing).
+
+### GSHP round 4: borefield flow floor, 3 gpm/ton under ratio 1.0 (2026-10-07, uncommitted)
+
+Run `_500_4` (`0d58ce51`): upgrade-only failures 65 -> 44. Hydronic 12 -> 1 and packages 15/17/17 -> 12/9/9, but 12
+buildings that succeeded in `_3` now failed (console 33, 36, 55, 56, 62, 329, 470; packaged 193, 249, 325, 466;
+hydronic 496; the package failures are the same buildings), all in climate zones 1A and 7. GSHP applicability was
+unchanged in every upgrade. Their borefields are huge relative to the heat pump plant (144 to 3,540 bores), and
+designing at the condenser flow spread it to 0.003-0.05 L/s per borehole: laminar, so the borehole resistance
+EnergyPlus uses (including for its short-time-step response, built at the design flow) jumped and the loop ran away
+hot (1A) or cold (7). Local matrix on 193, 33, 329, 249: committed code fails, catalog ratio restored still fails,
+0.2 L/s per borehole completes.
+- All three measures: GHEDesigner designs at 0.2 L/s per borehole; where that carries less than the condenser loop
+  flow it reruns at the condenser loop flow (flow_type SYSTEM). Every field gets at least 0.2 L/s per borehole and
+  never less than the heat pumps circulate. Tested: 33, 193, 329 complete (0.2 L/s kept); 185 completes (SYSTEM).
+- Packaged/console: the ratio revert made EnergyPlus size the heat pump water flow from a heating capacity equal to
+  cooling, so condenser flow and pump energy rose 35-47% in cooling-dominated buildings (about 4 gpm/ton). Loop design
+  delta T 3.6 -> 4.9 K (packaged) and 4.0 -> 5.9 K (console) restores the Trane rated flow, about 3 gpm/ton.
+  Tested: packaged 1, 3, 12, 185, 193 and console 224 complete; condenser flow back to 2.8-3 gpm per ton of coil capacity (e.g. 1: 3.93 -> 2.89 L/s, 224: 6.69 -> 4.54 L/s), unmet hours unchanged or lower, total electricity equal or slightly lower.
+
+Decisions, alternatives tried and the reasons (hydronic pumping options, convergence limits, ground pump, pump curve,
+Carrier limits, ratio, borefield flow), with the owner's rule for assumption changes: `gshp_fix/README.md`,
+"Decisions, alternatives tried, and why"; research write-ups with sources in `gshp_fix/research/`.
 
 ## 3. Work breakdown
 

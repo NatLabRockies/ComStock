@@ -4,8 +4,11 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 
 ## Resume here
 
-1. Uncommitted in the worktree (owner commits; suggested message at the end of the 2026-10-04 evening
-   entry): hydronic GSHP `:756`/`:848` fixes, ideal air loads naming, data-center skips in DOAS
+1. The owner pushed and started `sdr_2026r1_measure_fixes_500_2` (2026-10-04) with everything up to the
+   g-function fix (commit `24ceb77f`). Uncommitted since (suggested message at the end of the 2026-10-04
+   late-night entry): the Package_3 hot water flow autosizing in the heat-pump boiler measure, the outdoor
+   air fix in five measures, the energy recovery bypass control and wheel sizing in four measures, and the
+   analysis files (`erv_bypass/`, `hr_vs_nohr_*`, `failure_summary_*`, rerun scripts and tables). Earlier uncommitted items: hydronic GSHP `:756`/`:848` fixes, ideal air loads naming, data-center skips in DOAS
    minisplits and advanced RTU controls, the g-function column fix in packaged and console GSHP, docs, rerun tables and scripts (`rerun_compare.py`,
    `rerun_applicability_tally.md`, `parse_osw.py`, `tally.py`, `compare_r3.py`, `extract_osw_rerun.sh`,
    `r3_applicability_by_system.csv`, `rerun_baseline_chars.csv`), the yml / sample / id-map copies.
@@ -41,6 +44,132 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 | 23 | upgrade_unoccupied_oa_controls | sim | done: numerical divergence at the first unoccupied night; optimum start + night cycle lead | 2 | owner | | |
 
 ## Log
+
+### 2026-10-07 (run _4 evaluated, GSHP round 4)
+
+- Run `_500_4` scored (`failure_summary_aggregated_sdr_2026r1_measure_fixes_500_4.csv`): 44 upgrade-only failures;
+  hydronic fixed (12 -> 1), 12 new climate zone 1A/7 failures from laminar borefield design flow. Buildings in both
+  runs: site energy +0.1 to +0.4%, unmet heating hours flat to -5%, drilling -5 to +4%.
+- Pulled the 12 failures and baselines (Slurm 18943397, `C:/tmp/mf2026r1_run4`); round 4 in PLAN.md.
+- Owner had switched this worktree to another branch; GitHub Desktop stashed the notes, restored 2026-10-07.
+- Owner committed round 4 as `708e4ed3` (3 measure files; the push reported a GitHub internal server error but the
+  ref was updated) and launched `_500_5` on the same sample. Expected: 2 upgrade-only failures (the owner items),
+  range 2-14 (`failure_progress_by_upgrade.csv`).
+
+### 2026-10-06 (run _3 evaluated, GSHP round 3)
+
+- Run `_500_3`: upgrade-only failures 4,815 (10k) -> 274 -> 393 -> 65; 63 GSHP, 2 owner items. Unmet heating hours
+  vs `_2` (buildings in both): packaged -11%, console -1%, hydronic flat, packages -2 to -3%.
+- Pulled the 18 failing buildings' `up00` baselines (Slurm 18932317, `C:/tmp/mf2026r1_run3_base`).
+- Round 3 changes in PLAN.md ("GSHP round 3"). A research pass (three agents) confirmed the EnergyPlus EIR heating
+  sign bug (fixed upstream in 26.1), the branch-pump route to a minimum source flow, and the 90.1 and manufacturer
+  minimum-flow context; measure docs 89239/89131/89132 checked for each change.
+- Found the local harness used GHEDesigner 1.0, which reports soil heat capacity 1000x too large; patched locally with
+  the owner's OK, after which HEAD bldg 185 reproduced the Kestrel failure.
+- Owner committed round 3 as `0d58ce51` (7 measure files) and launched `_500_4` on the same sample (2026-10-06,
+  afternoon). Score it with `failure_summary_from_raw.py` and `run3_results_compare.py` (add `_500_4`), and check
+  GSHP applicability against `_3` (GHEDesigner errors are logged as not applicable) and hydronic runtimes.
+
+### 2026-10-05, afternoon (GSHP round 2)
+
+- Owner committed round 1 (`0bc41637`) and asked for the sizing and table steps. Pulled the 13 run _2 GSHP
+  buildings' `up00` baselines (Slurm 18918644, `C:/tmp/mf2026r1_run2_base`) and built an end-to-end harness
+  (`gshp_fix/e2e/`): each GSHP measure on the baseline, committed vs working tree, then the annual run.
+- Packaged and console: tables in ratio form and assigned before the sizing run, catalog capacity ratio, catalog
+  water flow (3.6 / 4.0 K loop delta T), packaged ground pump intermittent. Rated-curve warnings 0, heat pump
+  return water no longer 53-66 C, cooling no longer oversized 2.5-3.8x; totals -5 % to +6 %.
+- Hydronic: W vs kW heat pump count bug, catalog source flows, extended Carrier tables, then two EnergyPlus issues
+  found in testing: EIR ConstantFlow phantom source heat (fixed with VariableSpeedPumping) and the doubled EIR source
+  flow registration in loop sizing (worked around by setting the loop, pump and HX design flows).
+- Details and the results table: `gshp_fix/README.md`, "Round 2".
+
+### 2026-10-05 (GSHP plant fixes applied)
+
+- Owner approved the ground temperature and glycol fixes. Applied in the three GSHP measures with a third piece the
+  tests showed is needed: glycol on the ground loop alone does not help, because the condenser loop stays water and
+  the fluid-to-fluid HX trips at OpenStudio's 0 C limit. Now both loops are 20% propylene glycol and the HX limit is
+  -6 C. Results and scripts: `gshp_fix/` (README, `summary.csv`); runs in `C:/tmp/gshp_fix`.
+- Verification: console `test_pthp` 7/7 and hydronic `test_vav_air_cooled_chiller_with_gas_boiler_reheat` 7/7 with
+  the expected fluids, HX limit and Kusuda temperature in the output models; packaged: the edited measure applied directly to the PSZ-HP test model with New York weather returns Success with the same settings, and its annual run completes with no severe errors. The packaged suite's
+  PVAV test still errors before the plant code (needs a sizing run, as on 2026-10-02); the PTAC and PSZ-AC cases
+  are not applicable to the packaged and hydronic measures.
+- Found the source of the remaining cold-climate failure: OpenStudio's 11 K plant sizing default sizes the heat
+  pump water flows at a third of the catalog's. Tested 5.6 K on three models; not applied (owner).
+- Found that every packaged and console heat pump has heating capacity 0.263 x cooling (catalog 0.74), with water
+  flows sized from the heating side; cooling-mode return water reaches 78 C and all unmet hours are heating hours.
+  Condenser loop maxima without a flow filter are stale node values (loop idle about half the hours).
+- Item 2 assessed with links (PLAN.md, "GSHP plant fixes applied and item 2 assessed").
+
+### 2026-10-05 (run _2 evaluated)
+
+- Run `_2` landed (S3 `.../tests/sdr_2026r1_measure_fixes_500_2/`, Kestrel commit `24ceb77f`). Failure summary
+  `failure_summary_aggregated_sdr_2026r1_measure_fixes_500_2.csv`; comparison and GSHP root causes in PLAN.md
+  ("Run sdr_2026r1_measure_fixes_500_2"). Pulled 13 GSHP datapoints (Slurm 18917407, `C:/tmp/mf2026r1_run2`);
+  local EnergyPlus experiments in `C:/tmp/gshp_debug_10` and `C:/tmp/gshp_gtest` (`ratio_axes.py`,
+  `make_fix_variants.py`).
+- Verified: zeroed g-function completes, real g-function fails (same IDF); ground temperature model is the
+  OpenStudio default everywhere; glycol is lost when the GHX is added; heat pump tables clamp. Ground
+  temperature fix alone rescues the Texas warehouse; the 5A strip mall still fails with all three.
+- No measure code changed for the GSHP findings at this point (fixes followed the same day, entry above).
+
+### 2026-10-04, late night (energy recovery bypass)
+
+- Owner: no climate limit exists in the measure (only restaurants are excluded); asked for bypass if it can
+  be shown to work and to match real units, with plots. The divide-by-60 is in ComStock's measures (since
+  the 2023 Release 2 public commit, copied into newer measures), not in comstock-typical, which converts
+  air changes with 3600.
+- Implemented `add_erv_bypass_control` (EMS, one program per wheel) in the heat pump RTU, Energy_Recovery,
+  advanced RTU and VRF DOAS measures, plus wheel nominal flow sized to the design outdoor air in the first
+  three. Tested with nine annual runs of the pulled retail 1 (Detroit 5A, Los Angeles 3B, Honolulu 1A x no
+  recovery / recovery without bypass / with bypass) and the three other measures in Los Angeles; results,
+  figures and assumptions in `erv_bypass/README.md`. Energy recovery now saves HVAC energy in all three
+  climates (Los Angeles: -91 kWh without bypass, +114 kWh with); recovered energy within 1.3%.
+- Economizer check (owner question): all four wheels keep Economizer Lockout on, so economizer air above the
+  minimum passes the stopped wheel; at the HVAC system timestep (Detroit, `econ=true`) the wheel never ran above
+  98% of its rated flow while outdoor air reached 4.5x it. Details in `erv_bypass/README.md`.
+- Run `_2` contains none of today's later fixes; the next round should retest HPRTU+ER, Energy_Recovery,
+  Package_5, advanced RTU with energy recovery and both VRF upgrades, plus Package_3.
+- Suggested commit message for everything uncommitted:
+  `Model energy recovery bypass, fix ERV fan power inputs, autosize terminal hot water flows`
+  body: EMS bypass control for the wheel in four measures (EnergyPlus charged its fan power whenever outdoor
+  air flowed); wheel sized to the design outdoor air; design outdoor air from the standards helper instead
+  of a hand sum (ACH / 60, Maximum method ignored); heat-pump boiler measure autosizes fan coil, unit heater,
+  induction and CV/PIU reheat hot water flows (Package_3); rerun scoring, failure summaries, heat recovery
+  and applicability analyses, bypass test figures.
+
+### 2026-10-04, night (Package_3 fix, heat recovery check)
+
+- Owner started run `_2` with the pushed code, then asked for the Package_3 boiler fix and a check that
+  the heat-recovery variant beats the one without.
+- Package_3: the real cause was the fan coils' hard-sized Maximum Hot Water Flow Rate (baseline run at
+  180 F); EnergyPlus derives the coil's design load from that flow times the loop delta T, which the
+  post-envelope heating airflow cannot absorb at 140 F. The heat-pump boiler measure now autosizes the
+  hot water flow of fan coils, unit heaters, induction units and CV / PIU / VAV heat-and-cool reheat
+  terminals with hot water coils (it already did VAV reheat). Verified on the two pulled failures and by
+  rebuilding Package_3 on 48's baseline with the fixed measure (`C:/tmp/typ_runs/pkg3_chain`). The
+  delta T change tried earlier is not needed and was not applied.
+- Heat recovery: HPRTU+ER (upgrade 3) did not beat HPRTU (upgrade 1) in the 10k run, 17.4% vs 17.6%.
+  Two bugs in the outdoor air estimate behind the measure's wheel fan power (ACH / 60, Maximum method
+  summed) inflate it 60x in healthcare and ~2x in California; fixed in the five measures with that hand
+  sum by calling the openstudio-standards helper. Third cause, not fixed (owner decision): EnergyPlus
+  charges the heat exchanger's nominal power in every hour with outdoor air, bypassed or not. Details
+  and numbers in PLAN.md ("Heat recovery check"). Run `_2` does not contain these fixes.
+- Suggested commit message for the new uncommitted changes:
+  `Autosize terminal hot water flows in the HP boiler measure; fix the design outdoor air estimate for energy recovery fan power`
+  body: heat-pump boiler measure autosizes fan coil, unit heater, induction and CV/PIU reheat hot water
+  flows (Package_3 UA sizing failures); five measures use thermal_zone_get_outdoor_airflow_rate instead
+  of a hand sum that divided air changes by 60 and ignored the Maximum method (healthcare 60x, California
+  ~2x energy recovery fan power); heat recovery comparison scripts and results.
+
+### 2026-10-04, afternoon (failure summaries from the raw parquet)
+
+- Owner asked for `failure_summary_aggregated.csv` of the two runs. Neither run has a comstockpostproc
+  output on this PC, the Kestrel clones or S3 (the 10k run's S3 aggregates were written on 2026-10-01/02
+  from elsewhere; the rerun was never postprocessed). `failure_summary_from_raw.py` writes the same table
+  (same columns and status logic as `ComStock`, minus its 1% failure-rate stop) from the raw parquet:
+  `failure_summary_aggregated_sdr_2026r1_all_measure_10k.csv`, `failure_summary_aggregated_sdr_2026r1_measure_fixes_500.csv`.
+- Postprocessing note: `ComStock(...)` raises when any upgrade fails more than `acceptable_failure_percentage`
+  (default 0.01); the failure-enriched 500 sample exceeds it (hydronic 11%, packages 6/10/11 13-14%).
 
 ### 2026-10-04, evening (owner items assessed, g-function bug)
 
