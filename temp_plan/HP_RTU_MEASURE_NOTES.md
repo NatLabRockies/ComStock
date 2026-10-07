@@ -62,7 +62,7 @@ things get confirmed. **TBC** means not confirmed yet; the TBC items are collect
 |---|---|---|---|
 | 1. Dual fuel RTU, standard performance | Created | Done | Not started |
 | 2. CCHPC: challenge spec dual fuel RTU | Not started | Not started | Not started |
-| 3. CCHPC: typical dual fuel RTU | Created | Not started | Not started |
+| 3. CCHPC: typical dual fuel RTU | Not started | Not started | Not started |
 | 4. IMPACT: dual fuel | Not started | Not started | Not started |
 
 What each scenario still needs in code, options, and tests is in 4.1.
