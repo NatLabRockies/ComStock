@@ -285,6 +285,25 @@ def write_findings(out: Path, runs, primary, comps, fuel_mix, quantiles,
                   "the meters in kWh/ft² while still putting a larger share of its day into the "
                   "overnight hours."]
 
+    for p in sorted((out / "metrics").glob("measures_peaks_*.csv")):
+        pk = pd.read_csv(p, dtype={"upgrade": str, "anchor": str, "series": str})
+        pk = pk[(pk["basis"] == "stock") & (pk["metric"] == "electricity")]
+        if pk.empty:
+            continue
+        loc = p.stem.replace("measures_peaks_", "").replace("_", " ")
+        L += ["", f"## Seasonal electricity peaks — {loc}, whole stock (hourly-mean MW)", "",
+              "| season | series | peak MW | change vs baseline | hour (local standard) |",
+              "|---|---|---|---|---|"]
+        for _, r0 in pk.iterrows():
+            name = "stock baseline" if r0["role"] == "baseline" else f"upgrade {r0['upgrade']}"
+            chg = "" if r0["role"] == "baseline" else (
+                f"{r0['change_mw']:+,.1f} MW ({_pct(r0['change_pct'])})")
+            L.append(f"| {r0['season']} | {name} | {r0['peak_mw']:,.1f} | {chg} "
+                     f"| {r0['peak_hour']} |")
+        L += ["", "A measure's whole-stock series is the stock baseline plus its own change on "
+                  "the buildings it applies to. The peak week for each season is the calendar "
+                  "week holding the highest of these hours."]
+
     L += ["", "Full tables in `metrics/`; exact SQL in `queries/`; open `dashboard.html` for the "
               "interactive version."]
     (out / "findings.md").write_text("\n".join(L), encoding="utf-8")
@@ -821,10 +840,43 @@ def _assess(args) -> None:
             md_for_loc = (primary.md_county_table if loc["kind"] == "county"
                           else primary.md_table)
             slug = measures.location_slug(loc)
+            # Queried once: the seasonal averages and the peak weeks are both
+            # cut from this frame, so they cannot disagree about the data.
+            hourly = measures.fetch_measure_hourly(
+                primary.ts_table, md_for_loc, loc, measure_ids, no_cache=args.no_cache)
             prof = measures.assess_measure_timeseries(
                 primary.ts_table, md_for_loc, loc, measure_ids,
-                no_cache=args.no_cache)
+                no_cache=args.no_cache, hourly=hourly)
             prof.to_csv(out / "metrics" / f"measures_ts_{slug}.csv", index=False)
+            # The whole hourly year, for figures this page does not draw and for
+            # re-checking it. Parquet, not CSV: ~60k rows x every end use. The page
+            # never reads it, and its name stays out of the measures_ts_*.csv glob.
+            try:
+                hourly.to_parquet(out / "metrics" / f"measures_ts_hourly_{slug}.parquet",
+                                  index=False)
+            except Exception as exc:                          # noqa: BLE001
+                logger.warning("could not write the hourly frame for %s: %s",
+                               loc["label"], exc)
+            # Peak week by season. Fail-soft on its own: the seasonal averages
+            # above are already written and must not be lost to this step.
+            try:
+                weeks, peaks = measures.peak_weeks(hourly, measure_ids)
+                if not weeks.empty:
+                    weeks.to_csv(out / "metrics" / f"measures_peakweek_{slug}.csv", index=False)
+                    peaks.to_csv(out / "metrics" / f"measures_peaks_{slug}.csv", index=False)
+                    for _, pk in peaks[(peaks["basis"] == "stock") & (peaks["role"] == "baseline")
+                                       & (peaks["metric"] == "electricity")].iterrows():
+                        logger.info("  %s %s peak: stock baseline %.1f MW at %s (week of %s)",
+                                    loc["label"], pk["season"], pk["peak_mw"],
+                                    pk["peak_hour"], pk["week_start"])
+                else:
+                    coverage.setdefault("measures_peak_week_skipped", {})[loc["label"]] = (
+                        "no hourly rows for the stock baseline at this location")
+            except Exception as exc:                          # noqa: BLE001
+                logger.warning("peak weeks for %s failed: %s", loc["label"], exc,
+                               exc_info=True)
+                coverage.setdefault("measures_peak_week_skipped", {})[loc["label"]] = (
+                    f"{type(exc).__name__}: {exc}")
             # up_type must come from the table being queried: the literals
             # in the probe have to match the `upgrade` column's own type, and
             # defaulting to varchar against a bigint column made the probe fail

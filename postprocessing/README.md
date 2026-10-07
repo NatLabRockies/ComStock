@@ -314,6 +314,19 @@ Notes:
    `upgrade_ids_to_skip` restricts them the same way it restricts the driver's
    own plots. `include_upgrades=False` turns them off: `prepare_athena_tables`
    then exports the baseline alone, so there would be nothing to read.
+ - **Measure timeseries: seasonal averages and peak week by season.** The
+   locations come from `measure_states` (by default a ComStock run's own
+   `timeseries_locations_to_plot`). Besides the season x day-type averages, the
+   leg writes each season's peak week, `measures_peakweek_<loc>.csv` and
+   `measures_peaks_<loc>.csv`, cut from the same hourly data on two bases: the
+   whole stock (one week per season, holding the highest hour among the stock
+   baseline and every measure's whole-stock series, so all measures share it)
+   and each measure's own applicable buildings (the `peak_week_by_state` rule of
+   the measure plots). Weeks run Monday to Sunday in local standard time. The
+   full hourly year is kept as `measures_ts_hourly_<loc>.parquet` for figures
+   the page does not draw. On the page, the tab's sticky "Jump to" bar links
+   each panel and carries a peak-week season picker (all seasons by default;
+   the seasonal-peaks table always lists all three).
 
 ### Reviewing a run that is already in Athena
 

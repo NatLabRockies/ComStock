@@ -119,6 +119,22 @@ def _ami_profiles(path: Path, primary: str) -> list[dict]:
     return _records(pd.concat([df[df["run"] == primary], sec], ignore_index=True))
 
 
+# Key columns of the peak-week frames. Read as strings: pandas otherwise reads
+# an upgrade column holding only ids and blanks as float, and "4.0" would never
+# match the page's "4".
+PEAK_STR_COLS = ["basis", "anchor", "season", "week_start", "hour_ts", "upgrade",
+                 "set_by", "set_at"]
+
+
+def _peak_week_frame(path: Path) -> dict:
+    """measures_peakweek_<loc>.csv, packed. Several thousand rows of 20-odd
+    columns, which as records would repeat every key name on every row."""
+    df = pd.read_csv(path, dtype={c: str for c in PEAK_STR_COLS})
+    rows = _records(df)
+    return _pack_frame(rows, [c for c in PEAK_STR_COLS if c in df.columns],
+                       [c for c in df.columns if c not in PEAK_STR_COLS])
+
+
 def _references_label(payload: dict) -> str:
     """The subtitle's reference list: what was ACTUALLY compared against.
 
@@ -282,6 +298,13 @@ def build_payload(assess: Path) -> dict:
                    if not p.stem.startswith("measures_ts_mask_")},
             "tsMask": {p.stem.replace("measures_ts_mask_", ""): _records(pd.read_csv(p))
                        for p in sorted(m.glob("measures_ts_mask_*.csv"))},
+            # Keyed by the same location slug as `ts`. Deliberately not named
+            # measures_ts_*: that glob above would take them for locations.
+            "peakWeek": {p.stem.replace("measures_peakweek_", ""): _peak_week_frame(p)
+                         for p in sorted(m.glob("measures_peakweek_*.csv"))},
+            "peaks": {p.stem.replace("measures_peaks_", ""): _records(pd.read_csv(
+                          p, dtype={"upgrade": str, "anchor": str, "series": str}))
+                      for p in sorted(m.glob("measures_peaks_*.csv"))},
         } if (m / "measures_summary.csv").exists() else None),
         "coverage": coverage,
         "headline": HEADLINE_METRICS,
@@ -409,6 +432,9 @@ a.jump:hover{color:var(--ink);border-color:var(--ink-3)}
   min-width:0;flex:1 1 auto}
 .ami-legend{width:168px;flex:none;display:flex;flex-direction:column;gap:7px;
   font-size:12px;color:var(--ink-2);position:sticky;top:70px}
+/* below a tab's sticky jump bar, so the rail does not slide under it; the two
+   heights are measured by the page script (wireJumpBar) */
+.jumpbar~.panel .ami-legend{top:calc(var(--ctl-h,64px) + var(--jump-h,45px) + 8px)}
 .btn-mini{font-size:11.5px;padding:2px 9px;border-radius:6px;color:var(--ink-3)}
 .btn-mini:hover{color:var(--ink)}
 /* chart with its legend in a rail to the right — the layout the repo's figures

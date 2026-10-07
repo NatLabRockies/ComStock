@@ -1125,11 +1125,10 @@ def assess_measure_timeseries_masked(ts_table: str, md_table: str, loc: dict,
         build_ts_mask_sql(ts_table, md_table, loc, upgrades, dialect, up_type,
                           md_state=md_state),
         no_cache=no_cache, label=f"measure ts by mask {loc['label']}")
-    ts["hour_ts"] = pd.to_datetime(ts["hour_ts"])
-    month = ts["hour_ts"].dt.month
-    season = pd.Series(np.nan, index=ts.index, dtype=object)
-    for s_name, months in MEASURE_SEASONS.items():
-        season[month.isin(months)] = s_name
+    # Same clock as fetch_measure_hourly, or check_ts_masks would flag the
+    # folded hour as a disagreement between the two legs.
+    ts["hour_ts"] = fold_to_year(ts["hour_ts"]).to_numpy()
+    season = _season_of(ts["hour_ts"])
     ts = ts.assign(season=season,
                    day_type=np.where(ts["hour_ts"].dt.weekday >= 5, "Weekend", "Weekday"),
                    hour=ts["hour_ts"].dt.hour)
@@ -1165,8 +1164,53 @@ def check_ts_masks(masked: pd.DataFrame, prof: pd.DataFrame, upgrades: list[str]
                                ref_up, rel * 100)
 
 
-def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
-                              upgrades: list[str], no_cache: bool = False) -> pd.DataFrame:
+def fold_to_year(hour_ts) -> pd.Series:
+    """Hours the EST-to-local shift pushed out of the simulation year, put back.
+
+    The publication pipeline stamps every building in EST and wraps a western
+    building's last local hours of the year to 1 January (timeseries module
+    docstring). Shifting back to local time therefore lands those hours in the
+    PREVIOUS year -- 2017-12-31 23:00 for a Central building -- although they
+    hold 31 December of the simulation year. Folding them back gives one
+    contiguous year. Left alone, that hour was averaged as a Sunday instead of
+    the Monday it is, and a peak-week search would see a week of its own.
+    Crawled tables never leave the year and pass through unchanged.
+    """
+    ts = pd.to_datetime(pd.Series(hour_ts)).reset_index(drop=True)
+    if ts.empty:
+        return ts
+    year = int(ts.dt.year.mode().iloc[0])
+    early = ts.dt.year == year - 1
+    if early.any():
+        ts[early] = ts[early].map(lambda t: t.replace(year=year))
+    late = ~ts.dt.year.isin([year])
+    if late.any():
+        # Not produced by any known table; say so rather than guess a fold.
+        logger.warning("%d hour(s) outside %d after the local-time shift; left as is",
+                       int(late.sum()), year)
+    return ts
+
+
+def _season_of(ts: pd.Series) -> pd.Series:
+    """MEASURE_SEASONS label for each timestamp (NaN outside every season)."""
+    month = ts.dt.month
+    season = pd.Series(np.nan, index=ts.index, dtype=object)
+    for s_name, months in MEASURE_SEASONS.items():
+        season[month.isin(months).to_numpy()] = s_name
+    return season
+
+
+def fetch_measure_hourly(ts_table: str, md_table: str, loc: dict,
+                         upgrades: list[str], no_cache: bool = False) -> pd.DataFrame:
+    """Every hour of the year at `loc`, local standard time, for each scenario.
+
+    One row per (upgrade, hour_ts). `upgrade` is "0" for the whole stock at
+    baseline, "<n>" for measure n over its applicable buildings and "base_<n>"
+    for those same buildings at baseline. Weighted kWh per fuel, end uses under
+    their own names, and `sqft_weighted`, the floor area each scenario covers.
+    The seasonal averages and the peak weeks are both computed from this frame,
+    so the two can never be drawn from different data.
+    """
     tt = athena.table_column_types(ts_table)
     dialect = ts_dialect(ts_table, no_cache=no_cache)
     up_type = str(tt.get("upgrade", "varchar"))
@@ -1189,6 +1233,23 @@ def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
         b["sqft_weighted"] = float(bs["sqft_weighted"].iloc[0])
         parts.append(b)
     ts = pd.concat(parts, ignore_index=True)
+    ts["upgrade"] = ts["upgrade"].astype(str)
+    ts["hour_ts"] = fold_to_year(ts["hour_ts"]).to_numpy()
+    # Athena returns a GROUP BY in no particular order; sorted here so every
+    # file cut from this frame reads in time order.
+    return ts.sort_values(["upgrade", "hour_ts"], ignore_index=True)
+
+
+def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
+                              upgrades: list[str], no_cache: bool = False,
+                              hourly: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Seasonal-average profiles (season x day type x hour) per scenario.
+
+    `hourly` is fetch_measure_hourly's frame when the caller already has it,
+    so the hourly data is queried once for both this and the peak weeks.
+    """
+    ts = (hourly if hourly is not None
+          else fetch_measure_hourly(ts_table, md_table, loc, upgrades, no_cache=no_cache)).copy()
     ts["hour_ts"] = pd.to_datetime(ts["hour_ts"])
     ts["elec_kwh_per_sf"] = ts["elec_kwh"] / ts["sqft_weighted"]
     ts["gas_kwh_per_sf"] = ts["gas_kwh"] / ts["sqft_weighted"]
@@ -1200,10 +1261,7 @@ def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
     # be drawn in MW like the upstream measure timeseries plots (MW = kWh/1000
     # for hourly means).
     ts = ts.rename(columns={e: f"raw_{e}" for e in ENDUSE_STACK_ORDER if e in ts.columns})
-    month = ts["hour_ts"].dt.month
-    season = pd.Series(np.nan, index=ts.index, dtype=object)
-    for s_name, months in MEASURE_SEASONS.items():
-        season[month.isin(months)] = s_name
+    season = _season_of(ts["hour_ts"])
     daytype = np.where(ts["hour_ts"].dt.weekday >= 5, "Weekend", "Weekday")
     ts = ts.assign(season=season, day_type=daytype, hour=ts["hour_ts"].dt.hour)
     val_cols = (["elec_kwh_per_sf", "gas_kwh_per_sf", "elec_kwh", "gas_kwh"]
@@ -1213,3 +1271,159 @@ def assess_measure_timeseries(ts_table: str, md_table: str, loc: dict,
     prof = (ts.groupby(["upgrade", "season", "day_type", "hour"], as_index=False)[val_cols]
             .mean())
     return prof
+
+
+# ---------------------------------------------------------------- peak weeks
+#
+# A peak week is the Monday-to-Sunday calendar week holding the season's
+# highest hourly electricity. Two bases, matching the two the timeseries tab
+# always offers:
+#
+#   stock  one week per season, shared by every measure: the highest hour
+#          among the stock baseline and each measure's whole-stock series
+#          (stock + measure - its applicable baseline). Shared so the measures'
+#          lines sit on the same days and can be compared.
+#   own    per measure: the highest hour among that measure and its applicable
+#          baseline -- the rule of plot_measure_timeseries_peak_week_by_state,
+#          which restricts both to the applicable buildings.
+#
+# Taking the maximum over scenarios, not over the baseline alone, is the
+# upstream rule and the useful one: in a cold-climate winter the electrified
+# case sets the peak, and that is the week a utility needs to see.
+
+PEAK_METRICS = {"elec_kwh": "electricity", "gas_kwh": "natural_gas"}
+
+
+def week_start(ts: pd.Series) -> pd.Series:
+    """Monday 00:00 of each timestamp's calendar week.
+
+    For 2018 these are ISO weeks (1 January 2018 is a Monday), and 31 December
+    starts a week of its own -- the same one-day week the upstream plot calls
+    week 55.
+    """
+    return ts.dt.normalize() - pd.to_timedelta(ts.dt.weekday, unit="D")
+
+
+def _peak_plans(upgrades: list[str]) -> list[tuple]:
+    """(basis, anchor, {series key: (role, measure)}, scenarios the week carries)."""
+    stock = {"0": ("baseline", "")}
+    stock.update({f"stock:{u}": ("measure", u) for u in upgrades})
+    plans = [("stock", "all", stock,
+              ["0"] + list(upgrades) + [f"base_{u}" for u in upgrades])]
+    plans += [("own", u, {f"base_{u}": ("baseline", u), u: ("measure", u)},
+               [u, f"base_{u}"]) for u in upgrades]
+    return plans
+
+
+def _series(pivot: pd.DataFrame, key: str) -> pd.Series:
+    """One series from a (hour x scenario) pivot; "stock:<n>" is re-based.
+
+    The re-basing fills a missing term with 0, as the page's tsCombine does,
+    so the hour a term lacks is not voided -- the two agree by construction.
+    """
+    if key.startswith("stock:"):
+        u = key.split(":", 1)[1]
+        return (pivot["0"].add(pivot[u], fill_value=0)
+                .sub(pivot[f"base_{u}"], fill_value=0))
+    return pivot[key]
+
+
+def peak_weeks(hourly: pd.DataFrame, upgrades: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Peak week by season on both bases -> (week_rows, peaks).
+
+    week_rows: the hourly rows of every selected week, one set per (basis,
+    anchor, season), with `how` (hour of the week, 0-167) and what set the
+    week (`set_by`, `set_at`, `set_kwh`). Fuels and end uses in weighted kWh,
+    end uses under raw_ names like measures_ts_<loc>.csv.
+
+    peaks: per (basis, anchor, season, metric, series), the season's highest
+    hourly value and its hour, the reference baseline's peak, the change
+    peak-to-peak, and the series' value AT the baseline's peak hour (the
+    coincident change, which is what a utility's peak sees when the measure
+    moves the peak to another hour). Electricity and gas; weeks are chosen on
+    electricity only.
+    """
+    h = hourly.copy()
+    h["upgrade"] = h["upgrade"].astype(str)
+    h["hour_ts"] = pd.to_datetime(h["hour_ts"])
+    have = set(h["upgrade"])
+    if "0" not in have:
+        return pd.DataFrame(), pd.DataFrame()
+    ups = [str(u) for u in upgrades if str(u) in have and f"base_{u}" in have]
+    missing = [str(u) for u in upgrades if str(u) not in ups]
+    if missing:
+        logger.info("peak weeks: no hourly rows for measure(s) %s here; skipped", missing)
+    # pivot, not pivot_table: a duplicated (hour, scenario) must fail loudly
+    # here rather than be summed into a peak twice its size.
+    piv = {c: h.pivot(index="hour_ts", columns="upgrade", values=c).sort_index()
+           for c in PEAK_METRICS if c in h.columns}
+    elec = piv["elec_kwh"]
+    hours = pd.Series(elec.index, index=elec.index)
+    season = _season_of(hours)
+    wk = week_start(hours)
+
+    vals = (["elec_kwh", "gas_kwh"] + [c for c in TS_OTHER_FUEL_COLS if c in h.columns]
+            + [e for e in ENDUSE_STACK_ORDER if e in h.columns])
+    week_parts, peak_rows = [], []
+    for basis, anchor, smap, scen in _peak_plans(ups):
+        ref_key = next(k for k, (role, _m) in smap.items() if role == "baseline")
+        for sn in MEASURE_SEASONS:
+            in_sn = (season == sn).to_numpy()
+            if not in_sn.any():
+                continue
+            best = None
+            for key in smap:
+                s = _series(elec, key)[in_sn]
+                if not s.notna().any():
+                    continue
+                t, v = s.idxmax(), float(s.max())
+                if best is None or v > best[2]:
+                    best = (key, t, v)
+            if best is None:
+                continue
+            w0 = wk.loc[best[1]]
+            rows = h[h["upgrade"].isin(scen)
+                     & (h["hour_ts"] >= w0) & (h["hour_ts"] < w0 + pd.Timedelta(days=7))]
+            rows = (rows[["upgrade", "hour_ts"] + [c for c in vals if c in rows.columns]]
+                    .sort_values(["upgrade", "hour_ts"]).copy())
+            rows.insert(0, "basis", basis)
+            rows.insert(1, "anchor", anchor)
+            rows.insert(2, "season", sn)
+            rows.insert(3, "week_start", w0.strftime("%Y-%m-%d"))
+            rows.insert(4, "how", ((rows["hour_ts"] - w0) / pd.Timedelta(hours=1)).astype(int))
+            rows["set_by"] = best[0]
+            rows["set_at"] = best[1].strftime("%Y-%m-%d %H:%M")
+            rows["set_kwh"] = best[2]
+            week_parts.append(rows)
+
+            for col, metric in PEAK_METRICS.items():
+                if col not in piv:
+                    continue
+                ref = _series(piv[col], ref_key)[in_sn]
+                if not ref.notna().any():
+                    continue
+                ref_t, ref_v = ref.idxmax(), float(ref.max())
+                for key, (role, meas) in smap.items():
+                    s = _series(piv[col], key)[in_sn]
+                    if not s.notna().any():
+                        continue
+                    t, v = s.idxmax(), float(s.max())
+                    at_ref = float(s.loc[ref_t]) if pd.notna(s.loc[ref_t]) else np.nan
+                    peak_rows.append({
+                        "basis": basis, "anchor": anchor, "season": sn, "metric": metric,
+                        "series": key, "role": role, "upgrade": meas,
+                        "peak_mw": v / 1000.0, "peak_hour": t.strftime("%Y-%m-%d %H:%M"),
+                        "ref_peak_mw": ref_v / 1000.0,
+                        "ref_peak_hour": ref_t.strftime("%Y-%m-%d %H:%M"),
+                        "change_mw": (v - ref_v) / 1000.0,
+                        "change_pct": 100.0 * (v - ref_v) / ref_v if ref_v else np.nan,
+                        "at_ref_peak_mw": at_ref / 1000.0,
+                        "coincident_change_mw": (at_ref - ref_v) / 1000.0,
+                        "week_start": w0.strftime("%Y-%m-%d"),
+                    })
+    weeks = pd.concat(week_parts, ignore_index=True) if week_parts else pd.DataFrame()
+    if not weeks.empty:
+        weeks["hour_ts"] = weeks["hour_ts"].dt.strftime("%Y-%m-%d %H:%M")
+        weeks = weeks.rename(columns={e: f"raw_{e}" for e in ENDUSE_STACK_ORDER
+                                      if e in weeks.columns})
+    return weeks, pd.DataFrame(peak_rows)

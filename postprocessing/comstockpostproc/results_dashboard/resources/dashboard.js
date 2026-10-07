@@ -152,6 +152,7 @@ let state = { type: CROSS, tab: "overview", amiMode: "annual",
               rankFuel: "electricity.total", rankSig: true,
               measView: "single",
               measLoc: "",          // measure-timeseries location; "" = first available
+              pwSeason: "all",      // peak-week season drawn; "all" = every season
               measSel: D.measures&&D.measures.summary.length
                 ? String(D.measures.summary[0].upgrade) : "",
               measMulti: D.measures
@@ -1877,6 +1878,45 @@ const dimsToShow=(available, current)=>{
   return sel===ALL_DIMS ? available : [sel];
 };
 
+/* Sticky section index for a long tab -- navigation, not a filter: every panel
+   stays on the page. `sections` is [[id, label], ...] of what IS on the page;
+   `extra` is markup for the bar's right end, for a control that should stay in
+   reach while scrolling. */
+function jumpBarHTML(sections, extra=""){
+  return `<div class="panel jumpbar" style="position:sticky;top:var(--ctl-h,64px);z-index:20;padding:9px 14px">
+    <div class="legend" style="gap:6px 10px;margin:0"><span class="legend-title"
+      style="margin:0 4px 0 0">Jump to</span>${sections.map(([id,lab])=>
+      `<a class="jump" href="javascript:void 0" data-jump="${id}">${lab}</a>`).join("")}${extra}</div></div>`;
+}
+/* The bar sticks just under the sticky header, and the legend rails under
+   both. Neither height is fixed -- the header's tabs and run toggles wrap with
+   the window width, the bar's links with the tab -- so both are measured: a
+   fixed 64px left the bar over the header's second row of controls. */
+const stickyH=sel=>{ const e=document.querySelector(sel); return e?e.getBoundingClientRect().height:0; };
+const setStickyH=()=>{
+  document.documentElement.style.setProperty("--ctl-h", stickyH(".controls")+"px");
+  document.documentElement.style.setProperty("--jump-h", stickyH(".jumpbar")+"px");
+};
+const STICKY_RO=window.ResizeObserver?new ResizeObserver(setStickyH):null;
+// Call once the tab's charts are drawn: measuring forces a layout, and one
+// taken while the page is still short would clamp the reader's scroll position.
+// Scroll manually: a real #anchor href would overwrite the state hash the
+// whole dashboard deep-links through.
+function wireJumpBar(){
+  setStickyH();
+  if(STICKY_RO){
+    STICKY_RO.disconnect();
+    [".controls",".jumpbar"].forEach(s=>{ const e=document.querySelector(s); if(e) STICKY_RO.observe(e); });
+  }
+  document.querySelectorAll("[data-jump]").forEach(a=>a.addEventListener("click",ev=>{
+    ev.preventDefault();
+    const t=document.getElementById(a.dataset.jump);
+    if(t) window.scrollTo({top:t.getBoundingClientRect().top+window.scrollY
+                               -stickyH(".controls")-stickyH(".jumpbar")-10,
+                           behavior:"smooth"});
+  }));
+}
+
 function renderCross(){
   let h=`<div class="panel"><div class="head">
     <h2>Annual energy by every breakdown — TBtu, kBtu/ft²·yr, Mft²
@@ -1896,10 +1936,7 @@ function renderCross(){
     .concat(shownDims.map(d=>
       ["sec-"+d,(D.dimensions[d]||{label:d}).label.replace(/,.*$/,"")]))
     .concat([["sec-gap","End-use gap waterfalls"]]);
-  h+=`<div class="panel" style="position:sticky;top:64px;z-index:20;padding:9px 14px">
-    <div class="legend" style="gap:6px 10px;margin:0"><span class="legend-title"
-      style="margin:0 4px 0 0">Jump to</span>${SECTIONS.map(([id,lab])=>
-      `<a class="jump" href="javascript:void 0" data-jump="${id}">${lab}</a>`).join("")}</div></div>`;
+  h+=jumpBarHTML(SECTIONS);
   h+=`<div class="panel" id="sec-fuels"><h2 style="margin-top:0">Annual consumption by fuel — TBtu
       <span class="badge">whole stock, national</span></h2>
       <div class="scroll" id="all-fuels"></div></div>`;
@@ -1991,14 +2028,7 @@ function renderCross(){
   });
   wireDimSig(renderCross);
   wireDimToggle("xDimCtl", "xDim", renderCross);
-  // scroll manually: a real #anchor href would overwrite the state hash the
-  // whole dashboard deep-links through
-  document.querySelectorAll("[data-jump]").forEach(a=>a.addEventListener("click",ev=>{
-    ev.preventDefault();
-    const t=document.getElementById(a.dataset.jump);
-    if(t) window.scrollTo({top:t.getBoundingClientRect().top+window.scrollY-110,
-                           behavior:"smooth"});
-  }));
+  wireJumpBar();
 }
 
 function renderAnnual(){
@@ -4287,6 +4317,440 @@ function renderMeasuresAnnual(){
   wireGroups();
 }
 
+/* ================= peak week by season =================
+   measures_peakweek_<loc>.csv carries every hour of each selected week, per
+   basis and season:
+     basis "stock", anchor "all"  one week per season, shared by every measure:
+                                  the highest hour among the stock baseline and
+                                  each measure's whole-stock series
+     basis "own",   anchor "<n>"  measure n's own week: the highest hour among n
+                                  and its applicable baseline -- the upstream
+                                  peak_week_by_state rule
+   Its rows are the three scenario kinds of measures_ts_<loc>.csv ("0", "<n>",
+   "base_<n>"), so a measure's whole-stock line is re-based here exactly as the
+   seasonal averages are. measures_peaks_<loc>.csv carries each series' seasonal
+   peak wherever it falls, and its value at the baseline's peak hour. */
+const PW_SEASONS=["Summer","Shoulder","Winter"];     // the seasonal panels' order
+// The weeks drawn: the season picked in the tab's jump bar, or all three. The
+// seasonal-peaks table always lists every season.
+const pwSeasonsShown=()=>PW_SEASONS.includes(state.pwSeason)?[state.pwSeason]:PW_SEASONS;
+const PW_DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const PW_CACHE={};
+const pwRows=st=>{
+  if(!(st in PW_CACHE)) PW_CACHE[st]=dpUnpack(((MEAS&&MEAS.peakWeek)||{})[st]);
+  return PW_CACHE[st];
+};
+const pkRows=st=>((MEAS&&MEAS.peaks)||{})[st]||[];
+const hasPeakWeek=st=>pwRows(st).length>0;
+// "2018-01-02 07:00" -> "1/2 07:00"; dates are local standard time strings, so
+// they are split, never handed to Date() in the viewer's own time zone
+const pwShort=t=>{ const [d,hm]=String(t||"").split(" "); if(!hm) return String(t||"");
+  const [, m, dd]=d.split("-").map(Number); return `${m}/${dd} ${hm}`; };
+const pwDate=ws=>{ const [y,m,d]=String(ws||"").split("-").map(Number);
+  return y?`${m}/${d}/${y}`:""; };
+function pwDayLabels(ws){
+  const [y,m,d]=String(ws||"").split("-").map(Number);
+  return PW_DAYS.map((dn,i)=>{
+    if(!y) return dn;
+    const t=new Date(Date.UTC(y,m-1,d+i));
+    return `${dn} ${t.getUTCMonth()+1}/${t.getUTCDate()}`;
+  });
+}
+// What set a week. On a measure's own basis the chart already names the
+// measure, so the series is named by its role.
+const pwSeriesName=(k,own)=>{
+  const s=String(k);
+  if(s==="0") return "the stock baseline";
+  if(s.startsWith("stock:")) return `${measShort(s.slice(6))}, whole stock`;
+  if(s.startsWith("base_")) return own?"the applicable baseline"
+    :`the applicable baseline of ${measShort(s.slice(5))}`;
+  return own?"the measure":measShort(s);
+};
+const pwSkipWhy=st=>{
+  const sk=(D.coverage||{}).measures_peak_week_skipped||{};
+  return sk[st]||sk[String(st).replace(/_/g," ")]||"";
+};
+
+/* ---------- one Monday-to-Sunday week, hourly: lines over an optional stack ----------
+   x is the hour of the week (0-167) from the row's own `how`, so a week cut short
+   by the end of the year (31 December is a week of its own) draws one day and
+   leaves the rest of the frame empty rather than stretching it. */
+function weekChart(host, pts, opts={}){
+  const W=opts.width||760, H=opts.height||236, padR=12, padT=12, padB=46, N=168;
+  const plotH=H-padT-padB;
+  const stack=!!(opts.stack&&opts.stackKeys&&opts.stackKeys.length);
+  const lines=opts.lines||[];
+  const vals=[];
+  pts.forEach(p=>{
+    lines.forEach(l=>{ const v=p[l.key]; if(v!==null&&v!==undefined&&isFinite(v)) vals.push(v); });
+    if(stack) vals.push(opts.stackKeys.reduce((a,k)=>a+(p.eu[k]||0),0));
+  });
+  if(!vals.length){ host.innerHTML='<p class="note">No hourly data in this week.</p>'; return; }
+  const rawMax=Math.max(...vals);
+  const axY=niceAxis(0, opts.yMax||(rawMax>0?rawMax:1), 4), max=axY.hi;
+  const dec=Math.min(6, Math.max(0, 1-Math.floor(Math.log10(max))));
+  const tickDec=Math.max(dec, axY.dec);
+  const padL=axisPadL(axY.ticks.map(v=>v.toFixed(tickDec)), true);
+  const plotW=W-padL-padR;
+  const x=hw=>padL+(hw/(N-1))*plotW, y=v=>padT+plotH-(v/max)*plotH;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, style:figStyle(W)});
+  axY.ticks.forEach(v=>{
+    const yy=y(v);
+    svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:"gl"}));
+    const t=el("text",{x:padL-7,y:yy+4,class:"ax","text-anchor":"end"});
+    t.textContent=v.toFixed(tickDec); svg.appendChild(t);
+  });
+  const days=pwDayLabels(opts.weekStart);
+  for(let d=0; d<7; d++){
+    if(d) svg.appendChild(el("line",{x1:x(d*24),y1:padT,x2:x(d*24),y2:padT+plotH,class:"gl"}));
+    const t=el("text",{x:x(d*24+11.5),y:H-padB+15,class:"ax","text-anchor":"middle"});
+    t.textContent=days[d]; svg.appendChild(t);
+  }
+  const xl=el("text",{x:padL+plotW/2,y:H-4,class:"axl","text-anchor":"middle"});
+  xl.textContent=opts.xLabel||"Day of the week, local standard time"; svg.appendChild(xl);
+  if(opts.yLabel){
+    const ylb=el("text",{x:11,y:padT+plotH/2,class:"axl","text-anchor":"middle",
+      transform:`rotate(-90 11 ${padT+plotH/2})`});
+    ylb.textContent=opts.yLabel; svg.appendChild(ylb);
+  }
+  if(stack){
+    const clipId=`clip-${host.id||"pw"}-${Math.random().toString(36).slice(2,8)}`;
+    const defs=el("defs"), cp=el("clipPath",{id:clipId});
+    cp.appendChild(el("rect",{x:padL,y:padT,width:plotW,height:plotH}));
+    defs.appendChild(cp); svg.appendChild(defs);
+    const layer=el("g",{"clip-path":`url(#${clipId})`});
+    let base=pts.map(()=>0);
+    opts.stackKeys.forEach(k=>{
+      const top=pts.map((p,i)=>base[i]+(p.eu[k]||0));
+      let d=`M${x(pts[0].how)},${y(base[0])}`;
+      pts.forEach((p,i)=>{ d+=`L${x(p.how)},${y(top[i])}`; });
+      for(let i=pts.length-1;i>=0;i--) d+=`L${x(pts[i].how)},${y(base[i])}`;
+      const path=el("path",{d:d+"Z",fill:D.enduseColors[k]||"#888",opacity:.92,
+        stroke:"var(--panel)","stroke-width":.3});
+      path.addEventListener("mousemove", ev=>showTip(`<b>${k.replace(/_/g," ")}</b>`, ev));
+      path.addEventListener("mouseleave", hideTip);
+      layer.appendChild(path);
+      base=top;
+    });
+    svg.appendChild(layer);
+  }
+  // A missing hour breaks the line instead of being bridged.
+  const line=(key,color,dash,width)=>{
+    let d="", prev=null;
+    pts.forEach(p=>{
+      const v=p[key];
+      if(v===null||v===undefined||!isFinite(v)){ prev=null; return; }
+      d+=`${prev!==null&&p.how===prev+1?"L":"M"}${x(p.how).toFixed(1)},${y(v).toFixed(1)} `;
+      prev=p.how;
+    });
+    if(d) svg.appendChild(el("path",{d,fill:"none",stroke:color,"stroke-width":width||2,
+      "stroke-linejoin":"round","stroke-linecap":"round",...(dash?{"stroke-dasharray":dash}:{})}));
+  };
+  lines.forEach(l=>line(l.key, l.color, l.dash, l.width));
+  // the hour that set the week
+  if(opts.markHow!==null&&opts.markHow!==undefined&&opts.markHow>=0&&opts.markHow<N){
+    const mx=x(opts.markHow);
+    svg.appendChild(el("line",{x1:mx,y1:padT,x2:mx,y2:padT+plotH,stroke:"var(--bad)",
+      "stroke-width":1.2,"stroke-dasharray":"3 3"}));
+    if(opts.markLabel){
+      const right=mx>padL+plotW*0.7;
+      const t=el("text",{x:right?mx-5:mx+5,y:padT+12,class:"ax",
+        "text-anchor":right?"end":"start",style:"fill:var(--bad)"});
+      t.textContent=opts.markLabel; svg.appendChild(t);
+    }
+  }
+  svg.appendChild(el("rect",{x:padL,y:padT,width:plotW,height:plotH,
+    fill:"none",stroke:"var(--ink-2)","stroke-width":1}));
+  const cross=el("line",{x1:0,y1:padT,x2:0,y2:padT+plotH,stroke:"var(--ink-3)",
+    "stroke-width":1,opacity:0});
+  svg.appendChild(cross);
+  const hit=el("rect",{x:padL,y:padT,width:plotW,height:plotH,fill:"transparent"});
+  hit.addEventListener("mousemove", ev=>{
+    const bb=svg.getBoundingClientRect();
+    const rel=(ev.clientX-bb.left)/bb.width*W;
+    const hw=Math.max(0,Math.min(N-1,Math.round((rel-padL)/plotW*(N-1))));
+    const p=pts.find(q=>q.how===hw); if(!p) return;
+    cross.setAttribute("x1",x(hw)); cross.setAttribute("x2",x(hw)); cross.setAttribute("opacity",1);
+    let html=`<b>${esc(opts.title||"")} · ${esc(pwShort(p.t))}</b>`;
+    lines.forEach(l=>{
+      if(p[l.key]!==null&&p[l.key]!==undefined)
+        html+=`<div class="row"><span>${esc(l.label)}</span><span>${fmt(p[l.key],1)}</span></div>`;
+    });
+    if(stack){
+      const top=opts.stackKeys.map(k=>[k,p.eu[k]||0]).sort((a,b)=>b[1]-a[1]).slice(0,3);
+      html+=top.map(([k,v])=>`<div class="row"><span>&nbsp;&nbsp;${k.replace(/_/g," ")}</span><span>${fmt(v,1)}</span></div>`).join("");
+    }
+    showTip(html, ev);
+  });
+  hit.addEventListener("mouseleave", ()=>{ hideTip(); cross.setAttribute("opacity",0); });
+  svg.appendChild(hit);
+  host.innerHTML=""; attachChart(host, svg, opts.copy);
+}
+/* One y scale per panel: the three seasons drawn on one scale are what lets a
+   reader see that the winter week dwarfs the summer one. With one season
+   picked, the scale fits that season. */
+function pwSharedMax(pend){
+  let m=0;
+  pend.forEach(({pts,opts})=>pts.forEach(p=>{
+    (opts.lines||[]).forEach(l=>{ const v=p[l.key]; if(v!=null&&isFinite(v)&&v>m) m=v; });
+    if(opts.stack&&opts.stackKeys){
+      const s=opts.stackKeys.reduce((a,k)=>a+(p.eu[k]||0),0); if(s>m) m=s; }
+  }));
+  return m>0?m*1.08:1;
+}
+const pwLineKey=(color,dash,label)=>`<span class="key"><span style="width:14px;height:0;border-top:3px ${
+  dash?"dashed":"solid"} ${safeColor(color)};display:inline-block;flex:none"></span>${esc(label)}</span>`;
+const PW_MARK_KEY=`<span class="key"><span style="width:0;height:12px;border-left:1.5px dashed var(--bad);
+  display:inline-block;flex:none;margin:0 6px"></span>hour that set the week</span>`;
+
+/* Section markup for one location. `basis` is the tab's population basis;
+   union and intersection fall back to the whole stock, and say so. */
+function peakWeekHTML(st, sel, basis){
+  const stLab=esc(String(st).replace(/_/g," "));
+  if(!hasPeakWeek(st)){
+    const why=pwSkipWhy(st);
+    return `<div class="panel" id="sec-mpw-${st}"><h2>Peak week by season — ${stLab} — not computed</h2>
+      <p class="note">${why?esc(why):`This assessment has no peak-week rows for this location: it
+      predates the peak-week leg, or the leg found no hourly data here.`}</p></div>`;
+  }
+  const single=state.measView==="single";
+  const b=single?"own":(basis==="own"?"own":"stock");
+  const rule=b==="own"
+    ? `the Monday-to-Sunday calendar week holding the season's highest hourly electricity of the
+       measure or of its applicable baseline — the rule of the measure postprocessing
+       peak_week_by_state figures`
+    : `the Monday-to-Sunday calendar week holding the season's highest hourly electricity among the
+       stock baseline and every measure in this assessment, each on the whole-stock basis — one week
+       per season, shared by every measure so the lines sit on the same days`;
+  const common=`Each season's week is ${rule}. ${seasonSentence()} Hourly-mean megawatts, local
+    standard time; the red dashed line marks the hour that set the week.`;
+  // the jump bar's season picker hides the other weeks; say so on the panels
+  // it cuts, so a screenshot of one week does not read as the whole year
+  const oneSeason=pwSeasonsShown().length===1
+    ? `<span class="badge">${esc(state.pwSeason)} only</span>` : "";
+  let h="";
+  if(single){
+    const mm=sel[0];
+    const keys=pwLineKey("var(--ink)",false,"Measure total")
+      +pwLineKey("var(--ink)",true,"Baseline total (applicable)")+PW_MARK_KEY;
+    h+=`<div class="panel" id="sec-mpw-elec-${st}"><h2>Peak week by season — electricity — ${stLab} — MW
+        <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
+        <span class="badge">applicable buildings</span>
+        <span class="badge">this measure's own peak week</span>${oneSeason}
+        ${euAnyHidden()?`<span class="badge" style="color:var(--bad)">end uses hidden — the stack is
+          a subset; the total lines are unfiltered</span>`:""}
+        ${groupControls(`gpw-elec-${st}`)}</h2>
+      <p class="note">${common} The stack is the measure's end uses over its applicable buildings;
+      the solid line is the measure total and the dashed line the same buildings' baseline.</p>
+      ${enduseLegendToggle({extra:keys})}
+      <div id="mpw-elec-${st}" style="display:flex;flex-direction:column;gap:10px"></div></div>
+      <div class="panel" id="sec-mpw-gas-${st}"><h2>Peak week by season — natural gas — ${stLab} — MW thermal
+        <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
+        <span class="badge">the electricity weeks above</span>${oneSeason}
+        ${groupControls(`gpw-gas-${st}`)}</h2>
+      <p class="note">The same weeks, with the gas those buildings burn in them: chosen on electricity,
+      so a gas peak elsewhere in the season is in the table below, not drawn here. Solid is the
+      measure, dashed the same buildings' baseline.</p>
+      <div class="legend">${keys}</div>
+      <div id="mpw-gas-${st}" style="display:flex;flex-direction:column;gap:10px"></div></div>`;
+  } else {
+    const fallback=(basis==="union"||basis==="inter")
+      ? ` <b>Drawn on the whole-stock basis:</b> union and intersection need applicability-masked
+         hourly data, which the peak-week leg does not carry.` : "";
+    const legend=(b==="stock"
+        ? pwLineKey("var(--ink)",true,"Baseline (whole stock)")
+        : `<span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink-3);
+            display:inline-block;flex:none"></span>each measure's own baseline (dashed, same color)</span>`)
+      + measKeyLegend(measChosen()) + PW_MARK_KEY;
+    h+=`<div class="panel" id="sec-mpw-elec-${st}"><h2>Peak week by season — electricity — baseline vs each measure —
+        ${stLab} — MW <span class="badge">${b==="own"?"Each measure's own applicability":"Entire stock"}</span>
+        ${b==="own"?`<span class="badge" style="color:var(--bad)">weeks and populations differ
+          between measures</span>`:""}${oneSeason}
+        ${groupControls(`gpw-elec-${st}`)}</h2>
+      <p class="note">${common}${fallback} ${b==="stock"
+        ? `Every line covers the whole stock: a measure's line is the stock baseline plus its own
+           change, so the lines are directly comparable and the dashed line is their common baseline.`
+        : `Each measure over its OWN applicable buildings and in its OWN peak week, with that
+           measure's baseline dashed in the same color.`} Click a measure in the legend to drop it.</p>
+      <div class="legend">${legend}</div>
+      <div id="mpw-elec-${st}" style="display:flex;flex-direction:column;gap:10px"></div></div>`;
+  }
+  h+=`<div class="panel" id="sec-mpk-${st}"><h2>Seasonal peak demand — ${stLab}
+      <span class="badge">${b==="own"?(single?"applicable buildings":"each measure's own applicability")
+        :"entire stock"}</span></h2>
+    <p class="note">Each series' highest hour in the season, wherever it falls, so it can sit outside
+    the week drawn above. <b>Change</b> is peak to peak. <b>At the baseline's peak hour</b> is the
+    series' load in the hour the baseline itself peaks: the change a peak that stays put would see.
+    The two differ when a measure moves the peak to another hour.</p>
+    <div class="scroll" id="mpk-${st}"></div></div>`;
+  return h;
+}
+
+/* Draw the section's charts and tables; peakWeekHTML has laid out the hosts. */
+function drawPeakWeek(st, sel, basis){
+  if(!hasPeakWeek(st)) return;
+  const single=state.measView==="single";
+  const b=single?"own":(basis==="own"?"own":"stock");
+  const rows=pwRows(st);
+  const stLab=String(st).replace(/_/g," ");
+  const seasons=pwSeasonsShown();
+  const wkTitle=seasons.length===1?`${seasons[0]} peak week`:"peak week by season";
+  const MWv=v=>(v===null||v===undefined||v==="")?null:+v/1000;
+  const pick=(anchor,sn)=>rows.filter(r=>r.basis===b&&String(r.anchor)===String(anchor)&&r.season===sn);
+  const byHow=(rs,up,col)=>{ const o={};
+    rs.forEach(r=>{ if(String(r.upgrade)===String(up)&&r[col]!==null&&r[col]!==undefined) o[r.how]=+r[col]; });
+    return o; };
+  // the same re-basing as the seasonal panels' tsCombine: a missing term is 0
+  const rebase=(base0,baseUp,meas)=>{ const o={};
+    new Set([...Object.keys(base0),...Object.keys(baseUp),...Object.keys(meas)])
+      .forEach(k=>{ o[k]=(+base0[k]||0)-(+baseUp[k]||0)+(+meas[k]||0); });
+    return o; };
+  const meta=rs=>{ const r0=rs[0]||{};
+    const at=rs.find(r=>r.hour_ts===r0.set_at);
+    return {weekStart:r0.week_start, setBy:r0.set_by, setAt:r0.set_at,
+            markHow:at?at.how:null, markLabel:`peak ${pwShort(r0.set_at)}`}; };
+  const times=rs=>{ const o={}; rs.forEach(r=>{ o[r.how]=r.hour_ts; }); return o; };
+  const box=(host,title)=>{ const bx=document.createElement("div"); bx.className="chartbox";
+    bx.innerHTML=`<div class="head"><h3>${title}</h3></div><div class="chart"></div>`;
+    host.appendChild(bx); return bx; };
+  if(single){
+    const mm=sel[0];
+    [["elec","elec_kwh",true],["gas","gas_kwh",false]].forEach(([slug,col,doStack])=>{
+      const host=$(`#mpw-${slug}-${st}`); if(!host) return;
+      const pend=[];
+      seasons.forEach(sn=>{
+        const rs=pick(mm.up,sn); if(!rs.length) return;
+        const m=meta(rs), tBy=times(rs);
+        const meas=byHow(rs,mm.up,col), base=byHow(rs,`base_${mm.up}`,col);
+        const stackKeys=doStack?euOrderVisible().filter(k=>rs.some(r=>
+          String(r.upgrade)===String(mm.up)&&r["raw_"+k]!=null)):[];
+        const euBy={};
+        if(doStack) rs.forEach(r=>{ if(String(r.upgrade)!==String(mm.up)) return;
+          const e={}; stackKeys.forEach(k=>e[k]=MWv(r["raw_"+k])); euBy[r.how]=e; });
+        const hours=[...new Set([...Object.keys(meas),...Object.keys(base)].map(Number))].sort((a,c)=>a-c);
+        const pts=hours.map(hw=>({how:hw, t:tBy[hw], eu:euBy[hw]||{},
+          mtot:MWv(meas[hw]), btot:MWv(base[hw])}));
+        const bx=box(host,`${sn} — week of ${pwDate(m.weekStart)} — set by ${esc(pwSeriesName(m.setBy,true))}`);
+        pend.push({bx, pts, opts:{title:`${sn} peak week`, weekStart:m.weekStart, stack:doStack, stackKeys,
+          yLabel:slug==="elec"?"MW":"MW thermal", markHow:m.markHow, markLabel:m.markLabel,
+          lines:[{key:"mtot",color:"var(--ink)",dash:"",width:doStack?2.2:2,label:"Measure total"},
+                 {key:"btot",color:"var(--ink)",dash:"7 4",width:2.2,label:"Baseline (applicable)"}],
+          copy:{title:`${mm.up} ${mm.name} — ${stLab} — ${sn} peak week, week of ${pwDate(m.weekStart)} — `
+                     +(slug==="elec"?"electricity (MW)":"natural gas (MW thermal)"),
+                legend:(doStack?enduseLegendItemsExport():[]).concat(
+                  [{color:"#1a1d1f",label:"Measure total",line:true},
+                   {color:"#1a1d1f",label:"Baseline, applicable (dashed)",line:true,dash:true}])}}});
+      });
+      const yMax=pwSharedMax(pend);
+      pend.forEach(q=>weekChart(q.bx.querySelector(".chart"), q.pts, {...q.opts, yMax}));
+      registerGroupContainer(`gpw-${slug}-${st}`, `#mpw-${slug}-${st}`,
+        (doStack?enduseLegendItemsVisible():[]).concat(
+          [{color:"#1a1d1f",label:"Measure total",line:true},
+           {color:"#1a1d1f",label:"Baseline, applicable (dashed)",line:true,dash:true}]),
+        `${mm.up} ${mm.name} — ${stLab} — ${wkTitle}, `
+          +(slug==="elec"?"electricity (MW)":"natural gas (MW thermal)"), 1);
+    });
+  } else {
+    const host=$(`#mpw-elec-${st}`);
+    if(host){
+      const pend=[];
+      const col="elec_kwh";
+      if(b==="stock"){
+        seasons.forEach(sn=>{
+          const rs=pick("all",sn); if(!rs.length) return;
+          const m=meta(rs), tBy=times(rs);
+          const base0=byHow(rs,"0",col);
+          const series={btot:base0};
+          sel.forEach(mm=>{ series[`m_${mm.up}`]=rebase(base0, byHow(rs,`base_${mm.up}`,col),
+                                                         byHow(rs,mm.up,col)); });
+          const hours=[...new Set(Object.values(series).flatMap(s=>Object.keys(s).map(Number)))]
+            .sort((a,c)=>a-c);
+          const pts=hours.map(hw=>{ const o={how:hw, t:tBy[hw], eu:{}};
+            Object.entries(series).forEach(([k,s])=>o[k]=MWv(s[hw]===undefined?null:s[hw])); return o; });
+          const bx=box(host,`${sn} — week of ${pwDate(m.weekStart)} — set by ${esc(pwSeriesName(m.setBy))}`);
+          pend.push({bx, pts, opts:{title:`${sn} peak week`, weekStart:m.weekStart, yLabel:"MW",
+            markHow:m.markHow, markLabel:m.markLabel,
+            lines:sel.map(mm=>({key:`m_${mm.up}`,color:mm.color,dash:"",width:1.8,label:mm.short}))
+              .concat([{key:"btot",color:"var(--ink)",dash:"7 4",width:2.2,label:"Baseline (whole stock)"}]),
+            copy:{title:`${stLab} — ${sn} peak week, week of ${pwDate(m.weekStart)} — electricity, entire stock (MW)`,
+                  legend:[{color:"#1a1d1f",label:"Baseline, whole stock (dashed)",line:true,dash:true}]
+                    .concat(sel.map(mm=>({color:mm.color,label:mm.short,line:true})))}}});
+        });
+      } else {
+        sel.forEach(mm=>seasons.forEach(sn=>{
+          const rs=pick(mm.up,sn); if(!rs.length) return;
+          const m=meta(rs), tBy=times(rs);
+          const series={[`m_${mm.up}`]:byHow(rs,mm.up,col), [`b_${mm.up}`]:byHow(rs,`base_${mm.up}`,col)};
+          const hours=[...new Set(Object.values(series).flatMap(s=>Object.keys(s).map(Number)))]
+            .sort((a,c)=>a-c);
+          const pts=hours.map(hw=>{ const o={how:hw, t:tBy[hw], eu:{}};
+            Object.entries(series).forEach(([k,s])=>o[k]=MWv(s[hw]===undefined?null:s[hw])); return o; });
+          const bx=box(host,`${esc(mm.short)} · ${sn} — week of ${pwDate(m.weekStart)}`);
+          pend.push({bx, pts, opts:{title:`${mm.up} ${sn} peak week`, weekStart:m.weekStart, yLabel:"MW",
+            markHow:m.markHow, markLabel:m.markLabel,
+            lines:[{key:`m_${mm.up}`,color:mm.color,dash:"",width:1.8,label:mm.short},
+                   {key:`b_${mm.up}`,color:mm.color,dash:"5 3",width:1.4,label:`${mm.short} baseline`}],
+            copy:{title:`${stLab} — ${mm.up} ${mm.name} — ${sn} peak week, week of ${pwDate(m.weekStart)} — electricity, own applicable buildings (MW)`,
+                  legend:[{color:mm.color,label:mm.short,line:true},
+                          {color:mm.color,label:`${mm.short} baseline (dashed)`,line:true,dash:true}]}}});
+        }));
+      }
+      const yMax=pwSharedMax(pend);
+      pend.forEach(q=>weekChart(q.bx.querySelector(".chart"), q.pts, {...q.opts, yMax}));
+      registerGroupContainer(`gpw-elec-${st}`, `#mpw-elec-${st}`,
+        (b==="stock"?[{color:"#1a1d1f",label:"Baseline, whole stock (dashed)",line:true,dash:true}]
+          .concat(sel.map(mm=>({color:mm.color,label:mm.short,line:true})))
+          :sel.flatMap(mm=>[{color:mm.color,label:mm.short,line:true},
+            {color:mm.color,label:`${mm.short} baseline (dashed)`,line:true,dash:true}])),
+        `${stLab} — ${wkTitle}, electricity, `
+          +(b==="stock"?"entire stock":"each measure's own applicability")+" (MW)", 1);
+    }
+  }
+  peakTables(st, sel, b);
+}
+
+/* Seasonal peaks, electricity then gas: one row per series, each against its
+   reference baseline (the stock baseline, or the measure's applicable one). */
+function peakTables(st, sel, b){
+  const host=$(`#mpk-${st}`); if(!host) return;
+  const all=pkRows(st).filter(r=>r.basis===b);
+  if(!all.length){ host.innerHTML='<p class="note">No seasonal peaks were recorded.</p>'; return; }
+  const sgn=v=>(v===null||v===undefined||Number.isNaN(+v))?ABSENT.noValue:`${+v>0?"+":""}${fmt(+v,1)}`;
+  const row=(sn,label,r,isBase,color)=>`<tr><td style="text-align:left">${sn}</td>
+    <td style="text-align:left">${color?`<span class="sw" style="background:${safeColor(color)}"></span>`:""}${esc(label)}</td>
+    <td>${fmt(+r.peak_mw,1)}</td>
+    <td>${isBase?"":`${sgn(r.change_mw)} (${pct(+r.change_pct)})`}</td>
+    <td>${isBase?"":`${fmt(+r.at_ref_peak_mw,1)} (${sgn(r.coincident_change_mw)})`}</td>
+    <td style="text-align:left">${esc(pwShort(r.peak_hour))}</td>
+    <td style="text-align:left">${esc(pwDate(r.week_start))}</td></tr>`;
+  const table=(metric,unit)=>{
+    const rs=all.filter(r=>r.metric===metric);
+    if(!rs.length) return "";
+    let t=`<h3 style="margin:10px 0 4px">${metric==="electricity"?"Electricity":"Natural gas"} — ${unit}</h3>
+      <table><thead><tr><th style="text-align:left">Season</th><th style="text-align:left">Series</th>
+      <th>Peak</th><th>Change, peak to peak</th><th>At the baseline's peak hour</th>
+      <th style="text-align:left">Peak hour</th><th style="text-align:left">Week drawn</th></tr></thead><tbody>`;
+    PW_SEASONS.forEach(sn=>{
+      if(b==="stock"){
+        const base=rs.find(r=>r.season===sn&&r.role==="baseline");
+        if(!base) return;
+        t+=row(sn,"Baseline (whole stock)",base,true,null);
+        sel.forEach(mm=>{ const r=rs.find(x=>x.season===sn&&String(x.series)===`stock:${mm.up}`);
+          if(r) t+=row(sn,mm.short,r,false,mm.color); });
+      } else {
+        sel.forEach(mm=>{
+          const base=rs.find(r=>r.season===sn&&String(r.anchor)===mm.up&&r.role==="baseline");
+          const meas=rs.find(r=>r.season===sn&&String(r.anchor)===mm.up&&r.role==="measure");
+          if(base) t+=row(sn,`${mm.short} — applicable baseline`,base,true,null);
+          if(meas) t+=row(sn,mm.short,meas,false,mm.color);
+        });
+      }
+    });
+    return t+`</tbody></table>`;
+  };
+  host.innerHTML=table("electricity","MW")+table("natural_gas","MW thermal");
+}
+
 const TS_OTHER_COLS=["propane_kwh","fuel_oil_kwh","district_heating_kwh"];
 const TS_FUEL_LABEL={elec:"electricity", gas:"natural gas",
                      other:"other fuels (propane, fuel oil, district heat)"};
@@ -4450,10 +4914,32 @@ function renderMeasuresTs(){
         `<option value="${k}" ${k===tsBasis?"selected":""}>${lab}</option>`).join("")}
       </select></label>${shown.map(st=>tsPopBadge(st,tsBasis)).join(" ")}</div>`:""}</div>`;
 
+  /* The tab runs long -- three or four seasonal panels, then the peak weeks and
+     their table -- so it gets the Annual tab's sticky index, listing what is on
+     the page for this location and view. The peak-week season picker rides at
+     its right end, in reach from the charts it changes. */
+  const tsSections=st=>{
+    const single=state.measView==="single";
+    const s=single
+      ? [[`sec-mts-elec-${st}`,"Electricity by end use"],[`sec-mts-gas-${st}`,"Natural gas"]]
+          .concat(tsHasOther(st)?[[`sec-mts-other-${st}`,"Other fuels"]]:[])
+      : [[`sec-mts-elec-${st}`,"Electricity"],[`sec-mts-eu-${st}`,"End uses by season"]];
+    if(!hasPeakWeek(st)) return s.concat([[`sec-mpw-${st}`,"Peak week"]]);
+    return s.concat([[`sec-mpw-elec-${st}`,"Peak week: electricity"]],
+      single?[[`sec-mpw-gas-${st}`,"Peak week: natural gas"]]:[],
+      [[`sec-mpk-${st}`,"Seasonal peaks"]]);
+  };
+  const pwSeasonSel=st=>hasPeakWeek(st)?`<span class="spacer"></span>
+    <label class="note" style="margin:0">peak-week season
+      <select id="pwSeason" aria-label="peak-week season" style="padding:2px 8px;font-size:12px">${
+        [["all","All seasons"]].concat(PW_SEASONS.map(sn=>[sn,sn])).map(([k,lab])=>
+        `<option value="${k}" ${k===state.pwSeason?"selected":""}>${lab}</option>`).join("")}</select></label>`:"";
+  shown.forEach(st=>{ h+=jumpBarHTML(tsSections(st), pwSeasonSel(st)); });
+
   shown.forEach(st=>{
     if(state.measView==="single"&&sel.length){
       const mm=sel[0];
-      h+=`<div class="panel"><h2>Average hourly electricity demand by end use — ${st} — MW
+      h+=`<div class="panel" id="sec-mts-elec-${st}"><h2>Average hourly electricity demand by end use — ${st} — MW
           <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
           <span class="badge">applicable buildings</span>
           <span class="badge">measure vs its own baseline</span>
@@ -4470,7 +4956,7 @@ function renderMeasuresTs(){
             <span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink);display:inline-block;flex:none"></span>Baseline total (applicable)</span>
           </div>
         </div></div>
-        <div class="panel"><h2>Average hourly natural gas demand — ${st} — MW thermal
+        <div class="panel" id="sec-mts-gas-${st}"><h2>Average hourly natural gas demand — ${st} — MW thermal
           <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
           <span class="badge">applicable buildings</span>
           ${groupControls(`gts-gas-${st}`)}</h2>
@@ -4488,7 +4974,7 @@ function renderMeasuresTs(){
          third or more of a fuel-switching measure's fossil heating savings, and
          until this panel existed nothing on the tab said they were missing. Only
          drawn when the run's timeseries table carries them. */
-      if(tsHasOther(st)) h+=`<div class="panel"><h2>Average hourly other-fuel demand — ${st} — MW thermal
+      if(tsHasOther(st)) h+=`<div class="panel" id="sec-mts-other-${st}"><h2>Average hourly other-fuel demand — ${st} — MW thermal
           <span class="badge">${esc(mm.up)} · ${esc(mm.name)}</span>
           <span class="badge">propane + fuel oil + district heat</span>
           ${groupControls(`gts-other-${st}`)}</h2>
@@ -4507,7 +4993,7 @@ function renderMeasuresTs(){
         ? `<span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink);display:inline-block;flex:none"></span>Baseline (whole stock)</span>`
         : `<span class="key"><span style="width:14px;height:0;border-top:3px dashed var(--ink-3);display:inline-block;flex:none"></span>each measure's own baseline (dashed, same color)</span>`}
         ${measKeyLegend(measChosen())}`;
-      h+=`<div class="panel"><h2>Average hourly electricity demand — baseline vs each measure —
+      h+=`<div class="panel" id="sec-mts-elec-${st}"><h2>Average hourly electricity demand — baseline vs each measure —
           ${st} — MW <span class="badge">${tsBas[1]}</span>
           ${tsBasis==="own"?`<span class="badge" style="color:var(--bad)">line heights not
             comparable between measures</span>`:""}
@@ -4524,7 +5010,7 @@ function renderMeasuresTs(){
           <div class="ami-grid" id="mts-elec-${st}"></div>
           <div class="ami-legend">${tsLegend}</div>
         </div></div>
-        <div class="panel"><h2>Average hourly demand by end use and season — ${st} — MW
+        <div class="panel" id="sec-mts-eu-${st}"><h2>Average hourly demand by end use and season — ${st} — MW
           <span class="badge">${tsBas[1]}</span>
           <span class="badge">all days: 5/7 weekday, 2/7 weekend</span>
           ${groupControls(`gts-eu-${st}`)}</h2>
@@ -4537,12 +5023,16 @@ function renderMeasuresTs(){
         <div style="display:grid;grid-template-columns:repeat(3,minmax(0,310px));gap:8px 12px;justify-content:start" id="mts-eu-${st}"></div>
         </div>`;
     }
+    h+=peakWeekHTML(st, sel, tsBasis);
   });
   $("#view").innerHTML=h;
 
   const locSel=$("#measLoc");
   if(locSel) locSel.addEventListener("change",e=>{
     state.measLoc=e.target.value; renderMeasuresTs(); syncHash(); });
+  const pwSel=$("#pwSeason");
+  if(pwSel) pwSel.addEventListener("change",e=>{
+    state.pwSeason=e.target.value; renderMeasuresTs(); syncHash(); });
   const MW=v=>(v===null||v===undefined)?null:v/1000;
   const tsLegendItems=(stack,lines)=>(stack?enduseLegendItemsVisible():[]).concat(lines);
   // other_kwh is summed here from the per-fuel columns the query carries; a
@@ -4724,9 +5214,11 @@ function renderMeasuresTs(){
         `${st} — average hourly demand by end use and season, ${tsBas[1].toLowerCase()} (MW)`, 3);
     }
   });
+  shown.forEach(st=>drawPeakWeek(st, sel, tsBasis));
   wireMeasControls(renderMeasuresTs);
   wireEnduseLegend(renderMeasuresTs);
   wireGroups();
+  wireJumpBar();
 }
 
 function amiStackLegendHTML(){
@@ -5592,7 +6084,7 @@ function renderCoverage(){
    specific view can be shared by sending the URL */
 const HASH_KEYS=["tab","type","amiMode","amiRegion","euiBasis","euiMetric","xDim","distDim","distScale",
                  "dpGroup","dpDim","hfView",
-                 "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc",
+                 "rankDim","rankFuel","dimSig","rankSig","measView","measSel","measLoc","pwSeason",
                  "measDistGroup","measMulti","runsHidden","amiRuns","measBasis","measPop",
                  "measCatGroup","euHidden","feHidden","measHidden"];
 function syncHash(){
@@ -5628,6 +6120,7 @@ function parseHash(){
     state.amiRegion=AMI_REGIONS.includes("pepco")?"pepco":AMI_REGIONS[0];
   // a stale link must not leave a selector pointing at nothing
   if(state.measView!=="single"&&state.measView!=="multi") state.measView="single";
+  if(state.pwSeason!=="all"&&!PW_SEASONS.includes(state.pwSeason)) state.pwSeason="all";
   if(!DIST_GROUPS.some(g=>g[0]===state.measDistGroup)) state.measDistGroup="end_use";
   if(!CAT_GROUPS.some(g=>g[0]===state.measCatGroup)) state.measCatGroup="building_type";
   if(!availableBases().some(b=>b[0]===state.measBasis)) state.measBasis="stock";
