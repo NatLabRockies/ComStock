@@ -37,7 +37,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AMI(NamingMixin, UnitsMixin, S3UtilitiesMixin):
-    def __init__(self, truth_data_version, color_hex=NamingMixin.COLOR_AMI, reload_from_csv=False):
+    def __init__(self, truth_data_version, color_hex=NamingMixin.COLOR_AMI, reload_from_csv=False,
+                 download_truth_data=True):
         """
         A class to produce calibration graphics based on utility AMI data from the EULP project.
         Args:
@@ -127,9 +128,13 @@ class AMI(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             if not os.path.exists(p):
                 os.makedirs(p)
 
-        # Load and transform data, preserving all columns
-        logger.info(f'Downloading {self.dataset_name}')
-        self.download_truth_data()
+        # Load and transform data, preserving all columns. The raw regional files
+        # are only read when the aggregates are computed; reloading the exported
+        # CSV needs none of them, and download_truth_data=False keeps that path
+        # off S3 entirely (results_dashboard.exports.load_ami passes it).
+        if download_truth_data:
+            logger.info(f'{self.dataset_name}: checking truth data, downloading only files that are missing')
+            self.download_truth_data()
         if reload_from_csv:
             file_name = f'AMI long.csv'
             file_path = os.path.join(self.output_dir, file_name)

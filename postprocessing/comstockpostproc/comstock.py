@@ -30,6 +30,7 @@ from natsort import natsort_keygen, natsorted
 from pathlib import Path
 
 from buildstock_query import BuildStockQuery
+from comstockpostproc.athena_config import ATHENA_WORKGROUP
 from .comstock_query_builder import ComStockQueryBuilder
 from comstockpostproc.ami import AMI
 from comstockpostproc.cbecs import CBECS
@@ -39,6 +40,7 @@ from comstockpostproc.gas_correction_model import GasCorrectionModelMixin
 from comstockpostproc.naming_mixin import NamingMixin
 from comstockpostproc.s3_utilities_mixin import S3UtilitiesMixin, write_geo_data
 from comstockpostproc.units_mixin import UnitsMixin
+from comstockpostproc import allocation
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -90,6 +92,16 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.athena_table_name = athena_table_name
         self.data = None
         self.fkt = None  # TODO verify that we should initialize this?
+        # The stock allocation (the apportionment draw) this run's weights come from:
+        # its provenance (allocation.Provenance) once drawn, reloaded or adopted from
+        # another run, and how its models reconcile with this run's (allocation.Reconciliation).
+        self.allocation = None
+        self.allocation_reconciliation = None
+        self._sample_fingerprint = None
+        # Set by athena_tables.prepare_athena_tables: the draw the run's Athena tables
+        # carry, per the record beside the export. Differs from allocation_id only
+        # when stale tables were deliberately kept (see allocation_summary).
+        self.tables_allocation_id = None
         self.plotting_data = None
         self.monthly_data = None
         self.monthly_data_gap = None
@@ -116,7 +128,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # self.s3_client = boto3.client('s3', config=botocore.client.Config(max_pool_connections=50))
         # self.s3_resource = boto3.resource('s3')
         if self.athena_table_name is not None:
-            self.athena_client = BuildStockQuery(workgroup='comcore',
+            self.athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                                  db_name='enduse',
                                                  buildstock_type='comstock',
                                                  table_name=self.athena_table_name,
@@ -387,7 +399,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def download_timeseries_data_for_ami_comparison(self, ami, reload_from_csv=True, save_individual_regions=False):
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
@@ -664,6 +676,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 bool_possibilities = [set(['true', 'false']), set(['true']), set(['false'])]
                 if set(lower_col_vals) in bool_possibilities:
                     up_res = up_res.with_columns(pl.col(col).str.to_lowercase().replace({"false": False, "true": True}, default=None))
+
+            # Must precede the downselect: this is what makes the custom-building-spec
+            # geometry columns findable under the names the definitions use.
+            up_res = self.alias_custom_building_spec_columns(up_res)
 
             # Downselect columns to reduce memory use
             up_res = self.downselect_imported_columns(up_res)
@@ -1443,6 +1459,61 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         ]
 
         self.convert_units(col_names)
+
+    def alias_custom_building_spec_columns(self, df):
+        """Read create_custom_building_from_spec_* under the legacy measure names.
+
+        The custom-building-spec measure replaced two older measures and carries their
+        arguments under its own prefix:
+
+            create_bar_from_building_type_ratios_*   (geometry)
+            create_typical_building_from_model_*     (systems, loads, schedules)
+
+        comstock_column_definitions.csv names only the two legacy spellings, so without
+        this every one of those arguments goes missing on a custom-spec run -- including
+        in.sqft, which the whole weighting and EUI chain divides by, and
+        in.hvac_system_type, which the HVAC breakdowns and the results dashboard group by.
+        The failure surfaces late and unhelpfully, as a polars ColumnNotFoundError on the
+        renamed output ("in.sqft..ft2") rather than on the input that was actually absent.
+
+        Both sets are a verified 1:1 rename against hospital_resampling/str_100k_fixes_ts:
+        53 of 53 bar columns and 31 of 31 typical-building columns have an exact
+        custom-spec twin, none without. Ten carry named outputs -- in.sqft,
+        in.comstock_building_type, in.number_of_stories, in.rotation,
+        in.hvac_system_type, in.wall_construction_type and the four operating-hours
+        columns.
+
+        Only columns named in the definitions are aliased, and only where the legacy
+        spelling is ABSENT, so this is a no-op for runs built with the older measures.
+        """
+        CUSTOM = 'create_custom_building_from_spec'
+        LEGACY = ('create_bar_from_building_type_ratios',
+                  'create_typical_building_from_model')
+
+        col_defs_path = os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)
+        defined = (pl.scan_csv(col_defs_path)
+                   .select('original_col_name').collect().to_series().to_list())
+        present = set(df.columns)
+
+        renames = {}
+        for legacy_name in defined:
+            if not legacy_name or legacy_name in present:
+                continue
+            prefix = next((p for p in LEGACY if p in legacy_name), None)
+            if prefix is None:
+                continue
+            twin = legacy_name.replace(prefix, CUSTOM)
+            # Two legacy names can map onto one custom-spec column (both measures
+            # took e.g. _template). Keep the first and leave the duplicate missing
+            # rather than letting polars raise on a duplicate rename target.
+            if twin in present and twin not in renames:
+                renames[twin] = legacy_name
+
+        if renames:
+            df = df.rename(renames)
+            logger.info(f'Aliased {len(renames)} {CUSTOM}_* columns to the legacy measure '
+                        'names used by the column definitions')
+        return df
 
     def downselect_imported_columns(self, df):
         # Downselect to the columns marked for export in column definitions
@@ -2413,6 +2484,16 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
             alloc_wts_bills_dir = f's3://{alloc_wts_bills_dir}'
         if self.output_dir['fs'].exists(alloc_wts_bills_dir):
+            # The bills are derived from the stock allocation. A folder built from
+            # another draw, or before draws carried an id, is rebuilt rather than
+            # reused: inherited, it would carry the old weights into the export.
+            marker = allocation.read_marker(alloc_wts_bills_dir, self.output_dir['fs'])
+            if not allocation.derived_is_current(marker, self.allocation_id):
+                logger.warning(f'{alloc_wts_bills_dir} was built from allocation '
+                               f'{marker or "(unmarked)"} and the run now uses '
+                               f'{self.allocation_id}: rebuilding the bills for upgrade {upgrade_id}')
+                self.output_dir['fs'].rm(alloc_wts_bills_dir, recursive=True)
+        if self.output_dir['fs'].exists(alloc_wts_bills_dir):
             state_pqts = []
             pqt_glob = f'{alloc_wts_bills_dir}/**/cached_allocated_weights_plus_bills_*.parquet'
             for p in self.output_dir['fs'].glob(pqt_glob):
@@ -2638,6 +2719,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             state_pqts.append(cached_file_path)
             with self.output_dir['fs'].open(cached_file_path, "wb") as f:
                 state_alloc_wts.write_parquet(f)
+        # Stamp the folder with the draw it was built from (see the check above).
+        if self.allocation_id:
+            allocation.write_marker(alloc_wts_bills_dir, self.allocation_id, self.output_dir['fs'])
         alloc_wts = pl.scan_parquet(state_pqts, hive_partitioning=True, storage_options=self.output_dir['storage_options'])
 
         return alloc_wts_bills_dir
@@ -3103,42 +3187,169 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         return f'Finished {geo_exports} for upgrade {upgrade_id} in {(datetime.datetime.now() - tstart).total_seconds()} seconds.'
 
+    # ---- the stock allocation (the apportionment draw) as a file -------------------
+    # See comstockpostproc.allocation. A run's weights come from one draw file; these
+    # say where it is, whether a file fits this run, and which draw is in use.
+
+    @property
+    def allocation_path(self):
+        """This run's own draw file: output/ComStock <v>/cached_ComStock_alloc_wts.parquet."""
+        path = f'{self.output_dir["fs_path"]}/{allocation.FILE_NAME}'
+        if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
+            path = f's3://{path}'
+        return path
+
+    def sample_fingerprint(self):
+        """(hash, rows) of this run's buildstock.csv; (None, None) when it is not on disk."""
+        if self._sample_fingerprint is None:
+            path = os.path.join(self.data_dir, self.buildstock_file_name)
+            self._sample_fingerprint = (allocation.sample_fingerprint(path) if os.path.exists(path)
+                                        else (None, None))
+        return self._sample_fingerprint
+
+    def allocation_status(self, apportionment: Apportion, path=None):
+        """What a draw file is to this run -- missing, unverified (no provenance), stale
+        (made for another estimate or sample) or valid -- without raising. `path` is
+        another file to judge; the default is this run's own."""
+        return allocation.status_of(path or self.allocation_path,
+                                    estimate_version=apportionment.stock_estimation_version,
+                                    bootstrap_coefficient=apportionment.bootstrap_coefficient,
+                                    sample_hash=self.sample_fingerprint()[0],
+                                    fs=None if path else self.output_dir['fs'])
+
+    @property
+    def allocation_id(self):
+        """Identity of the draw this run's weights come from, read from the draw file
+        when this object did not make or adopt it itself. None for a legacy draw
+        (no provenance) or when there is no draw yet."""
+        if self.allocation is None:
+            try:
+                if allocation.exists(self.allocation_path, self.output_dir['fs']):
+                    self.allocation = allocation.read_provenance(self.allocation_path, self.output_dir['fs'])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f'Could not read the provenance of {self.allocation_path}: {exc}')
+        return self.allocation.allocation_id if self.allocation else None
+
+    @property
+    def allocation_summary(self):
+        """The draw in use, for a dashboard manifest or a log: a plain dict, or None.
+
+        When prepare_athena_tables found the run's Athena tables carrying ANOTHER
+        draw and kept them (a published run this machine did not make), the record
+        is the tables' draw, since that is what the dashboard reads."""
+        tables = getattr(self, 'tables_allocation_id', None)
+        if tables and tables != self.allocation_id:
+            return {'allocation_id': tables, 'drawn_for': None, 'created': None,
+                    'estimate_version': None, 'sample_hash': None, 'shared': None,
+                    'n_models_drawn': None, 'reconciliation': None,
+                    'note': "the run's Athena tables carry this allocation; this machine's draw "
+                            f"({(self.allocation_id or 'none')[:8]}) differs and was not exported"}
+        if self.allocation_id is None:
+            return None
+        p, r = self.allocation, self.allocation_reconciliation
+        return {'allocation_id': p.allocation_id, 'drawn_for': p.drawn_for, 'created': p.created,
+                'estimate_version': p.estimate_version, 'sample_hash': p.sample_hash,
+                'shared': p.drawn_for != self.comstock_run_name,
+                'n_models_drawn': p.n_models_drawn,
+                'reconciliation': None if r is None else
+                {'shared': r.shared, 'only_in_draw': r.only_in_draw, 'only_in_run': r.only_in_run}}
+
+    def _adopt_allocation(self, apportionment: Apportion, base_sim_outs: pl.LazyFrame, source=None):
+        """Check a draw against this run and make it this run's draw file.
+
+        `source` None: this run's own file (reload_from_cache). A path: a draw made for
+        another run on the same sample, or the file a published run was postprocessed
+        with; it is copied into this run's folder with copied_from set, so the folder
+        stays self-contained and get_allocated_weights() finds it. A legacy draw (no
+        provenance) is refused: nothing can show it fits this run.
+        """
+        own = self.allocation_path
+        fs_src = None if source is not None else self.output_dir['fs']
+        src = str(source) if source is not None else own
+        if not allocation.exists(src, fs_src):
+            raise FileNotFoundError(
+                f'Cannot find {src} to reload the stock allocation; set reload_from_cache=False to draw one.')
+        prov = allocation.read_provenance(src, fs_src)
+        if prov is None:
+            raise allocation.AllocationError(
+                f'{src} was written before draws carried provenance, so it cannot be checked against '
+                f'{self.comstock_run_name}. Draw again (reload_from_cache=False) for a draw that can be '
+                'reused and shared.')
+        bad = allocation.mismatches(prov, estimate_version=apportionment.stock_estimation_version,
+                                    bootstrap_coefficient=apportionment.bootstrap_coefficient,
+                                    sample_hash=self.sample_fingerprint()[0])
+        if bad:
+            raise allocation.AllocationError(
+                f'{src} does not fit {self.comstock_run_name}: ' + '; '.join(bad))
+        run_ids = {int(i) for i in base_sim_outs.select(pl.col(self.BLDG_ID)).unique().collect()
+                   .get_column(self.BLDG_ID).to_list()}
+        rec = allocation.reconcile(allocation.draw_model_ids(src, fs_src, self.BLDG_ID), run_ids)
+        if rec.shared == 0:
+            raise allocation.AllocationError(
+                f'{src} and {self.comstock_run_name} have no model in common; it cannot weight this run.')
+        if src.replace('\\', '/') != own.replace('\\', '/'):
+            logger.info(f'Copying the stock allocation {src} to {own}')
+            prov = allocation.copy_allocation(src, own, prov, fs_src=fs_src, fs_dst=self.output_dir['fs'])
+        self.allocation, self.allocation_reconciliation = prov, rec
+        self.APPORTIONED = True
+        logger.info(f'{self.comstock_run_name} uses {prov.describe()}: {rec.describe()}')
+
     def create_allocated_weights(self,
                                 apportionment: Apportion,
                                 base_sim_outs: pl.LazyFrame,
                                 keep_n_per_apportionment_group=False,
-                                reload_from_cache=False):
+                                reload_from_cache=False,
+                                allocation_path=None):
+        """Give this run its stock allocation: a model for every (bootstrapped) building
+        in the estimate, with the weight that makes the model stand for it.
+
+          allocation_path    use THIS draw (local or s3://): one made for another run
+                             on the same sample, or the one a published run was
+                             postprocessed with, so plots made here match. Checked
+                             against this run -- estimate, bootstrap coefficient and
+                             sample fingerprint, AllocationError otherwise -- its
+                             models reconciled and logged, then copied into this run's
+                             folder with copied_from set.
+          reload_from_cache  True: reuse this run's own draw, checked the same way (raises
+                             when it is absent or does not fit). 'auto': reuse it when it
+                             fits this run, draw otherwise -- what a driver that reruns
+                             wants, since every draw changes the weights and so the bills
+                             and the Athena tables that are built from them.
+          neither            draw. The draw is random (np.random.choice), so two draws
+                             differ model by model; the file carries provenance so it
+                             can be reused and shared. See comstockpostproc.allocation.
+        """
         # This function doesn't support already CBECS-weighted self.data - error out
         if self.CBECS_WEIGHTS_APPLIED:
             raise RuntimeError('Unable to apply apportionment weighting after CBECS weighting - reverse order.')
 
         # Path to cached allocated weights file
-        file_name = f'cached_ComStock_alloc_wts.parquet'
-        fkt_file_path = f'{self.output_dir["fs_path"]}/{file_name}'
-        if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
-            fkt_file_path = f's3://{fkt_file_path}'
-        if reload_from_cache:
+        fkt_file_path = self.allocation_path
+        if reload_from_cache == 'auto' and allocation_path is None:
+            status = self.allocation_status(apportionment)
+            reload_from_cache = status.state == 'valid'
+            logger.info(f'{self.comstock_run_name}: own stock allocation is {status.describe()}; '
+                        f'{"reusing it" if reload_from_cache else "drawing"}')
+        if reload_from_cache or allocation_path is not None:
             # fkt creation is non-deterministic, so recreating it results in a different set of models
-            # being used, which is an issue if postprocessing is stopped and restarted.
-            # Reloading from cache ensures that the same set of models is used.
-            if self.output_dir['fs'].exists(fkt_file_path):
-                logger.info(f'Reloading fkt from cache: {fkt_file_path}')
-                self.fkt = pl.scan_parquet(fkt_file_path, storage_options=self.output_dir['storage_options'])
+            # being used, which is an issue if postprocessing is stopped and restarted, and which makes
+            # two runs on one sample differ where no model changed. A draw is reused only after
+            # _adopt_allocation has checked that it fits this run.
+            self._adopt_allocation(apportionment, base_sim_outs, source=allocation_path)
+            logger.info(f'Reloading fkt from: {fkt_file_path}')
+            self.fkt = pl.scan_parquet(fkt_file_path, storage_options=self.output_dir['storage_options'])
 
-                # Join on the missing PUMA ID
-                # TODO this should be done in the initial fkt creation; remove once fixed (in 3 places)
-                geo_cols = {
-                    'nhgis_tract_gisjoin': self.TRACT_ID,
-                    'nhgis_puma_gisjoin': self.PUMA_ID,
-                }
-                file_path = os.path.join(self.truth_data_dir, self.geospatial_lookup_file_name)
-                geospatial_data = pl.read_csv(file_path, columns=list(geo_cols.keys()), infer_schema_length=None)
-                geospatial_data = geospatial_data.rename(geo_cols)
-                geospatial_data = geospatial_data.lazy()
-                self.fkt = self.fkt.join(geospatial_data, on=self.TRACT_ID)
-            else:
-                raise FileNotFoundError(
-                f'Cannot find {fkt_file_path} to reload fkt, set reload_from_cache=False.')
+            # Join on the missing PUMA ID
+            # TODO this should be done in the initial fkt creation; remove once fixed (in 3 places)
+            geo_cols = {
+                'nhgis_tract_gisjoin': self.TRACT_ID,
+                'nhgis_puma_gisjoin': self.PUMA_ID,
+            }
+            file_path = os.path.join(self.truth_data_dir, self.geospatial_lookup_file_name)
+            geospatial_data = pl.read_csv(file_path, columns=list(geo_cols.keys()), infer_schema_length=None)
+            geospatial_data = geospatial_data.rename(geo_cols)
+            geospatial_data = geospatial_data.lazy()
+            self.fkt = self.fkt.join(geospatial_data, on=self.TRACT_ID)
         else:
             # Pull the columns required to do the matching plus the annual energy total as a safety blanket
             # TODO this is a superset for convienience - slim down later
@@ -3325,10 +3536,24 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             # Drop unwanted columns from the foreign key table and persist
             fkt = fkt.drop('tdf_id', APPO_GROUP_ID, 'truth_sqft', 'in.tract_assignment_type', self.FLR_AREA)
 
-            # Cache the allocated weights for reuse
-            with self.output_dir['fs'].open(fkt_file_path, "wb") as f:
-                fkt.collect().write_parquet(f)
-            logger.info(f'Caching allocated weights to: {fkt_file_path}')
+            # Cache the allocated weights for reuse, with the provenance that lets another
+            # run on this sample (or anyone plotting this run) reuse exactly this draw.
+            fkt_df = fkt.collect()
+            sample_hash, sample_rows = self.sample_fingerprint()
+            if sample_hash is None:
+                logger.warning(f'{os.path.join(self.data_dir, self.buildstock_file_name)} is not on disk, '
+                               'so this draw carries no sample fingerprint and cannot be reused or shared')
+            self.allocation = allocation.new_provenance(
+                drawn_for=self.comstock_run_name, drawn_for_version=str(self.comstock_run_version),
+                estimate_version=str(apportionment.stock_estimation_version),
+                bootstrap_coefficient=int(bs_coef), sample_hash=sample_hash or '',
+                sample_rows=int(sample_rows or 0),
+                n_models_drawn=int(fkt_df.get_column(self.BLDG_ID).n_unique()),
+                n_models_available=int(csdf.select(pl.col(self.BLDG_ID)).unique().collect().height),
+                n_rows=int(fkt_df.height))
+            self.allocation_reconciliation = None
+            allocation.write_allocation(fkt_df, fkt_file_path, self.allocation, fs=self.output_dir['fs'])
+            logger.info(f'Caching allocated weights to: {fkt_file_path} -- {self.allocation.describe()}')
 
             # Scan the fkt
             self.fkt = pl.scan_parquet(fkt_file_path, storage_options=self.output_dir['storage_options'])
@@ -4595,7 +4820,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
     @staticmethod
     def create_views(
-            dataset_name: str, database_name: str = "vizstock", workgroup: str = "eulp"
+            dataset_name: str, database_name: str = "vizstock", workgroup: str = ATHENA_WORKGROUP
         ):
             glue = boto3.client("glue", region_name="us-west-2")
 
@@ -4831,7 +5056,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             weight_view_table = f'{self.comstock_run_name}_md_agg_national_by_state_vu'
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
