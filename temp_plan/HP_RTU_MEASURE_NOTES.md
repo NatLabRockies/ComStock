@@ -534,3 +534,4 @@ Section numbers in older entries are the numbers at the time.
   sequential control (old 3.3) moved under the plan as 4.3 and 4.4; the "still to confirm" list
   (old 1.3) merged into Open questions (now section 6). Added "gas heating control" and "#446" to
   the terms list and removed the repeated definitions and EMS reasoning. No content dropped.
+- 2026-10-07: Corrected 1.2: the scenario 3 (CCHPC typical dual fuel RTU) measure doc is "Not started", not "Created".
