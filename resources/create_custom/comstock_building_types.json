@@ -188,7 +188,7 @@
             "ComStock DOE Ref Pre-1980"
           ],
           "space_types": {
-            "apartment": {
+            "multifamily - dwelling unit": {
               "ratio": 0.8896,
               "space_type_gen": true,
               "default": true
@@ -1480,7 +1480,7 @@
             "ComStock DOE Ref Pre-1980"
           ],
           "space_types": {
-            "apartment": {
+            "multifamily - dwelling unit": {
               "ratio": 0.8727,
               "space_type_gen": true,
               "default": true
