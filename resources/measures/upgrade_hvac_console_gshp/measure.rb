@@ -380,9 +380,9 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     condenser_loop_sizing = condenser_loop.sizingPlant
     condenser_loop_sizing.setLoopType('Condenser')
     condenser_loop_sizing.setDesignLoopExitTemperature(cond_loop_setpoint_c)
-    # EnergyPlus sizes the heat pump water flow as heating capacity / (delta T rho cp); 4.0 K gives the Trane rated
-    # flow (9 gpm at 31.3 kBtu/h, 20% propylene glycol), where OpenStudio's 11 K default gave a third of it
-    condenser_loop_sizing.setLoopDesignTemperatureDifference(4.0)
+    # EnergyPlus sizes the heat pump water flow as heating capacity / (delta T rho cp), with heating sized to cooling;
+    # 5.9 K gives the Trane rated flow (9 gpm at 45.9 kBtu/h cooling, 20% propylene glycol), about 3 gpm/ton
+    condenser_loop_sizing.setLoopDesignTemperatureDifference(5.9)
     # the heat pumps pull this loop below 0 C in cold climates; use the ground loop's 20% propylene glycol
     condenser_loop.setFluidType('PropyleneGlycol')
     condenser_loop.setGlycolConcentration(20)
@@ -802,42 +802,48 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       borefield_defaults['soil']['undisturbed_temp'] = undisturbed_ground_temp.to_f.round(2)
     end
 
-    # design the borefield for the flow the heat pumps circulate; at 0.2 L/s per borehole it carried a quarter to a
-    # third of it, and the heat exchanger starved the condenser loop until it ran away in cold weather
+    # design the borefield at 0.2 L/s per borehole, or at the heat pumps' flow where that carries more: at 0.2 L/s small
+    # fields starved the condenser loop through the heat exchanger, at the full flow large fields went laminar
     ghx_design_flow = condenser_loop.maximumLoopFlowRate
     ghx_design_flow = condenser_loop.autosizedMaximumLoopFlowRate if ghx_design_flow.empty?
-    if ghx_design_flow.is_initialized && ghx_design_flow.get.positive?
-      borefield_defaults['design']['flow_rate'] = (ghx_design_flow.get * 1000.0).round(4) # L/s
-      borefield_defaults['design']['flow_type'] = 'SYSTEM'
-    end
+    ghx_design_flow = ghx_design_flow.is_initialized ? ghx_design_flow.get : 0.0
 
     borefield_defaults['loads'] = {}
     borefield_defaults['loads']['ground_loads'] = ground_loads
     ghe_in_path = "#{ghedesigner_run_dir}/ghedesigner_input.json"
-    File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
-    runner.registerInfo('GHEDesigner input JSON file created.')
+    2.times do
+      File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
+      runner.registerInfo('GHEDesigner input JSON file created.')
 
-    # Make system call to run GHEDesigner
-    start_time = Time.new
-    # TODO: remove conda activate andrew
-    require 'open3'
-    require 'etc'
-    # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
-    command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
-    if status.success?
-      runner.registerInfo("Successfully ran ghedesigner: #{command}")
-    else
-      # runner.registerError("Error running ghedesigner: #{command}")
-      # runner.registerError("stdout: #{stdout_str}")
-      # runner.registerError("stderr: #{stderr_str}")
-      # return false
-      runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
-      return true
+      # Make system call to run GHEDesigner
+      start_time = Time.new
+      # TODO: remove conda activate andrew
+      require 'open3'
+      require 'etc'
+      # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
+      command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
+      if status.success?
+        runner.registerInfo("Successfully ran ghedesigner: #{command}")
+      else
+        # runner.registerError("Error running ghedesigner: #{command}")
+        # runner.registerError("stdout: #{stdout_str}")
+        # runner.registerError("stderr: #{stderr_str}")
+        # return false
+        runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
+        return true
+      end
+      end_time = Time.new
+      runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
+
+      number_of_boreholes = JSON.parse(File.read("#{ghedesigner_run_dir}/SimulationSummary.json"))['ghe_system']['number_of_boreholes']
+      break if borefield_defaults['design']['flow_type'] == 'SYSTEM' ||
+               number_of_boreholes * borefield_defaults['design']['flow_rate'] / 1000.0 >= ghx_design_flow
+
+      borefield_defaults['design']['flow_rate'] = (ghx_design_flow * 1000.0).round(4) # L/s
+      borefield_defaults['design']['flow_type'] = 'SYSTEM'
     end
-    end_time = Time.new
-    runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
 
     # Get some information from borefield inputs
     pipe_thermal_conductivity_w_per_m_k = borefield_defaults['pipe']['conductivity']
