@@ -45,6 +45,15 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 
 ## Log
 
+### 2026-10-07, afternoon (run _5 evaluated)
+
+- Run `_500_5` (`708e4ed3`): 2 upgrade-only failures, the owner items (unoccupied AHU, 10k id 8613; wall insulation,
+  10k id 5552), exactly the estimate in `failure_progress_by_upgrade.csv`; every GSHP upgrade and package at 0, GSHP
+  applicability unchanged. Overall 4,815 (10k, same 500) -> 274 -> 393 -> 65 -> 44 -> 2.
+- Buildings in both runs, `_3` -> `_5`: site energy -0.3 to +0.1%; pumps -14 to -15% (packaged/console, code curve);
+  hydronic heating +8% / cooling -7% (phantom source heat gone); unmet heating hours -5% packaged, about -1% elsewhere;
+  drilling -5% (hydronic) to +3% (packaged). `_4` -> `_5`: packaged/console pumps -26/-31% (3 gpm/ton restored).
+
 ### 2026-10-07 (run _4 evaluated, GSHP round 4)
 
 - Run `_500_4` scored (`failure_summary_aggregated_sdr_2026r1_measure_fixes_500_4.csv`): 44 upgrade-only failures;

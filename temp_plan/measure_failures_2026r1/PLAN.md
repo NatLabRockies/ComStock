@@ -336,7 +336,7 @@ electricity in the hotel); bldg 77 kitchen cooling unmet hours (2,540 h vs 700 b
 related); per-borehole flow in buildings with few bores (1.56 kg/s in bldg 163); the hydronic doc's chilled water
 reset (Table 3) and variable-speed ground pump are not in the code (pre-existing).
 
-### GSHP round 4: borefield flow floor, 3 gpm/ton under ratio 1.0 (2026-10-07, uncommitted)
+### GSHP round 4: borefield flow floor, 3 gpm/ton under ratio 1.0 (2026-10-07, `708e4ed3`; run _5: 2 failures, the owner items)
 
 Run `_500_4` (`0d58ce51`): upgrade-only failures 65 -> 44. Hydronic 12 -> 1 and packages 15/17/17 -> 12/9/9, but 12
 buildings that succeeded in `_3` now failed (console 33, 36, 55, 56, 62, 329, 470; packaged 193, 249, 325, 466;
