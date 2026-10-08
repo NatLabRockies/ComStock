@@ -124,6 +124,27 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
   end
 
   # define what happens when the measure is run
+  # EnergyPlus 25.1-26.1 read past an optimum start manager's fan schedule on a day that is entirely off and set
+  # garbage zone setpoints (fixed in 26.2); one timestep on at midnight keeps such days in bounds
+  def self.keep_optimum_start_in_bounds(model, air_loop_hvac, availability_schedule)
+    return false unless Gem::Version.new(OpenStudio.energyPlusVersion.to_s) < Gem::Version.new('26.2.0')
+    return false unless air_loop_hvac.availabilityManagers.any? { |m| m.to_AvailabilityManagerOptimumStart.is_initialized }
+
+    minutes = 60 / model.getTimestep.numberOfTimestepsPerHour
+    day_schedules = [availability_schedule.defaultDaySchedule, availability_schedule.summerDesignDaySchedule,
+                     availability_schedule.winterDesignDaySchedule] + availability_schedule.scheduleRules.map(&:daySchedule)
+    changed = false
+    day_schedules.uniq { |day| day.handle.to_s }.each do |day|
+      next unless day.values.all?(&:zero?)
+
+      day.clearValues
+      day.addValue(OpenStudio::Time.new(0, 0, minutes, 0), 1.0)
+      day.addValue(OpenStudio::Time.new(0, 24, 0, 0), 0.0)
+      changed = true
+    end
+    changed
+  end
+
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments) # Do **NOT** remove this line
 
@@ -216,7 +237,15 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
         sch_ruleset.setName("#{air_loop_hvac.name}_night_fancycle_novent_schedule")
         air_loop_hvac.setAvailabilitySchedule(sch_ruleset)
         air_loop_hvac.setNightCycleControlType('CycleOnAny')
-        air_loop_vent_sch = sch_ruleset
+        # the ventilation schedule keeps a padded day entirely off (no outdoor air during the midnight timestep)
+        vent_sch = sch_ruleset.clone(model).to_ScheduleRuleset.get
+        if UnoccupiedOAControls.keep_optimum_start_in_bounds(model, air_loop_hvac, sch_ruleset)
+          vent_sch.setName("#{air_loop_hvac.name}_night_novent_schedule")
+          air_loop_vent_sch = vent_sch
+        else
+          vent_sch.remove
+          air_loop_vent_sch = sch_ruleset
+        end
       end
       if air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
         air_loop_oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
@@ -262,7 +291,15 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
         air_loop_hvac.setAvailabilitySchedule(sch_ruleset)
         air_loop_hvac.setNightCycleControlType('CycleOnAny')
         sch_ruleset.setName("#{air_loop_hvac.name}_night_fancycle_novent_schedule")
-        air_loop_vent_sch = sch_ruleset
+        # the ventilation schedule keeps a padded day entirely off (no outdoor air during the midnight timestep)
+        vent_sch = sch_ruleset.clone(model).to_ScheduleRuleset.get
+        if UnoccupiedOAControls.keep_optimum_start_in_bounds(model, air_loop_hvac, sch_ruleset)
+          vent_sch.setName("#{air_loop_hvac.name}_night_novent_schedule")
+          air_loop_vent_sch = vent_sch
+        else
+          vent_sch.remove
+          air_loop_vent_sch = sch_ruleset
+        end
       end
       next unless air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
       air_loop_oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
