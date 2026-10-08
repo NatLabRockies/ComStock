@@ -2866,4 +2866,78 @@ TEST:test_fan_data_records_are_present_and_sane
       end
     end
   end
+  # Reads one hvac_add_heat_pump_rtu row from the options lookup and returns its measure arguments
+  # as a name => value string hash, so a test can apply exactly what a ComStock run would.
+  def options_lookup_args_for(option_name)
+    path = File.join(File.dirname(__FILE__), '../../../options_lookup.tsv')
+    row = File.readlines(path, chomp: true).map { |l| l.split("\t") }.find do |cols|
+      cols[0] == 'hvac_add_heat_pump_rtu' && cols[1] == option_name
+    end
+    refute_nil(row, "options lookup has no hvac_add_heat_pump_rtu row named #{option_name}")
+    assert_equal('upgrade_hvac_add_heat_pump_rtu', row[2], "#{option_name} points to the wrong measure")
+    row[3..].reject(&:empty?).to_h { |a| a.split('=', 2) }
+  end
+
+  # Verifies the scenario 2 options lookup row (CCHPC challenge spec dual fuel RTU): natural gas
+  # backup, the -10 F gas backup compressor lockout, and the cchpc_2027_spec heating curves.
+  # Apply-only, so it runs in well under a minute.
+  def test_dual_fuel_cchpc_spec_lockout_neg10F_option
+    puts "\n######\nTEST:test_dual_fuel_cchpc_spec_lockout_neg10F_option\n######\n"
+    test_name = 'test_dual_fuel_cchpc_spec_lockout_neg10F_option'
+    lookup_args = options_lookup_args_for('dual_fuel_cchpc_spec_lockout_neg10F')
+    assert_equal('dual_fuel_gas_furnace_backup', lookup_args['backup_ht_fuel_scheme'])
+    assert_equal('cchpc_2027_spec', lookup_args['hprtu_scenario'])
+
+    osm_path = model_input_path('380_small_office_psz_gas_coil_7A.osm')
+    epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
+    measure = AddHeatPumpRtu.new
+    model = load_model(osm_path)
+    arguments = measure.arguments(model)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+
+    # every argument in the row must be a measure argument, or the run would silently ignore it
+    unknown_args = lookup_args.keys - arguments.map(&:name)
+    assert_empty(unknown_args, "options lookup arguments not defined by the measure: #{unknown_args}")
+    arguments.each_with_index do |arg, idx|
+      cloned = arguments[idx].clone
+      if lookup_args.key?(arg.name)
+        value = lookup_args[arg.name]
+        case arg.type.valueName
+        when 'Double' then cloned.setValue(value.to_f)
+        when 'Integer' then cloned.setValue(value.to_i)
+        when 'Boolean' then cloned.setValue(value == 'true')
+        else cloned.setValue(value)
+        end
+      end
+      argument_map[arg.name] = cloned
+    end
+
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                          run_model: false, apply: true, model: model)
+    applied = load_model(model_output_path(test_name))
+    unitary_systems = applied.getAirLoopHVACUnitarySystems
+    refute_empty(unitary_systems, 'no unitary systems after applying dual_fuel_cchpc_spec_lockout_neg10F')
+
+    expected_lockout_temp_c = OpenStudio.convert(lookup_args['hp_min_comp_lockout_temp_gas_backup_f'].to_f, 'F', 'C').get
+    cchpc_heating_cap_curves = %w[h_cap_low h_cap_medium h_cap_high h_cap_boost]
+    unitary_systems.each do |system|
+      sup_htg_coil = system.supplementalHeatingCoil.get
+      assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "expected a gas backup coil for #{system.name}")
+      assert_equal('NaturalGas', sup_htg_coil.to_CoilHeatingGas.get.fuelType,
+                   "dual fuel backup coil for #{system.name} should burn natural gas")
+
+      htg_coil = system.heatingCoil.get
+      if htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized
+        htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.get
+        curve_names = htg_coil.stages.map { |st| st.heatingCapacityFunctionofTemperatureCurve.name.get }
+      else
+        htg_coil = htg_coil.to_CoilHeatingDXSingleSpeed.get
+        curve_names = [htg_coil.totalHeatingCapacityFunctionofTemperatureCurve.name.get]
+      end
+      assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
+                      "compressor lockout for #{system.name} should be the -10 F gas backup temperature")
+      assert(curve_names.all? { |n| cchpc_heating_cap_curves.include?(n) },
+             "heating coil for #{system.name} uses #{curve_names}, expected cchpc_2027_spec curves #{cchpc_heating_cap_curves}")
+    end
+  end
 end
