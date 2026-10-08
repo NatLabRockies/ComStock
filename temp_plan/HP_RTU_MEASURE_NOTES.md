@@ -63,7 +63,7 @@ things get confirmed. **TBC** means not confirmed yet; the TBC items are collect
 | Scenario | Options lookup option | Performance category | Compressor lockout | Backup heat | Oversizing | Heating sizing temp | Gas heating control |
 |---|---|---|---|---|---|---|---|
 | 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
-| 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. (The existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
+| 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | `dual_fuel_cchpc_spec_lockout_neg10F` (added 2026-10-08, see 3.3; the existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 3. CCHPC: typical dual fuel RTU | **None yet.** Needs a new performance category first | **TBC:** Challenge "typical" unit (new curve from one middle-performing lab-tested unit; Parveen is choosing it, see 4.3) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 4. IMPACT: dual fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
 
@@ -142,7 +142,8 @@ it raised are in section 6.
 
 Two things have been added so far, both adapted from #446 and both without its EMS code: a dual
 fuel backup choice with options lookup rows (3.1), and a reporting output for IMPACT (3.2). Why we
-left the EMS behind is explained in 3.2.
+left the EMS behind is explained in 3.2. A review of every existing option against scenarios 1 and
+2, and the scenario 2 row it led to, is in 3.3.
 
 ### 3.1 Dual fuel backup choice and options
 
@@ -186,6 +187,62 @@ economizer, roof, or window changes.
   named it `dual_fuel_std_perf_lockout_*` to show both the dual fuel intent and the performance
   category.
 - **No EMS two-stage gas coil.** The backup is the measure's existing single-stage gas coil (3.2).
+
+### 3.3 Options lookup review for scenarios 1 and 2 (2026-10-08)
+
+I went through all 41 `hvac_add_heat_pump_rtu` rows (40 before the new row below) to see which
+match scenarios 1 and 2 (1.1). Scenarios 3 and 4 are left out until their definitions are settled.
+
+**What every row has in common:** `htg_sizing_option=0F`, `clg_oversizing_estimate=1`,
+`htg_to_clg_hp_ratio=1`, `dcv=false`, `econ=false`, `debug_verbose=false`, and `setback_value=2`
+(which only matters when `modify_setbacks=true`). So matching comes down to the other arguments:
+
+| Argument | What scenarios 1 and 2 need |
+|---|---|
+| `backup_ht_fuel_scheme` | `dual_fuel_gas_furnace_backup` (always natural gas backup, always the gas lockout; 3.1) |
+| `hp_min_comp_lockout_temp_gas_backup_f` | 30 (scenario 1) / -10 (scenario 2) |
+| `hprtu_scenario` | `two_speed_standard_eff` (scenario 1) / `cchpc_2027_spec` (scenario 2) |
+| `performance_oversizing_factor` | 0 ("oversizing not considered") |
+| `hr`, `roof`, `window`, `sizing_run`, `modify_setbacks` | all `false` |
+
+`htg_sizing_option` is "N/A" in 1.1, and that holds in the code: with an oversizing factor of 0 the
+heat pump's rated heating capacity can't go above the upsized cooling capacity, so the sizing
+temperature doesn't change the capacity. (It can still change which sizing branch is taken, and so
+the design heating airflow. Every row uses `0F` anyway.)
+
+**Scenario 1: exact match.** `dual_fuel_std_perf_lockout_30F` matches every argument. The rows
+closest to it:
+
+| Option | Differs in | Effect |
+|---|---|---|
+| `orig_fuel_backup_std_perf_gas_lockout_30F` | `backup_ht_fuel_scheme=match_original_primary_heating_fuel` | Electric-heated buildings get electric backup with the *electric* lockout (0 F), and fuel oil or propane buildings keep their fuel. Not a true dual fuel run. This is probably what the earlier 10K used (4.2) |
+| `dual_fuel_std_perf_lockout_{17F,0F,neg10F}` | Gas lockout only | Lockout sensitivity variants |
+| #446 `dual_fuel_hybrid_heating_30F` (not in this lookup) | `hprtu_scenario=carrier_48qe_dualfuel`, single `hp_min_comp_lockout_temp_f` | The 2025 R4 yml's option (5.1). Won't run on this branch |
+
+So the scenario 1 rerun should keep `dual_fuel_std_perf_lockout_30F`. If the earlier 10K used
+`orig_fuel_backup_std_perf_gas_lockout_30F`, expect differences only in buildings that heat with
+electricity, fuel oil, or propane.
+
+**Scenario 2: no existing match, so I added one.** The two closest rows each differ in one argument:
+
+| Option | Differs in |
+|---|---|
+| `cchpc_2027_spec` | `backup_ht_fuel_scheme=electric_resistance_backup` (and an unused gas lockout of -10) |
+| `dual_fuel_std_perf_lockout_neg10F` | `hprtu_scenario=two_speed_standard_eff` |
+
+New row, in both copies of the options lookup right after `dual_fuel_std_perf_lockout_neg10F`:
+
+| Option | `backup_ht_fuel_scheme` | Electric backup lockout | Gas backup lockout | `hprtu_scenario` |
+|---|---|---|---|---|
+| `dual_fuel_cchpc_spec_lockout_neg10F` | `dual_fuel_gas_furnace_backup` | 0 F (not used) | -10 F | `cchpc_2027_spec` |
+
+It's `dual_fuel_std_perf_lockout_neg10F` with `hprtu_scenario=cchpc_2027_spec`. The electric backup
+lockout is 0 F to follow the `dual_fuel_std_perf_lockout_*` rows; `cchpc_2027_spec` uses -10 F
+there, but dual fuel never reads it. No measure change needed: `cchpc_2027_spec` is already a valid
+`hprtu_scenario` choice, and its JSON (`performance_map_CCHP_spec_2027.json`) has `fan_data`.
+
+- [ ] Add a fast apply-only test for this row (gas backup coil, -10 F lockout, `cchpc_2027_spec`
+      curves), ideally reading the arguments from the options lookup (4.5).
 
 ### 3.2 New output for scenario 4 (IMPACT): heat pump heat during gas heating
 
@@ -273,20 +330,21 @@ ready to combine when it has:
 
 | # | Scenario | Measure changes needed | Options lookup | Tests | Next step |
 |---|---|---|---|---|---|
-| 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Double check the options the earlier 10K used (4.2) so the rerun matches; expect to keep mostly the same options. Simulation on hold until the space type refactor is stable |
-| 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | No measure changes needed (confirmed). If no existing options lookup row matches what we're modeling, add one. This can be done now. 10K run on hold until the space type refactor is stable |
+| 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Options reviewed (3.3): `dual_fuel_std_perf_lockout_30F` is an exact match; keep it for the rerun. Still to confirm which option the earlier 10K used (4.2). Simulation on hold until the space type refactor is stable |
+| 2 | CCHPC challenge spec dual fuel RTU | None expected | `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`), added 2026-10-08 | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | Done: no existing row matched, so `dual_fuel_cchpc_spec_lockout_neg10F` was added (3.3). No measure changes needed (confirmed). Next: an apply-only test for the row. 10K run on hold until the space type refactor is stable |
 | 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Blocked: waiting on the latest data from Parveen. Once received, compare it with the existing curves (4.3), then add the options row |
 | 4 | IMPACT dual fuel | **Sequential control** (4.4) and the TBC items in section 6 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (3.2) | Meet with the team to confirm the simulation scope (may mean many options lookup rows; TBD). Then confirm IMPACT's parameters and choose how to do sequential |
 
 **All simulations are on hold** until the space type refactor (happening in parallel) reaches a
 working, stable version, possibly next week. In the meantime, prep work can go ahead for scenarios 1
-and 2 (checking earlier options, adding a scenario 2 options row if needed). Scenario 3 is waiting on
+and 2. The options review and the scenario 2 row are done (3.3); confirming which option the earlier
+scenario 1 10K used is still open. Scenario 3 is waiting on
 Parveen's latest data, and scenario 4 is waiting on a team meeting to confirm its scope.
 
 ### 4.2 Steps
 
-1. **Match each scenario to an option.** Keep the options column in 1.1 up to date and add the
-   scenario 2 row. Find out which option the scenario 1 10K used. It ran before
+1. **Match each scenario to an option.** Keep the options column in 1.1 up to date. The scenario 2
+   row is added (3.3). Find out which option the scenario 1 10K used. It ran before
    `dual_fuel_gas_furnace_backup` existed, so it was probably
    `orig_fuel_backup_std_perf_gas_lockout_30F` (`match_original_primary_heating_fuel`). That option
    gives electric backup to electric-heated buildings and keeps fuel oil or propane, so it isn't a
@@ -582,7 +640,7 @@ upgrades:
   - upgrade_name: DualFuel_StdPerf_30F
     options:
       - option: hvac_add_heat_pump_rtu|dual_fuel_std_perf_lockout_30F
-  - upgrade_name: DualFuel_CCHPC_spec_neg10F           # once the scenario 2 row exists
+  - upgrade_name: DualFuel_CCHPC_spec_neg10F
     options:
       - option: hvac_add_heat_pump_rtu|dual_fuel_cchpc_spec_lockout_neg10F
   # scenarios 3 and 4: add once their options exist (4.1)
@@ -612,8 +670,9 @@ their own sections (the checkboxes in 3.2, 4.3, and 4.5).
       decided whether we want it (3.1).
 
 **Questions about the inherited code** (section 2):
-- [ ] Do all four scenario JSONs (`two_speed_standard_eff`, `two_speed_lab_data`,
-      `variable_speed_high_eff`, `cchpc_2027_spec`) include `fan_data`? (2.3)
+- [x] Do all four scenario JSONs (`two_speed_standard_eff`, `two_speed_lab_data`,
+      `variable_speed_high_eff`, `cchpc_2027_spec`) include `fan_data`? (2.3) Yes, all four do
+      (checked 2026-10-08).
 - [ ] What else still passes `hp_min_comp_lockout_temp_f`? (Search ymls, workflows, and tests.) (2.1)
 - [ ] Does anything look for the old coil or fan names (`gas backup coil`, `VFD Fan`)? (2.2, 2.3)
 - [ ] Is 25 F the right default lockout for gas backup? (2.1)
@@ -674,3 +733,8 @@ Section numbers in older entries are the numbers at the time.
   Reference: load-based staging (lowest stage whose full-load capacity meets the load, with linear
   interpolation between stages n−1 and n), the role of the per-stage curves, and what that means
   for boost and the compressor lockout.
+- 2026-10-08: Reviewed all 40 `hvac_add_heat_pump_rtu` options against scenarios 1 and 2 (new 3.3).
+  Scenario 1 matches `dual_fuel_std_perf_lockout_30F` exactly. Scenario 2 had no match, so I added
+  `dual_fuel_cchpc_spec_lockout_neg10F` (dual fuel, gas lockout -10 F, `cchpc_2027_spec`) to both
+  copies of the options lookup. Updated 1.1, 4.1, 4.2, and 5.1. Closed the `fan_data` open question:
+  all four scenario JSONs have it.
