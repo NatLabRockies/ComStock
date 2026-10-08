@@ -42,7 +42,8 @@ run it (5), and what's still undecided (6).
   units (scenario 3). Decided on 2026-10-07: "typical" means **one** real unit chosen from the
   middle of the pack, not an average of all the data points. Parveen is choosing the unit.
 - **Max / boost:** the Challenge let manufacturers submit a fifth speed above the normal top speed.
-  The spec JSON calls it "boost" and gives it a heating capacity above 100% of rated (4.3).
+  The spec JSON calls it "boost" (heating stage 4 of 4) and gives it a heating capacity above 100%
+  of rated. How the four stages work is in 4.3.
 - **Options lookup:** `resources/options_lookup.tsv`. Each row ties an option name in a yml to a
   set of measure arguments. `national/housing_characteristics/options_lookup.tsv` is an identical copy.
 - **10K run / full run:** a ComStock run on a 10,000-building sample, or on the full sample.
@@ -332,14 +333,96 @@ normal top speed. My reading, to confirm with Parveen: "max" is the normal top s
 is that optional fifth speed. Parveen can elaborate on how the submitted products differ
 physically. Per Parveen, we may still use four stages for scenario 3.
 
-**How the model reflects speeds above rated.** It already does, in the challenge spec category.
-In `performance_map_CCHP_spec_2027.json`, `staging_data` has four heating stages with stage 2 as
-the rated stage and capacity fractions above 1.0 for the top two stages (stage 3 = 1.35,
-stage 4 = 1.39, the "boost" stage with its own `h_cap_boost` / `h_eir_boost` curves). That is how
-the measure specifies capacities over 100%. The JSON also carries
-`boost_stage_num_and_max_temp_tuple` (`[4, -8.33]` C); the measure reads it in
-`assign_staging_data` but I haven't found where it's applied, so check before relying on it. For
-scenario 3, whether the new JSON gets a fifth stage depends on Parveen's choice above.
+**How the model reflects speeds above rated (checked against the code on 2026-10-08).** The
+Challenge RTU Technical Support Document says: "Heat pumps for the measure scenario are modeled with
+4 stages of heating: low, medium, high, and boost." The measure does this in the challenge spec
+category (`cchpc_2027_spec`, `performance_map_CCHP_spec_2027.json`, `staging_data`). Heating has
+four stages, cooling also has four (cooling has no boost):
+
+| Heating stage | Name | Capacity fraction (of rated) | Flow fraction | COP fraction | Capacity / efficiency curves |
+|---|---|---|---|---|---|
+| 1 | low | 0.713 | 0.50 | 1.019 | `h_cap_low` / `h_eir_low` |
+| 2 | medium (**rated stage**) | 1.000 | 1.0 | 1.000 | `h_cap_medium` / `h_eir_medium` |
+| 3 | high (the "max" speed) | 1.350 | 1.0 | 1.098 | `h_cap_high` / `h_eir_high` |
+| 4 | boost | 1.389 | 1.0 | 0.722 | `h_cap_boost` / `h_eir_boost` |
+
+- **Rated stage is 2, not the top stage.** `rated_stage_num_heating` is 2, so the rated heating
+  capacity (the sized value) belongs to "medium". The other stages are fractions of it, which is how
+  the measure gets capacities over 100%: high is 135% and boost is 139% of rated. (Cooling is the
+  opposite: its rated stage is 4, the top stage.)
+- **Each stage is its own speed in the coil.** `set_heating_coil_stages` builds one
+  `CoilHeatingDXMultiSpeedStageData` per stage, using that stage's capacity, COP
+  (`final_rated_heating_cop` × COP fraction), airflow, and its own capacity and EIR vs.
+  temperature curves. The four curves are loaded per stage in the curve section of the measure.
+  All four stages share one capacity-vs-flow curve and one EIR-vs-flow curve.
+- **Boost costs efficiency.** Its COP fraction is 0.72 versus about 1.0 to 1.1 for the other three,
+  so it adds only about 3% more capacity than high but at a much lower COP.
+- **Flow per ton is checked per stage.** `adjust_cfm_per_ton_per_limits` can raise or lower a
+  stage's airflow, and can drop a stage if its flow per ton can't be met. The checks skip the rated
+  stage and higher (`stage < rated_stage_num`), so only low can be adjusted for heating; medium,
+  high and boost are left as given.
+- **The boost temperature limit is NOT applied.** The JSON has
+  `boost_stage_num_and_max_temp_tuple` = `[4, -8.33333]` (stage 4, max outdoor temperature in C,
+  about 17 F), which reads as "boost is only available at or below this temperature". The measure
+  reads it in `assign_staging_data` and passes it along, but nothing uses it afterward (searched the
+  whole measure folder). So boost can run at any outdoor temperature where the coil asks for the top
+  speed. The other three JSONs set the tuple to `[]`. Part of the limit may be carried by the
+  `h_cap_boost` / `h_eir_boost` curve ranges, but I haven't checked, and curve inputs outside the
+  range are clamped rather than cut off. **Decision (2026-10-08): don't enforce the limit for now.**
+  Revisit if the typical unit's data shows boost matters at warmer temperatures.
+- **Open for scenario 3:** whether the new JSON keeps four stages (as Parveen suggested) or adds a
+  fifth. If it keeps four, the stage layout above is the template.
+
+**How EnergyPlus chooses the stage (checked 2026-10-08 against the EnergyPlus 25.1 Engineering
+Reference, sections 15.2.13 `Coil:Heating:DX:MultiSpeed` and 16.5.6 multispeed unitary control, at
+`C:\EnergyPlusV25-1-0\Documentation\EngineeringReference.pdf`).** The measure puts the coils in an
+`AirLoopHVAC:UnitarySystem` with `Control Type = Load`, which uses the staging logic below.
+**Stages are chosen by load, not by outdoor temperature.** Each HVAC timestep:
+
+1. **Load.** The thermostat zone's sensible heating load is scaled up by the control zone's share
+   of system airflow to get the load the unit must deliver.
+2. **Top stage check.** The unit is modeled at full load at the highest stage (4, boost). If that
+   can't meet the load, it runs at stage 4 with speed ratio 1 and the supplemental coil (gas or
+   electric backup) makes up the rest; the setpoint may not be met.
+3. **Stage 1 (low).** If stage 1's full-load capacity is enough, the unit stays at stage 1 and
+   cycles on and off. Cycling ratio = load ÷ stage-1 full capacity (0 to 1). This is the only mode
+   with part-load (cycling) losses through the PLF curve: the spec JSON sets
+   `enable_cycling_losses_above_lowest_speed` to false, which becomes
+   `Apply Part Load Fraction to Speeds Greater than 1 = No` on the coil.
+4. **Step up.** Otherwise the cycling ratio is 1 and the stage number rises one at a time (2, 3, 4).
+   The stage number is the lowest index whose full-load sensible capacity at the given airflow is
+   greater than or equal to the load.
+5. **Interpolate between n−1 and n.** Speed ratio = (load − full output at n−1) ÷ (full output at n
+   − full output at n−1), 0 to 1. Capacity, airflow and power are linear blends,
+   `Q = SR × Q_n + (1 − SR) × Q_(n−1)` and `Power = SR × P_n + (1 − SR) × P_(n−1)`
+   (equations 15.355 and 15.359), as if the compressor spent a fraction SR of the timestep at stage
+   n and the rest at n−1. The final speed ratio comes from an iterative solve, since fan heat and
+   outlet conditions change with airflow.
+
+Where the per-stage curves come in: each stage's full-load capacity is
+`RatedCap_i × CapFT_i(T_indoor, T_outdoor) × CapFF_i(flow fraction)`, and likewise EIR, using that
+stage's own curves (`h_cap_low` … `h_cap_boost`, `h_eir_low` … `h_eir_boost`). The curves don't
+pick the stage; they set how much capacity each stage has at the current conditions, and the load
+comparison in steps 2 to 5 uses that. Outdoor temperature affects staging only indirectly: colder
+outdoors shrinks every stage's capacity, so a given load reaches a higher stage sooner.
+
+What this means for the four-stage spec model:
+- Boost (stage 4) runs only when the load exceeds high (stage 3)'s full-load capacity at that
+  hour's conditions. In mild weather with high loads (for example morning warm-up) boost can run.
+  Nothing in EnergyPlus or the measure ties it to −8.33 C, consistent with the unused tuple above.
+- Between stages 3 and 4 the model blends 135% and 139% capacity with COP fractions 1.098 and
+  0.722. Because the blend is linear in time share, hours in that band pay a steep efficiency
+  penalty for a small capacity gain.
+- "Rated stage = 2" only affects how capacities are specified (fractions of the sized stage 2
+  capacity). Staging itself works through the four absolute capacities in order.
+- EnergyPlus has an alternative, `Single Mode Operation = Yes` on
+  `UnitarySystemPerformance:Multispeed`, where the unit runs the highest stage that does **not**
+  exceed the load, with no interpolation (section 15.2.13.5). The measure doesn't set it;
+  OpenStudio's forward translator writes the performance object itself with the default `No`, so
+  the interpolating mode is what runs. To double check, look for
+  `UnitarySystemPerformance:Multispeed` in a translated IDF.
+- The compressor lockout (the 0 F / 25 F arguments, 2.1) is the only outdoor-temperature gate. It
+  switches the whole DX coil off, after which only the supplemental coil heats.
 
 **References we can use:**
 
@@ -517,7 +600,8 @@ their own sections (the checkboxes in 3.2, 4.3, and 4.5).
 - [ ] Scenario 3: the performance curve for the Challenge "typical" unit (a new curve is needed).
       Which unit is "typical" and whether it has a fifth (boost) stage are with Parveen. Plan and
       data sources are in 4.3.
-- [ ] Is `boost_stage_num_and_max_temp_tuple` used anywhere after it's read from the JSON? (4.3)
+- [x] Is `boost_stage_num_and_max_temp_tuple` used anywhere after it's read from the JSON? No; the
+      boost temperature limit isn't applied. Decided not to enforce it for now (4.3).
 - [ ] Scenario 4: performance category, compressor lockout, oversizing, and heating sizing temp.
 - [ ] Scenario 4: how the measure will support both simultaneous and sequential gas heating (4.4),
       and whether that needs a new argument.
@@ -579,3 +663,12 @@ Section numbers in older entries are the numbers at the time.
   measure doc of scenario 2 (electric backup, with a dual fuel measure expected next). Added the
   Challenge Specification V1 PDF as background, noting it uses the older naming. Noted the
   Challenge's new name, "Commercial Building HVAC Technology Challenge", in Terms.
+- 2026-10-08: Checked the Technical Support Document's "4 stages of heating: low, medium, high, and
+  boost" against `measure.rb`. Rewrote the stage paragraph in 4.3 with a stage table (rated stage is
+  2; capacity, flow and COP fractions; curves), how stages become coil speeds, the flow-per-ton
+  check, and the finding that `boost_stage_num_and_max_temp_tuple` is read but never applied.
+  Decided not to enforce the boost limit for now and closed that open item in section 6.
+- 2026-10-08: Added "How EnergyPlus chooses the stage" to 4.3, from the EnergyPlus 25.1 Engineering
+  Reference: load-based staging (lowest stage whose full-load capacity meets the load, with linear
+  interpolation between stages n−1 and n), the role of the per-stage curves, and what that means
+  for boost and the compressor lockout.
