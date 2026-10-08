@@ -2878,15 +2878,15 @@ TEST:test_fan_data_records_are_present_and_sane
     row[3..].reject(&:empty?).to_h { |a| a.split('=', 2) }
   end
 
-  # Verifies the scenario 2 options lookup row (CCHPC challenge spec dual fuel RTU): natural gas
-  # backup, the -10 F gas backup compressor lockout, and the cchpc_2027_spec heating curves.
-  # Apply-only, so it runs in well under a minute.
-  def test_dual_fuel_cchpc_spec_lockout_neg10F_option
-    puts "\n######\nTEST:test_dual_fuel_cchpc_spec_lockout_neg10F_option\n######\n"
-    test_name = 'test_dual_fuel_cchpc_spec_lockout_neg10F_option'
-    lookup_args = options_lookup_args_for('dual_fuel_cchpc_spec_lockout_neg10F')
+  # Applies one dual fuel options lookup row and checks every RTU it creates: a natural gas backup
+  # coil, the row's gas backup compressor lockout, the expected heating coil type and stage count,
+  # and heating capacity curves from the row's performance category. Apply-only, so it runs in well
+  # under a minute.
+  def verify_dual_fuel_options_lookup_row(test_name, option_name, expected_hprtu_scenario,
+                                          expected_heating_stages, expected_heating_cap_curves)
+    lookup_args = options_lookup_args_for(option_name)
     assert_equal('dual_fuel_gas_furnace_backup', lookup_args['backup_ht_fuel_scheme'])
-    assert_equal('cchpc_2027_spec', lookup_args['hprtu_scenario'])
+    assert_equal(expected_hprtu_scenario, lookup_args['hprtu_scenario'])
 
     osm_path = model_input_path('380_small_office_psz_gas_coil_7A.osm')
     epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
@@ -2916,10 +2916,9 @@ TEST:test_fan_data_records_are_present_and_sane
                                           run_model: false, apply: true, model: model)
     applied = load_model(model_output_path(test_name))
     unitary_systems = applied.getAirLoopHVACUnitarySystems
-    refute_empty(unitary_systems, 'no unitary systems after applying dual_fuel_cchpc_spec_lockout_neg10F')
+    refute_empty(unitary_systems, "no unitary systems after applying #{option_name}")
 
     expected_lockout_temp_c = OpenStudio.convert(lookup_args['hp_min_comp_lockout_temp_gas_backup_f'].to_f, 'F', 'C').get
-    cchpc_heating_cap_curves = %w[h_cap_low h_cap_medium h_cap_high h_cap_boost]
     unitary_systems.each do |system|
       sup_htg_coil = system.supplementalHeatingCoil.get
       assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "expected a gas backup coil for #{system.name}")
@@ -2927,17 +2926,38 @@ TEST:test_fan_data_records_are_present_and_sane
                    "dual fuel backup coil for #{system.name} should burn natural gas")
 
       htg_coil = system.heatingCoil.get
-      if htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized
-        htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.get
-        curve_names = htg_coil.stages.map { |st| st.heatingCapacityFunctionofTemperatureCurve.name.get }
-      else
+      if expected_heating_stages == 1
+        assert(htg_coil.to_CoilHeatingDXSingleSpeed.is_initialized,
+               "expected a single speed DX heating coil for #{system.name}")
         htg_coil = htg_coil.to_CoilHeatingDXSingleSpeed.get
         curve_names = [htg_coil.totalHeatingCapacityFunctionofTemperatureCurve.name.get]
+      else
+        assert(htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized,
+               "expected a multispeed DX heating coil for #{system.name}")
+        htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.get
+        assert_equal(expected_heating_stages, htg_coil.stages.size, "heating stage count for #{system.name}")
+        curve_names = htg_coil.stages.map { |st| st.heatingCapacityFunctionofTemperatureCurve.name.get }
       end
       assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
-                      "compressor lockout for #{system.name} should be the -10 F gas backup temperature")
-      assert(curve_names.all? { |n| cchpc_heating_cap_curves.include?(n) },
-             "heating coil for #{system.name} uses #{curve_names}, expected cchpc_2027_spec curves #{cchpc_heating_cap_curves}")
+                      "compressor lockout for #{system.name} should be the gas backup temperature in #{option_name}")
+      assert(curve_names.all? { |n| expected_heating_cap_curves.include?(n) },
+             "heating coil for #{system.name} uses #{curve_names}, expected #{expected_hprtu_scenario} curves #{expected_heating_cap_curves}")
     end
+  end
+
+  # Scenario 1 (dual fuel RTU, standard performance): 30 F gas backup lockout and the single stage
+  # two_speed_standard_eff heating curve.
+  def test_dual_fuel_std_perf_lockout_30F_option
+    puts "\n######\nTEST:test_dual_fuel_std_perf_lockout_30F_option\n######\n"
+    verify_dual_fuel_options_lookup_row('test_dual_fuel_std_perf_lockout_30F_option', 'dual_fuel_std_perf_lockout_30F',
+                                        'two_speed_standard_eff', 1, %w[h_cap_T])
+  end
+
+  # Scenario 2 (CCHPC challenge spec dual fuel RTU): -10 F gas backup lockout and the four
+  # cchpc_2027_spec heating stages.
+  def test_dual_fuel_cchpc_spec_lockout_neg10F_option
+    puts "\n######\nTEST:test_dual_fuel_cchpc_spec_lockout_neg10F_option\n######\n"
+    verify_dual_fuel_options_lookup_row('test_dual_fuel_cchpc_spec_lockout_neg10F_option', 'dual_fuel_cchpc_spec_lockout_neg10F',
+                                        'cchpc_2027_spec', 4, %w[h_cap_low h_cap_medium h_cap_high h_cap_boost])
   end
 end
