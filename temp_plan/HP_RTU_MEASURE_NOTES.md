@@ -241,8 +241,15 @@ lockout is 0 F to follow the `dual_fuel_std_perf_lockout_*` rows; `cchpc_2027_sp
 there, but dual fuel never reads it. No measure change needed: `cchpc_2027_spec` is already a valid
 `hprtu_scenario` choice, and its JSON (`performance_map_CCHP_spec_2027.json`) has `fan_data`.
 
-- [ ] Add a fast apply-only test for this row (gas backup coil, -10 F lockout, `cchpc_2027_spec`
-      curves), ideally reading the arguments from the options lookup (4.5).
+- [x] Add a fast apply-only test for this row (gas backup coil, -10 F lockout, `cchpc_2027_spec`
+      curves), ideally reading the arguments from the options lookup (4.5). Done:
+      `test_dual_fuel_cchpc_spec_lockout_neg10F_option` reads the row from
+      `resources/options_lookup.tsv`, fails if any of its arguments isn't a measure argument,
+      applies it to `380_small_office_psz_gas_coil_7A.osm`, and checks every RTU for a natural gas
+      backup coil, a -10 F compressor lockout, and heating stages that use the Challenge spec
+      curves (`h_cap_low`, `h_cap_medium`, `h_cap_high`, `h_cap_boost`). It passed on 2026-10-08
+      with OpenStudio 3.10.0 (87 assertions, about 21 s). The helper `options_lookup_args_for` can be
+      reused for the other scenarios' tests.
 
 ### 3.2 New output for scenario 4 (IMPACT): heat pump heat during gas heating
 
@@ -331,7 +338,7 @@ ready to combine when it has:
 | # | Scenario | Measure changes needed | Options lookup | Tests | Next step |
 |---|---|---|---|---|---|
 | 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Options reviewed (3.3): `dual_fuel_std_perf_lockout_30F` is an exact match; keep it for the rerun. Still to confirm which option the earlier 10K used (4.2). Simulation on hold until the space type refactor is stable |
-| 2 | CCHPC challenge spec dual fuel RTU | None expected | `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`), added 2026-10-08 | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | Done: no existing row matched, so `dual_fuel_cchpc_spec_lockout_neg10F` was added (3.3). No measure changes needed (confirmed). Next: an apply-only test for the row. 10K run on hold until the space type refactor is stable |
+| 2 | CCHPC challenge spec dual fuel RTU | None expected | `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`), added 2026-10-08 | `test_dual_fuel_cchpc_spec_lockout_neg10F_option` (apply-only, reads the options lookup row; 3.3), plus the existing fan/JSON tests | Done: no existing row matched, so `dual_fuel_cchpc_spec_lockout_neg10F` was added (3.3). No measure changes needed (confirmed). Apply-only test added and passing (3.3). 10K run on hold until the space type refactor is stable |
 | 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Blocked: waiting on the latest data from Parveen. Once received, compare it with the existing curves (4.3), then add the options row |
 | 4 | IMPACT dual fuel | **Sequential control** (4.4) and the TBC items in section 6 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (3.2) | Meet with the team to confirm the simulation scope (may mean many options lookup rows; TBD). Then confirm IMPACT's parameters and choose how to do sequential |
 
@@ -518,7 +525,7 @@ Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), ad
 
 ### 4.5 Unit tests
 
-**Where things stand** (`tests/measure_test.rb`, 29 tests):
+**Where things stand** (`tests/measure_test.rb`, 29 tests before 2026-10-08, 30 now):
 - **The slow ones:** 7 tests call `verify_hp_rtu`, which does two sizing runs each (before and
   after the measure). 4 more run full simulations.
 - **Example:** `test_elec_backup_lockout_7A` spent over 20 minutes in one sizing run because the
@@ -543,7 +550,8 @@ Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), ad
 - [ ] **One fast test per scenario** that applies its options lookup arguments and checks that they
   show up in the model (backup coil fuel, lockout, performance curves, fan, control strategy).
   Ideally the test reads the arguments straight from the options lookup row, so the two can't drift
-  apart.
+  apart. Scenario 2 has one (`test_dual_fuel_cchpc_spec_lockout_neg10F_option`, 3.3); scenario 1
+  can reuse its `options_lookup_args_for` helper.
 - [ ] **One simulation test** (slow group) for the new output (3.2), on a small dual fuel model.
 
 ---
@@ -738,3 +746,6 @@ Section numbers in older entries are the numbers at the time.
   `dual_fuel_cchpc_spec_lockout_neg10F` (dual fuel, gas lockout -10 F, `cchpc_2027_spec`) to both
   copies of the options lookup. Updated 1.1, 4.1, 4.2, and 5.1. Closed the `fan_data` open question:
   all four scenario JSONs have it.
+- 2026-10-08: Added `test_dual_fuel_cchpc_spec_lockout_neg10F_option`, an apply-only test for the
+  scenario 2 row that reads its arguments from the options lookup. It passes (OpenStudio 3.10.0).
+  Regenerated the measure's `measure.xml` for the test file checksum. Updated 3.3, 4.1, and 4.5.
