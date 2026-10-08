@@ -154,6 +154,7 @@ class NamingMixin():
     ANN_GAS_INTEQUIP_KBTU = 'out.natural_gas.interior_equipment.energy_consumption..kwh'
     ANN_GAS_SWH_KBTU = 'out.natural_gas.water_systems.energy_consumption..kwh'
     ANN_GAS_COOL_KBTU = 'out.natural_gas.cooling.energy_consumption..kwh'
+    ANN_PEAK_ELEC_DEMAND_KW = 'out.electricity.total.peak_demand..kw'
 
     # End use energy - propane
     ANN_PROPANE_HEAT_KBTU = 'out.propane.heating.energy_consumption..kwh'

@@ -2406,27 +2406,27 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
       capacity_w, coil_design_cop = get_cooling_coil_capacity_and_cop(runner, model, coil)
       dx_cooling_total_capacity_w += capacity_w
 
-      # get DX Cooling Coil efficiency ratings
+      # get DX Cooling Coil efficiency ratings (AHRI 210/240-2023 EER2/SEER2 and AHRI 340/360-2022 IEER, from the EnergyPlus 2023 standard ratings table)
       coil_eer = 0.0
-      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coils' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'EER'"
+      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coil Standard Ratings 2023' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'EER2'"
       val = sql.execAndReturnFirstDouble(var_val_query)
       if val.is_initialized
         coil_eer = val.get
       else
-        runner.registerWarning("Coil 'EER' not available for DX cooling coil '#{coil.name}'.")
+        runner.registerWarning("Coil 'EER2' not available for DX cooling coil '#{coil.name}'.")
       end
 
       coil_seer_std = 0.0
-      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coils' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'SEER Standard'"
+      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coil Standard Ratings 2023' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'SEER2 Standard'"
       val = sql.execAndReturnFirstDouble(var_val_query)
       if val.is_initialized
         coil_seer_std = val.get
       else
-        runner.registerWarning("Coil 'SEER Standard' not available for DX cooling coil '#{coil.name}'.")
+        runner.registerWarning("Coil 'SEER2 Standard' not available for DX cooling coil '#{coil.name}'.")
       end
 
       coil_ieer = 0.0
-      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coils' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'IEER'"
+      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Cooling Coil Standard Ratings 2023' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'IEER'"
       val = sql.execAndReturnFirstDouble(var_val_query)
       if val.is_initialized
         coil_ieer = val.get
@@ -2491,25 +2491,25 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     runner.registerValue('com_report_hvac_dx_cooling_total_electric_j', dx_cooling_total_electric_j)
     runner.registerValue('com_report_hvac_dx_cooling_total_load_j', dx_cooling_total_load_j)
 
-    # report out DX cooling SEERs, EERs, IEERs at each size category
+    # report out DX cooling SEER2s, EER2s, IEERs at each size category
     dx_cooling_design_seer_0_to_30_kbtuh = dx_cooling_0_to_30_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_seer_0_to_30_kbtuh / dx_cooling_0_to_30_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_seer_0_to_30_kbtuh', dx_cooling_design_seer_0_to_30_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_seer2_0_to_30_kbtuh', dx_cooling_design_seer_0_to_30_kbtuh)
     dx_cooling_design_seer_30_to_65_kbtuh = dx_cooling_30_to_65_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_seer_30_to_65_kbtuh / dx_cooling_30_to_65_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_seer_30_to_65_kbtuh', dx_cooling_design_seer_30_to_65_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_seer2_30_to_65_kbtuh', dx_cooling_design_seer_30_to_65_kbtuh)
     dx_cooling_design_eer_65_to_135_kbtuh = dx_cooling_65_to_135_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_65_to_135_kbtuh / dx_cooling_65_to_135_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer_65_to_135_kbtuh', dx_cooling_design_eer_65_to_135_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_65_to_135_kbtuh', dx_cooling_design_eer_65_to_135_kbtuh)
     dx_cooling_design_ieer_65_to_135_kbtuh = dx_cooling_65_to_135_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_65_to_135_kbtuh / dx_cooling_65_to_135_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_65_to_135_kbtuh', dx_cooling_design_ieer_65_to_135_kbtuh)
     dx_cooling_design_eer_135_to_240_kbtuh = dx_cooling_135_to_240_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_135_to_240_kbtuh / dx_cooling_135_to_240_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer_135_to_240_kbtuh', dx_cooling_design_eer_135_to_240_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_135_to_240_kbtuh', dx_cooling_design_eer_135_to_240_kbtuh)
     dx_cooling_design_ieer_135_to_240_kbtuh = dx_cooling_135_to_240_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_135_to_240_kbtuh / dx_cooling_135_to_240_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_135_to_240_kbtuh', dx_cooling_design_ieer_135_to_240_kbtuh)
     dx_cooling_design_eer_240_to_760_kbtuh = dx_cooling_240_to_760_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_240_to_760_kbtuh / dx_cooling_240_to_760_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer_240_to_760_kbtuh', dx_cooling_design_eer_240_to_760_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_240_to_760_kbtuh', dx_cooling_design_eer_240_to_760_kbtuh)
     dx_cooling_design_ieer_240_to_760_kbtuh = dx_cooling_240_to_760_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_240_to_760_kbtuh / dx_cooling_240_to_760_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_240_to_760_kbtuh', dx_cooling_design_ieer_240_to_760_kbtuh)
     dx_cooling_design_eer_760_plus_kbtuh = dx_cooling_760_plus_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_760_plus_kbtuh / dx_cooling_760_plus_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer_760_plus_kbtuh', dx_cooling_design_eer_760_plus_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_760_plus_kbtuh', dx_cooling_design_eer_760_plus_kbtuh)
     dx_cooling_design_ieer_760_plus_kbtuh = dx_cooling_760_plus_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_760_plus_kbtuh / dx_cooling_760_plus_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_760_plus_kbtuh', dx_cooling_design_ieer_760_plus_kbtuh)
 
@@ -2689,14 +2689,14 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
       dx_heating_total_supplemental_electric_j += supplemental_electric_j
       dx_heating_total_supplemental_gas_j += supplemental_gas_j
 
-      # get DX Heating Coil efficiency rating
+      # get DX Heating Coil efficiency rating (AHRI 210/240-2023 HSPF2)
       coil_hspf = 0.0
-      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Heating Coils' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'HSPF'"
+      var_val_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'EquipmentSummary' AND ReportForString = 'Entire Facility' AND TableName = 'DX Heating Coils AHRI 2023' AND RowName = '#{coil.name.get.to_s.upcase}' AND ColumnName = 'HSPF2'"
       val = sql.execAndReturnFirstDouble(var_val_query)
       if val.is_initialized
         coil_hspf = val.get
       else
-        runner.registerWarning("Coil 'HSPF' not available for DX heating coil '#{coil.name}'.")
+        runner.registerWarning("Coil 'HSPF2' not available for DX heating coil '#{coil.name}'.")
       end
 
       # get Heating Coil Heating Energy
@@ -2769,11 +2769,11 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     dx_heating_design_cop_0F = dx_heating_total_dx_load_j > 0.0 ? dx_heating_load_weighted_design_cop_0F / dx_heating_total_dx_load_j : 0.0
     runner.registerValue('com_report_hvac_dx_heating_design_cop_0f', dx_heating_design_cop_0F)
 
-    # report out DX heating HSPFs and COPs at each size category
+    # report out DX heating HSPF2s and COPs at each size category
     dx_heating_design_hspf_0_to_30_kbtuh = dx_heating_0_to_30_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_hspf_0_to_30_kbtuh / dx_heating_0_to_30_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_heating_design_hspf_0_to_30_kbtuh', dx_heating_design_hspf_0_to_30_kbtuh)
+    runner.registerValue('com_report_hvac_dx_heating_design_hspf2_0_to_30_kbtuh', dx_heating_design_hspf_0_to_30_kbtuh)
     dx_heating_design_hspf_30_to_65_kbtuh = dx_heating_30_to_65_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_hspf_30_to_65_kbtuh / dx_heating_30_to_65_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_heating_design_hspf_30_to_65_kbtuh', dx_heating_design_hspf_30_to_65_kbtuh)
+    runner.registerValue('com_report_hvac_dx_heating_design_hspf2_30_to_65_kbtuh', dx_heating_design_hspf_30_to_65_kbtuh)
     dx_heating_design_cop_65_to_135_kbtuh = dx_heating_65_to_135_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_cop_65_to_135_kbtuh / dx_heating_65_to_135_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_heating_design_cop_65_to_135_kbtuh', dx_heating_design_cop_65_to_135_kbtuh)
     dx_heating_design_cop_135_to_240_kbtuh = dx_heating_135_to_240_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_cop_135_to_240_kbtuh / dx_heating_135_to_240_kbtuh_total_load_j : 0

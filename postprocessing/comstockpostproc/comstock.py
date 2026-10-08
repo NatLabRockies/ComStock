@@ -626,12 +626,15 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             if upgrade_id == 0:
                 up_res = up_res.with_columns([pl.lit(self.BASE_NAME).alias('apply_upgrade.upgrade_name')])
                 a_up_col = 'apply_upgrade.applicable'
-                if up_res[a_up_col].dtype == pl.Boolean:
-                    up_res = up_res.with_columns([pl.lit(True).alias(a_up_col)])
-                    logger.debug('Adding apply_upgrade.applicable to baseline as Boolean')
-                elif up_res[a_up_col].dtype == pl.Utf8:
+                if a_up_col in up_res.columns and up_res[a_up_col].dtype == pl.Utf8:
                     up_res = up_res.with_columns([pl.lit('True').alias(a_up_col)])
                     logger.debug('Adding apply_upgrade.applicable to baseline as String')
+                else:
+                    # Boolean, or a Null-typed column: buildstockbatch writes no applicability for
+                    # the baseline, and every baseline row is applicable by definition. Without this
+                    # branch the nulls were filled with False below.
+                    up_res = up_res.with_columns([pl.lit(True).alias(a_up_col)])
+                    logger.debug('Adding apply_upgrade.applicable to baseline as Boolean')
 
             # Fill Nulls in measure-within-upgrade applicability columns with False
             for c, dt in up_res.schema.items():
@@ -1163,7 +1166,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Read the buildstock.csv and join columns onto annual results by building ID
         file_path = os.path.join(self.truth_data_dir, self.ejscreen_file_name)
         ejscreen = pl.scan_csv(file_path).select(col_def_names)
-        ejscreen = ejscreen.with_columns([pl.col(tract_col).cast(pl.Utf8)])
+        # The 11-digit tract ID is inferred as an integer, which drops the leading zero of
+        # state FIPS codes 01-09 (AL, AK, AZ, AR, CA, CO, CT); pad it back before slicing.
+        ejscreen = ejscreen.with_columns([pl.col(tract_col).cast(pl.Utf8).str.zfill(11)])
 
         # Convert EJSCREEN census tract ID to gisjoin format
         ejscreen = ejscreen.with_columns((
@@ -1210,7 +1215,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Read the buildstock.csv and join columns onto annual results by building ID
         file_path = os.path.join(self.truth_data_dir, self.cejst_file_name)
         cejst = pl.scan_csv(file_path).select(col_def_names)
-        cejst = cejst.with_columns([pl.col(tract_col).cast(pl.Utf8)])
+        # Same leading-zero problem as EJSCREEN: pad the tract ID back to 11 digits.
+        cejst = cejst.with_columns([pl.col(tract_col).cast(pl.Utf8).str.zfill(11)])
 
         # Convert CEJST census tract ID to gisjoin format
         cejst = cejst.with_columns((
@@ -1227,8 +1233,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Merge in the CEJST columns
         input_lf = input_lf.join(cejst, on=self.TRACT_ID, how='left')
 
-	    # Fill nulls in CEJST data with False (assume NOT disadvantaged)
-        input_lf = input_lf.with_columns(pl.col(self.TRACT_ID).fill_null(False))
+        # Tracts without a CEJST match (for example 2020-vintage tract IDs that are absent from
+        # the 2010-based CEJST file) are left null rather than assumed not disadvantaged.
+        # (The previous fill targeted the tract-ID column and had no effect.)
 
         assert isinstance(input_lf, pl.LazyFrame)
 
@@ -2560,18 +2567,17 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             # Join the utility bills onto each building based on state
             alloc_wts = alloc_wts.join(util_bills_by_state, on=[self.BLDG_ID, self.STATE_ABBRV], how='left')
 
-        # fill missing utility bill costs with state average
-        alloc_wts = alloc_wts.with_columns(
-            [pl.when('usd' in column)
-               .then(pl.col(column)
-                       .fill_null(pl.col(self.UTIL_STATE_AVG_ELEC_COST))
-                    )
-               .when('label' in column)
-               .then(pl.col(column)
-                       .fill_null('state_average_rate')
-                    )
-            for column in self.UTIL_ELEC_BILL_VALS]
-        )
+        # fill missing utility bill costs with state average.
+        # These are Python conditions on the column name, not polars expressions. Columns that
+        # are neither a cost nor a label (num_bills) are left as parsed; the previous when/when
+        # chain had no otherwise and replaced them with null.
+        fill_exprs = []
+        for column in self.UTIL_ELEC_BILL_VALS:
+            if 'usd' in column:
+                fill_exprs.append(pl.col(column).fill_null(pl.col(self.UTIL_STATE_AVG_ELEC_COST)).alias(column))
+            elif 'label' in column:
+                fill_exprs.append(pl.col(column).fill_null('state_average_rate').alias(column))
+        alloc_wts = alloc_wts.with_columns(fill_exprs)
 
         alloc_wts = alloc_wts.with_columns(
             [pl.col(column).cast(pl.Int64) for column in self.UTIL_ELEC_BILL_COSTS + [self.UTIL_ELEC_BILL_NUM_BILLS]]
@@ -3371,6 +3377,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         logger.debug('Converting units in the weighted columns')
         for col in (self.GHG_FUEL_COLS +
                     [self.ANN_GHG_EGRID, self.ANN_GHG_CAMBIUM] +
+                    [self.ANN_PEAK_ELEC_DEMAND_KW] +
                     self.COLS_TOT_ANN_ENGY +
                     self.COLS_GEN_ANN_ENGY +
                     self.COLS_ENDUSE_ANN_ENGY +
@@ -3399,24 +3406,25 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         assert isinstance(input_lf, pl.LazyFrame)
 
         logger.debug('Adding weighted savings columns')
-        #based on the unweighted savings columns, generate the weighted savings columns
-        if self.include_upgrades:
-            for unweighted_saving_cols, weighted_saving_cols in self.unweighted_weighted_map.items():
-                # logger.info(f'Handling {unweighted_saving_cols} to {weighted_saving_cols}')
-                if weighted_saving_cols in existing_col_names:
-                    logger.info(f'Already added weighted savings column: {weighted_saving_cols}')
-                    continue
+        # Based on the unweighted savings columns, generate the weighted savings columns.
+        # This also runs for a baseline-only export (all zeros), so the exported schema does
+        # not depend on whether upgrades were processed alongside the baseline.
+        for unweighted_saving_cols, weighted_saving_cols in self.unweighted_weighted_map.items():
+            # logger.info(f'Handling {unweighted_saving_cols} to {weighted_saving_cols}')
+            if weighted_saving_cols in existing_col_names:
+                logger.info(f'Already added weighted savings column: {weighted_saving_cols}')
+                continue
 
-                # Check if the unweighted savings column actually exists before trying to use it
-                if unweighted_saving_cols not in existing_col_names:
-                    logger.debug(f'Skipping {unweighted_saving_cols} as it does not exist (likely processing baseline)')
-                    continue
+            # Check if the unweighted savings column actually exists before trying to use it
+            if unweighted_saving_cols not in existing_col_names:
+                logger.debug(f'Skipping {unweighted_saving_cols} as it does not exist')
+                continue
 
-                old_unit = self.units_from_col_name(unweighted_saving_cols)
-                new_unit = self.units_from_col_name(weighted_saving_cols)
-                conv_fact = self.conv_fact(old_unit, new_unit)
-                input_lf: pl.LazyFrame = input_lf.with_columns((pl.col(unweighted_saving_cols) * pl.col(self.BLDG_WEIGHT) * conv_fact).alias(weighted_saving_cols))
-                logger.debug(f'Adding {unweighted_saving_cols} * {self.BLDG_WEIGHT} * {conv_fact} -> {weighted_saving_cols}')
+            old_unit = self.units_from_col_name(unweighted_saving_cols)
+            new_unit = self.units_from_col_name(weighted_saving_cols)
+            conv_fact = self.conv_fact(old_unit, new_unit)
+            input_lf: pl.LazyFrame = input_lf.with_columns((pl.col(unweighted_saving_cols) * pl.col(self.BLDG_WEIGHT) * conv_fact).alias(weighted_saving_cols))
+            logger.debug(f'Adding {unweighted_saving_cols} * {self.BLDG_WEIGHT} * {conv_fact} -> {weighted_saving_cols}')
 
         assert isinstance(input_lf, pl.LazyFrame)
 
