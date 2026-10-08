@@ -273,13 +273,15 @@ ready to combine when it has:
 
 | # | Scenario | Measure changes needed | Options lookup | Tests | Next step |
 |---|---|---|---|---|---|
-| 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Confirm which option the earlier 10K used (4.2). If it was different, rerun the 10K, then do a full run |
-| 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | Add the row, then a 10K run |
-| 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Compare Parveen's experimental data with the existing curves (4.3). Then add the options row |
-| 4 | IMPACT dual fuel | **Sequential control** (4.4) and the TBC items in section 6 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (3.2) | Confirm IMPACT's parameters. Choose how to do sequential |
+| 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_backup_is_natural_gas` | Double check the options the earlier 10K used (4.2) so the rerun matches; expect to keep mostly the same options. Simulation on hold until the space type refactor is stable |
+| 2 | CCHPC challenge spec dual fuel RTU | None expected | Add `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`) | Existing fan/JSON tests plus the dual fuel test. Add a `cchpc_2027_spec` case if it's cheap | No measure changes needed (confirmed). If no existing options lookup row matches what we're modeling, add one. This can be done now. 10K run on hold until the space type refactor is stable |
+| 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Blocked: waiting on the latest data from Parveen. Once received, compare it with the existing curves (4.3), then add the options row |
+| 4 | IMPACT dual fuel | **Sequential control** (4.4) and the TBC items in section 6 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (3.2) | Meet with the team to confirm the simulation scope (may mean many options lookup rows; TBD). Then confirm IMPACT's parameters and choose how to do sequential |
 
-Scenarios 1 and 2 can go ahead now. Scenarios 3 and 4 are waiting on decisions (performance data,
-IMPACT parameters, and the sequential approach) before any measure work.
+**All simulations are on hold** until the space type refactor (happening in parallel) reaches a
+working, stable version, possibly next week. In the meantime, prep work can go ahead for scenarios 1
+and 2 (checking earlier options, adding a scenario 2 options row if needed). Scenario 3 is waiting on
+Parveen's latest data, and scenario 4 is waiting on a team meeting to confirm its scope.
 
 ### 4.2 Steps
 
