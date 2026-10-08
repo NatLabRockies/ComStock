@@ -33,6 +33,14 @@ run it (5), and what's still undecided (6).
   **Simultaneous:** the heat pump and the gas coil heat at the same time; the gas coil adds heat when
   the heat pump can't keep up. **Sequential:** the gas coil heats alone and the heat pump compressor
   is off.
+- **Challenge spec:** the minimum performance requirement of the Cold Climate Heat Pump Challenge
+  (CCHPC). This is what the `cchpc_2027_spec` category models (scenario 2). It is a floor, not a
+  typical product: the lab-tested units that passed the Challenge perform better than it.
+- **Challenge "typical" unit:** the middle-performing unit among the actual lab-tested Challenge
+  units (scenario 3). Decided on 2026-10-07: "typical" means **one** real unit chosen from the
+  middle of the pack, not an average of all the data points. Parveen is choosing the unit.
+- **Max / boost:** the Challenge let manufacturers submit a fifth speed above the normal top speed.
+  The spec JSON calls it "boost" and gives it a heating capacity above 100% of rated (4.3).
 - **Options lookup:** `resources/options_lookup.tsv`. Each row ties an option name in a yml to a
   set of measure arguments. `national/housing_characteristics/options_lookup.tsv` is an identical copy.
 - **10K run / full run:** a ComStock run on a 10,000-building sample, or on the full sample.
@@ -53,7 +61,7 @@ things get confirmed. **TBC** means not confirmed yet; the TBC items are collect
 |---|---|---|---|---|---|---|---|
 | 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | **None yet.** Proposed: `dual_fuel_cchpc_spec_lockout_neg10F`. (The existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
-| 3. CCHPC: typical dual fuel RTU | **None yet.** Needs a new performance category first | **TBC:** typical market equipment (new curve) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
+| 3. CCHPC: typical dual fuel RTU | **None yet.** Needs a new performance category first | **TBC:** Challenge "typical" unit (new curve from one middle-performing lab-tested unit; Parveen is choosing it, see 4.3) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 4. IMPACT: dual fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
 
 ### 1.2 Status
@@ -289,8 +297,9 @@ IMPACT parameters, and the sequential approach) before any measure work.
 
 ### 4.3 Scenario 3: performance data plan and references (from the meeting on 2026-10-06)
 
-**Experimental data.** Parveen has experimental data for a typical dual fuel RTU, which is what
-scenario 3 needs. We compare it against the existing curves in
+**Experimental data.** Parveen has lab-tested data on many actual Challenge dual fuel RTU units.
+Scenario 3 uses the "typical" unit from that set (see below). We compare it against the existing
+curves in
 `resources/measures/upgrade_hvac_add_heat_pump_rtu/resources/performance_maps_hprtu_lab_data.json`.
 (That file is the `two_speed_lab_data` category.)
 
@@ -309,6 +318,27 @@ scenario 3 needs. We compare it against the existing curves in
 - **Fan:** Parveen also has fan data. Next step: look at what it contains.
 - **Defrost:** no defrost data, so we keep the existing defrost data.
 
+**What "typical" means (clarified 2026-10-07/08).** The Challenge spec (scenario 2, already
+modeled) is the Challenge's *minimum* requirement, so the tested units perform better than it, not
+worse. Scenario 3's "typical" unit is the middle-performing one among the actual lab-tested units.
+We discussed two ways to define "middle": an average of all the data points, or one unit that sits
+in the middle on one or several metrics. **Decision: one unit.** Parveen is working out which unit
+and on which metrics.
+
+**Max and boost speeds.** Manufacturers could submit a fifth speed to the Challenge, above the
+normal top speed. My reading, to confirm with Parveen: "max" is the normal top speed and "boost"
+is that optional fifth speed. Parveen can elaborate on how the submitted products differ
+physically. Per Parveen, we may still use four stages for scenario 3.
+
+**How the model reflects speeds above rated.** It already does, in the challenge spec category.
+In `performance_map_CCHP_spec_2027.json`, `staging_data` has four heating stages with stage 2 as
+the rated stage and capacity fractions above 1.0 for the top two stages (stage 3 = 1.35,
+stage 4 = 1.39, the "boost" stage with its own `h_cap_boost` / `h_eir_boost` curves). That is how
+the measure specifies capacities over 100%. The JSON also carries
+`boost_stage_num_and_max_temp_tuple` (`[4, -8.33]` C); the measure reads it in
+`assign_staging_data` but I haven't found where it's applied, so check before relying on it. For
+scenario 3, whether the new JSON gets a fifth stage depends on Parveen's choice above.
+
 **References we can use:**
 
 | Reference | Location | Use |
@@ -316,11 +346,13 @@ scenario 3 needs. We compare it against the existing curves in
 | Challenge RTU Technical Support Document (DOE review, reviewed by Sam Petty; unpublished) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\Challenge RTU Technical Support Document- DOE Review.docx` | Background to reuse for scenarios 2 (CCHPC challenge spec dual fuel RTU) and 3 (CCHPC typical dual fuel RTU) |
 | Standard performance dual fuel RTU measure doc (`dual_fuel_hp_rtu_measure_doc_v5.docx`) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\` | The measure doc for scenario 1 |
 | Lab tested data HPRTU measure doc | **Not received yet** | Explains how `performance_maps_hprtu_lab_data.json` was created |
-| Lab tested data on many actual dual fuel RTU units | **Not received yet** | Reference to cite for scenario 3 |
+| Lab tested data on many actual dual fuel RTU units | **Not received yet.** Asked whether a published version (manufacturer names removed) exists; if so I need its URL or citation | Reference to cite for scenario 3 |
 
-- [ ] Compare Parveen's experimental points with the existing curves and decide which case applies.
+- [ ] Parveen: pick the "typical" unit and say which metric(s) put it in the middle.
+- [ ] Parveen: confirm whether scenario 3 uses four stages or a fifth (boost) stage.
+- [ ] Compare the typical unit's points with the existing curves and decide which case applies.
 - [ ] Look at Parveen's fan data.
-- [ ] Get the two documents we haven't received.
+- [ ] Get the two documents we haven't received, and a URL or citation for the lab data if one is published.
 
 ### 4.4 Scenario 4: sequential control (open)
 
@@ -479,8 +511,10 @@ Decisions and questions that don't have an owner yet. Action items with a clear 
 their own sections (the checkboxes in 3.2, 4.3, and 4.5).
 
 **Decisions about the scenarios** (the TBC items in 1.1):
-- [ ] Scenario 3: the performance curve for typical market equipment (a new curve is needed). Plan
-      and data sources are in 4.3.
+- [ ] Scenario 3: the performance curve for the Challenge "typical" unit (a new curve is needed).
+      Which unit is "typical" and whether it has a fifth (boost) stage are with Parveen. Plan and
+      data sources are in 4.3.
+- [ ] Is `boost_stage_num_and_max_temp_tuple` used anywhere after it's read from the JSON? (4.3)
 - [ ] Scenario 4: performance category, compressor lockout, oversizing, and heating sizing temp.
 - [ ] Scenario 4: how the measure will support both simultaneous and sequential gas heating (4.4),
       and whether that needs a new argument.
@@ -535,3 +569,6 @@ Section numbers in older entries are the numbers at the time.
   (old 1.3) merged into Open questions (now section 6). Added "gas heating control" and "#446" to
   the terms list and removed the repeated definitions and EMS reasoning. No content dropped.
 - 2026-10-07: Corrected 1.2: the scenario 3 (CCHPC typical dual fuel RTU) measure doc is "Not started", not "Created".
+- 2026-10-08: Added what "Challenge spec" and Challenge "typical" mean, the max/boost speeds, and
+  how the spec JSON already models capacities over 100%, from a colleague's answers to my questions.
+  Added terms, updated the scenario 3 row in 1.1 and the data plan in 4.3, and added open items.
