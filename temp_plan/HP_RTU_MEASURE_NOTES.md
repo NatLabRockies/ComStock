@@ -34,8 +34,10 @@ run it (5), and what's still undecided (6).
   the heat pump can't keep up. **Sequential:** the gas coil heats alone and the heat pump compressor
   is off.
 - **Challenge spec:** the minimum performance requirement of the Cold Climate Heat Pump Challenge
-  (CCHPC). This is what the `cchpc_2027_spec` category models (scenario 2). It is a floor, not a
-  typical product: the lab-tested units that passed the Challenge perform better than it.
+  (CCHPC), since renamed the **Commercial Building HVAC Technology Challenge**. This file keeps the
+  CCHPC name because the measure and option names use it. The spec is what the `cchpc_2027_spec`
+  category models (scenario 2). It is a floor, not a typical product: the lab-tested units that
+  passed the Challenge perform better than it.
 - **Challenge "typical" unit:** the middle-performing unit among the actual lab-tested Challenge
   units (scenario 3). Decided on 2026-10-07: "typical" means **one** real unit chosen from the
   middle of the pack, not an average of all the data points. Parveen is choosing the unit.
@@ -343,7 +345,8 @@ scenario 3, whether the new JSON gets a fifth stage depends on Parveen's choice 
 
 | Reference | Location | Use |
 |---|---|---|
-| Challenge RTU Technical Support Document (DOE review, reviewed by Sam Petty; unpublished) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\Challenge RTU Technical Support Document- DOE Review.docx` | Background to reuse for scenarios 2 (CCHPC challenge spec dual fuel RTU) and 3 (CCHPC typical dual fuel RTU) |
+| Challenge RTU Technical Support Document (DOE review, reviewed by Sam Petty; unpublished) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\Challenge RTU Technical Support Document- DOE Review.docx` | **The predecessor measure doc of scenario 2.** It models the challenge spec HP RTU with electric resistance backup and says: "The HP-RTUs all use electric resistance supplemental heat in this study, noting that the Challenge does encourage dual fuel, of which a measure is expected in an upcoming ComStock data release." Scenario 2 is that dual fuel measure. Also background to reuse for scenario 3 (CCHPC typical dual fuel RTU) |
+| Commercial Building Heat Pump Technology Challenge Specification, V1 | `ComStock - Measures\HVAC - Dual Fuel RTU\references\Commercial Building Heat Pump Technology Challenge Specification_V1.pdf` | Background on the Challenge itself (what the spec requires). **Not up to date on naming:** it uses the older terms; the Challenge is now called the "Commercial Building HVAC Technology Challenge" (see Terms). Use it for context, but check current naming before citing |
 | Standard performance dual fuel RTU measure doc (`dual_fuel_hp_rtu_measure_doc_v5.docx`) | `ComStock - Measures\HVAC - Dual Fuel RTU\references\` | The measure doc for scenario 1 |
 | Lab tested data HPRTU measure doc | **Not received yet** | Explains how `performance_maps_hprtu_lab_data.json` was created |
 | Lab tested data on many actual dual fuel RTU units | **Not received yet.** Asked whether a published version (manufacturer names removed) exists; if so I need its URL or citation | Reference to cite for scenario 3 |
@@ -572,3 +575,7 @@ Section numbers in older entries are the numbers at the time.
 - 2026-10-08: Added what "Challenge spec" and Challenge "typical" mean, the max/boost speeds, and
   how the spec JSON already models capacities over 100%, from a colleague's answers to my questions.
   Added terms, updated the scenario 3 row in 1.1 and the data plan in 4.3, and added open items.
+- 2026-10-08: References in 4.3: the Challenge RTU Technical Support Document is the predecessor
+  measure doc of scenario 2 (electric backup, with a dual fuel measure expected next). Added the
+  Challenge Specification V1 PDF as background, noting it uses the older naming. Noted the
+  Challenge's new name, "Commercial Building HVAC Technology Challenge", in Terms.
