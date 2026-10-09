@@ -17,6 +17,27 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     return 'Hourly'
   end
 
+  # unitary systems with a DX heating coil and a fuel-fired supplemental heating coil (i.e., dual fuel / hybrid heating)
+  # @param model [OpenStudio::Model::Model] OpenStudio model object
+  # @return [Array<Hash>] list of { unitary_system:, dx_coil:, gas_coil: } names
+  def hybrid_heating_coil_pairs(model)
+    pairs = []
+    model.getAirLoopHVACUnitarySystems.sort.each do |unitary_system|
+      next unless unitary_system.heatingCoil.is_initialized && unitary_system.supplementalHeatingCoil.is_initialized
+
+      dx_coil = unitary_system.heatingCoil.get
+      next unless dx_coil.to_CoilHeatingDXSingleSpeed.is_initialized ||
+                  dx_coil.to_CoilHeatingDXMultiSpeed.is_initialized ||
+                  dx_coil.to_CoilHeatingDXVariableSpeed.is_initialized
+
+      gas_coil = unitary_system.supplementalHeatingCoil.get
+      next unless gas_coil.to_CoilHeatingGas.is_initialized || gas_coil.to_CoilHeatingGasMultiStage.is_initialized
+
+      pairs << { unitary_system: unitary_system.name.to_s, dx_coil: dx_coil.name.to_s, gas_coil: gas_coil.name.to_s }
+    end
+    return pairs
+  end
+
   # human readable description
   def description
     return 'In order to train the surrogate model for ComStock, we need to have more summary information about the
@@ -195,6 +216,14 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
       else
         next
       end
+    end
+
+    # request zone timestep heating energy for DX and supplemental gas coils on hybrid heating unitary systems
+    # used to calculate DX heating load during timesteps when the gas coil is also heating
+    # requested only for these coils to limit output size
+    hybrid_heating_coil_pairs(model).each do |pair|
+      result << OpenStudio::IdfObject.load("Output:Variable,#{pair[:dx_coil]},Heating Coil Heating Energy,Timestep;").get # J
+      result << OpenStudio::IdfObject.load("Output:Variable,#{pair[:gas_coil]},Heating Coil Heating Energy,Timestep;").get # J
     end
 
     # result << OpenStudio::IdfObject.load("Output:Variable,*,Fan #{elec} Energy,RunPeriod;").get # J
@@ -2996,6 +3025,27 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
                          com_report_unitary_sys_cycling_excess_electricity_cooling_pcnt)
     runner.registerValue('com_report_unitary_sys_cycling_excess_electricity_heating_pcnt',
                          com_report_unitary_sys_cycling_excess_electricity_heating_pcnt)
+
+    # calculate DX heating load during hybrid heating
+    # sums DX heating coil energy in zone timesteps where the supplemental gas coil is also heating
+    # this variable is to support the difference between two operating scenarios
+    #  1) simultaneous DX heating and gas coil heating
+    #  2) gas coil heating only and DX compressor locked out
+    # zone timestep is used because hourly averages would count DX heating in an entire hour when the gas coil runs for part of it
+    com_report_hvac_dx_heating_load_during_hybrid_heating_j = 0.0
+    hybrid_heating_coil_pairs(model).each do |pair|
+      dx_heating_j = convert_timeseries_to_list(sql.timeSeries(ann_env_pd, 'Zone Timestep', 'Heating Coil Heating Energy', pair[:dx_coil].upcase))
+      gas_heating_j = convert_timeseries_to_list(sql.timeSeries(ann_env_pd, 'Zone Timestep', 'Heating Coil Heating Energy', pair[:gas_coil].upcase))
+      if dx_heating_j.nil? || gas_heating_j.nil? || dx_heating_j.size != gas_heating_j.size
+        runner.registerWarning("Zone timestep heating coil energy not available for '#{pair[:unitary_system]}'; excluded from DX heating load during hybrid heating.")
+        next
+      end
+
+      dx_heating_j.each_with_index do |dx_j, i|
+        com_report_hvac_dx_heating_load_during_hybrid_heating_j += dx_j if gas_heating_j[i] > 0.0
+      end
+    end
+    runner.registerValue('com_report_hvac_dx_heating_load_during_hybrid_heating_j', com_report_hvac_dx_heating_load_during_hybrid_heating_j)
 
     # Get the outdoor air temp timeseries and calculate heating and cooling degree days
     # Per ISO 15927-6, "Accumulated hourly temperature differences shall be calculated according to 4.4 when hourly data are available. When hourly data are not available, the approximate method given in 4.5, based on the maximum and minimum temperatures each day, may be used."
