@@ -57,6 +57,8 @@ run it (5), and what's still undecided (6).
 All four scenarios use the same measure. They should differ only in arguments and performance
 data, not in code paths, so every scenario goes through the same workflow. Update these tables as
 things get confirmed. **TBC** means not confirmed yet; the TBC items are collected in section 6.
+The scenario 4 row shows the values proposed from the precursor study (4.4) until the team confirms
+them.
 
 ### 1.1 Configuration
 
@@ -65,7 +67,7 @@ things get confirmed. **TBC** means not confirmed yet; the TBC items are collect
 | 1. Dual fuel RTU, standard performance | `dual_fuel_std_perf_lockout_30F` | Standard (`two_speed_standard_eff`) | 30 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 2. Cold Climate Heat Pump Challenge (CCHPC): challenge spec dual fuel RTU | `dual_fuel_cchpc_spec_lockout_neg10F` (added 2026-10-08, see 3.3; the existing `cchpc_2027_spec` option uses electric backup) | Challenge spec (`cchpc_2027_spec`) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
 | 3. CCHPC: typical dual fuel RTU | **None yet.** Needs a new performance category first | **TBC:** Challenge "typical" unit (new curve from one middle-performing lab-tested unit; Parveen is choosing it, see 4.3) | -10 F | Gas | Oversizing not considered | N/A if no oversizing | Simultaneous |
-| 4. IMPACT: dual fuel | **None yet.** Needs control strategy support first | **TBC** | **TBC** | Gas | **TBC** | **TBC** | Simultaneous and sequential |
+| 4. IMPACT: dual fuel | **TBC.** Proposed (from the precursor study, 4.4): `dual_fuel_std_perf_lockout_{30F,17F,0F,neg10F}`, the existing rows from 3.1. Sequential rows only if sequential is simulated | **TBC.** Proposed: Standard (`two_speed_standard_eff`), as in the precursor study | **TBC.** Proposed: sweep of 30, 17, 0, -10 F | Gas | **TBC.** Proposed: Oversizing not considered (the precursor and #446 default) | **TBC.** N/A if no oversizing | Simultaneous (simulated) and sequential (**TBC:** proposed as post-processed from the 3.2 output, as in the precursor study; see 4.4) |
 
 ### 1.2 Status
 
@@ -346,13 +348,14 @@ ready to combine when it has:
 | 1 | Dual fuel RTU, standard performance | None (the dual fuel backup choice is done, 3.1) | `dual_fuel_std_perf_lockout_30F` | `test_dual_fuel_std_perf_lockout_30F_option` (apply-only, reads the options lookup row; 3.3), plus `test_dual_fuel_backup_is_natural_gas` | Options reviewed (3.3): `dual_fuel_std_perf_lockout_30F` is an exact match; keep it for the rerun. Still to confirm which option the earlier 10K used (4.2). Simulation on hold until the space type refactor is stable |
 | 2 | CCHPC challenge spec dual fuel RTU | None expected | `dual_fuel_cchpc_spec_lockout_neg10F` (`dual_fuel_gas_furnace_backup`, gas lockout -10 F, `cchpc_2027_spec`), added 2026-10-08 | `test_dual_fuel_cchpc_spec_lockout_neg10F_option` (apply-only, reads the options lookup row; 3.3), plus the existing fan/JSON tests | Done: no existing row matched, so `dual_fuel_cchpc_spec_lockout_neg10F` was added (3.3). No measure changes needed (confirmed). Apply-only test added and passing (3.3). 10K run on hold until the space type refactor is stable |
 | 3 | CCHPC typical dual fuel RTU | **A new performance category:** a performance map JSON (with `fan_data`), a new `hprtu_scenario` choice, and matching branches wherever the code switches on scenario | A new row once the category exists. Gas backup | The JSON format and `fan_data` tests should cover the new JSON (check that they loop over every scenario). One apply-only test for the new choice | Blocked: waiting on the latest data from Parveen. Once received, compare it with the existing curves (4.3), then add the options row |
-| 4 | IMPACT dual fuel | **Sequential control** (4.4) and the TBC items in section 6 | Two rows (simultaneous and sequential) once the arguments exist | One apply-only test per strategy. One simulation check of the new output (3.2) | Meet with the team to confirm the simulation scope (may mean many options lookup rows; TBD). Then confirm IMPACT's parameters and choose how to do sequential |
+| 4 | IMPACT dual fuel | **None if sequential is post-processed** as in the precursor study (4.4, option a). Otherwise sequential control (4.4) and the TBC items in section 6 | **Proposed (from the precursor study, 4.4):** the four existing `dual_fuel_std_perf_lockout_{30F,17F,0F,neg10F}` rows (3.1), simultaneous control. Sequential rows only if we simulate it (4.4, option b) | One apply-only test per strategy if sequential gets an argument. One simulation check of the new output (3.2) | Confirm the proposed scope with the team (4.4): a lockout sweep (30, 17, 0, -10 F) with standard performance and simultaneous control; sequential derived from the new output (3.2); utility rate sensitivity and building filters in post-processing. Then confirm IMPACT's parameters and choose how to do sequential |
 
 **All simulations are on hold** until the space type refactor (happening in parallel) reaches a
 working, stable version, possibly next week. In the meantime, prep work can go ahead for scenarios 1
 and 2. The options review and the scenario 2 row are done (3.3); confirming which option the earlier
 scenario 1 10K used is still open. Scenario 3 is waiting on
-Parveen's latest data, and scenario 4 is waiting on a team meeting to confirm its scope.
+Parveen's latest data. Scenario 4 has a proposed scope taken from the precursor study (4.4); it
+still needs a team meeting to confirm it.
 
 ### 4.2 Steps
 
@@ -513,13 +516,47 @@ What this means for the four-stage spec model:
 - [ ] Look at Parveen's fan data.
 - [ ] Get the two documents we haven't received, and a URL or citation for the lab data if one is published.
 
-### 4.4 Scenario 4: sequential control (open)
+### 4.4 Scenario 4: scope and sequential control (open)
 
-Today the measure only models simultaneous operation (3.2). Options for sequential, all avoiding
-EMS:
+**What the precursor study did.** The deck `260410_dual_fuel_RTU_analysis_results_shared_version_1.pdf`
+(Kim, Ringold, CaraDonna; April 2026, not in the repo) is the precursor of scenario 4. Its results
+most likely came from the 2025 R4 full run in 5.1: that run had one `dual_fuel_hybrid_heating_*`
+upgrade per lockout on `carrier_48qe_dualfuel`, and the deck has the same four lockouts and a
+Carrier 48QE catalog comparison. **To confirm.** The scenario space the deck covered:
+
+| Dimension | What was varied | How |
+|---|---|---|
+| System configuration | Dual fuel RTU (DX coil + gas furnace), with a standard HP RTU (DX coil + electric resistance) as the reference | Simulated (slide 3) |
+| Compressor lockout | 30, 17, 0, -10 F | Simulated: one upgrade per lockout |
+| Gas heating control | Simultaneous vs sequential | **Simultaneous simulated; sequential post-processed.** The heat pump heat delivered while the gas coil was on (what 3.2 now reports) was moved to gas at 0.8 thermal efficiency and taken out of electricity at the heat pump COP (slide 11). This is option (a) below |
+| Performance data | Carrier 48QE catalog vs the standard performance curves vs lab measurements | Validation only (slide 6). All three agreed for a two-speed unit, so the deck concluded that the choice should be about rated efficiency or unit class (e.g., variable speed), not manufacturer |
+| Utility rates, generic | Electricity energy 0.02 and 0.26 $/kWh; electricity demand 0.7 and 34 $/kW; gas 0.6 and 1.9 $/therm | Post-processing: 2 x 2 x 2 = 8 high/low combinations (slides 13-14) |
+| Utility rates, by state | GA 0.12 $/kWh, 0 $/kW, 1.27 $/therm; TX 0.06, 10.88, 1.21; ME 0.10, 15.79, 1.21; MN 0.08, 16.49, 1.02 | Post-processing (slides 15-16) |
+| Building filter | Standalone retail in GA, TX, ME, MN with PSZ-AC baselines (electric or gas coil); 6,800 / 6,656 / 820 / 3,497 models | Post-processing filter on the full run (slide 8) |
+| Outputs | Electricity and gas intensity (kWh/sqft), peak demand, and the total bill split into electric energy, electric demand, and gas ($/sqft) | |
+
+Headline results (slide 18): 30 F to -10 F lockout gave +34% electricity intensity and +27% peak
+demand; simultaneous to sequential gave -11% electricity and +52% gas; lockout matters more as the
+electricity/gas price gap grows; electricity energy rates dominate the bill; a 0 F lockout was
+cheapest, by a small margin, in MN and ME, with a plateau in GA and TX.
+
+**Proposed scope for scenario 4, as a starting point (to confirm with the team):**
+- Keep the four-lockout sweep (30, 17, 0, -10 F) with simultaneous control. The rows already exist:
+  `dual_fuel_std_perf_lockout_{30F,17F,0F,neg10F}` (3.1). Standard performance replaces the
+  precursor's Carrier category, which the deck's validation slide supports.
+- Derive sequential from the new output (3.2) as before, unless IMPACT needs it simulated.
+- Rate sensitivity and the state and building type filters stay in post-processing, so they add no
+  options rows.
+- Still open: whether to repeat the sweep with the Challenge categories (scenarios 2 and 3), which
+  would multiply the rows, and whether IMPACT wants all building types or the retail filter.
+
+**Modeling sequential.** Today the measure only models simultaneous operation (3.2). Options for
+sequential, all avoiding EMS:
 - **(a) Estimate it afterwards.** Run simultaneous only, and treat the new output (3.2) as the heat
   that would move from the heat pump to gas. No measure change and only one run, but it's an
-  estimate: it ignores how the equipment would actually behave under sequential control.
+  estimate: it ignores how the equipment would actually behave under sequential control. **This is
+  what the precursor study did** (slide 11: gas at 0.8 thermal efficiency, electricity at the heat
+  pump COP).
 - **(b) Use a built-in switchover.** Set the compressor lockout and the unitary system's maximum
   outdoor temperature for the supplemental heater to the same value. Below it, only gas heats;
   above it, only the heat pump. No EMS, but above the switchover there's no gas help when the heat
@@ -677,11 +714,15 @@ their own sections (the checkboxes in 3.2, 4.3, and 4.5).
 - [x] Is `boost_stage_num_and_max_temp_tuple` used anywhere after it's read from the JSON? No; the
       boost temperature limit isn't applied. Decided not to enforce it for now (4.3).
 - [ ] Scenario 4: performance category, compressor lockout, oversizing, and heating sizing temp.
+      A proposed scope from the precursor study is in 4.4: standard performance, a 30/17/0/-10 F
+      lockout sweep, and the #446 defaults (no oversizing, `htg_sizing_option=0F`, 3.1).
 - [ ] Scenario 4: how the measure will support both simultaneous and sequential gas heating (4.4),
       and whether that needs a new argument.
 - [ ] Performance category for the `dual_fuel_std_perf_lockout_*` options. They use
       `two_speed_standard_eff` for now. #446 also added a `carrier_48qe_dualfuel` category; we haven't
-      decided whether we want it (3.1).
+      decided whether we want it (3.1). The precursor deck (4.4) found the Carrier 48QE catalog, the
+      standard performance curves, and lab data agree for a two-speed unit, which argues for staying
+      with `two_speed_standard_eff`.
 
 **Questions about the inherited code** (section 2):
 - [x] Do all four scenario JSONs (`two_speed_standard_eff`, `two_speed_lab_data`,
@@ -759,3 +800,12 @@ Section numbers in older entries are the numbers at the time.
   the shared steps of both option tests into `verify_dual_fuel_options_lookup_row`, which now also
   checks the heating coil type and stage count. Both pass. Regenerated `measure.xml`. Updated 3.3,
   4.1, and 4.5.
+- 2026-10-09: Extracted the scenario space of the precursor dual fuel RTU study (April 2026 deck)
+  into 4.4: four lockouts simulated, sequential derived by post-processing (option a), Carrier vs
+  standard vs lab validation, generic and state utility rate sweeps, and the retail filter in GA, TX,
+  ME, MN. Used it to propose a starting scope for scenario 4 in 4.1 (to confirm with the team) and
+  added notes to the two related open items in section 6. Renamed 4.4 to "scope and sequential
+  control".
+- 2026-10-09: Filled the scenario 4 row in 1.1 with the proposed values from the precursor study
+  (options rows, standard performance, lockout sweep, no oversizing, sequential post-processed),
+  each still marked TBC.
