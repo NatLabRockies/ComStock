@@ -651,12 +651,48 @@ Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), ad
 ### 4.5 Unit tests
 
 **Where things stand** (`tests/measure_test.rb`, 29 tests before 2026-10-08, 31 now):
-- **The slow ones:** 7 tests call `verify_hp_rtu`, which does two sizing runs each (before and
-  after the measure). 4 more run full simulations.
+- **The slow ones:** 4 tests call `verify_hp_rtu`, which hard-sizes the model with a sizing run
+  before and after the measure (`test_380_Small_Office_PSZ_Gas_2A`,
+  `test_380_small_office_psz_gas_coil_7A`, `test_small_office_psz_not_hard_sized`,
+  `test_380_retail_psz_gas_6B`; the two lockout tests used to as well, until 2026-10-09). 2 more
+  run full annual simulations (`test_380_small_office_psz_gas_coil_7A_upsizing_adv` and `_std`).
 - **Example:** `test_elec_backup_lockout_7A` spent over 20 minutes in one sizing run because the
   HVAC loops didn't converge on the cooling design day ("Maximum iterations (20) exceeded").
 - **Fast ones exist too:** apply-only tests such as `test_backup_coil_matches_original_fuel` (26 s)
   and `test_dual_fuel_backup_is_natural_gas` (19 s) take under a minute.
+
+**Test changes made on 2026-10-09**, all on this branch (commits `465c8341` and `97c6b03c`), and
+how each worked out:
+
+| Change | Tests affected | Result |
+|---|---|---|
+| Removed the first of two definitions of `calc_cfm_per_ton_singlespdcoil_heating`, `calc_cfm_per_ton_multispdcoil_heating`, `calc_cfm_per_ton_multispdcoil_cooling`, `verify_cfm_per_ton` (Ruby was already using the second) | restaurant cfm/ton tests, the two `upsizing_*` tests | same checks, no behavior change |
+| Shared helpers: `build_argument_map`, `assert_envelope_measures_applied`, `verify_lookup_table_value`, `assert_cfm_per_ton_within_limits`, `run_hp_rtu_test`, `assert_measure_not_applicable`, `assert_existing_ervs_unchanged`, `run_sizing_comparison`, `apply_with_setback`, `heating_setpoint_profiles`, `assert_setback_deltas_within` | all 31 | same assertions; file went from 2963 to about 1560 lines |
+| Removed the 65-line commented-out example test and two unused path helpers | none | |
+| `verify_hp_rtu` dropped its unused `model` parameter and unused locals | the 4 hard-size tests (6 at the time) | same assertions |
+| `test_gas_backup_lockout_7A`, `test_elec_backup_lockout_7A`: apply-only through the new `verify_backup_heat_and_lockout` instead of `verify_hp_rtu` | 2 | 55 min to 10 s each; backup coil type and lockout still checked on every RTU; stage and airflow checks remain in the 7A hard-size test |
+| `test_dual_fuel_backup_is_natural_gas` uses the same helper with `expected_backup_fuel_type: 'NaturalGas'` | 1 | same assertions |
+| `test_380_full_service_restaurant_psz_gas_coil_single_erv_3A_na`: `hr=true` on the excluded restaurant type, plus a check for the not-applicable warning | 1 | was an exact copy of the `hr=false` test; now a distinct check, passes |
+| `test_confirm_heating_setback_change_opt_start`: removed the unreachable `possible_opt_start` call; added a direct check that each ramp step below the new minimum is raised to it and the occupied setpoint is unchanged | 1 | was a repeat of the square wave check; now verifies the ramp branch, passes |
+| `test_fan_scenarios_are_differentiated`: compares fans pair by pair, matched by name, instead of `.first` of each scenario's unordered fan list | 1 | was flaky (see below); passes on all 18 pairs |
+| Test names and output directories | none changed | |
+
+**A flaky test found by the second full run.** `test_fan_scenarios_are_differentiated` passed in the
+first full run and failed in the second, on identical measure code, with "the scenarios should
+share an impeller efficiency; two-speed 0.55575 vs variable-speed 0.56225". The 7A model has 18
+air loops (two stories), and in *both* scenarios 15 fans get motor efficiency 0.855 and the 3 main
+zone fans get 0.865, because brake horsepower lands in a different 90.1 bin for the larger zones.
+The test compared `two_speed.first` with `var_speed.first`, and the order of
+`getAirLoopHVACUnitarySystems` is not stable, so it sometimes paired a 0.855 fan with a 0.865 one.
+The original test had the same `.first` comparison. It now pairs fans by name (both scenarios name
+them after the same air loops) and checks every pair.
+
+**Running the whole file in parallel locally.** A temporary bash script (kept outside the repo)
+launches nine `openstudio execute_ruby_script tests/measure_test.rb -v -n "/^(names)$/"` processes
+with `MSYS_NO_PATHCONV=1`, waits, and collects the `-v` per-test times. The groups: one per
+hard-size test (2A, 7A, not hard sized, retail 6B), one each for the two lockout tests (now fast,
+could be merged), the two annual simulations together, the three restaurant cfm/ton tests
+together, and the remaining 20 fast tests together. Nine processes fit in 32 GB with room to spare.
 - **Measured 2026-10-05:** four tests (argument names, the two `*_lockout_7A` tests, and the backup
   fuel test) took 46 minutes together, almost all of it the two lockout tests' sizing runs.
 - **Measured 2026-10-09, full run** (OpenStudio 3.10.0, all 31 tests, commit `465c8341`, run as
@@ -680,6 +716,15 @@ Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), ad
   | restaurant tests (5), setback tests (2), fan tests (2) | 17 to 32 s each | one application |
   | NA tests (3), options lookup tests (2) | 3 to 7 s each | |
   | argument, JSON format, fan data tests (4) | under 0.1 s | |
+
+- **Measured 2026-10-09, second full run** (commit `97c6b03c`, after the test revisions below, same
+  nine-process script). 31 tests, 3562 assertions, 30 passed, **1 failed**: `test_fan_scenarios_are_differentiated`,
+  which turned out to be flaky (fixed the same day, see "A flaky test" below; it passes on its own
+  after the fix). Wall time 36 minutes, summed test time 100 minutes (down from 57 and 259). The
+  two lockout tests went from 55 minutes to 24 s each. The slow tests also ran faster than in the
+  first run because fewer heavy processes competed for CPU: 7A hard-size 35 min (was 56), retail
+  6B 22 min (was 32), the annual simulations 17 and 13 min (were 24 each). So per-test times depend
+  on what else is running; the ranking is stable.
 
   **Where the time goes.** The sizing run that `mimic_hardsize_model` does *after* the measure is
   25 to 50 times slower than the one before it, on every model (7A: 2 min to 53 min; retail 6B: 1.7
@@ -987,3 +1032,7 @@ Section numbers in older entries are the numbers at the time.
   requests energy recovery on the excluded restaurant building type and checks the warning. The
   opt-start setback test drops its unreachable `possible_opt_start` filter and asserts the ramp
   branch directly (intermediate step raised to the new minimum, occupied setpoint untouched).
+- 2026-10-09: Second full parallel run (on `97c6b03c`) exposed `test_fan_scenarios_are_differentiated`
+  as flaky: it compared the first fan of each scenario from an unordered list, and the motor
+  efficiency bin differs by air loop. Fixed to compare fans paired by name (4.5). Added a
+  consolidated table of the day's test changes and the parallel grouping to 4.5.

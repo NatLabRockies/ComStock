@@ -1499,20 +1499,27 @@ class AddHeatPumpRtuTest < Minitest::Test
     _m2, var_speed = apply_and_get_supply_fans('test_fan_diff_var_speed', '380_small_office_psz_gas_coil_7A.osm', 'NE_Kearney_Muni_725526_16.epw', 'variable_speed_high_eff')
     refute_empty(two_speed)
     refute_empty(var_speed)
+    assert_equal(two_speed.size, var_speed.size, 'the scenarios should create the same number of supply fans')
 
-    ts = two_speed.first
-    vs = var_speed.first
-    refute_in_delta(unwrap_optional(ts.fanPowerCoefficient4), unwrap_optional(vs.fanPowerCoefficient4), 1e-6,
-                    'two-speed and variable-speed scenarios share a part-load curve')
-    # deliberately EQUAL, not better: openstudio-standards does not distinguish fan types, and no source was found for a higher
-    # impeller on a variable-speed wheel, so the scenarios share one impeller and the advantage rests on the curve and the turndown floor
-    assert_in_delta(ts.fanEfficiency, vs.fanEfficiency, 1e-6,
-                    "the scenarios should share an impeller efficiency; two-speed #{ts.fanEfficiency} vs variable-speed #{vs.fanEfficiency}")
-    assert(unwrap_optional(vs.fanPowerMinimumFlowFraction) <= unwrap_optional(ts.fanPowerMinimumFlowFraction) + 1e-6,
-           'variable speed should turn down at least as far as two-speed')
+    # compare fan by fan: the fans are named after their air loops, which are the same in both scenarios, and the motor
+    # efficiency bin varies by air loop (larger zones get a bigger motor), so comparing by position in an unordered list is not valid
+    two_speed_by_name = two_speed.to_h { |fan| [fan.name.to_s, fan] }
+    var_speed.each do |vs|
+      ts = two_speed_by_name[vs.name.to_s]
+      refute_nil(ts, "no two-speed fan named #{vs.name}")
 
-    # static pressure is a property of the duct system, not the equipment, and must be identical between scenarios and unchanged from the original fan
-    assert_in_delta(ts.pressureRise, vs.pressureRise, 1e-6, 'static pressure should not differ between scenarios')
+      refute_in_delta(unwrap_optional(ts.fanPowerCoefficient4), unwrap_optional(vs.fanPowerCoefficient4), 1e-6,
+                      "#{vs.name}: two-speed and variable-speed scenarios share a part-load curve")
+      # deliberately EQUAL, not better: openstudio-standards does not distinguish fan types, and no source was found for a higher
+      # impeller on a variable-speed wheel, so the scenarios share one impeller and the advantage rests on the curve and the turndown floor
+      assert_in_delta(ts.fanEfficiency, vs.fanEfficiency, 1e-6,
+                      "#{vs.name}: the scenarios should share an impeller efficiency; two-speed #{ts.fanEfficiency} vs variable-speed #{vs.fanEfficiency}")
+      assert(unwrap_optional(vs.fanPowerMinimumFlowFraction) <= unwrap_optional(ts.fanPowerMinimumFlowFraction) + 1e-6,
+             "#{vs.name}: variable speed should turn down at least as far as two-speed")
+
+      # static pressure is a property of the duct system, not the equipment, and must be identical between scenarios and unchanged from the original fan
+      assert_in_delta(ts.pressureRise, vs.pressureRise, 1e-6, "#{vs.name}: static pressure should not differ between scenarios")
+    end
   end
 
   # a backup coil matching the original fuel must burn the building's original fuel; fuel oil and propane coils are
