@@ -1899,7 +1899,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - primary school": {
               "ratio": 0.4793,
               "space_type_gen": true,
               "default": true
@@ -1968,7 +1968,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - primary school": {
               "ratio": 0.561,
               "space_type_gen": true,
               "default": true
@@ -2512,7 +2512,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - secondary school": {
               "ratio": 0.3041,
               "space_type_gen": true,
               "default": true
@@ -2594,7 +2594,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - secondary school": {
               "ratio": 0.3528,
               "space_type_gen": true,
               "default": true
