@@ -730,6 +730,58 @@ together, and the remaining 20 fast tests together. Nine processes fit in 32 GB 
   hard-size 31 min, retail 6B 18 min, the annual simulations 14 and 13 min, 2A hard-size 2.4 min;
   the other 26 tests take 7 minutes together.
 
+**All full runs of 2026-10-09, side by side.** Same machine, same nine-process script. Runs 2 and 3
+are faster partly because the lockout tests stopped repeating the 7A sizing run, which also freed
+CPU for the remaining slow tests.
+
+  | | Run 1 (`465c8341`, after the cleanup) | Run 2 (`97c6b03c`, after the test revisions) | Run 3 (`13e26c1e`, after the fan test fix) |
+  |---|---|---|---|
+  | Tests | 31 | 31 | 31 |
+  | Passed / failed / errors | 31 / 0 / 0 | 30 / 1 / 0 | 31 / 0 / 0 |
+  | Assertions | 4224 | 3562 | 3651 |
+  | Wall time (9 processes) | 57 min | 36 min | 31 min |
+  | Summed test time | 259 min | 100 min | 84 min |
+
+  The run 2 failure was the flaky `test_fan_scenarios_are_differentiated` (see below). Assertions
+  drop from run 1 to 2 because the lockout tests no longer run the full hard-size checks, and rise
+  in run 3 because the fan test now checks all 18 fan pairs instead of one.
+
+  Per test, sorted by run 3 time:
+
+  | Test | Run 1 | Run 2 | Run 3 |
+  |---|---|---|---|
+  | `test_380_small_office_psz_gas_coil_7A` | 56.0 min | 35.3 min | 30.8 min |
+  | `test_380_retail_psz_gas_6B` | 32.4 min | 22.2 min | 17.9 min |
+  | `test_380_small_office_psz_gas_coil_7A_upsizing_adv` | 24.4 min | 17.3 min | 13.7 min |
+  | `test_380_small_office_psz_gas_coil_7A_upsizing_std` | 24.0 min | 13.5 min | 12.6 min |
+  | `test_380_Small_Office_PSZ_Gas_2A` | 4.4 min | 3.2 min | 2.4 min |
+  | `test_backup_coil_matches_original_fuel` | 80 s | 49 s | 56 s |
+  | `test_dual_fuel_backup_is_natural_gas` | 40 s | 42 s | 36 s |
+  | `test_small_office_psz_not_hard_sized` | 46 s | 40 s | 31 s |
+  | `test_sizing_model_in_hawaii` | 39 s | 25 s | 30 s |
+  | `test_fan_scenarios_are_differentiated` | 42 s | 40 s FAIL | 27 s |
+  | `test_sizing_model_in_alaska` | 37 s | 26 s | 22 s |
+  | `test_fan_two_speed_standard_eff` | 20 s | 18 s | 19 s |
+  | `test_fan_variable_speed_high_eff` | 21 s | 21 s | 18 s |
+  | `test_380_full_service_restaurant_psz_gas_coil` | 30 s | 21 s | 17 s |
+  | `test_elec_backup_lockout_7A` | 55.8 min | 26 s | 17 s |
+  | `test_gas_backup_lockout_7A` | 53.1 min | 26 s | 17 s |
+  | `test_380_full_service_restaurant_psz_gas_coil_std_perf` | 30 s | 25 s | 14 s |
+  | `test_380_full_service_restaurant_psz_gas_coil_single_erv_3A` | 27 s | 19 s | 14 s |
+  | `test_confirm_heating_setback_change_square_wave` | 21 s | 27 s | 14 s |
+  | `test_380_full_service_restaurant_psz_gas_coil_upsizing` | 32 s | 23 s | 13 s |
+  | `test_380_full_service_restaurant_psz_gas_coil_single_erv_3A_na` | 32 s | 18 s | 13 s |
+  | `test_confirm_heating_setback_change_opt_start` | 17 s | 13 s | 8 s |
+  | `test_dual_fuel_cchpc_spec_lockout_neg10F_option` | 5 s | 5 s | 3 s |
+  | `test_380_StripMall_Residential_AC_with_residential_forced_air_furnace_2A` | 7 s | 4 s | 3 s |
+  | `test_dual_fuel_std_perf_lockout_30F_option` | 6 s | 5 s | 3 s |
+  | `test_380_medium_office_doas_fan_coil_acc_boiler_3A` | 5 s | 4 s | 3 s |
+  | `test_380_warehouse_pvav_gas_boiler_reheat_2A` | 3 s | 3 s | 2 s |
+  | `test_table_lookup_format` | 0 s | 0 s | 0 s |
+  | `test_biquadratic_format` | 0 s | 0 s | 0 s |
+  | `test_number_of_arguments_and_argument_names` | 0 s | 0 s | 0 s |
+  | `test_fan_data_records_are_present_and_sane` | 0 s | 0 s | 0 s |
+
   **Where the time goes.** The sizing run that `mimic_hardsize_model` does *after* the measure is
   25 to 50 times slower than the one before it, on every model (7A: 2 min to 53 min; retail 6B: 1.7
   to 30 min; 2A: 0.6 to 3 min). Its `eplusout.err` has 48 to 76 "SimHVAC: Maximum iterations (20)
