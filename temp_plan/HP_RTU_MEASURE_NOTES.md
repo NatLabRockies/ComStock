@@ -112,6 +112,19 @@ it raised are in section 6.
 - If the entry is missing or incomplete, it warns and falls back to a two-speed fan curve
   `[0.005131596, -0.061344439, 0.870911024, 0.221907644, -0.036605825]` and the baseline impeller
   efficiency from `std.fan_baseline_impeller_efficiency`.
+- All four scenario JSONs have a `fan_data` entry, so the fallback doesn't trigger today.
+  `cchpc_2027_spec` and `variable_speed_high_eff` use the 90.1 Appendix G single-zone VAV curve;
+  the two two-speed scenarios use the two-speed curve above.
+- Only `fan_power_coefficients` and `impeller_efficiency` change the model. `fan_type` is only
+  printed in the debug log, and the `*_howto` / `*_notes` fields are documentation.
+  `fan_power_function_ff` (only in the CCHPC JSON) isn't read by the measure.
+- The impeller efficiency is 0.65 in every scenario, so total efficiency (impeller x 90.1 motor,
+  looked up at bhp x 1.1) is 0.556-0.605 for all of them. The variable-speed fan advantage comes
+  only from the curve and the lower minimum flow.
+- The minimum flow fraction is not in `fan_data`. The measure sets it to the highest of the lowest
+  stage airflow (after the cfm/ton adjustment), the lowest stage flow fraction in the JSON's staging
+  data (0.40 for CCHPC, 0.59 for two-speed), and the minimum outdoor air ratio. It limits only the
+  power curve; EnergyPlus can still move less air.
 - Before: every scenario used the Daikin Rebel variable-speed fan curve, and scenarios other than
   high efficiency got a fixed fan efficiency of 0.63.
 - Fan renamed from `"<loop> VFD Fan"` to `"<loop> Supply Fan"`. Its pressure rise is now set when
@@ -809,3 +822,7 @@ Section numbers in older entries are the numbers at the time.
 - 2026-10-09: Filled the scenario 4 row in 1.1 with the proposed values from the precursor study
   (options rows, standard performance, lockout sweep, no oversizing, sequential post-processed),
   each still marked TBC.
+- 2026-10-09: Expanded 2.3 with how `fan_data` is applied (which fields matter, the 0.65 impeller
+  in every scenario, and where the minimum flow fraction comes from). Fixed the stale
+  `fan_efficiency_range_for_this_scenario` text in all four scenario JSONs, which still described
+  the earlier 0.70 variable-speed impeller. Text only; no model change. Regenerated `measure.xml`.
