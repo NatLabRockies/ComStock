@@ -2493,23 +2493,23 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
 
     # report out DX cooling SEER2s, EER2s, IEERs at each size category
     dx_cooling_design_seer_0_to_30_kbtuh = dx_cooling_0_to_30_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_seer_0_to_30_kbtuh / dx_cooling_0_to_30_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_seer2_0_to_30_kbtuh', dx_cooling_design_seer_0_to_30_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_seer_2_0_to_30_kbtuh', dx_cooling_design_seer_0_to_30_kbtuh)
     dx_cooling_design_seer_30_to_65_kbtuh = dx_cooling_30_to_65_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_seer_30_to_65_kbtuh / dx_cooling_30_to_65_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_seer2_30_to_65_kbtuh', dx_cooling_design_seer_30_to_65_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_seer_2_30_to_65_kbtuh', dx_cooling_design_seer_30_to_65_kbtuh)
     dx_cooling_design_eer_65_to_135_kbtuh = dx_cooling_65_to_135_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_65_to_135_kbtuh / dx_cooling_65_to_135_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_65_to_135_kbtuh', dx_cooling_design_eer_65_to_135_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer_2_65_to_135_kbtuh', dx_cooling_design_eer_65_to_135_kbtuh)
     dx_cooling_design_ieer_65_to_135_kbtuh = dx_cooling_65_to_135_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_65_to_135_kbtuh / dx_cooling_65_to_135_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_65_to_135_kbtuh', dx_cooling_design_ieer_65_to_135_kbtuh)
     dx_cooling_design_eer_135_to_240_kbtuh = dx_cooling_135_to_240_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_135_to_240_kbtuh / dx_cooling_135_to_240_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_135_to_240_kbtuh', dx_cooling_design_eer_135_to_240_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer_2_135_to_240_kbtuh', dx_cooling_design_eer_135_to_240_kbtuh)
     dx_cooling_design_ieer_135_to_240_kbtuh = dx_cooling_135_to_240_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_135_to_240_kbtuh / dx_cooling_135_to_240_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_135_to_240_kbtuh', dx_cooling_design_ieer_135_to_240_kbtuh)
     dx_cooling_design_eer_240_to_760_kbtuh = dx_cooling_240_to_760_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_240_to_760_kbtuh / dx_cooling_240_to_760_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_240_to_760_kbtuh', dx_cooling_design_eer_240_to_760_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer_2_240_to_760_kbtuh', dx_cooling_design_eer_240_to_760_kbtuh)
     dx_cooling_design_ieer_240_to_760_kbtuh = dx_cooling_240_to_760_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_240_to_760_kbtuh / dx_cooling_240_to_760_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_240_to_760_kbtuh', dx_cooling_design_ieer_240_to_760_kbtuh)
     dx_cooling_design_eer_760_plus_kbtuh = dx_cooling_760_plus_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_eer_760_plus_kbtuh / dx_cooling_760_plus_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_cooling_design_eer2_760_plus_kbtuh', dx_cooling_design_eer_760_plus_kbtuh)
+    runner.registerValue('com_report_hvac_dx_cooling_design_eer_2_760_plus_kbtuh', dx_cooling_design_eer_760_plus_kbtuh)
     dx_cooling_design_ieer_760_plus_kbtuh = dx_cooling_760_plus_kbtuh_total_load_j > 0.0 ? dx_cooling_load_weighted_design_ieer_760_plus_kbtuh / dx_cooling_760_plus_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_cooling_design_ieer_760_plus_kbtuh', dx_cooling_design_ieer_760_plus_kbtuh)
 
@@ -2771,9 +2771,9 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
 
     # report out DX heating HSPF2s and COPs at each size category
     dx_heating_design_hspf_0_to_30_kbtuh = dx_heating_0_to_30_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_hspf_0_to_30_kbtuh / dx_heating_0_to_30_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_heating_design_hspf2_0_to_30_kbtuh', dx_heating_design_hspf_0_to_30_kbtuh)
+    runner.registerValue('com_report_hvac_dx_heating_design_hspf_2_0_to_30_kbtuh', dx_heating_design_hspf_0_to_30_kbtuh)
     dx_heating_design_hspf_30_to_65_kbtuh = dx_heating_30_to_65_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_hspf_30_to_65_kbtuh / dx_heating_30_to_65_kbtuh_total_load_j : 0
-    runner.registerValue('com_report_hvac_dx_heating_design_hspf2_30_to_65_kbtuh', dx_heating_design_hspf_30_to_65_kbtuh)
+    runner.registerValue('com_report_hvac_dx_heating_design_hspf_2_30_to_65_kbtuh', dx_heating_design_hspf_30_to_65_kbtuh)
     dx_heating_design_cop_65_to_135_kbtuh = dx_heating_65_to_135_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_cop_65_to_135_kbtuh / dx_heating_65_to_135_kbtuh_total_load_j : 0
     runner.registerValue('com_report_hvac_dx_heating_design_cop_65_to_135_kbtuh', dx_heating_design_cop_65_to_135_kbtuh)
     dx_heating_design_cop_135_to_240_kbtuh = dx_heating_135_to_240_kbtuh_total_load_j > 0.0 ? dx_heating_load_weighted_design_cop_135_to_240_kbtuh / dx_heating_135_to_240_kbtuh_total_load_j : 0

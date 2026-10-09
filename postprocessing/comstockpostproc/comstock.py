@@ -668,6 +668,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 if set(lower_col_vals) in bool_possibilities:
                     up_res = up_res.with_columns(pl.col(col).str.to_lowercase().replace({"false": False, "true": True}, default=None))
 
+            # Must precede the downselect: this is what makes the custom-building-spec
+            # geometry columns findable under the names the definitions use.
+            up_res = self.alias_custom_building_spec_columns(up_res)
+
             # Downselect columns to reduce memory use
             up_res = self.downselect_imported_columns(up_res)
 
@@ -1451,6 +1455,62 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         self.convert_units(col_names)
 
+    def alias_custom_building_spec_columns(self, df):
+        """Read create_custom_building_from_spec_* under the legacy measure names.
+
+        The custom-building-spec measure replaced two older measures and carries their
+        arguments under its own prefix:
+
+            create_bar_from_building_type_ratios_*   (geometry)
+            create_typical_building_from_model_*     (systems, loads, schedules)
+
+        comstock_column_definitions.csv names only the two legacy spellings, so without
+        this every one of those arguments goes missing on a custom-spec run -- including
+        in.sqft, which the whole weighting and EUI chain divides by, and
+        in.hvac_system_type, which the HVAC breakdowns and the results dashboard group by.
+        The failure surfaces late and unhelpfully, as a polars ColumnNotFoundError on the
+        renamed output ("in.sqft..ft2") rather than on the input that was actually absent.
+
+        Both sets are a verified 1:1 rename against hospital_resampling/str_100k_fixes_ts:
+        53 of 53 bar columns and 31 of 31 typical-building columns have an exact
+        custom-spec twin, none without. Ten carry named outputs -- in.sqft,
+        in.comstock_building_type, in.number_of_stories, in.rotation,
+        in.hvac_system_type, in.wall_construction_type and the four operating-hours
+        columns.
+
+        Only columns named in the definitions are aliased, and only where the legacy
+        spelling is ABSENT, so this is a no-op for runs built with the older measures.
+        (Same code as on ccaradon/calibration-qaqc, PR #463.)
+        """
+        CUSTOM = 'create_custom_building_from_spec'
+        LEGACY = ('create_bar_from_building_type_ratios',
+                  'create_typical_building_from_model')
+
+        col_defs_path = os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)
+        defined = (pl.scan_csv(col_defs_path)
+                   .select('original_col_name').collect().to_series().to_list())
+        present = set(df.columns)
+
+        renames = {}
+        for legacy_name in defined:
+            if not legacy_name or legacy_name in present:
+                continue
+            prefix = next((p for p in LEGACY if p in legacy_name), None)
+            if prefix is None:
+                continue
+            twin = legacy_name.replace(prefix, CUSTOM)
+            # Two legacy names can map onto one custom-spec column (both measures
+            # took e.g. _template). Keep the first and leave the duplicate missing
+            # rather than letting polars raise on a duplicate rename target.
+            if twin in present and twin not in renames:
+                renames[twin] = legacy_name
+
+        if renames:
+            df = df.rename(renames)
+            logger.info(f'Aliased {len(renames)} {CUSTOM}_* columns to the legacy measure '
+                        'names used by the column definitions')
+        return df
+
     def downselect_imported_columns(self, df):
         # Downselect to the columns marked for export in column definitions
         logger.debug(f'Memory before downselect_columns: {df.estimated_size()}')
@@ -1565,6 +1625,44 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         return cols_to_keep
 
+
+    def cast_columns_to_definitions(self, input_lf):
+        """Cast exported columns to the data_type declared in the column definitions.
+
+        Parquet otherwise takes whatever type the data happens to infer: a baseline-only export
+        writes all-zero float columns as integers, measure arguments arrive as strings, and types
+        drift between releases. Columns without a definition, or with a blank data_type, are left
+        as they are. Casts are strict, so a value that cannot be converted fails the export
+        instead of becoming a silent null.
+        """
+        type_map = {'float': pl.Float64, 'integer': pl.Int64, 'string': pl.Utf8, 'boolean': pl.Boolean}
+        col_defs = pl.read_csv(os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME))
+        def_types = {}
+        for name, dtype in col_defs.select(['new_col_name', 'data_type']).iter_rows():
+            if name is None or dtype not in type_map:
+                continue
+            def_types[name] = type_map[dtype]
+
+        casts = []
+        for col, current in input_lf.collect_schema().items():
+            target = def_types.get(col.split('..')[0], def_types.get(col))
+            if target is None or current == target:
+                continue
+            if target == pl.Boolean and current != pl.Boolean:
+                # No exported column needs this today; a string-to-boolean mapping is a judgment call
+                logger.warning(f'Not casting {col} from {current} to Boolean; update the column definitions or the data')
+                continue
+            expr = pl.col(col)
+            if current in (pl.Categorical, pl.Enum) or isinstance(current, (pl.Categorical, pl.Enum)):
+                expr = expr.cast(pl.Utf8)
+            casts.append(expr.cast(target).alias(col))
+            logger.debug(f'Casting {col} from {current} to {target} per {COLUMN_DEFINITION_FILE_NAME}')
+
+        if casts:
+            logger.info(f'Casting {len(casts)} exported columns to the data types in {COLUMN_DEFINITION_FILE_NAME}')
+            input_lf = input_lf.with_columns(casts)
+
+        return input_lf
 
     def reorder_columns(self, unsorted_cols):
         # Reorder columns for easier comprehension
@@ -2698,7 +2796,21 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             + geo_agg_cols
         ).agg(
             [
-                pl.col([self.BLDG_WEIGHT] + weighted_util_cols + cost_cols + [self.UTIL_ELEC_BILL_NUM_BILLS]).sum(),
+                pl.col([self.BLDG_WEIGHT] + weighted_util_cols).sum(),
+                # The unweighted per-building bills and the rate count are averaged, weighted by
+                # the allocated weights, not summed: apportionment can draw one model several times
+                # in the same tract, so a sum multiplied the building's bill by its number of draws
+                # (37% of 2025 R3 per-building rows were inflated by 1.5x or more). Within a tract
+                # every draw shares one utility, so this is the building's exact bill; at county or
+                # state level it is the weight-averaged bill across the tracts the model represents.
+                *[
+                    pl.when(pl.col(col).is_not_null().any())
+                      .then((pl.col(col) * pl.col(self.BLDG_WEIGHT)).sum()
+                            / (pl.col(self.BLDG_WEIGHT) * pl.col(col).is_not_null()).sum())
+                      .otherwise(None)
+                      .alias(col)
+                    for col in cost_cols + [self.UTIL_ELEC_BILL_NUM_BILLS]
+                ],
                 pl.col([self.FLR_AREA] + bill_label_cols + eia_id_cols).first()
             ]
         )
@@ -2779,6 +2891,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         logger.info(f"Downselecting columns using option: {column_downselection}")
         ordered_cols = self.reorder_columns(self.columns_for_export(wtd_agg_outs, column_downselection))
         wtd_agg_outs = wtd_agg_outs.select(ordered_cols)
+
+        # Cast exported columns to the data types declared in the column definitions
+        wtd_agg_outs = self.cast_columns_to_definitions(wtd_agg_outs)
 
         # Drop the dataset and completed_status columns
         # since these aren't useful to the target audience
