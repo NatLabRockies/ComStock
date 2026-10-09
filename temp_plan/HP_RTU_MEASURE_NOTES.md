@@ -158,7 +158,8 @@ it raised are in section 6.
 Two things have been added so far, both adapted from #446 and both without its EMS code: a dual
 fuel backup choice with options lookup rows (3.1), and a reporting output for IMPACT (3.2). Why we
 left the EMS behind is explained in 3.2. A review of every existing option against scenarios 1 and
-2, and the scenario 2 row it led to, is in 3.3.
+2, and the scenario 2 row it led to, is in 3.3. The measure and its test file were then cleaned up
+without changing what the measure does (3.4).
 
 ### 3.1 Dual fuel backup choice and options
 
@@ -339,6 +340,74 @@ the compressor is locked out, so above the lockout the model already runs as "si
 
 This output only *measures* the difference between the two control strategies. How the measure
 will *model* sequential control is still open (4.4).
+
+### 3.4 Code cleanup of the measure and its tests (2026-10-09)
+
+Commit `465c8341`. `measure.rb` went from 2804 to about 2040 lines and `tests/measure_test.rb` from
+2963 to about 1555, with no change to what the measure does. The goal was readability, consistent
+comments, and no duplicated code, before adding the scenario 3 and 4 work on top.
+
+**What changed in `measure.rb`:**
+- The eleven per-scenario `case` blocks that loaded performance curves (about 200 lines) are now one
+  table, `SCENARIO_CURVE_NAMES`, listing each scenario's curve names by stage, plus a small
+  `stage_curves` builder. `SCENARIO_PERFORMANCE_JSON` maps each scenario to its JSON file. Adding a
+  scenario means adding one entry to each table. Curve creation order and names are unchanged.
+- Repeated blocks became helpers: `set_curve_limits`, `crankcase_heater_power_w`,
+  `get_supply_fan_properties`, `get_original_coil_capacities`, `get_original_heating_coil_fuel_type`,
+  `get_min_oa_flow_m3_per_s`, `get_design_supply_air_flow_m3_per_s`, and `modify_heating_setbacks`
+  (the 130-line setback block that was inline in the air loop loop).
+- `assign_staging_data` returns a hash instead of a 17-element array, so the caller reads named
+  fields instead of positional ones.
+- Lists that were rebuilt inside loops are now class constants: name-match lists for applicability
+  (`HP_NAME_WORDS`, `DATA_CENTER_NAME_WORDS`, ...), `SPACE_TYPES_NO_SETBACK`, `HTG_SIZING_OPTIONS_F`,
+  the ERV exclusion lists, and the rated COP regressions.
+- Removed duplicated setter calls (compressor lockout and fuel type set twice on the multispeed
+  coils, one heating curve set twice per stage), duplicate entries in exclusion lists, the unused
+  `_adv` COP regressions, the unused fan efficiency locals, commented-out code, and unused method
+  parameters. The `%w[...]` arrays became bracket arrays because the repo's rubocop style asks for it.
+- Comments are lowercase sentences and the section banners use one style. Argument names,
+  descriptions, defaults, and choice order are byte-identical (the regenerated `measure.xml` changed
+  only its checksums).
+
+**What changed in `tests/measure_test.rb`:**
+- Four helpers (`calc_cfm_per_ton_*`, `verify_cfm_per_ton`) were defined twice; the second
+  definitions, which Ruby was already using, are kept.
+- The argument-population loop that was copied into about twenty tests is one helper,
+  `build_argument_map(arguments, overrides)`. The roof/window value check, lookup table check,
+  cfm/ton checks, NA check, ERV check, sizing comparison, and setback checks are shared helpers.
+- Removed the 65-line commented-out example test and two unused path helpers. The 31 test names and
+  their output directories are unchanged, so nothing downstream moves.
+
+**Two edits that do change behaviour, both in paths that previously raised an exception:**
+- The setback code's warning referenced an undefined variable `zone`; it now uses `thermal_zone`.
+- A supply fan whose availability schedule is a `ScheduleRuleset` was cast with the
+  `ScheduleConstant` getter, which raises; it now uses the `ScheduleRuleset` getter.
+
+**Bugs found and deliberately left alone**, each marked with a `TODO` comment in the code so they
+can be fixed as separate, reviewable changes:
+- `reference_heating_cfm_per_ton` is read from the **cooling** key of the staging data. All four
+  JSONs define a separate heating value (411 or 420 vs 365 or 404 cfm/ton), so fixing this changes
+  the adjusted heating COP for scenarios whose JSON leaves `final_rated_heating_cop` as `false`.
+- The window upgrade's initial and final conditions are written into the **roof** variables, so the
+  window conditions never reach the reported condition strings.
+- The night cycling check is `night_cyc_sched_vals.include?([0, 0.0])`, which tests for an array
+  element and is never true. The "high OA fraction with night cycling" exclusion therefore never
+  removes an air loop.
+- `test_confirm_heating_setback_change_opt_start` calls `possible_opt_start`, which has never been
+  defined in the repo (added in `424e904f`). The call sits behind `i > 3`, and the heating setpoint
+  day profiles in `Retail_PSZ-AC_updated_39_opt_start.osm` have 1, 3, or 4 values, so it is never
+  reached: the test passes, but its optimum-start filtering is dead code and the test checks the
+  same thing as the square wave test.
+- `test_380_full_service_restaurant_psz_gas_coil_single_erv_3A` and its `_na` twin have identical
+  bodies; neither toggles `hr`.
+
+**How it was verified.** Nine output models from the committed code and the cleaned code were
+compared with object handles replaced by type and name and timestamps masked: all identical. The
+nine cover `two_speed_standard_eff`, `cchpc_2027_spec`, and `variable_speed_high_eff`; the sizing
+run path (`test_sizing_model_in_alaska`, both runs); the setback path; and all three backup fuel
+paths. All 31 tests were then run on the cleaned code in parallel (4.5) and pass.
+Rubocop offenses went from 196 to 36; the remaining 36 are test method names with capitals, `eval` of
+JSON strings, and size metrics on `run`.
 
 ---
 
@@ -590,19 +659,85 @@ Decide once IMPACT's definition of "sequential" is confirmed. If we pick (b), ad
   and `test_dual_fuel_backup_is_natural_gas` (19 s) take under a minute.
 - **Measured 2026-10-05:** four tests (argument names, the two `*_lockout_7A` tests, and the backup
   fuel test) took 46 minutes together, almost all of it the two lockout tests' sizing runs.
+- **Measured 2026-10-09, full run** (OpenStudio 3.10.0, all 31 tests, commit `465c8341`, run as
+  nine parallel processes with a temporary script; 20 logical cores, 32 GB). All pass. Wall time
+  57 minutes; the sum of test times is 259 minutes, so a serial run would take about 4.5 hours
+  (more than the earlier estimate). Startup per process is about 25 s. Per test:
+
+  | Test | Time | Where it goes |
+  |---|---|---|
+  | `test_380_small_office_psz_gas_coil_7A` | 56.0 min | sizing run after the measure: 53 min (before: 2 min) |
+  | `test_elec_backup_lockout_7A` | 55.8 min | same model, same 53 min sizing run |
+  | `test_gas_backup_lockout_7A` | 53.1 min | same model, same 50 min sizing run |
+  | `test_380_retail_psz_gas_6B` | 32.4 min | sizing run after the measure: 30 min (before: 1.7 min) |
+  | `test_380_small_office_psz_gas_coil_7A_upsizing_adv` | 24.4 min | annual EnergyPlus run: 23 min |
+  | `test_380_small_office_psz_gas_coil_7A_upsizing_std` | 24.0 min | annual EnergyPlus run: 23 min |
+  | `test_380_Small_Office_PSZ_Gas_2A` | 4.4 min | sizing run after the measure: 3 min (before: 0.6 min) |
+  | `test_backup_coil_matches_original_fuel` | 80 s | three measure applications |
+  | `test_small_office_psz_not_hard_sized` | 46 s | sizing runs of 3 s and 7 s |
+  | `test_fan_scenarios_are_differentiated`, `test_dual_fuel_backup_is_natural_gas` | 40 s each | two or three applications |
+  | `test_sizing_model_in_alaska`, `test_sizing_model_in_hawaii` | 37 to 39 s | two applications with the measure's own sizing run (2 s each) |
+  | restaurant tests (5), setback tests (2), fan tests (2) | 17 to 32 s each | one application |
+  | NA tests (3), options lookup tests (2) | 3 to 7 s each | |
+  | argument, JSON format, fan data tests (4) | under 0.1 s | |
+
+  **Where the time goes.** The sizing run that `mimic_hardsize_model` does *after* the measure is
+  25 to 50 times slower than the one before it, on every model (7A: 2 min to 53 min; retail 6B: 1.7
+  to 30 min; 2A: 0.6 to 3 min). Its `eplusout.err` has 48 to 76 "SimHVAC: Maximum iterations (20)
+  exceeded for all HVAC loops" warnings on the cooling design day; the pre-measure run has none. The
+  measure's own sizing run (`SR1`, on the not-hard-sized model before the equipment is replaced)
+  takes 2 to 10 s. So the slow part is simulating the *new* HP RTU, which also explains the 23
+  minute annual runs for a small office. The three 7A hard-size tests repeat the identical 53 minute
+  sizing run three times.
+
+**How the tests are parallelized today.** They aren't, within this file. The Rakefile
+(`unit_tests:upgrade_measure_tests`) runs each file in `test/upgrade_measure_tests.txt` in its own
+process, with as many processes as the agent has cores, and Jenkins calls that through the
+`cbci_shared_libs` pipeline (not in this repo, so the agent's core count isn't visible here). The 31
+tests in `measure_test.rb` run one after another in one process, so this file is likely the longest
+single item in the upgrade group. Locally, the same split can be made by hand with name filters in
+separate terminals; the leading `/` of a regex filter needs `MSYS_NO_PATHCONV=1` in Git Bash or
+the first alternative silently never matches.
 
 **Proposed:**
-- [ ] **Time every test.** Run minitest with `--verbose` to get per-test times, and record them here.
+- [x] **Time every test.** Per-test times recorded above (2026-10-09).
+- [ ] **Split the file so CI runs it in parallel.** Move the shared helpers (now all in one place
+  after 3.4) into `tests/hprtu_test_helper.rb` and split the tests into files by cost, each with
+  its own class name, e.g. fast tests, two hard-size files of three tests, the five restaurant
+  tests, and the two annual simulations. List each file in `test/upgrade_measure_tests.txt`; the
+  Rakefile then schedules them as separate processes with no CI change. Expected: about 30 minutes
+  instead of 1.5 to 2 hours, on an agent with spare cores. One precedent in the repo
+  (`create_typical_building_from_model` has two test files).
 - [ ] **Split the tests in two:**
   - *Fast:* argument, JSON, and apply-only checks. Run on every change.
   - *Slow:* sizing and simulation checks. Run before a 10K run or a PR.
   - Make the split explicit, e.g. a name prefix or an environment variable that skips slow tests.
-- [ ] **Drop duplicate slow tests.** Three `verify_hp_rtu` tests (`test_380_small_office_psz_gas_coil_7A`,
-  `test_gas_backup_lockout_7A`, `test_elec_backup_lockout_7A`) do the same before/after sizing runs
-  on `380_small_office_psz_gas_coil_7A.osm` and differ only in arguments. The lockout checks could
-  be apply-only. Keep one sizing test per behavior and make the rest apply-only.
-- [ ] **Find out why the 7A sizing run doesn't converge.** It may be the model, or the fan changes in
-  2.3–2.5. If it's the fan changes, real runs are affected too.
+- [x] **Drop duplicate slow tests** (2026-10-09). `test_gas_backup_lockout_7A` and
+  `test_elec_backup_lockout_7A` repeated the 53 minute post-measure sizing run that
+  `test_380_small_office_psz_gas_coil_7A` already does on the same model. They are now apply-only
+  through a new helper, `verify_backup_heat_and_lockout`, which checks the backup coil type, its
+  fuel when asked, and the compressor lockout on every new RTU; `test_dual_fuel_backup_is_natural_gas`
+  uses the same helper. Each lockout test now takes about 10 s instead of 55 minutes, and the
+  4-stage and airflow checks stay covered by the 7A hard-size test. Both pass.
+- [ ] **Find out why the sizing run of the HP RTU model doesn't converge.** Not just 7A: every
+  post-measure sizing run on 2026-10-09 (2A, 7A, retail 6B, the two lockout tests) hit the
+  iteration limit on the cooling design day, and none of the pre-measure runs did. It may be the
+  model, or the fan changes in 2.3–2.5. If it's the fan changes, real runs are affected too. Run one
+  post-measure sizing run with `Output:Diagnostics,DisplayExtraWarnings` to see which loop and
+  component.
+- [x] **Fix `test_confirm_heating_setback_change_opt_start`** (2026-10-09). Its call to
+  `possible_opt_start` (never defined in the repo) was unreachable because the test model's day
+  profiles have at most 4 values (3.4), so the test only repeated the square wave check. The dead
+  filter is removed and the test now checks the measure's ramp branch directly: the model's Sunday
+  profile (59 F until 03:00, 64.8 F until 04:15, 67 F until 23:15, 59 F) must become 65, 65, 67, 65 F
+  with a 2 F setback, i.e. every step below the new minimum is raised to it and the occupied
+  setpoint is untouched. Ramp profiles are found in the input model (more than two unique values)
+  and paired with the modified day schedules by name. Passes.
+- [x] **Decide what the `_na` ERV test should check** (2026-10-09). It was a copy of
+  `test_380_full_service_restaurant_psz_gas_coil_single_erv_3A` (3.4). It now sets `hr=true` on the
+  full service restaurant model (a building type excluded from energy recovery) and asserts that the
+  three existing ERVs are untouched and that the measure registered its "not applicable for energy
+  recovery" warning. Passes in 10 s.
 - [ ] **One fast test per scenario** that applies its options lookup arguments and checks that they
   show up in the model (backup coil fuel, lockout, performance curves, fan, control strategy).
   Ideally the test reads the arguments straight from the options lookup row, so the two can't drift
@@ -745,6 +880,15 @@ their own sections (the checkboxes in 3.2, 4.3, and 4.5).
 - [ ] Does anything look for the old coil or fan names (`gas backup coil`, `VFD Fan`)? (2.2, 2.3)
 - [ ] Is 25 F the right default lockout for gas backup? (2.1)
 
+**Bugs found during the cleanup** (3.4), each marked `TODO` in the code and left as-is so the fix is
+its own reviewable change:
+- [ ] `reference_heating_cfm_per_ton` reads the cooling key. Fixing it changes the adjusted heating
+      COP; confirm the intent with Chris and measure the effect on a 10K run before changing it.
+- [ ] Window upgrade conditions overwrite the roof conditions in the reported condition strings.
+- [ ] The night cycling check `include?([0, 0.0])` is never true, so the high OA fraction exclusion
+      never fires. Decide whether that exclusion is still wanted (its comment calls it temporary,
+      pending an EnergyPlus fix) before fixing or deleting it.
+
 ## 7. Thoughts and brainstorming
 
 _(empty)_
@@ -826,3 +970,20 @@ Section numbers in older entries are the numbers at the time.
   in every scenario, and where the minimum flow fraction comes from). Fixed the stale
   `fan_efficiency_range_for_this_scenario` text in all four scenario JSONs, which still described
   the earlier 0.70 variable-speed impeller. Text only; no model change. Regenerated `measure.xml`.
+- 2026-10-09: Cleaned up `measure.rb` and `tests/measure_test.rb` with no functional change
+  (commit `465c8341`, new 3.4): curve loading driven by a per-scenario name table, repeated blocks
+  extracted into helpers, duplicated test helpers and dead code removed, comments made consistent.
+  Verified by comparing nine before/after output models (all identical) and running 16 tests.
+  Recorded the bugs found but left alone in 3.4 and section 6, and the test timings and the
+  parallelization situation (per-file in the Rakefile, none within the file) in 4.5, with a proposal
+  to split the file so CI runs it in parallel. Regenerated `measure.xml`.
+- 2026-10-09: Ran all 31 tests on the cleaned code as nine parallel processes (temporary script,
+  not in the repo): all pass, 57 minutes wall, 259 minutes summed. Recorded per-test times in 4.5
+  and the finding that the post-measure sizing run is 25 to 50 times slower than the pre-measure
+  one on every model, with iteration-limit warnings on the cooling design day. Corrected 3.4: the
+  opt-start setback test passes because its undefined helper is behind an unreachable guard.
+- 2026-10-09: Test revisions (4.5): the two lockout tests are apply-only via the new
+  `verify_backup_heat_and_lockout` helper (55 min to 10 s each), and the `_na` ERV test now
+  requests energy recovery on the excluded restaurant building type and checks the warning. The
+  opt-start setback test drops its unreachable `possible_opt_start` filter and asserts the ramp
+  branch directly (intermediate step raised to the new minimum, occupied setpoint untouched).
