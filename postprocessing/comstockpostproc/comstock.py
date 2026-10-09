@@ -1480,7 +1480,6 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         Only columns named in the definitions are aliased, and only where the legacy
         spelling is ABSENT, so this is a no-op for runs built with the older measures.
-        (Same code as on ccaradon/calibration-qaqc, PR #463.)
         """
         CUSTOM = 'create_custom_building_from_spec'
         LEGACY = ('create_bar_from_building_type_ratios',
