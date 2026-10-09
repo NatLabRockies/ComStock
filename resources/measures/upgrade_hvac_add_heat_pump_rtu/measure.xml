@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>add_heat_pump_rtu</name>
   <uid>f4567a68-27f2-4a15-ae91-ba0f35cd08c7</uid>
-  <version_id>971ae329-1ae9-4b63-a80a-904ad4a1e016</version_id>
-  <version_modified>2026-10-09T12:34:06Z</version_modified>
+  <version_id>502e9252-a5f2-4dfc-869c-90f5ac38f38d</version_id>
+  <version_modified>2026-10-09T13:13:58Z</version_modified>
   <xml_checksum>5E2576E4</xml_checksum>
   <class_name>AddHeatPumpRtu</class_name>
   <display_name>add_heat_pump_rtu</display_name>
@@ -354,7 +354,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>BD683D6F</checksum>
+      <checksum>C4C1971A</checksum>
     </file>
     <file>
       <filename>call_other_measures.rb</filename>
@@ -402,7 +402,7 @@
       <filename>measure_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>BB247780</checksum>
+      <checksum>A4A7252C</checksum>
     </file>
   </files>
 </measure>
