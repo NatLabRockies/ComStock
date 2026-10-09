@@ -220,6 +220,10 @@ class SetHVACTemplate < OpenStudio::Measure::ModelMeasure
     # Air Loop Controls
     model.getAirLoopHVACs.sort.each { |obj| standard.air_loop_hvac_apply_standard_controls(obj, climate_zone) }
 
+    # VAV terminal minimums at the zone outdoor air the replacement template's ventilation design
+    # needs (the DOE Ref templates leave occupant-driven zones at their 30% minimum)
+    standard.model_apply_vav_terminal_minimum_outdoor_air(model)
+
     # Zone HVAC Controls
     model.getZoneHVACComponents.sort.each { |obj| standard.zone_hvac_component_apply_standard_controls(obj) }
 

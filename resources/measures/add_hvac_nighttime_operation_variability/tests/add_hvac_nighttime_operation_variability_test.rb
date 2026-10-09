@@ -210,4 +210,47 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
     assert_equal('RestaurantSitDown Kitchen Exhaust Fan Balanced Exhaust Fraction Schedule', kitchen_exhaust_fan.balancedExhaustFractionSchedule.get.name.get)
     assert_equal('RestaurantSitDown Kitchen_Exhaust_SCH', tranfer_air_fan.availabilitySchedule.get.name.get)
   end
+
+  # A packaged unit whose HVAC template set its fan to cycle during occupied hours keeps cycling
+  # under the night modes; an untagged unit gets the cloned availability schedule as before. Both
+  # get the night outdoor air schedule. No shipped template cycles fans, so the test overrides the
+  # template's air_loop_hvac_unitary_supply_fan_cycles? to stand in for one that does.
+  def test_template_cycling_fans_keep_cycling
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    model = OpenStudio::Model::Model.new
+    std = Standard.build('ComStock DOE Ref 1980-2004')
+    std.define_singleton_method(:air_loop_hvac_unitary_supply_fan_cycles?) { |_air_loop_hvac| true }
+    zones = (0...2).map do |i|
+      polygon = OpenStudio::Point3dVector.new
+      [[0, 0], [0, 10], [10, 10], [10, 0]].each { |x, y| polygon << OpenStudio::Point3d.new(x + (i * 20), y, 0) }
+      space = OpenStudio::Model::Space.fromFloorPrint(polygon, 3.0, model).get
+      zone = OpenStudio::Model::ThermalZone.new(model)
+      space.setThermalZone(zone)
+      zone
+    end
+    loops = zones.map { |zone| std.model_add_psz_ac(model, [zone]).first }
+    loops.each do |loop|
+      availability = OpenStudio::Model::ScheduleRuleset.new(model, 1.0)
+      loop.setAvailabilitySchedule(availability)
+      loop.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir.setMinimumOutdoorAirSchedule(availability)
+    end
+    std.air_loop_hvac_apply_unitary_supply_fan_operating_mode(loops[0])
+    units = loops.map { |loop| loop.supplyComponents.map(&:to_AirLoopHVACUnitarySystem).find(&:is_initialized).get }
+    assert_equal(model.alwaysOffDiscreteSchedule, units[0].supplyAirFanOperatingModeSchedule.get)
+
+    measure = AddHvacNighttimeOperationVariability.new
+    argument_map = OpenStudio::Measure::OSArgumentMap.new
+    rtu_night_mode = measure.arguments(model)[0].clone
+    assert(rtu_night_mode.setValue('night_fancycle_vent'))
+    argument_map['rtu_night_mode'] = rtu_night_mode
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    measure.run(model, runner, argument_map)
+    assert_equal('Success', runner.result.value.valueName)
+
+    assert_equal(model.alwaysOffDiscreteSchedule, units[0].supplyAirFanOperatingModeSchedule.get, 'template cycling fan should keep cycling')
+    assert_includes(units[1].supplyAirFanOperatingModeSchedule.get.name.to_s, 'night_fancycle_schedule')
+    loops.each do |loop|
+      assert_includes(loop.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir.minimumOutdoorAirSchedule.get.name.to_s, 'night_ventcycle_schedule')
+    end
+  end
 end

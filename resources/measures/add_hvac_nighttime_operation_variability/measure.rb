@@ -92,6 +92,14 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
     return is_evap
   end
 
+  # Determine if a packaged unit's supply fan was set to cycle during occupied hours by its HVAC
+  # template ('auto' thermostat fan). The template records the continuous
+  # schedule it replaced in this property; such a fan keeps cycling, so the night modes below
+  # change only its availability and outdoor air schedules.
+  def template_cycling_fan?(component)
+    component.additionalProperties.hasFeature('continuous_fan_operating_mode_schedule')
+  end
+
   # define what happens when the measure is run
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
@@ -268,6 +276,8 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_fan_sch.setName("#{air_loop_hvac.name}_night_fancycle_schedule")
         # Schedule to control the airloop fan operation schedule
         air_loop_hvac.supplyComponents.each do |component|
+          next if template_cycling_fan?(component)
+
           obj_type = component.iddObjectType.valueName.to_s
           case obj_type
           when 'OS_AirLoopHVAC_UnitarySystem'
@@ -310,6 +320,8 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
 
         # set unitary supply fan operation schedule - loop through air loop components to find unitary systems
         air_loop_hvac.supplyComponents.each do |component|
+          next if template_cycling_fan?(component)
+
           obj_type = component.iddObjectType.valueName.to_s
           case obj_type
           when 'OS_AirLoopHVAC_UnitarySystem'
