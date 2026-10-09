@@ -725,6 +725,10 @@ together, and the remaining 20 fast tests together. Nine processes fit in 32 GB 
   first run because fewer heavy processes competed for CPU: 7A hard-size 35 min (was 56), retail
   6B 22 min (was 32), the annual simulations 17 and 13 min (were 24 each). So per-test times depend
   on what else is running; the ranking is stable.
+- **Measured 2026-10-09, third full run** (commit `13e26c1e`, after the fan test fix). 31 tests,
+  3651 assertions, **all pass**. Wall time 31 minutes, summed test time 84 minutes. Slowest: 7A
+  hard-size 31 min, retail 6B 18 min, the annual simulations 14 and 13 min, 2A hard-size 2.4 min;
+  the other 26 tests take 7 minutes together.
 
   **Where the time goes.** The sizing run that `mimic_hardsize_model` does *after* the measure is
   25 to 50 times slower than the one before it, on every model (7A: 2 min to 53 min; retail 6B: 1.7
@@ -1036,3 +1040,5 @@ Section numbers in older entries are the numbers at the time.
   as flaky: it compared the first fan of each scenario from an unordered list, and the motor
   efficiency bin differs by air loop. Fixed to compare fans paired by name (4.5). Added a
   consolidated table of the day's test changes and the parallel grouping to 4.5.
+- 2026-10-09: Third full parallel run on `13e26c1e`: 31 tests, 3651 assertions, 0 failures, 31
+  minutes wall (4.5).
