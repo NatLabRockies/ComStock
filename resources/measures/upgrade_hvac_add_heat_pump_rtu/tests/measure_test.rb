@@ -627,6 +627,7 @@ class AddHeatPumpRtuTest < Minitest::Test
   end
 
   # apply the measure with the given argument overrides and assert the existing ERVs are unchanged
+  # @return [OpenStudio::Measure::OSResult] measure result
   def assert_existing_ervs_unchanged(test_name, osm_name, epw_name, overrides)
     announce_test(osm_name)
     osm_path = model_input_path(osm_name)
@@ -636,10 +637,42 @@ class AddHeatPumpRtuTest < Minitest::Test
     argument_map = build_argument_map(measure.arguments(model), overrides)
 
     ervs_baseline = model.getHeatExchangerAirToAirSensibleAndLatents
-    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true)
+    result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true)
     model = load_model(model_output_path(test_name))
     ervs_upgrade = model.getHeatExchangerAirToAirSensibleAndLatents
     assert_equal(ervs_baseline, ervs_upgrade)
+    result
+  end
+
+  # apply the measure without hard sizing and check the backup coil type and compressor lockout temperature on every new RTU
+  # @param expect_gas_backup [Boolean] true when a gas backup coil is expected, false for electric resistance
+  # @param expected_lockout_temp_f [Double] expected compressor lockout temperature on each new DX heating coil
+  # @param expected_backup_fuel_type [String, nil] when given, the fuel type expected on a gas backup coil
+  def verify_backup_heat_and_lockout(test_name, measure, argument_map, osm_path, epw_path, expect_gas_backup:, expected_lockout_temp_f:,
+                                     expected_backup_fuel_type: nil, model: nil)
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
+    applied = load_model(model_output_path(test_name))
+    unitary_systems = applied.getAirLoopHVACUnitarySystems
+    refute_empty(unitary_systems, "no unitary systems after applying the measure in #{test_name}")
+
+    expected_lockout_temp_c = OpenStudio.convert(expected_lockout_temp_f, 'F', 'C').get
+    unitary_systems.each do |system|
+      sup_htg_coil = system.supplementalHeatingCoil.get
+      if expect_gas_backup
+        assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "expected a gas backup heating coil for #{system.name}")
+        unless expected_backup_fuel_type.nil?
+          assert_equal(expected_backup_fuel_type, sup_htg_coil.to_CoilHeatingGas.get.fuelType,
+                       "backup coil for #{system.name} should burn #{expected_backup_fuel_type}")
+        end
+      else
+        assert(sup_htg_coil.to_CoilHeatingElectric.is_initialized, "expected an electric resistance backup heating coil for #{system.name}")
+      end
+
+      htg_coil = system.heatingCoil.get
+      htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized ? htg_coil.to_CoilHeatingDXMultiSpeed.get : htg_coil.to_CoilHeatingDXSingleSpeed.get
+      assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
+                      "compressor lockout temperature for #{system.name} does not match the expected #{expected_lockout_temp_f}F")
+    end
   end
 
   # ---------------------------------------------------------
@@ -1114,6 +1147,7 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   # the dual fuel compressor lockout temperature applies when the backup heating coil is a gas furnace
   # the electric backup lockout is deliberately set to a different value so this test fails if the wrong argument is used
+  # apply-only: the lockout and backup coil type do not depend on hard sizing, which test_380_small_office_psz_gas_coil_7A covers
   def test_gas_backup_lockout_7A
     osm_name = '380_small_office_psz_gas_coil_7A.osm'
     announce_test(osm_name)
@@ -1133,12 +1167,13 @@ class AddHeatPumpRtuTest < Minitest::Test
 
     # the original model heats with gas, so matching the original fuel gives gas backup coils
     # and the compressor should lock out at the gas backup temperature
-    verify_hp_rtu('test_gas_backup_lockout_7A', measure, argument_map, osm_path, epw_path,
-                  expect_gas_backup: true, expected_lockout_temp_f: gas_backup_lockout_temp_f)
+    verify_backup_heat_and_lockout('test_gas_backup_lockout_7A', measure, argument_map, osm_path, epw_path,
+                                   expect_gas_backup: true, expected_lockout_temp_f: gas_backup_lockout_temp_f)
   end
 
   # the gas backup lockout temperature is ignored when the backup heating coil is electric resistance,
   # even though the original model heats with gas
+  # apply-only, like test_gas_backup_lockout_7A
   def test_elec_backup_lockout_7A
     osm_name = '380_small_office_psz_gas_coil_7A.osm'
     announce_test(osm_name)
@@ -1156,8 +1191,8 @@ class AddHeatPumpRtuTest < Minitest::Test
                                       'hp_min_comp_lockout_temp_gas_backup_f' => gas_backup_lockout_temp_f)
 
     # electric resistance backup was requested, so the electric lockout temperature applies
-    verify_hp_rtu('test_elec_backup_lockout_7A', measure, argument_map, osm_path, epw_path,
-                  expect_gas_backup: false, expected_lockout_temp_f: elec_backup_lockout_temp_f)
+    verify_backup_heat_and_lockout('test_elec_backup_lockout_7A', measure, argument_map, osm_path, epw_path,
+                                   expect_gas_backup: false, expected_lockout_temp_f: elec_backup_lockout_temp_f)
   end
 
   # ##########################################################################
@@ -1303,10 +1338,13 @@ class AddHeatPumpRtuTest < Minitest::Test
                                    'hprtu_scenario' => 'variable_speed_high_eff')
   end
 
-  # existing ERVs are not affected in a non-applicable building type
+  # existing ERVs are not affected when energy recovery IS requested on a building type that is excluded from it
+  # (full service restaurants); the measure warns and leaves the ERVs in place
   def test_380_full_service_restaurant_psz_gas_coil_single_erv_3A_na
-    assert_existing_ervs_unchanged(__method__, '380_full_service_restaurant_psz_gas_coil_single_erv_3A.osm', 'SC_Columbia_Metro_723100_12.epw',
-                                   'hprtu_scenario' => 'variable_speed_high_eff')
+    result = assert_existing_ervs_unchanged(__method__, '380_full_service_restaurant_psz_gas_coil_single_erv_3A.osm', 'SC_Columbia_Metro_723100_12.epw',
+                                            'hprtu_scenario' => 'variable_speed_high_eff', 'hr' => true)
+    assert(result.warnings.any? { |w| w.logMessage.include?('not applicable for energy recovery') },
+           'expected a warning that the building type is not applicable for energy recovery')
   end
 
   # ##########################################################################
@@ -1322,20 +1360,33 @@ class AddHeatPumpRtuTest < Minitest::Test
     assert_setback_deltas_within(heating_setpoint_profiles(model), setback_value_c, &:values)
   end
 
-  # confirm that any heating setbacks are now 2F for profiles with an optimum start ramp
+  # confirm that any heating setbacks are now 2F on a model whose Sunday profile has an optimum start ramp
+  # (an intermediate setpoint step before the occupied setpoint), and check the ramp branch of the measure directly:
+  # every step below the new minimum is raised to it and the occupied setpoint is untouched
   def test_confirm_heating_setback_change_opt_start
     setback_val = 2.0
     setback_value_c = setback_val * 5 / 9
-    model = apply_with_setback(__method__, 'Retail_PSZ-AC_updated_39_opt_start.osm', 'NE_Kearney_Muni_725526_16.epw', setback_val)
+    osm_name = 'Retail_PSZ-AC_updated_39_opt_start.osm'
 
-    assert_setback_deltas_within(heating_setpoint_profiles(model), setback_value_c) do |tstat_profile|
-      # exclude values that could have been part of an optimum start; the check needs at least the third timestep in the profile
-      working_profile = tstat_profile.values.dup
-      tstat_profile_min = tstat_profile.values.min
-      tstat_profile.values.each_with_index do |value, i|
-        working_profile.delete(value) if i > 3 && possible_opt_start(i, tstat_profile, tstat_profile_min)
+    # ramp profiles in the input model have more than two unique values
+    ramp_profiles_before = heating_setpoint_profiles(load_model(model_input_path(osm_name))).select { |p| p.values.uniq.size > 2 }
+    refute_empty(ramp_profiles_before, 'expected the opt-start model to contain a heating setpoint profile with a ramp')
+
+    model = apply_with_setback(__method__, osm_name, 'NE_Kearney_Muni_725526_16.epw', setback_val)
+    profiles_after = heating_setpoint_profiles(model)
+    assert_setback_deltas_within(profiles_after, setback_value_c, &:values)
+
+    # the measure modifies the day schedules in place, so pair them by name
+    ramp_profiles_before.each do |before|
+      after = profiles_after.find { |p| p.name.to_s == before.name.to_s }
+      refute_nil(after, "profile #{before.name} is missing after the measure")
+      new_min = before.values.max - setback_value_c
+      assert_in_delta(before.values.max, after.values.max, 1e-6, "occupied setpoint of #{before.name} should be untouched")
+      assert_equal(before.values.size, after.values.size, "#{before.name} should keep its time steps")
+      before.values.zip(after.values).each do |value_before, value_after|
+        expected = [value_before, new_min].max
+        assert_in_delta(expected, value_after, 1e-6, "#{before.name}: #{value_before} C should become #{expected} C")
       end
-      working_profile
     end
   end
 
@@ -1518,22 +1569,10 @@ class AddHeatPumpRtuTest < Minitest::Test
                                         'hp_min_comp_lockout_temp_elec_backup_f' => 0.0,
                                         'hp_min_comp_lockout_temp_gas_backup_f' => gas_backup_lockout_temp_f)
 
-      set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
-      applied = load_model(model_output_path(test_name))
-      unitary_systems = applied.getAirLoopHVACUnitarySystems
-      refute_empty(unitary_systems, "no unitary systems after applying dual fuel to #{c[:name]} model")
-      expected_lockout_temp_c = OpenStudio.convert(gas_backup_lockout_temp_f, 'F', 'C').get
-      unitary_systems.each do |system|
-        sup_htg_coil = system.supplementalHeatingCoil.get
-        assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "expected a gas backup coil for #{system.name} (original fuel #{c[:name]})")
-        assert_equal('NaturalGas', sup_htg_coil.to_CoilHeatingGas.get.fuelType,
-                     "dual fuel backup coil for #{system.name} should burn natural gas (original fuel #{c[:name]})")
-
-        htg_coil = system.heatingCoil.get
-        htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized ? htg_coil.to_CoilHeatingDXMultiSpeed.get : htg_coil.to_CoilHeatingDXSingleSpeed.get
-        assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
-                        "dual fuel compressor lockout for #{system.name} should use the gas backup temperature")
-      end
+      # dual fuel always gives a natural gas backup coil and the gas backup lockout, whatever the original fuel
+      verify_backup_heat_and_lockout(test_name, measure, argument_map, osm_path, epw_path,
+                                     model: model, expect_gas_backup: true, expected_lockout_temp_f: gas_backup_lockout_temp_f,
+                                     expected_backup_fuel_type: 'NaturalGas')
     end
   end
 
