@@ -2267,7 +2267,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "retail": {
+            "retail - mass merchandising": {
               "ratio": 0.8291999999999999,
               "space_type_gen": true,
               "default": false
@@ -2277,7 +2277,7 @@
       ],
       "service_water_heating_overrides": [
         {
-          "space_type": "retail",
+          "space_type": "retail - mass merchandising",
           "equipment": {
             "*": {
               "peak_flow_rate_gph_per_floor_area_ft2": 0.00088,
