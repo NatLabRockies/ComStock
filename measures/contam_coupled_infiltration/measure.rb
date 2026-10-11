@@ -152,7 +152,7 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
   end
 
   def register_summary(runner, summary)
-    runner.registerValue('osm2contam_version', summary['osm2contam_version'])
+    runner.registerValue('version', summary['osm2contam_version'])
     runner.registerValue('assumptions_sha', summary['assumptions_sha'])
     runner.registerValue('timesteps_per_hour', summary['timesteps_per_hour'])
     runner.registerValue('prepare_seconds', summary['seconds'].to_f)
