@@ -98,3 +98,22 @@ __If you get a run error related to custom gem installation, try deleting  ComSt
 Simulation results will show up in `C:/my_effort/runs/my_run`. During the run,
 the simulation results will be viewable uncompressed. When the run finishes,
 everything will be compressed into a `.tar.gz` just like on Eagle.
+
+## CONTAM coupling (osm2contam)
+
+The `contam_coupled_infiltration` and `contam_infiltration_report` measures couple a CONTAM
+multizone airflow model to each building's EnergyPlus run. They call the `osm2contam`
+Python package, so a local run needs, beyond the setup above:
+
+- A CPython 3.12 environment with `osm2contam` installed. 3.12 is required because
+  EnergyPlus 25.1 embeds CPython 3.12 and the coupling runs inside it as a PythonPlugin.
+  Point `OSM2CONTAM_PYTHON` at its interpreter, e.g.
+  `C:\osm2contam\.venv\Scripts\python.exe`.
+- Windows Developer Mode (or an Administrator prompt), so `buildstock_local` can create its
+  per-building symlinks.
+- No `run_directory_cleanup` on Windows. `SimulationOutputReport` leaves `eplusout.sql`
+  open and Windows will not delete an open file, so the cleanup fails every datapoint.
+
+`ymls/contam_dev.yml` runs three small buildings coupled for a year. The full setup,
+sizing and checks are in the osm2contam repository, `docs/comstock-integration-plan.md`
+section 2.6.

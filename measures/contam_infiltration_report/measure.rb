@@ -71,6 +71,14 @@ class ContamInfiltrationReport < OpenStudio::Measure::ReportingMeasure
     prepare['strata'].each do |key, value|
       runner.registerValue("strata_#{key}", value.is_a?(Numeric) ? value.to_f : value.to_s)
     end
+    design = prepare['design_infiltration']
+    runner.registerValue('design_infiltration_4pa_m3_s', design['total_m3_s'].to_f) if design
+    leakage = prepare['leakage']
+    if leakage
+      runner.registerValue('envelope_leakage_source', leakage['source'].to_s)
+      runner.registerValue('contam_leakage_flow_4pa_m3_s', leakage['contam_flow_4pa_m3_s'].to_f) if leakage['contam_flow_4pa_m3_s']
+      runner.registerValue('envelope_leakage_ratio_to_default', leakage['ratio_to_default'].to_f) if leakage['ratio_to_default']
+    end
     coupling = prepare['coupling']
     return if coupling.nil?
     runner.registerValue('contam_zones', coupling['contam_zones'])

@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>contam_coupled_infiltration</name>
   <uid>ede2ed82-f0cf-4781-9746-4300c8a4b519</uid>
-  <version_id>4215cd26-61db-47ea-b9c6-75cc0b6ea858</version_id>
-  <version_modified>2026-10-11T16:25:02Z</version_modified>
+  <version_id>9e8d482e-facc-4139-b679-a74605a59178</version_id>
+  <version_modified>2026-10-11T17:58:25Z</version_modified>
   <xml_checksum>073AC746</xml_checksum>
   <class_name>ContamCoupledInfiltration</class_name>
   <display_name>CONTAM Coupled Infiltration</display_name>
@@ -51,6 +51,25 @@
       <required>false</required>
       <model_dependent>false</model_dependent>
       <default_value></default_value>
+    </argument>
+    <argument>
+      <name>envelope_leakage</name>
+      <display_name>Envelope leakage (coupled)</display_name>
+      <description>model: CONTAM's envelope passes the model's own design infiltration at 4 Pa, which is the sampled airtightness as set_nist_infiltration_correlations applied it. assumptions: the assumptions file's per-area value.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>model</default_value>
+      <choices>
+        <choice>
+          <value>model</value>
+          <display_name>model</display_name>
+        </choice>
+        <choice>
+          <value>assumptions</value>
+          <display_name>assumptions</display_name>
+        </choice>
+      </choices>
     </argument>
     <argument>
       <name>capacitance_multiplier</name>
@@ -107,7 +126,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>E7047C66</checksum>
+      <checksum>480ADA45</checksum>
     </file>
   </files>
 </measure>

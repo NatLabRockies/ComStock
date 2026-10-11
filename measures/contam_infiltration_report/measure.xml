@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>contam_infiltration_report</name>
   <uid>283d5430-29d5-4b21-924b-0d5b5726a83c</uid>
-  <version_id>91ff61f3-89d2-4ad2-9115-df7a782d3e33</version_id>
-  <version_modified>2026-10-11T16:41:08Z</version_modified>
+  <version_id>40fd995e-6d48-41e6-aa7d-49d61fcbd2f9</version_id>
+  <version_modified>2026-10-11T17:58:05Z</version_modified>
   <xml_checksum>C0D55C95</xml_checksum>
   <class_name>ContamInfiltrationReport</class_name>
   <display_name>CONTAM Infiltration Report</display_name>
@@ -33,7 +33,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>7137BE08</checksum>
+      <checksum>474B45F9</checksum>
     </file>
   </files>
 </measure>

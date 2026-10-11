@@ -59,6 +59,12 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
     assumptions.setDefaultValue('')
     args << assumptions
 
+    leakage = OpenStudio::Measure::OSArgument.makeChoiceArgument('envelope_leakage', ['model', 'assumptions'], true)
+    leakage.setDisplayName('Envelope leakage (coupled)')
+    leakage.setDescription("model: CONTAM's envelope passes the model's own design infiltration at 4 Pa, which is the sampled airtightness as set_nist_infiltration_correlations applied it. assumptions: the assumptions file's per-area value.")
+    leakage.setDefaultValue('model')
+    args << leakage
+
     capacitance = OpenStudio::Measure::OSArgument.makeDoubleArgument('capacitance_multiplier', true)
     capacitance.setDisplayName('Zone capacitance multiplier (coupled)')
     capacitance.setDescription('ZoneCapacitanceMultiplier:ResearchSpecial temperature multiplier, for a coupling that rings. 0 leaves it unset.')
@@ -113,7 +119,8 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
     tph = mode == 'coupled' ? runner.getIntegerArgumentValue('timesteps_per_hour', user_arguments) : model.getTimestep.numberOfTimestepsPerHour
     command = [python_command, '-m', 'osm2contam', 'comstock-prepare',
                '--osm', osm, '--epw', epw, '--out', work,
-               '--mode', mode, '--timesteps-per-hour', tph.to_s]
+               '--mode', mode, '--timesteps-per-hour', tph.to_s,
+               '--leakage', runner.getStringArgumentValue('envelope_leakage', user_arguments)]
     assumptions = runner.getOptionalStringArgumentValue('assumptions', user_arguments)
     command += ['--assumptions', assumptions.get] if assumptions.is_initialized && !assumptions.get.strip.empty?
 
