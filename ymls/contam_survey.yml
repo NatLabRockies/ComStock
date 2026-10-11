@@ -1,0 +1,44 @@
+# CONTAM campaign, pass 1: survey the candidate pool (osm2contam plan §3.1).
+#
+# Builds every pool row and runs contam_coupled_infiltration in attributes mode, which
+# measures the §8.4 strata from the model, then cuts the run period to one day: no annual
+# simulation is needed, so each building costs its model build, a sizing run and a day.
+# (Not --measures_only: with custom gems buildstock_local puts that flag where the CLI
+# reads it as the Gemfile path, and every building fails before it is built.)
+#
+#   $env:OSM2CONTAM_PYTHON = "C:\osm2contam\.venv\Scripts\python.exe"
+#   python ../sampling/contam_stratified_select.py pool <full buildstock.csv> --size 1000 \
+#       --out ../samples/contam_pool.csv
+#   buildstock_local contam_survey.yml
+#
+# then collect with osm2contam scripts/comstock_collect.py --survey ../contam_survey_output
+# and select with sampling/contam_stratified_select.py campaign.
+schema_version: '0.3'
+buildstock_directory: ../
+project_directory: national
+output_directory: ../contam_survey_output
+weather_files_path: C:/Projects/WeatherData/BuildStock_2018_FIPS_HI.zip   # machine-specific
+
+sampler:
+  type: precomputed
+  args:
+    sample_file: ../samples/contam_pool.csv
+
+baseline:
+  n_buildings_represented: 1000
+  custom_gems: True
+
+os_version: 3.10.0
+os_sha: 86d7e215a1
+max_minutes_per_sim: 120
+
+workflow_generator:
+  type: commercial_default
+  args:
+    measures:
+    - measure_dir_name: contam_coupled_infiltration
+      arguments:
+        mode: attributes
+        survey_run_days: 1
+    reporting_measures:
+    - measure_dir_name: contam_infiltration_report

@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>contam_coupled_infiltration</name>
   <uid>ede2ed82-f0cf-4781-9746-4300c8a4b519</uid>
-  <version_id>9e8d482e-facc-4139-b679-a74605a59178</version_id>
-  <version_modified>2026-10-11T17:58:25Z</version_modified>
+  <version_id>9b1b8174-e581-4676-8a0d-a9d0a001f464</version_id>
+  <version_modified>2026-10-11T19:37:06Z</version_modified>
   <xml_checksum>073AC746</xml_checksum>
   <class_name>ContamCoupledInfiltration</class_name>
   <display_name>CONTAM Coupled Infiltration</display_name>
@@ -72,6 +72,15 @@
       </choices>
     </argument>
     <argument>
+      <name>survey_run_days</name>
+      <display_name>Survey run period, days (attributes)</display_name>
+      <description>Attributes mode only: shorten the run period to this many days, since a survey needs the model, not an annual result. 0 leaves the run period alone. Exists because buildstock_local --measures_only is broken with custom gems.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+    </argument>
+    <argument>
       <name>capacitance_multiplier</name>
       <display_name>Zone capacitance multiplier (coupled)</display_name>
       <description>ZoneCapacitanceMultiplier:ResearchSpecial temperature multiplier, for a coupling that rings. 0 leaves it unset.</description>
@@ -126,7 +135,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>480ADA45</checksum>
+      <checksum>D3E61804</checksum>
     </file>
   </files>
 </measure>

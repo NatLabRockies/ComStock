@@ -45,3 +45,5 @@ postprocessing/extract_models_and_errors.py
 # test results
 test/reports
 contam_dev_output/
+contam_survey_output/
+contam_campaign_output/

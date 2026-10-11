@@ -4,6 +4,7 @@
 require 'json'
 require 'open3'
 require 'fileutils'
+require 'date'
 
 # Couples a CONTAM multizone airflow model to the EnergyPlus run, or surveys the model
 # for the CONTAM infiltration campaign without changing it.
@@ -64,6 +65,12 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
     leakage.setDescription("model: CONTAM's envelope passes the model's own design infiltration at 4 Pa, which is the sampled airtightness as set_nist_infiltration_correlations applied it. assumptions: the assumptions file's per-area value.")
     leakage.setDefaultValue('model')
     args << leakage
+
+    survey_days = OpenStudio::Measure::OSArgument.makeIntegerArgument('survey_run_days', true)
+    survey_days.setDisplayName('Survey run period, days (attributes)')
+    survey_days.setDescription('Attributes mode only: shorten the run period to this many days, since a survey needs the model, not an annual result. 0 leaves the run period alone. Exists because buildstock_local --measures_only is broken with custom gems.')
+    survey_days.setDefaultValue(0)
+    args << survey_days
 
     capacitance = OpenStudio::Measure::OSArgument.makeDoubleArgument('capacitance_multiplier', true)
     capacitance.setDisplayName('Zone capacitance multiplier (coupled)')
@@ -139,6 +146,20 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
     summary = JSON.parse(File.read(File.join(work, 'prepare.json')))
     register_summary(runner, summary)
     if mode == 'attributes'
+      days = runner.getIntegerArgumentValue('survey_run_days', user_arguments)
+      if days > 0
+        # Everything the survey measures was read above, from the model as built; this
+        # only spares the annual simulation nobody will read.
+        run_period = model.getRunPeriod
+        year = model.getYearDescription.assumedYear
+        first = Date.new(year, run_period.getBeginMonth, run_period.getBeginDayOfMonth)
+        last = first + (days - 1)
+        run_period.setEndMonth(last.month)
+        run_period.setEndDayOfMonth(last.day)
+        runner.registerValue('survey_run_days', days)
+        runner.registerFinalCondition("Surveyed #{summary['strata']['zones']} zones; run period cut to #{days} day(s) for the survey, the model is otherwise unchanged.")
+        return true
+      end
       runner.registerFinalCondition("Surveyed #{summary['strata']['zones']} zones; the model is unchanged.")
       return true
     end
