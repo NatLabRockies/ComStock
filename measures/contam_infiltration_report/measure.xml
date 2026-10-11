@@ -3,13 +3,13 @@
   <schema_version>3.1</schema_version>
   <name>contam_infiltration_report</name>
   <uid>283d5430-29d5-4b21-924b-0d5b5726a83c</uid>
-  <version_id>bd34263d-c506-4280-b60c-aebf518a8537</version_id>
-  <version_modified>2026-10-11T16:12:52Z</version_modified>
+  <version_id>91ff61f3-89d2-4ad2-9115-df7a782d3e33</version_id>
+  <version_modified>2026-10-11T16:41:08Z</version_modified>
   <xml_checksum>C0D55C95</xml_checksum>
   <class_name>ContamInfiltrationReport</class_name>
   <display_name>CONTAM Infiltration Report</display_name>
   <description>Reports the infiltration a CONTAM-coupled run produced, per building and per zone.</description>
-  <modeler_description>Calls osm2contam (python -m osm2contam comstock-reduce) on run/osm2contam and eplusout.sql. Registers building values; writes zones.csv and zone_hourly.csv.gz into run/osm2contam. Not applicable unless contam_coupled_infiltration ran in coupled mode. The Python interpreter is OSM2CONTAM_PYTHON if set, else python (Windows) or python3.</modeler_description>
+  <modeler_description>Registers what contam_coupled_infiltration reported (strata, version, coupling counts), since buildstockbatch collects values only from reporting measures. In coupled mode, also calls osm2contam (python -m osm2contam comstock-reduce) on run/osm2contam and eplusout.sql, registers building values, and writes zones.csv and zone_hourly.csv.gz into run/osm2contam. Not applicable if contam_coupled_infiltration did not run. The Python interpreter is OSM2CONTAM_PYTHON if set, else python (Windows) or python3.</modeler_description>
   <arguments />
   <outputs />
   <provenances />
@@ -33,7 +33,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>0EEB805C</checksum>
+      <checksum>7137BE08</checksum>
     </file>
   </files>
 </measure>

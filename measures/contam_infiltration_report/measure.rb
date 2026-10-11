@@ -29,9 +29,11 @@ class ContamInfiltrationReport < OpenStudio::Measure::ReportingMeasure
   end
 
   def modeler_description
-    return 'Calls osm2contam (python -m osm2contam comstock-reduce) on run/osm2contam and eplusout.sql. ' \
-           'Registers building values; writes zones.csv and zone_hourly.csv.gz into run/osm2contam. ' \
-           'Not applicable unless contam_coupled_infiltration ran in coupled mode. ' \
+    return 'Registers what contam_coupled_infiltration reported (strata, version, coupling counts), since buildstockbatch ' \
+           'collects values only from reporting measures. In coupled mode, also calls osm2contam ' \
+           '(python -m osm2contam comstock-reduce) on run/osm2contam and eplusout.sql, registers building values, and ' \
+           'writes zones.csv and zone_hourly.csv.gz into run/osm2contam. ' \
+           'Not applicable if contam_coupled_infiltration did not run. ' \
            'The Python interpreter is OSM2CONTAM_PYTHON if set, else python (Windows) or python3.'
   end
 
@@ -59,6 +61,25 @@ class ContamInfiltrationReport < OpenStudio::Measure::ReportingMeasure
     return nil
   end
 
+  def register_prepare(runner, prepare)
+    runner.registerValue('mode', prepare['mode'])
+    runner.registerValue('version', prepare['osm2contam_version'])
+    runner.registerValue('assumptions_sha', prepare['assumptions_sha'])
+    runner.registerValue('timesteps_per_hour', prepare['timesteps_per_hour'])
+    runner.registerValue('prepare_seconds', prepare['seconds'].to_f)
+    runner.registerValue('translation_warnings', prepare['warnings'].size)
+    prepare['strata'].each do |key, value|
+      runner.registerValue("strata_#{key}", value.is_a?(Numeric) ? value.to_f : value.to_s)
+    end
+    coupling = prepare['coupling']
+    return if coupling.nil?
+    runner.registerValue('contam_zones', coupling['contam_zones'])
+    runner.registerValue('contam_paths', coupling['paths'])
+    runner.registerValue('air_systems_driven', coupling['air_systems'])
+    runner.registerValue('infiltration_objects', coupling['infiltration_objects'])
+    runner.registerValue('mixing_objects', coupling['mixing_objects'])
+  end
+
   def run(runner, user_arguments)
     super(runner, user_arguments)
     return false unless runner.validateUserArguments(arguments, user_arguments)
@@ -69,9 +90,13 @@ class ContamInfiltrationReport < OpenStudio::Measure::ReportingMeasure
       runner.registerAsNotApplicable('contam_coupled_infiltration did not run on this model')
       return true
     end
-    mode = JSON.parse(File.read(File.join(prepared, 'prepare.json')))['mode']
+    prepare = JSON.parse(File.read(File.join(prepared, 'prepare.json')))
+    # buildstockbatch collects values only from reporting measures, so what the
+    # ModelMeasure registered never reaches results.csv. Register it again from here.
+    register_prepare(runner, prepare)
+    mode = prepare['mode']
     unless mode == 'coupled'
-      runner.registerAsNotApplicable("contam_coupled_infiltration ran in #{mode} mode; there is no coupled run to report")
+      runner.registerFinalCondition("Surveyed #{prepare['strata']['zones']} zones (#{mode} mode); no coupled run to reduce.")
       return true
     end
 

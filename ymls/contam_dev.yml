@@ -40,6 +40,9 @@ workflow_generator:
         timesteps_per_hour: 60
     reporting_measures:
     - measure_dir_name: SimulationOutputReport
-    # Before run_directory_cleanup, which deletes eplusout.sql.
+    # On Kestrel this goes before run_directory_cleanup, which deletes eplusout.sql.
     - measure_dir_name: contam_infiltration_report
-    - measure_dir_name: run_directory_cleanup
+    # No run_directory_cleanup on Windows: SimulationOutputReport leaves eplusout.sql
+    # open, Windows refuses to delete an open file, and the cleanup then fails every
+    # datapoint (Errno::EACCES). Linux deletes open files, so Kestrel runs never see it.
+    # Without it, data_point.zip simply keeps the full EnergyPlus output.
