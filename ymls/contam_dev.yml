@@ -1,0 +1,45 @@
+# CONTAM coupling, first local run: three small buildings coupled at 60 s for a year.
+#
+# Exercises the three paths the coupling has: a live-driven air handler (retail,
+# PSZ-AC), zone equipment only with no air handler (small office, PTHP), and an
+# exhaust-dominated building with transfer air (full-service restaurant).
+#
+# Needs osm2contam installed in a CPython 3.12 environment named by OSM2CONTAM_PYTHON,
+# and the weather archive below on this machine; see osm2contam
+# docs/comstock-integration-plan.md section 2.6.
+#
+#   $env:OSM2CONTAM_PYTHON = "C:\osm2contam\.venv\Scripts\python.exe"
+#   buildstock_local contam_dev.yml
+schema_version: '0.3'
+buildstock_directory: ../
+project_directory: national
+output_directory: ../contam_dev_output
+weather_files_path: C:/Projects/WeatherData/BuildStock_2018_FIPS_HI.zip   # machine-specific
+
+sampler:
+  type: precomputed
+  args:
+    sample_file: ../samples/contam_dev.csv
+
+baseline:
+  n_buildings_represented: 3
+  custom_gems: True
+
+os_version: 3.10.0
+os_sha: 86d7e215a1
+# A coupled year at 60 steps per hour is hours, not minutes.
+max_minutes_per_sim: 600
+
+workflow_generator:
+  type: commercial_default
+  args:
+    measures:
+    - measure_dir_name: contam_coupled_infiltration
+      arguments:
+        mode: coupled
+        timesteps_per_hour: 60
+    reporting_measures:
+    - measure_dir_name: SimulationOutputReport
+    # Before run_directory_cleanup, which deletes eplusout.sql.
+    - measure_dir_name: contam_infiltration_report
+    - measure_dir_name: run_directory_cleanup

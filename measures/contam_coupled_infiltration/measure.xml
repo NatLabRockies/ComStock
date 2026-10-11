@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>contam_coupled_infiltration</name>
+  <uid>ede2ed82-f0cf-4781-9746-4300c8a4b519</uid>
+  <version_id>5fc51e4b-2ebe-4d06-9088-a39cc877290a</version_id>
+  <version_modified>2026-10-11T16:03:15Z</version_modified>
+  <xml_checksum>073AC746</xml_checksum>
+  <class_name>ContamCoupledInfiltration</class_name>
+  <display_name>CONTAM Coupled Infiltration</display_name>
+  <description>Replaces the model infiltration with infiltration and interzone airflow computed by a CONTAM multizone model coupled to EnergyPlus every timestep, or surveys the model for the CONTAM infiltration campaign.</description>
+  <modeler_description>Calls osm2contam (python -m osm2contam comstock-prepare) on the model as built. coupled: removes every SpaceInfiltration object, adds one zero-flow SpaceInfiltrationDesignFlowRate per thermal zone and one zero-flow ZoneMixing per directed zone pair, named as osm2contam's coupling.json states, sets the timestep, and adds a PythonPluginInstance whose plugin drives ContamX through contamxpy and actuates those objects. attributes: computes the zone attributes and the building strata axes and registers them, changing nothing. The Python interpreter is OSM2CONTAM_PYTHON if set, else python (Windows) or python3.</modeler_description>
+  <arguments>
+    <argument>
+      <name>mode</name>
+      <display_name>Mode</display_name>
+      <description>off: do nothing. attributes: survey the model, change nothing. coupled: couple CONTAM to the EnergyPlus run.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>coupled</default_value>
+      <choices>
+        <choice>
+          <value>off</value>
+          <display_name>off</display_name>
+        </choice>
+        <choice>
+          <value>attributes</value>
+          <display_name>attributes</display_name>
+        </choice>
+        <choice>
+          <value>coupled</value>
+          <display_name>coupled</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>timesteps_per_hour</name>
+      <display_name>Timesteps per hour (coupled)</display_name>
+      <description>EnergyPlus timestep and CONTAM synchronization interval in coupled mode. 60 is a 60 s step, CONTAM's minimum. Ignored in attributes mode.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>60</default_value>
+    </argument>
+    <argument>
+      <name>assumptions</name>
+      <display_name>Assumptions file</display_name>
+      <description>osm2contam assumptions YAML. Blank for the bundled default.</description>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+    <argument>
+      <name>capacitance_multiplier</name>
+      <display_name>Zone capacitance multiplier (coupled)</display_name>
+      <description>ZoneCapacitanceMultiplier:ResearchSpecial temperature multiplier, for a coupling that rings. 0 leaves it unset.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+    </argument>
+    <argument>
+      <name>on_translation_failure</name>
+      <display_name>On translation failure</display_name>
+      <description>fail: the datapoint fails. skip: leave the model unchanged and mark the measure not applicable. default: fail in coupled mode, where an uncoupled run would pass for a coupled one, skip otherwise.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>default</default_value>
+      <choices>
+        <choice>
+          <value>default</value>
+          <display_name>default</display_name>
+        </choice>
+        <choice>
+          <value>fail</value>
+          <display_name>fail</display_name>
+        </choice>
+        <choice>
+          <value>skip</value>
+          <display_name>skip</display_name>
+        </choice>
+      </choices>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Envelope.Infiltration</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.10.0</identifier>
+        <min_compatible>3.10.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>DADD79D7</checksum>
+    </file>
+  </files>
+</measure>
