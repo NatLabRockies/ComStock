@@ -65,9 +65,12 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # rated COP regressions, COP = intercept + slope * capacity_kw, clamped to the fitted product range
   # fitted to Carrier/Lennox products meeting the 2023 federal minimum efficiency requirements
   # COPs exclude blower power and blower heat gain
+  # the _adv regressions are fitted to Daikin Rebel data for the advanced/variable-speed scenario
   RATED_COP_REGRESSIONS = {
     cooling: { intercept: 3.881009, slope: -0.01034, min: 3.02, max: 3.97 },
-    heating: { intercept: 3.957724, slope: -0.008502, min: 3.46, max: 3.99 }
+    heating: { intercept: 3.957724, slope: -0.008502, min: 3.46, max: 3.99 },
+    cooling_adv: { intercept: 4.140806, slope: -0.007577, min: 3.34, max: 4.29 },
+    heating_adv: { intercept: 3.861114, slope: -0.003304, min: 3.5, max: 3.87 }
   }.freeze
 
   # user-selectable heat pump heating sizing temperatures
@@ -461,6 +464,16 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # rated heating COP from fitted regression
   def get_rated_cop_heating(rated_capacity_w)
     rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:heating])
+  end
+
+  # rated cooling COP from fitted regression - for advanced/variable-speed performance HPRTU
+  def get_rated_cop_cooling_adv(rated_capacity_w)
+    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:cooling_adv])
+  end
+
+  # rated heating COP from fitted regression - for advanced/variable-speed performance HPRTU
+  def get_rated_cop_heating_adv(rated_capacity_w)
+    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:heating_adv])
   end
 
   # convert cfm/ton to m3/s per W
@@ -1741,12 +1754,17 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # ---------------------------------------------------------
       # adjust rated cooling COP for the sized cfm/ton if the json does not specify a final rated COP
       if final_rated_cooling_cop == false
+        rated_cooling_cop = if hprtu_scenario == 'two_speed_standard_eff'
+                              get_rated_cop_cooling(stage_caps_cooling[rated_stage_num_cooling])
+                            else
+                              get_rated_cop_cooling_adv(stage_caps_cooling[rated_stage_num_cooling])
+                            end
         final_rated_cooling_cop = adjust_rated_cop_from_ref_cfm_per_ton(runner, stage_flows_cooling[rated_stage_num_cooling],
                                                                         reference_cooling_cfm_per_ton,
                                                                         stage_caps_cooling[rated_stage_num_cooling],
-                                                                        get_rated_cop_cooling(stage_caps_cooling[rated_stage_num_cooling]),
+                                                                        rated_cooling_cop,
                                                                         cool_eir_ff_curve_stages[rated_stage_num_cooling])
-        runner.registerInfo("sizing summary: rated cooling COP adjusted from #{get_rated_cop_cooling(stage_caps_cooling[rated_stage_num_cooling]).round(3)} to #{final_rated_cooling_cop.round(3)} based on reference cfm/ton of #{reference_cooling_cfm_per_ton.round(0)} (i.e., average value of actual products)")
+        runner.registerInfo("sizing summary: rated cooling COP adjusted from #{rated_cooling_cop.round(3)} to #{final_rated_cooling_cop.round(3)} based on reference cfm/ton of #{reference_cooling_cfm_per_ton.round(0)} (i.e., average value of actual products)")
         runner.registerInfo("sizing summary: sizing air loop (#{air_loop_hvac.name}): final rated cooling COP = #{final_rated_cooling_cop.round(3)}")
       end
 
@@ -1762,12 +1780,17 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # ---------------------------------------------------------
       # adjust rated heating COP for the sized cfm/ton if the json does not specify a final rated COP
       if final_rated_heating_cop == false
+        rated_heating_cop = if hprtu_scenario == 'two_speed_standard_eff'
+                              get_rated_cop_heating(stage_caps_heating[rated_stage_num_heating])
+                            else
+                              get_rated_cop_heating_adv(stage_caps_heating[rated_stage_num_heating])
+                            end
         final_rated_heating_cop = adjust_rated_cop_from_ref_cfm_per_ton(runner, stage_flows_heating[rated_stage_num_heating],
                                                                         reference_heating_cfm_per_ton,
                                                                         stage_caps_heating[rated_stage_num_heating],
-                                                                        get_rated_cop_heating(stage_caps_heating[rated_stage_num_heating]),
+                                                                        rated_heating_cop,
                                                                         heat_eir_ff_curve_stages[rated_stage_num_heating])
-        runner.registerInfo("sizing summary: rated heating COP adjusted from #{get_rated_cop_heating(stage_caps_heating[rated_stage_num_heating]).round(3)} to #{final_rated_heating_cop.round(3)} based on reference cfm/ton of #{reference_heating_cfm_per_ton.round(0)} (i.e., average value of actual products)")
+        runner.registerInfo("sizing summary: rated heating COP adjusted from #{rated_heating_cop.round(3)} to #{final_rated_heating_cop.round(3)} based on reference cfm/ton of #{reference_heating_cfm_per_ton.round(0)} (i.e., average value of actual products)")
         runner.registerInfo("sizing summary: sizing air loop (#{air_loop_hvac.name}): final rated heating COP = #{final_rated_heating_cop.round(3)}")
       end
 
