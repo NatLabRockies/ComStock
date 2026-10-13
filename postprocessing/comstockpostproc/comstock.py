@@ -2287,6 +2287,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # plot_unmet_hours
         pcs += list(set(self.UNMET_HOURS_COLS))
 
+        # measure_doc_assets: every fuel's own total, and the total bill
+        pcs += [self.col_name_to_weighted(c, new_units=UnitsMixin.UNIT.ENERGY.TBTU) for c in self.COLS_TOT_ANN_ENGY]
+        pcs += [self.col_name_to_weighted(self.UTIL_BILL_TOTAL_MEAN, UnitsMixin.UNIT.CURRENCY.BILLION_USD)]
+
         # Reduce down to the unique set
         pcs = list(set(pcs))
         pcs.sort()
