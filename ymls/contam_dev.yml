@@ -1,4 +1,5 @@
-# CONTAM coupling, first local run: three small buildings coupled at 60 s for a year.
+# CONTAM coupling, first local run: three small buildings coupled for a year at ComStock's
+# own 4 steps per hour (900 s sync; docs/comstock-integration-plan.md section 3.3).
 #
 # Exercises the three paths the coupling has: a live-driven air handler (retail,
 # PSZ-AC), zone equipment only with no air handler (small office, PTHP), and an
@@ -27,7 +28,7 @@ baseline:
 
 os_version: 3.10.0
 os_sha: 86d7e215a1
-# A coupled year at 60 steps per hour is hours, not minutes.
+# Generous: a coupled year at 4 steps per hour is minutes, but the 60 s arm (contam_arm_timestep60.yml) is hours.
 max_minutes_per_sim: 600
 
 workflow_generator:
@@ -37,7 +38,7 @@ workflow_generator:
     - measure_dir_name: contam_coupled_infiltration
       arguments:
         mode: coupled
-        timesteps_per_hour: 60
+        timesteps_per_hour: 4
     reporting_measures:
     - measure_dir_name: SimulationOutputReport
     # On Kestrel this goes before run_directory_cleanup, which deletes eplusout.sql.

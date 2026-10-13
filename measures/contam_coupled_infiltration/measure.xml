@@ -37,11 +37,11 @@
     <argument>
       <name>timesteps_per_hour</name>
       <display_name>Timesteps per hour (coupled)</display_name>
-      <description>EnergyPlus timestep and CONTAM synchronization interval in coupled mode. 60 is a 60 s step, CONTAM's minimum. Ignored in attributes mode.</description>
+      <description>EnergyPlus timestep and CONTAM synchronization interval in coupled mode. 4 is ComStock's production timestep (900 s); 60 is a 60 s step, CONTAM's minimum. Ignored in attributes mode.</description>
       <type>Integer</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
-      <default_value>60</default_value>
+      <default_value>4</default_value>
     </argument>
     <argument>
       <name>assumptions</name>

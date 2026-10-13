@@ -51,7 +51,7 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
     tph = OpenStudio::Measure::OSArgument.makeIntegerArgument('timesteps_per_hour', true)
     tph.setDisplayName('Timesteps per hour (coupled)')
     tph.setDescription('EnergyPlus timestep and CONTAM synchronization interval in coupled mode. 60 is a 60 s step, CONTAM\'s minimum. Ignored in attributes mode.')
-    tph.setDefaultValue(60)
+    tph.setDefaultValue(4)
     args << tph
 
     assumptions = OpenStudio::Measure::OSArgument.makeStringArgument('assumptions', false)

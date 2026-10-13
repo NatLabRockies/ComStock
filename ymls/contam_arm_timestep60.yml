@@ -1,0 +1,46 @@
+# CONTAM coupling, the 60 s timestep arm: coupled at 60 steps per hour against the main
+# arm's 4 (osm2contam docs/comstock-integration-plan.md section 3.3). Use it as the
+# contam_stratified_select.py --template for the arm's batches, which replaces the sample
+# file and building count. Run as it stands, it repeats contam_dev.yml's three buildings
+# at 60 s, which is the cheapest paired check of the two timesteps.
+#
+# Identical to contam_dev.yml except for the timestep and the output directory.
+#
+#   $env:OSM2CONTAM_PYTHON = "C:\osm2contam\.venv\Scripts\python.exe"
+#   buildstock_local contam_arm_timestep60.yml
+schema_version: '0.3'
+buildstock_directory: ../
+project_directory: national
+output_directory: ../contam_arm_timestep60_output
+weather_files_path: C:/Projects/WeatherData/BuildStock_2018_FIPS_HI.zip   # machine-specific
+
+sampler:
+  type: precomputed
+  args:
+    sample_file: ../samples/contam_dev.csv
+
+baseline:
+  n_buildings_represented: 3
+  custom_gems: True
+
+os_version: 3.10.0
+os_sha: 86d7e215a1
+# A coupled year at 60 steps per hour is hours, not minutes.
+max_minutes_per_sim: 600
+
+workflow_generator:
+  type: commercial_default
+  args:
+    measures:
+    - measure_dir_name: contam_coupled_infiltration
+      arguments:
+        mode: coupled
+        timesteps_per_hour: 60
+    reporting_measures:
+    - measure_dir_name: SimulationOutputReport
+    # On Kestrel this goes before run_directory_cleanup, which deletes eplusout.sql.
+    - measure_dir_name: contam_infiltration_report
+    # No run_directory_cleanup on Windows: SimulationOutputReport leaves eplusout.sql
+    # open, Windows refuses to delete an open file, and the cleanup then fails every
+    # datapoint (Errno::EACCES). Linux deletes open files, so Kestrel runs never see it.
+    # Without it, data_point.zip simply keeps the full EnergyPlus output.

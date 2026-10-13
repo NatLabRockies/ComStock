@@ -238,11 +238,11 @@ def campaign(args):
     write_csv(out / "campaign_buildstock.csv", fields, [row_of[s["Building"]] for s in selected])
     for batch in range(1, n_batches + 1):
         members = [row_of[s["Building"]] for s in selected if s["batch"] == batch]
-        sample_path = out / f"contam_campaign_{batch:02d}.csv"
+        sample_path = out / f"{args.prefix}_{batch:02d}.csv"
         write_csv(sample_path, fields, members)
         if args.template:
-            _write_yaml(Path(args.template), out / f"contam_campaign_{batch:02d}.yml",
-                        sample_path, batch, len(members))
+            _write_yaml(Path(args.template), out / f"{args.prefix}_{batch:02d}.yml",
+                        sample_path, batch, len(members), args.prefix)
 
     manifest_fields = ["Building", "arm", "batch", "cell", "imbalance_bin", "height_bin",
                        "climate_bin", "oa_bin", "exposure_bin", "fan_mode", "building_type",
@@ -275,10 +275,10 @@ def _stock_median(sample, column):
     return spelling[median]
 
 
-def _write_yaml(template, target, sample_path, batch, count):
+def _write_yaml(template, target, sample_path, batch, count, prefix="contam_campaign"):
     text = template.read_text(encoding="utf-8")
     replacements = {
-        r"^output_directory:.*$": f"output_directory: ../contam_campaign_output/batch_{batch:02d}",
+        r"^output_directory:.*$": f"output_directory: ../{prefix}_output/batch_{batch:02d}",
         r"^(\s*)sample_file:.*$": lambda m: f"{m.group(1)}sample_file: {sample_path.resolve().as_posix()}",
         r"^(\s*)n_buildings_represented:.*$": lambda m: f"{m.group(1)}n_buildings_represented: {count}",
     }
@@ -314,6 +314,9 @@ def main(argv=None):
                    help="pinned airtightness option (default: the sample's median)")
     p.add_argument("--batch-size", type=int, default=40)
     p.add_argument("--template", help="a coupled-run YAML to write one per batch from")
+    p.add_argument("--prefix", default="contam_campaign",
+                   help="batch file and output directory prefix; give an arm its own "
+                        "(e.g. contam_arm_timestep60) so its output cannot land on the main run's")
     p.add_argument("--seed", type=int, default=2026)
     p.set_defaults(func=campaign)
 
