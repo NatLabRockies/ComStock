@@ -65,12 +65,13 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # rated COP regressions, COP = intercept + slope * capacity_kw, clamped to the fitted product range
   # fitted to Carrier/Lennox products meeting the 2023 federal minimum efficiency requirements
   # COPs exclude blower power and blower heat gain
-  # the _adv regressions are fitted to Daikin Rebel data for the advanced/variable-speed scenario
+  # the _adv regressions are fitted to Daikin Rebel and NEXIO Max DVH data for the advanced/variable-speed scenario,
+  # clamped to the regression's COP at the smallest and largest fitted capacity
   RATED_COP_REGRESSIONS = {
     cooling: { intercept: 3.881009, slope: -0.01034, min: 3.02, max: 3.97 },
     heating: { intercept: 3.957724, slope: -0.008502, min: 3.46, max: 3.99 },
-    cooling_adv: { intercept: 4.140806, slope: -0.007577, min: 3.34, max: 4.29 },
-    heating_adv: { intercept: 3.861114, slope: -0.003304, min: 3.5, max: 3.87 }
+    cooling_adv: { intercept: 4.135933, slope: -0.007531, min: 3.41, max: 4.06 },
+    heating_adv: { intercept: 4.040459, slope: -0.006347, min: 3.63, max: 3.92 }
   }.freeze
 
   # user-selectable heat pump heating sizing temperatures
