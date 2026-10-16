@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>utility_bills</name>
   <uid>eba532c2-efac-41fe-b7cb-b4538bb02c32</uid>
-  <version_id>def15f36-f28b-4111-aa1c-5cef548860fd</version_id>
-  <version_modified>2025-07-16T21:43:37Z</version_modified>
+  <version_id>5536f02a-2605-4960-b2e8-be1731ee2ed9</version_id>
+  <version_modified>2026-10-15T18:55:41Z</version_modified>
   <xml_checksum>15BF4E57</xml_checksum>
   <class_name>UtilityBills</class_name>
   <display_name>Utility Bills</display_name>
@@ -33,13 +33,31 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>0008674F</checksum>
+      <checksum>60CC75EA</checksum>
+    </file>
+    <file>
+      <filename>README.md</filename>
+      <filetype>md</filetype>
+      <usage_type>readme</usage_type>
+      <checksum>2A315BA4</checksum>
     </file>
     <file>
       <filename>calc_elec_bill.py</filename>
       <filetype>py</filetype>
       <usage_type>resource</usage_type>
       <checksum>F638C0D3</checksum>
+    </file>
+    <file>
+      <filename>build_elec_rate_states.py</filename>
+      <filetype>py</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>909FEFBE</checksum>
+    </file>
+    <file>
+      <filename>elec_rate_states.csv</filename>
+      <filetype>csv</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>092C19A2</checksum>
     </file>
     <file>
       <filename>eia_com_elec_avg_yrly_rate_increase.json</filename>
@@ -63867,7 +63885,7 @@
       <filename>utility_bills_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>36A381D3</checksum>
+      <checksum>601CBA73</checksum>
     </file>
   </files>
 </measure>

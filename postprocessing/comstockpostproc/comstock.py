@@ -39,6 +39,7 @@ from comstockpostproc.gas_correction_model import GasCorrectionModelMixin
 from comstockpostproc.naming_mixin import NamingMixin
 from comstockpostproc.s3_utilities_mixin import S3UtilitiesMixin, write_geo_data
 from comstockpostproc.units_mixin import UnitsMixin
+from comstockpostproc import utility_bills_join
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -1444,16 +1445,22 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         self.convert_units(col_names)
 
+    def imported_column_definitions(self, col_defs):
+        # The column definitions to import from the raw results: the columns of the full metadata
+        # export, plus the utility_bills result strings, which the bills stage parses into each
+        # allocated row's bill columns and which are imported whether or not they are exported
+        return col_defs.filter(
+            ((pl.col('full_metadata') == True) | pl.col('new_col_name').is_in(self.COLS_UTIL_BILL_RESULTS)) &
+            (~pl.col('location').is_in(['calculated', 'geospatial', 'cejst', 'ejscreen']))
+        )
+
     def downselect_imported_columns(self, df):
-        # Downselect to the columns marked for export in column definitions
+        # Downselect to the imported columns: those marked for export in column definitions,
+        # plus the utility bill result strings postprocessing parses
         logger.debug(f'Memory before downselect_columns: {df.estimated_size()}')
         col_defs_path = os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)
         col_defs = pl.scan_csv(col_defs_path)
-        col_def_names = col_defs.filter(
-            (pl.col('full_metadata') == True) &
-            (~pl.col('location').is_in(['calculated', 'geospatial', 'cejst', 'ejscreen']))
-        )
-        col_def_names = col_def_names.select('original_col_name').collect()
+        col_def_names = self.imported_column_definitions(col_defs).select('original_col_name').collect()
         col_def_names = col_def_names.to_series().to_list()
 
         # Handle missing columns
@@ -1653,9 +1660,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Rename columns per comstock_column_definitions.csv
 
         # Read the column definitions
-        col_defs = pl.read_csv(os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME))
-        col_defs = col_defs.filter((pl.col('full_metadata') == True) &
-                                   (~pl.col('location').is_in(['calculated', 'geospatial', 'cejst', 'ejscreen'])))
+        col_defs = self.imported_column_definitions(pl.read_csv(os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)))
         for col_def in col_defs.iter_rows(named=True):
             orig_name = col_def['original_col_name']
             new_name = col_def['new_col_name']
@@ -2354,9 +2359,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def get_allocated_weights_plus_util_bills_for_upgrade(self, upgrade_id):
 
         # Read from cache
-        alloc_wts_bills_dir = f'{self.output_dir["fs_path"]}/cached_allocated_weights_plus_bills/upgrade={upgrade_id}'
+        alloc_wts_bills_root = f'{self.output_dir["fs_path"]}/cached_allocated_weights_plus_bills'
         if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
-            alloc_wts_bills_dir = f's3://{alloc_wts_bills_dir}'
+            alloc_wts_bills_root = f's3://{alloc_wts_bills_root}'
+        alloc_wts_bills_dir = f'{alloc_wts_bills_root}/upgrade={upgrade_id}'
         if not self.output_dir['fs'].exists(alloc_wts_bills_dir):
             raise Exception(f"{alloc_wts_bills_dir} does not exist. Ensure create_allocated_weights_plus_util_bills_for_upgrade has been called previously.")
         state_pqts = []
@@ -2409,9 +2415,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         alloc_wts = self.get_allocated_weights_scaled_to_cbecs_for_upgrade(upgrade_id)
 
         # If the cached file already exists, scan and return
-        alloc_wts_bills_dir = f'{self.output_dir["fs_path"]}/cached_allocated_weights_plus_bills/upgrade={upgrade_id}'
+        alloc_wts_bills_root = f'{self.output_dir["fs_path"]}/cached_allocated_weights_plus_bills'
         if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
-            alloc_wts_bills_dir = f's3://{alloc_wts_bills_dir}'
+            alloc_wts_bills_root = f's3://{alloc_wts_bills_root}'
+        alloc_wts_bills_dir = f'{alloc_wts_bills_root}/upgrade={upgrade_id}'
         if self.output_dir['fs'].exists(alloc_wts_bills_dir):
             state_pqts = []
             pqt_glob = f'{alloc_wts_bills_dir}/**/cached_allocated_weights_plus_bills_*.parquet'
@@ -2441,63 +2448,38 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Assign the EIA Utility ID for each building based on this tract
         tract_to_util_file_path = os.path.join(self.truth_data_dir, self.tract_to_util_map_file_name)
         tract_to_util_map = pl.scan_csv(tract_to_util_file_path)
+        utility_bills_join.assert_unique_on(tract_to_util_map, [self.TRACT_ID], tract_to_util_file_path)
+        n_alloc_rows = alloc_wts.select(pl.len()).collect().item()
         alloc_wts = alloc_wts.join(tract_to_util_map, on=self.TRACT_ID, how='left')
 
         # Get the utility bills by EIA ID from the simulation outputs.
         # This column includes the utility bills calculated for all possible
-        # locations each simulation output could be allocated to.
+        # locations each simulation output could be allocated to, one row per
+        # building, utility and state (a utility serving several states of the
+        # sampling region has a bill for each).
         # Include building floor area for utility cost intenstity calcs.
-        util_bills_by_eia_id = sim_outs.select(
-            [self.BLDG_ID, self.UTIL_BILL_ELEC_RESULTS, self.FLR_AREA]
-        )
+        bills_info = {}
+        util_bills_by_eia_id = utility_bills_join.electricity_bills_by_utility(
+            sim_outs, self.BLDG_ID, self.UTIL_BILL_ELEC_RESULTS, self.UTIL_BILL_EIA_ID,
+            self.UTIL_ELEC_BILL_VALS, self.SAMPLING_REGION, self.UTIL_BILL_STATE_ELEC_RESULTS,
+            keep_cols=[self.FLR_AREA], info=bills_info)
+        util_bills_by_eia_id, bills_join_keys = utility_bills_join.bills_join_keys(
+            util_bills_by_eia_id, self.BLDG_ID, self.UTIL_BILL_EIA_ID, self.STATE_ABBRV)
+        utility_bills_join.assert_unique_on(util_bills_by_eia_id, bills_join_keys, 'Electricity bills by utility')
+        bills_info['n_bldg_utility_states_without_in_state_tariff'] = utility_bills_join.check_rows_find_their_state(
+            alloc_wts, util_bills_by_eia_id, bills_join_keys, bills_info['bill_state_source'])
 
-        # Cast utility data column from Categorical back to String
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            pl.col(self.UTIL_BILL_ELEC_RESULTS).cast(pl.String)
-        )
+        # Join the utility bills onto each building based on utility ID and state
+        alloc_wts = alloc_wts.join(util_bills_by_eia_id, on=bills_join_keys, how='left')
 
-        # Create a new row for each Building ID x EIA ID combination
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            pl.col(self.UTIL_BILL_ELEC_RESULTS).str.strip_chars_start('|').str.strip_chars_end('|').str.split('|')
-        ).explode(self.UTIL_BILL_ELEC_RESULTS)
-
-        # Split the values into a temporary list column
-        tsc = 'tsc'
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            pl.col(self.UTIL_BILL_ELEC_RESULTS).str.split(":").alias(tsc)
-        )
-
-        # Define column names based on  measure output
-        # NOTE: Column name order must match the order in utility_bills/measure.rb!
-        new_util_columns = [self.UTIL_BILL_EIA_ID] + self.UTIL_ELEC_BILL_VALS
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            pl.col(tsc).list.to_struct("max_width", new_util_columns)
-        ).unnest(tsc)
-        # NOTE: need to do this otherwise the lazyframe query optimization breaks down
-        collect_tstart = datetime.datetime.now()
-        util_bills_by_eia_id = util_bills_by_eia_id.collect().lazy()
-        collect_tend = datetime.datetime.now()
-        elapsed_time = (collect_tend - collect_tstart).total_seconds()
-        logger.info(f"Collect time for util_bills_by_eia_id: {elapsed_time} seconds")
-
-        # Replace empty strings with nulls in the new columns
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            [pl.when(pl.col(new_col) == "")
-            .then(None)
-            .otherwise(pl.col(new_col))
-            .alias(new_col)
-            for new_col in new_util_columns]
-        )
-
-        # Convert the EIA ID and bill column dtypes to integers
-        cols_to_int = [c for c in self.UTIL_ELEC_BILL_VALS if '..usd' in c]
-        cols_to_int.append(self.UTIL_BILL_EIA_ID)
-        util_bills_by_eia_id = util_bills_by_eia_id.with_columns(
-            [pl.col(column).cast(pl.Int64) for column in cols_to_int]
-        )
-
-        # Join the utility bills onto each building based on utility ID
-        alloc_wts = alloc_wts.join(util_bills_by_eia_id, on=[self.BLDG_ID, self.UTIL_BILL_EIA_ID], how='left')
+        # Rows without a utility bill (billed at the state average below) got no floor area from
+        # the bills frame; take it from the simulation outputs, so every row carries its building's
+        # area and the bill intensities downstream are defined for state-average rows too
+        bldg_area = sim_outs.select(self.BLDG_ID, pl.col(self.FLR_AREA).alias('_bldg_area'))
+        utility_bills_join.assert_unique_on(bldg_area, [self.BLDG_ID], 'Simulation outputs floor area')
+        alloc_wts = (alloc_wts.join(bldg_area, on=self.BLDG_ID, how='left')
+                     .with_columns(pl.coalesce(pl.col(self.FLR_AREA), pl.col('_bldg_area')).alias(self.FLR_AREA))
+                     .drop('_bldg_area'))
 
         # Loop through each fuel and assign state-level bills to each building
         for col_state_util_result, col_state_util_bill in dict(zip(self.COLS_STATE_UTIL_RESULTS, self.COST_STATE_UTIL_COSTS)).items():
@@ -2558,6 +2540,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             )
 
             # Join the utility bills onto each building based on state
+            utility_bills_join.assert_unique_on(util_bills_by_state, [self.BLDG_ID, self.STATE_ABBRV], col_state_util_result)
             alloc_wts = alloc_wts.join(util_bills_by_state, on=[self.BLDG_ID, self.STATE_ABBRV], how='left')
 
         # fill missing utility bill costs with state average
@@ -2622,6 +2605,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         collect_tend = datetime.datetime.now()
         elapsed_time = (collect_tend - collect_tstart).total_seconds()
         logger.info(f"Collect time for upgrade {upgrade_id}: {elapsed_time} seconds")
+        utility_bills_join.assert_row_count_preserved(n_alloc_rows, alloc_wts.height, f'The utility bills joins for upgrade {upgrade_id}')
         alloc_wts = alloc_wts.drop('upgrade')  # upgrade column will be read from hive partition dir name
         logger.info(f'Caching allocated weights plus bills for upgrade {upgrade_id} to: {alloc_wts_bills_dir}')
         # Cache by state to enable faster reading
@@ -2639,6 +2623,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             with self.output_dir['fs'].open(cached_file_path, "wb") as f:
                 state_alloc_wts.write_parquet(f)
         alloc_wts = pl.scan_parquet(state_pqts, hive_partitioning=True, storage_options=self.output_dir['storage_options'])
+        logger.info(f"Utility bills for upgrade {upgrade_id}: states from {bills_info['bill_state_source']}, "
+                    f"{bills_info['n_electricity_bills']:,} bills for {bills_info['n_buildings_with_bills']:,} buildings, "
+                    f"{bills_info['n_bldg_utility_states_without_in_state_tariff']:,} building-utility-state "
+                    f"combinations billed at the state average")
 
         return alloc_wts_bills_dir
 
