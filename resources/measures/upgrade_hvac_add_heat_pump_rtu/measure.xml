@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>add_heat_pump_rtu</name>
   <uid>f4567a68-27f2-4a15-ae91-ba0f35cd08c7</uid>
-  <version_id>d107e709-c634-4e04-a9b6-9b87552a5bdb</version_id>
-  <version_modified>2026-10-16T18:08:13Z</version_modified>
+  <version_id>70682aa1-ed8d-41be-9b89-65a205f3106e</version_id>
+  <version_modified>2026-10-16T19:00:57Z</version_modified>
   <xml_checksum>5E2576E4</xml_checksum>
   <class_name>AddHeatPumpRtu</class_name>
   <display_name>add_heat_pump_rtu</display_name>
@@ -366,7 +366,7 @@
       <filename>performance_map_CCHP_spec_2027.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
-      <checksum>1254DFAB</checksum>
+      <checksum>89D24220</checksum>
     </file>
     <file>
       <filename>performance_maps_hprtu_lab_data.json</filename>
