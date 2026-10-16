@@ -20,14 +20,14 @@ ModelMeasure
 
 
 ### Backup Heat Type
-Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup.
+Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.
 **Name:** backup_ht_fuel_scheme,
 **Type:** Choice,
 **Units:** ,
 **Required:** true,
 **Model Dependent:** false
 
-**Choice Display Names** ["match_original_primary_heating_fuel", "electric_resistance_backup"]
+**Choice Display Names** ["match_original_primary_heating_fuel", "electric_resistance_backup", "dual_fuel_gas_furnace_backup"]
 
 
 ### Maximum Performance Oversizing Factor
