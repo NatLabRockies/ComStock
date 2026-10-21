@@ -1450,12 +1450,13 @@ class AddHeatPumpRtuTest < Minitest::Test
     measure = AddHeatPumpRtu.new
     w_per_ton = 3516.852842
     # rated COP at 3, 10 and 30 tons; the values the measure's RATED_COP_REGRESSIONS constant gave before the regressions moved into the
-    # jsons, except cchpc_2027_spec heating at 30 tons, whose capacity limit was raised from 64.67 kW to 89.61 kW (3.63 before)
+    # jsons, except cchpc_2027_spec, which uses the line fitted through the ten lab-tested Challenge units (the same records as the Challenge
+    # typical unit's json), cooling held inside 35.80-72.45 kW and heating inside 18.98-89.61 kW
     expected = {
       'two_speed_standard_eff' => { 'cooling' => [3.77192, 3.51737, 3.02], 'heating' => [3.86802, 3.65872, 3.46] },
       'two_speed_lab_data' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
       'variable_speed_high_eff' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
-      'cchpc_2027_spec' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.47168] }
+      'cchpc_2027_spec' => { 'cooling' => [3.85038, 3.85038, 3.94259], 'heating' => [4.09111, 3.9229, 3.35721] }
     }
     SCENARIO_PERFORMANCE_JSON.each_key do |scenario|
       table = scenario_json(scenario)['tables']['curves']['table']
