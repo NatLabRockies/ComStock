@@ -62,18 +62,6 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     }.freeze
   }.freeze
 
-  # rated COP regressions, COP = intercept + slope * capacity_kw, clamped to the fitted product range
-  # fitted to Carrier/Lennox products meeting the 2023 federal minimum efficiency requirements
-  # COPs exclude blower power and blower heat gain
-  # the _adv regressions are fitted to Daikin Rebel and NEXIO Max DVH data for the advanced/variable-speed scenario,
-  # clamped to the regression's COP at the smallest and largest fitted capacity
-  RATED_COP_REGRESSIONS = {
-    cooling: { intercept: 3.881009, slope: -0.01034, min: 3.02, max: 3.97 },
-    heating: { intercept: 3.957724, slope: -0.008502, min: 3.46, max: 3.99 },
-    cooling_adv: { intercept: 4.135933, slope: -0.007531, min: 3.41, max: 4.06 },
-    heating_adv: { intercept: 4.040459, slope: -0.006347, min: 3.63, max: 3.92 }
-  }.freeze
-
   # user-selectable heat pump heating sizing temperatures
   HTG_SIZING_OPTIONS_F = { '47F' => 47, '17F' => 17, '0F' => 0, '-10F' => -10 }.freeze
 
@@ -446,35 +434,28 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     [fan_data['fan_type'], fan_data['fan_power_coefficients'], fan_data['impeller_efficiency']]
   end
 
+  # read the rated COP regressions on rated capacity from the scenario's performance json
+  # used when the json's staging_data leaves final_rated_cooling_cop or final_rated_heating_cop as false
+  # @return [Hash] 'cooling' and 'heating' regression records, each nil if absent
+  def assign_rated_cop_regressions(rated_cop_json, std)
+    ['cooling', 'heating'].to_h do |mode|
+      [mode, std.model_find_object(rated_cop_json['tables']['curves'], 'name' => "rated_#{mode}_cop_regression")]
+    end
+  end
+
   # ---------------------------------------------------------
   # sizing and performance helpers
   # ---------------------------------------------------------
 
-  # rated COP from a fitted regression on rated capacity
+  # rated COP from a linear regression record on rated capacity in kW, COP = coeff_1 + coeff_2 * capacity_kw
+  # the capacity is held inside the record's input limits and the COP inside its output limits, where given, as EnergyPlus evaluates a curve
   def rated_cop_from_regression(rated_capacity_w, regression)
     rated_capacity_kw = rated_capacity_w / 1000 # W to kW
-    rated_cop = regression[:intercept] + (regression[:slope] * rated_capacity_kw)
-    rated_cop.clamp(regression[:min], regression[:max])
-  end
-
-  # rated cooling COP from fitted regression
-  def get_rated_cop_cooling(rated_capacity_w)
-    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:cooling])
-  end
-
-  # rated heating COP from fitted regression
-  def get_rated_cop_heating(rated_capacity_w)
-    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:heating])
-  end
-
-  # rated cooling COP from fitted regression - for advanced/variable-speed performance HPRTU
-  def get_rated_cop_cooling_adv(rated_capacity_w)
-    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:cooling_adv])
-  end
-
-  # rated heating COP from fitted regression - for advanced/variable-speed performance HPRTU
-  def get_rated_cop_heating_adv(rated_capacity_w)
-    rated_cop_from_regression(rated_capacity_w, RATED_COP_REGRESSIONS[:heating_adv])
+    rated_capacity_kw = rated_capacity_kw.clamp(regression['minimum_independent_variable_1'] || -Float::INFINITY,
+                                                regression['maximum_independent_variable_1'] || Float::INFINITY)
+    rated_cop = regression['coeff_1'] + (regression['coeff_2'] * rated_capacity_kw)
+    rated_cop.clamp(regression['minimum_dependent_variable_output'] || -Float::INFINITY,
+                    regression['maximum_dependent_variable_output'] || Float::INFINITY)
   end
 
   # convert cfm/ton to m3/s per W
@@ -1398,6 +1379,17 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     heat_plf_fplr1 = model_add_curve(model, 'heat_plf_plr1', custom_data_json, std)
     defrost_eir = model_add_curve(model, 'defrost_eir', custom_data_json, std)
 
+    # rated COP regressions on rated capacity; a json that leaves a final rated COP as false must have the regression for that mode
+    rated_cop_regressions = assign_rated_cop_regressions(custom_data_json, std)
+    final_rated_cops = assign_staging_data(custom_data_json, std)
+    ['cooling', 'heating'].each do |mode|
+      next unless final_rated_cops[:"final_rated_#{mode}_cop"] == false && rated_cop_regressions[mode].nil?
+
+      runner.registerError("The performance json for scenario #{hprtu_scenario} leaves final_rated_#{mode}_cop as false but has no " \
+                           "rated_#{mode}_cop_regression record, so the rated #{mode} COP cannot be set.")
+      return false
+    end
+
     # ---------------------------------------------------------
     # replace existing applicable air loops with new heat pump rtu air loops
     # ---------------------------------------------------------
@@ -1755,11 +1747,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # ---------------------------------------------------------
       # adjust rated cooling COP for the sized cfm/ton if the json does not specify a final rated COP
       if final_rated_cooling_cop == false
-        rated_cooling_cop = if hprtu_scenario == 'two_speed_standard_eff'
-                              get_rated_cop_cooling(stage_caps_cooling[rated_stage_num_cooling])
-                            else
-                              get_rated_cop_cooling_adv(stage_caps_cooling[rated_stage_num_cooling])
-                            end
+        rated_cooling_cop = rated_cop_from_regression(stage_caps_cooling[rated_stage_num_cooling], rated_cop_regressions['cooling'])
         final_rated_cooling_cop = adjust_rated_cop_from_ref_cfm_per_ton(runner, stage_flows_cooling[rated_stage_num_cooling],
                                                                         reference_cooling_cfm_per_ton,
                                                                         stage_caps_cooling[rated_stage_num_cooling],
@@ -1781,11 +1769,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # ---------------------------------------------------------
       # adjust rated heating COP for the sized cfm/ton if the json does not specify a final rated COP
       if final_rated_heating_cop == false
-        rated_heating_cop = if hprtu_scenario == 'two_speed_standard_eff'
-                              get_rated_cop_heating(stage_caps_heating[rated_stage_num_heating])
-                            else
-                              get_rated_cop_heating_adv(stage_caps_heating[rated_stage_num_heating])
-                            end
+        rated_heating_cop = rated_cop_from_regression(stage_caps_heating[rated_stage_num_heating], rated_cop_regressions['heating'])
         final_rated_heating_cop = adjust_rated_cop_from_ref_cfm_per_ton(runner, stage_flows_heating[rated_stage_num_heating],
                                                                         reference_heating_cfm_per_ton,
                                                                         stage_caps_heating[rated_stage_num_heating],

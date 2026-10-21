@@ -1444,6 +1444,37 @@ class AddHeatPumpRtuTest < Minitest::Test
     assert_in_delta(0.401, fan_power_at(two, 0.66), 0.01, 'two-speed curve does not land on the 90.1 low-speed power point at 0.66 flow')
   end
 
+  # data-only check of the rated COP regression records the measure falls back to when a json leaves the final rated COPs as false
+  def test_rated_cop_regression_records
+    announce_test('test_rated_cop_regression_records')
+    measure = AddHeatPumpRtu.new
+    w_per_ton = 3516.852842
+    # rated COP at 3, 10 and 30 tons; the values the measure's RATED_COP_REGRESSIONS constant gave before the regressions moved into the
+    # jsons, except cchpc_2027_spec heating at 30 tons, whose capacity limit was raised from 64.67 kW to 89.61 kW (3.63 before)
+    expected = {
+      'two_speed_standard_eff' => { 'cooling' => [3.77192, 3.51737, 3.02], 'heating' => [3.86802, 3.65872, 3.46] },
+      'two_speed_lab_data' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
+      'variable_speed_high_eff' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
+      'cchpc_2027_spec' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.47168] }
+    }
+    SCENARIO_PERFORMANCE_JSON.each_key do |scenario|
+      table = scenario_json(scenario)['tables']['curves']['table']
+      ['cooling', 'heating'].each do |mode|
+        rec = table.find { |e| e['name'] == "rated_#{mode}_cop_regression" }
+        refute_nil(rec, "#{scenario}: no rated_#{mode}_cop_regression record in its performance json")
+        assert_equal('Linear', rec['form'], "#{scenario}: rated_#{mode}_cop_regression should be Linear")
+        assert(rec['minimum_independent_variable_1'] < rec['maximum_independent_variable_1'],
+               "#{scenario}: rated_#{mode}_cop_regression capacity limits are not in order")
+        refute_empty(rec['notes'].to_s, "#{scenario}: rated_#{mode}_cop_regression has no source note")
+
+        [3, 10, 30].zip(expected.fetch(scenario).fetch(mode)).each do |tons, cop|
+          actual = measure.rated_cop_from_regression(tons * w_per_ton, rec)
+          assert_in_delta(cop, actual, 1e-4, "#{scenario}: rated #{mode} COP at #{tons} tons is #{actual.round(5)}, expected #{cop}")
+        end
+      end
+    end
+  end
+
   # two-speed units cannot modulate continuously; the fan floor must come from the lowest stage flow fraction
   # in the scenario's staging data (0.59 in cooling), or the outdoor air ratio when that is higher
   def test_fan_two_speed_standard_eff
