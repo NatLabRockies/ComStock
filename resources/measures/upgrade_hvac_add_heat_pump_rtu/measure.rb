@@ -1585,7 +1585,11 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       else
         hp_derate_factor_at_user_dsn = rated_heat_cap_ft_curve.evaluate(ia_temp_c, oa_temp_c)
       end
-      req_rated_hp_cap_at_user_dsn_to_meet_load_at_user_dsn = dns_htg_load_at_user_dsn_temp / hp_derate_factor_at_user_dsn
+      # each heating stage's capacity is its stage_cap_fractions_heating value times dx_rated_htg_cap_applied, and the rated stage's own
+      # fraction need not be 1: the CCHP JSONs store it as the unit's rated heating to rated cooling capacity ratio. So the capacity
+      # required here is the one whose rated stage meets the design load
+      rated_htg_stage_cap_frac = stage_cap_fractions_heating[rated_stage_num_heating]
+      req_rated_hp_cap_at_user_dsn_to_meet_load_at_user_dsn = dns_htg_load_at_user_dsn_temp / hp_derate_factor_at_user_dsn / rated_htg_stage_cap_frac
 
       # ---------------------------------------------------------
       # sizing: rated capacities and design airflows
@@ -1641,19 +1645,21 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         runner.registerInfo('sizing summary: before rated cfm/ton adjustmant')
         runner.registerInfo("sizing summary: dx_rated_htg_cap_applied = #{dx_rated_htg_cap_applied}")
         runner.registerInfo("sizing summary: design_heating_airflow_m_3_per_s = #{design_heating_airflow_m_3_per_s}")
-        runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / dx_rated_htg_cap_applied)}")
+        runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / (dx_rated_htg_cap_applied * rated_htg_stage_cap_frac))}")
         runner.registerInfo("sizing summary: dx_rated_clg_cap_applied = #{dx_rated_clg_cap_applied}")
         runner.registerInfo("sizing summary: design_cooling_airflow_m_3_per_s = #{design_cooling_airflow_m_3_per_s}")
         runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_cooling_airflow_m_3_per_s / dx_rated_clg_cap_applied)}")
       end
 
-      # adjust design airflows if the rated stage cfm/ton limits are violated
-      cfm_per_ton_rated_heating = m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / dx_rated_htg_cap_applied)
+      # adjust design airflows if the rated stage cfm/ton limits are violated; the rated heating stage's capacity is its fraction of
+      # dx_rated_htg_cap_applied (see rated_htg_stage_cap_frac above)
+      rated_htg_stage_cap = dx_rated_htg_cap_applied * rated_htg_stage_cap_frac
+      cfm_per_ton_rated_heating = m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / rated_htg_stage_cap)
       cfm_per_ton_rated_cooling = m_3_per_sec_watts_to_cfm_per_ton(design_cooling_airflow_m_3_per_s / dx_rated_clg_cap_applied)
       if cfm_per_ton_rated_heating < CFM_PER_TON_MIN_RATED
-        design_heating_airflow_m_3_per_s = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MIN_RATED) * dx_rated_htg_cap_applied
+        design_heating_airflow_m_3_per_s = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MIN_RATED) * rated_htg_stage_cap
       elsif cfm_per_ton_rated_heating > CFM_PER_TON_MAX_RATED
-        design_heating_airflow_m_3_per_s = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MAX_RATED) * dx_rated_htg_cap_applied
+        design_heating_airflow_m_3_per_s = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MAX_RATED) * rated_htg_stage_cap
       end
       if cfm_per_ton_rated_cooling < CFM_PER_TON_MIN_RATED
         design_cooling_airflow_m_3_per_s = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MIN_RATED) * dx_rated_clg_cap_applied
@@ -1665,7 +1671,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         runner.registerInfo('sizing summary: after rated cfm/ton adjustmant')
         runner.registerInfo("sizing summary: dx_rated_htg_cap_applied = #{dx_rated_htg_cap_applied}")
         runner.registerInfo("sizing summary: design_heating_airflow_m_3_per_s = #{design_heating_airflow_m_3_per_s}")
-        runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / dx_rated_htg_cap_applied)}")
+        runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_heating_airflow_m_3_per_s / (dx_rated_htg_cap_applied * rated_htg_stage_cap_frac))}")
         runner.registerInfo("sizing summary: dx_rated_clg_cap_applied = #{dx_rated_clg_cap_applied}")
         runner.registerInfo("sizing summary: design_cooling_airflow_m_3_per_s = #{design_cooling_airflow_m_3_per_s}")
         runner.registerInfo("sizing summary: cfm/ton heating = #{m_3_per_sec_watts_to_cfm_per_ton(design_cooling_airflow_m_3_per_s / dx_rated_clg_cap_applied)}")
