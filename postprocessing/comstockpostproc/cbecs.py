@@ -5,8 +5,6 @@ import os
 import boto3
 import botocore
 import logging
-import numpy as np
-import pandas as pd
 import polars as pl
 
 from comstockpostproc.naming_mixin import NamingMixin
@@ -15,8 +13,6 @@ from comstockpostproc.s3_utilities_mixin import S3UtilitiesMixin
 
 logger = logging.getLogger(__name__)
 
-# Use future pandas behavior, which we handled by casting column type after .replace() calls
-pd.set_option('future.no_silent_downcasting', True)
 
 class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
     def __init__(self, cbecs_year, truth_data_version, color_hex=NamingMixin.COLOR_CBECS_2012, weighted_energy_units='tbtu', weighted_utility_units='billion_usd', reload_from_csv=False):
@@ -58,10 +54,10 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             file_name = f'CBECS wide.csv'
             file_path = os.path.abspath(os.path.join(self.output_dir, file_name))
             if not os.path.exists(file_path):
-                 raise FileNotFoundError(
+                raise FileNotFoundError(
                     f'Cannot find {file_path} to reload data, set reload_from_csv=False to create CSV.')
             logger.info(f'Reloading from CSV: {file_path}')
-            self.data = pd.read_csv(file_path, low_memory=False)
+            self.data = pl.read_csv(file_path, infer_schema_length=None)
         else:
             self.load_data()
             self.rename_columns_and_convert_units()
@@ -80,11 +76,13 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
         for c in self.data.columns:
             logger.debug(c)
 
-        assert isinstance(self.data, pd.DataFrame)
+        assert isinstance(self.data, pl.DataFrame)
         logging.info(f'Created {self.dataset_name} with {len(self.data)} rows')
 
-        self.data = self.data.astype(str)
-        #Convert columns with name in self.FLR_AREA or weight to numeric
+        # Cast everything to string, then convert the numeric columns back to
+        # numeric. This mirrors the pandas implementation which casts the whole
+        # frame to str and then applies pd.to_numeric to columns matching a set
+        # of patterns.
         numeric_patterns = [
             self.FLR_AREA,
             self.BLDG_WEIGHT,
@@ -95,17 +93,27 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             'intensity'
         ]
 
+        cast_exprs = []
         for col in self.data.columns:
             if any(pattern in col for pattern in numeric_patterns):
-                try:
-                    self.data[col] = pd.to_numeric(self.data[col], errors='coerce')
-                except:
-                    # If conversion fails, keep as string
-                    pass
+                cast_exprs.append(pl.col(col).cast(pl.Utf8).cast(pl.Float64, strict=False).alias(col))
+            else:
+                cast_exprs.append(pl.col(col).cast(pl.Utf8).alias(col))
+        self.data = self.data.with_columns(cast_exprs)
 
-        # Then convert to polars with schema overrides
-        self.data = pl.from_pandas(self.data).lazy()
+        # Convert to a LazyFrame
+        self.data = self.data.lazy()
         assert isinstance(self.data, pl.LazyFrame)
+
+    # ------------------------------------------------------------------
+    # Small polars helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _to_float(col_name):
+        # Convert a column to Float64, coercing non-numeric values (e.g.
+        # 'Not Applicable', '.') to null. This mirrors the pandas pattern of
+        # replacing the sentinel strings with NaN and then astype('float64').
+        return pl.col(col_name).cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
 
     def download_data(self):
         # CBECS microdata
@@ -130,7 +138,7 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
 
         # CBECS HVAC to Comstock System Type Mapping table
-        file_name = f'cbecs_{self.year}_w_cstock_hvac_v3.csv'
+        file_name = f'cbecs_{self.year}_w_cstock_hvac.csv'
         file_path = os.path.join(self.truth_data_dir, file_name)
         if not os.path.exists(file_path):
             s3_file_path = f'truth_data/{self.truth_data_version}/EIA/CBECS/{file_name}'
@@ -141,82 +149,102 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
 
         # Load microdata
         file_path = os.path.join(self.truth_data_dir, self.data_file_name)
-        self.data = pd.read_csv(file_path, low_memory=False, na_values=['.'])
+        self.data = pl.read_csv(file_path, null_values=['.'], infer_schema_length=None)
+        # Drop fully-null rows to mirror pandas' skip_blank_lines behavior (e.g.
+        # a trailing blank line in the source CSV)
+        self.data = self.data.filter(~pl.all_horizontal(pl.all().is_null()))
 
         # Load microdata codebook
         file_path = os.path.join(self.truth_data_dir, self.data_codebook_file_name)
-        codebook = pd.read_csv(file_path, index_col='File order', low_memory=False)
+        codebook = pl.read_csv(file_path, infer_schema_length=None)
+
+        # Normalize the codebook name/label columns and compute the final label.
+        # Labels that CBECS reused for multiple columns are differentiated by
+        # appending the variable name; the first occurrence keeps the plain
+        # label (is_first_distinct is True only for that first row).
+        codebook = codebook.with_columns(
+            pl.col('Variable name').str.strip_chars().alias('_var_name'),
+            pl.col('Label').str.strip_chars().alias('_var_label'),
+        ).with_columns(
+            pl.when(pl.col('_var_label').is_first_distinct())
+            .then(pl.col('_var_label'))
+            .otherwise(pl.col('_var_label') + pl.lit(' ') + pl.col('_var_name'))
+            .alias('_final_label')
+        )
+
         # Make a dict of column names (e.g. PBA) to labels (e.g. Principal building activity)
-        # and a dict of numeric enumerations to strings for non-numeric variables
-        var_name_to_label = {}
-        var_label_to_enums = {}
-        for file_order, row in codebook.iterrows():
-            var_name = row['Variable name'].strip()
-            var_type = row['Variable type'].strip()
-            var_label = row['Label'].strip()
-            var_vals = row['Values/Format codes']
-            # logger.debug('')
-            # logger.debug('*'*20)
-            # logger.debug(var_name)
-            # logger.debug(var_label)
-            # logger.debug(var_type)
-            # logger.debug(var_vals)
+        var_name_to_label = dict(zip(
+            codebook['_var_name'].to_list(),
+            codebook['_final_label'].to_list()
+        ))
 
-            # Check if this label was already used by CBECS for another column
-            if var_label in list(var_name_to_label.values()):
-                logger.debug(f'CBECS used the label "{var_label}" for multiple columns')
-                logger.debug(f'    - now: {var_name}')
-                for nm, lbl in var_name_to_label.items():
-                    if lbl == var_label:
-                        logger.debug(f'    - prev: {nm}')
-                # If reused, append the column name to the label to differentiate
-                var_label = f'{var_label} {var_name}'
-                logger.debug(f'    Relabeling "{var_name}" to: "{var_label}"')
+        # Make a dict of labels to a dict of numeric enumerations -> strings for
+        # non-numeric variables. The 'key=value|key=value' format is exploded
+        # into long form and grouped by label rather than iterating row-by-row.
+        enum_long = (
+            codebook
+            .select('_final_label', 'Values/Format codes')
+            .drop_nulls('Values/Format codes')
+            .with_columns(pl.col('Values/Format codes').str.split('|').alias('_seg'))
+            .explode('_seg')
+            .filter(pl.col('_seg').str.contains('=', literal=True))
+            .with_columns(pl.col('_seg').str.split_exact('=', 1).alias('_kv'))
+            .with_columns(
+                pl.col('_kv').struct.field('field_0').alias('_enum_key'),
+                pl.col('_kv').struct.field('field_1').str.strip_chars().alias('_enum_val'),
+            )
+            .group_by('_final_label', maintain_order=True)
+            .agg(pl.col('_enum_key'), pl.col('_enum_val'))
+        )
+        var_label_to_enums = {
+            label: dict(zip(keys, vals))
+            for label, keys, vals in zip(
+                enum_long['_final_label'].to_list(),
+                enum_long['_enum_key'].to_list(),
+                enum_long['_enum_val'].to_list(),
+            )
+        }
 
-            # Add the name to label mapping
-            var_name_to_label[var_name] = var_label
-
-            # For non-numeric fields, parse the value/format codes into a dict
-            enum_to_value = {}
-            if not pd.isna(var_vals) and '=' in var_vals:
-                for v in var_vals.split('|'):
-                    if '=' in v:
-                        n, val = v.split('=')
-                        enum_to_value[n] = val.strip()
-            if len(enum_to_value) > 0:
-                var_label_to_enums[var_label] = enum_to_value
-
-        # Rename the columns
-        self.data.rename(columns=var_name_to_label, inplace=True)
+        # Rename the columns (only those present in the microdata)
+        rename_map = {name: label for name, label in var_name_to_label.items() if name in self.data.columns}
+        self.data = self.data.rename(rename_map)
 
         # Double-check for duplicate columns; there should be none
-        for col, dup in zip(self.data.columns, self.data.columns.duplicated()):
-            if dup:
+        seen = set()
+        drop_cols = []
+        for col in self.data.columns:
+            if col in seen:
                 logger.warning(f'Dropped column with duplicate label: {col}')
-                self.data.drop(col, axis=1, inplace=True)
+                drop_cols.append(col)
+            seen.add(col)
+        if drop_cols:
+            self.data = self.data.drop(drop_cols)
 
-        # Decode the column values
-        def decode_variable(val, decoder_map):
-            # logger.debug('***')
-            # logger.debug(f'DECODING {val}')
-            # logger.debug(f'with {decoder_map}')
-            if pd.isna(val):  # NaN = 'Missing' in decoder map
-                val = 'Missing'
-            if val in decoder_map.keys():
-                return decoder_map[val]
-            elif str(int(val)) in decoder_map.keys():
-                return decoder_map[str(int(val))]
-            else:
-                return val
-
-        for col_name in list(self.data):
-            # logger.debug(col_name)
-            if col_name in var_label_to_enums.keys():
+        # Decode the column values using the codebook enumerations. This mirrors
+        # the pandas decode_variable logic:
+        #   - null values become 'Missing'
+        #   - numeric keys are looked up as their integer-string representation
+        #   - unmapped values are left unchanged
+        decode_exprs = []
+        for col_name in self.data.columns:
+            if col_name in var_label_to_enums:
                 decoder_map = var_label_to_enums[col_name]
-                # logger.debug(f'Decoding {col_name}')
-                # logger.debug('  value map:')
-                # logger.debug(f'  {decoder_map}')
-                self.data[col_name] = self.data[col_name].apply(lambda key: decode_variable(key, decoder_map))
+                dtype = self.data.schema[col_name]
+                if dtype.is_numeric():
+                    key = (
+                        pl.when(pl.col(col_name).is_null())
+                        .then(pl.lit('Missing'))
+                        .otherwise(pl.col(col_name).cast(pl.Int64, strict=False).cast(pl.Utf8))
+                    )
+                else:
+                    key = (
+                        pl.when(pl.col(col_name).is_null())
+                        .then(pl.lit('Missing'))
+                        .otherwise(pl.col(col_name).cast(pl.Utf8))
+                    )
+                decode_exprs.append(key.replace(decoder_map).alias(col_name))
+        if decode_exprs:
+            self.data = self.data.with_columns(decode_exprs)
 
     def rename_columns_and_convert_units(self):
         column_map = {
@@ -264,7 +292,8 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             'Annual fuel oil expenditures ($)': self.UTIL_BILL_FUEL_OIL
         }
 
-        self.data.rename(columns=column_map, inplace=True)
+        rename_map = {old: new for old, new in column_map.items() if old in self.data.columns}
+        self.data = self.data.rename(rename_map)
 
         # Combine some CBECS columns to match ComStock
         combo_cols = [
@@ -286,73 +315,101 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             [['District heat cooking use (thous Btu)',
             'District heat miscellaneous use (thous Btu)'], self.ANN_DISTHTG_INTEQUIP_KBTU]
         ]
+        combo_exprs = []
+        source_cast_exprs = []
+        seen_sources = set()
         for cols, new_col_name in combo_cols:
             found_cols = []
             for col in cols:
-                if not col in self.data:
+                if col not in self.data.columns:
                     logger.warning(f'Missing energy column {col}, will not be included in {new_col_name}')
                     continue
-                self.data[col] = self.data[col].replace('Not Applicable', str(np.nan))
-                self.data[col] = self.data[col].replace('Not applicable', str(np.nan))
-                self.data[col] = self.data[col].astype('float64')
                 found_cols.append(col)
-            new_col_dict = {}
-            new_col_dict[new_col_name] = self.data[found_cols].sum(axis=1)
-            self.data = pd.concat([self.data, pd.DataFrame(new_col_dict)],axis=1)
+                # Cast the source column to float in place (mirrors pandas)
+                if col not in seen_sources:
+                    source_cast_exprs.append(self._to_float(col).alias(col))
+                    seen_sources.add(col)
+            if found_cols:
+                combo_exprs.append(pl.sum_horizontal([self._to_float(c) for c in found_cols]).alias(new_col_name))
+            else:
+                combo_exprs.append(pl.lit(0.0).alias(new_col_name))
+        if source_cast_exprs:
+            self.data = self.data.with_columns(source_cast_exprs)
+        if combo_exprs:
+            self.data = self.data.with_columns(combo_exprs)
 
         # Convert all energy columns from base CBECS kBtu to kWh
+        conv_exprs = []
+        base_cbecs_units = 'kbtu'
         for col in (self.COLS_TOT_ANN_ENGY + self.COLS_ENDUSE_ANN_ENGY):
             # Skip end-use columns that aren't part of CBECS
-            if not col in self.data:
+            if col not in self.data.columns:
                 continue
-            # Ensure the energy column is numeric then create weighted column
-            self.data[col] = self.data[col].replace('Not Applicable', str(np.nan))
-            self.data[col] = self.data[col].replace('Not applicable', str(np.nan))
-            self.data[col] = self.data[col].astype('float64')
-            new_col = self.col_name_to_weighted(col, self.weighted_energy_units)
-
-            # Convert to match units in updated column name
-            base_cbecs_units = 'kbtu'
+            # Convert to match units in the column name
             target_units = self.units_from_col_name(col)
             conv_fact = self.conv_fact(base_cbecs_units, target_units)
-            self.data[col] = self.data[col] * conv_fact
+            conv_exprs.append((self._to_float(col) * conv_fact).alias(col))
+        if conv_exprs:
+            self.data = self.data.with_columns(conv_exprs)
 
     def set_column_data_types(self):
-        # TODO generalize this on CBECS loading?
+        # Ensure the total annual energy columns are numeric
+        cast_exprs = []
         for col in self.COLS_TOT_ANN_ENGY:
-            if col in self.data:
-                self.data[col] = self.data[col].replace('Not Applicable', np.nan)
-                self.data[col] = self.data[col].astype('float64')
+            if col in self.data.columns:
+                cast_exprs.append(self._to_float(col).alias(col))
+        if cast_exprs:
+            self.data = self.data.with_columns(cast_exprs)
 
     def add_dataset_column(self):
-        self.data[self.DATASET] = self.dataset_name
+        self.data = self.data.with_columns(pl.lit(self.dataset_name).alias(self.DATASET))
 
     def add_energy_intensity_columns(self):
-        # Create EUI column for each annual energy column
+        # Ensure the floor area is numeric before dividing
+        add_null_exprs = []
         for engy_col in (self.COLS_TOT_ANN_ENGY + self.COLS_ENDUSE_ANN_ENGY):
-            # Put in np.nan for end-use columns that aren't part of CBECS
-            if not engy_col in self.data:
-                self.data[engy_col] = np.nan
-            # Divide energy by area to create intensity
+            # Put in null for end-use columns that aren't part of CBECS
+            if engy_col not in self.data.columns:
+                add_null_exprs.append(pl.lit(None, dtype=pl.Float64).alias(engy_col))
+        if add_null_exprs:
+            self.data = self.data.with_columns(add_null_exprs)
+
+        # Create EUI column for each annual energy column
+        eui_exprs = []
+        area = self._to_float(self.FLR_AREA)
+        for engy_col in (self.COLS_TOT_ANN_ENGY + self.COLS_ENDUSE_ANN_ENGY):
             eui_col = self.col_name_to_eui(engy_col)
-            self.data[engy_col] = self.data[engy_col].replace('Not Applicable', np.nan)
-            self.data[engy_col] = self.data[engy_col].astype('float64')
-            self.data[eui_col] = self.data[engy_col] / self.data[self.FLR_AREA]
+            eui_exprs.append((self._to_float(engy_col) / area).alias(eui_col))
+        if eui_exprs:
+            self.data = self.data.with_columns(eui_exprs)
 
     def add_bill_intensity_columns(self):
         # Create bill per area column for each annual utility bill column
+        add_null_exprs = []
         for bill_col in self.COLS_UTIL_BILLS:
-            # Put in np.nan for bill columns that aren't part of CBECS
-            if not bill_col in self.data:
-                self.data[bill_col] = np.nan
-            # Divide bill by area to create intensity
+            # Put in null for bill columns that aren't part of CBECS
+            if bill_col not in self.data.columns:
+                add_null_exprs.append(pl.lit(None, dtype=pl.Float64).alias(bill_col))
+        if add_null_exprs:
+            self.data = self.data.with_columns(add_null_exprs)
+
+        # Cast the bill columns to float in place (mirrors pandas), then create
+        # the per-area intensity columns
+        bill_cast_exprs = []
+        per_area_exprs = []
+        area = self._to_float(self.FLR_AREA)
+        for bill_col in self.COLS_UTIL_BILLS:
+            bill_cast_exprs.append(self._to_float(bill_col).alias(bill_col))
             per_area_col = self.col_name_to_area_intensity(bill_col)
-            self.data[bill_col] = self.data[bill_col].replace('Not applicable', str(np.nan))
-            self.data[bill_col] = self.data[bill_col].astype('float64')
-            self.data[per_area_col] = self.data[bill_col] / self.data[self.FLR_AREA]
+            per_area_exprs.append((self._to_float(bill_col) / area).alias(per_area_col))
+        if bill_cast_exprs:
+            self.data = self.data.with_columns(bill_cast_exprs)
+        if per_area_exprs:
+            self.data = self.data.with_columns(per_area_exprs)
 
     def add_energy_rate_columns(self):
         # Create energy rate column for each annual utility bill column
+        rate_exprs = []
         for bill_col in self.COLS_UTIL_BILLS:
             # Get the corresponding energy consumption column
             bill_to_engy_col = {
@@ -367,176 +424,163 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
                 continue
             # Divide bill by consumption to create rate
             rate_col = self.col_name_to_energy_rate(bill_col)
-            self.data[bill_col] = self.data[bill_col].replace('Not applicable', np.nan)
-            self.data[bill_col] = self.data[bill_col].astype('float64')
-            self.data[rate_col] = self.data[bill_col] / self.data[engy_col]
+            rate_exprs.append((self._to_float(bill_col) / self._to_float(engy_col)).alias(rate_col))
+        if rate_exprs:
+            self.data = self.data.with_columns(rate_exprs)
 
     def add_comstock_building_type_column(self):
         # Add the ComStock building type for each row of CBECS
 
         # Load the building type mapping file
         file_path = os.path.join(self.resource_dir, self.building_type_mapping_file_name)
-        bldg_type_map = pd.read_csv(file_path, index_col='CBECS More specific building activity')
-        bldg_type_map.head()
+        bldg_type_map = pl.read_csv(file_path, infer_schema_length=None)
 
-        def cbecs_to_comstock_bldg_type(row, bldg_type_map):
-            # Get the CBECS properties
-            cbecs_bldg_type = row[self.CBECS_BLDG_TYPE]
-            sqft = row[self.FLR_AREA]
-            nfloor = row['Number of floors']
-            # Recode CBECS 2012 enumerations
-            if nfloor == '15 to 25':
-                nfloor = 15
-            elif nfloor == 'More than 25':
-                nfloor = 26
-            # Recode CBECS 2018 enumerations
-            elif nfloor == '10 to 14':
-                nfloor = 10
-            elif nfloor == '15 or more':
-                nfloor = 15
+        # Build a dict from CBECS building activity -> intermediate ComStock building type
+        inter_map = dict(zip(
+            bldg_type_map['CBECS More specific building activity'].to_list(),
+            bldg_type_map['ComStock Intermediate Building Type'].to_list()
+        ))
 
-            # Look up the intermediate comstock building type
-            cstock_bldg_type = bldg_type_map['ComStock Intermediate Building Type'].loc[cbecs_bldg_type]
+        # Look up the intermediate comstock building type
+        inter = pl.col(self.CBECS_BLDG_TYPE).replace_strict(inter_map, default=None)
 
-            # Assign size category to offices
-            if cstock_bldg_type == 'Office':
-                if sqft < 25_000:
-                    if nfloor <=3:
-                        cstock_bldg_type = 'SmallOffice'
-                    else:
-                        cstock_bldg_type = 'MediumOffice'
-                elif sqft >= 25_000 and sqft < 150_000:
-                    if nfloor <= 5:
-                        cstock_bldg_type = 'MediumOffice'
-                    else:
-                        cstock_bldg_type = 'LargeOffice'
-                elif sqft >= 150_000:
-                    cstock_bldg_type = 'LargeOffice'
-                else:
-                    err_msg = f"Should never get here, check logic for {row}"
-                    logger.error(err_msg)
-                    raise Exception(err_msg)
-                assert cstock_bldg_type != 'Office'  # Offices must be assigned a size
+        # Recode the number of floors, handling both CBECS 2012 and 2018 enumerations
+        nfloor_str = pl.col('Number of floors').cast(pl.Utf8)
+        nfloor = (
+            pl.when(nfloor_str == '15 to 25').then(pl.lit(15.0))      # CBECS 2012
+            .when(nfloor_str == 'More than 25').then(pl.lit(26.0))    # CBECS 2012
+            .when(nfloor_str == '10 to 14').then(pl.lit(10.0))        # CBECS 2018
+            .when(nfloor_str == '15 or more').then(pl.lit(15.0))      # CBECS 2018
+            .otherwise(pl.col('Number of floors').cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False))
+        )
 
-            return cstock_bldg_type
+        sqft = self._to_float(self.FLR_AREA)
 
+        # Assign size category to offices
+        office_type = (
+            pl.when(sqft < 25_000)
+                .then(pl.when(nfloor <= 3).then(pl.lit('SmallOffice')).otherwise(pl.lit('MediumOffice')))
+            .when((sqft >= 25_000) & (sqft < 150_000))
+                .then(pl.when(nfloor <= 5).then(pl.lit('MediumOffice')).otherwise(pl.lit('LargeOffice')))
+            .when(sqft >= 150_000)
+                .then(pl.lit('LargeOffice'))
+            .otherwise(pl.lit(None, dtype=pl.Utf8))
+        )
 
-        self.data[self.BLDG_TYPE] = self.data.apply(lambda row: cbecs_to_comstock_bldg_type(row, bldg_type_map), axis=1)
+        cstock_bldg_type = (
+            pl.when(inter == 'Office')
+            .then(office_type)
+            .otherwise(inter)
+        )
+
+        self.data = self.data.with_columns(cstock_bldg_type.alias(self.BLDG_TYPE))
 
     def add_aeo_nems_building_type_column(self):
         # Add the AEO and NEMS building type for each row of CBECS
 
         # Load the building type mapping file
         file_path = os.path.join(self.resource_dir, self.building_type_mapping_file_name)
-        bldg_type_map = pd.read_csv(file_path, index_col='CBECS More specific building activity')
-        bldg_type_map.head()
+        bldg_type_map = pl.read_csv(file_path, infer_schema_length=None)
 
-        def cbecs_to_aeo_bldg_type(row, bldg_type_map):
-            # Get the CBECS properties
-            cbecs_bldg_type = row[self.CBECS_BLDG_TYPE]
-            sqft = row[self.FLR_AREA]
+        aeo_map = dict(zip(
+            bldg_type_map['CBECS More specific building activity'].to_list(),
+            bldg_type_map['NEMS and AEO Intermediate Building Type'].to_list()
+        ))
 
-            # Look up the intermediate comstock building type
-            aeo_bldg_type = bldg_type_map['NEMS and AEO Intermediate Building Type'].loc[cbecs_bldg_type]
+        inter = pl.col(self.CBECS_BLDG_TYPE).replace_strict(aeo_map, default=None)
+        sqft = self._to_float(self.FLR_AREA)
 
-            # Assign size category to offices
-            if aeo_bldg_type == 'Office':
-                if sqft <= 50_000:
-                    aeo_bldg_type = 'Office - Small'
-                else:
-                    aeo_bldg_type = 'Office - Large'
-                assert aeo_bldg_type != 'office'  # Offices must be assigned a size
+        office_type = (
+            pl.when(sqft <= 50_000)
+            .then(pl.lit('Office - Small'))
+            .otherwise(pl.lit('Office - Large'))
+        )
 
-            return aeo_bldg_type
+        aeo_bldg_type = (
+            pl.when(inter == 'Office')
+            .then(office_type)
+            .otherwise(inter)
+        )
 
-        self.data[self.AEO_BLDG_TYPE] = self.data.apply(lambda row: cbecs_to_aeo_bldg_type(row, bldg_type_map), axis=1)
+        self.data = self.data.with_columns(aeo_bldg_type.alias(self.AEO_BLDG_TYPE))
 
     def add_vintage_column(self):
         # Adds decadal vintage bins used in CBECS 2018
 
         if self.YEAR_BUILT in self.data.columns:
-            def vintage_bin_from_year(year):
-                if year == 'Before 1946':
-                    return 'Before 1946'
-                year = int(year)
-                if 1946 < year < 1960:
-                    vint = '1946 to 1959'
-                elif year < 1970:
-                    vint = '1960 to 1969'
-                elif year < 1980:
-                    vint = '1970 to 1979'
-                elif year < 1990:
-                    vint = '1980 to 1989'
-                elif year < 2000:
-                    vint = '1990 to 1999'
-                elif year < 2013:
-                    vint = '2000 to 2012'
-                elif year < 2019:
-                    vint = '2013 to 2018'
-                else:
-                    vint = '2019 or newer'
-                return vint
-
-            self.data[self.VINTAGE] = self.data.apply(lambda row: vintage_bin_from_year(row[self.YEAR_BUILT]), axis=1)
+            year_str = pl.col(self.YEAR_BUILT).cast(pl.Utf8)
+            year_num = pl.col(self.YEAR_BUILT).cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+            vintage = (
+                pl.when(year_str == 'Before 1946').then(pl.lit('Before 1946'))
+                .when((year_num > 1946) & (year_num < 1960)).then(pl.lit('1946 to 1959'))
+                .when(year_num < 1970).then(pl.lit('1960 to 1969'))
+                .when(year_num < 1980).then(pl.lit('1970 to 1979'))
+                .when(year_num < 1990).then(pl.lit('1980 to 1989'))
+                .when(year_num < 2000).then(pl.lit('1990 to 1999'))
+                .when(year_num < 2013).then(pl.lit('2000 to 2012'))
+                .when(year_num < 2019).then(pl.lit('2013 to 2018'))
+                .otherwise(pl.lit('2019 or newer'))
+            )
+            self.data = self.data.with_columns(vintage.alias(self.VINTAGE))
         else:
             # Use the vintage bins already in CBECS
-            self.data[self.VINTAGE] = self.data['Year of construction category']
+            self.data = self.data.with_columns(
+                pl.col('Year of construction category').alias(self.VINTAGE)
+            )
 
     def add_weighted_area_and_energy_columns(self):
-        # # Area
-        # new_area_col = self.col_name_to_weighted(self.FLR_AREA)
-        # self.data[new_area_col] = self.data[self.FLR_AREA] * self.data[self.BLDG_WEIGHT]
-
-        # # Energy
-        # for col in self.COLS_TOT_ANN_ENGY:
-        #     new_col = self.col_name_to_weighted(col)
-        #     self.data[new_col] = self.data[col] * self.data[self.BLDG_WEIGHT]
+        weight = self._to_float(self.BLDG_WEIGHT)
 
         # Area - ensure the column is numeric then create weighted column
-        self.data[self.FLR_AREA] = self.data[self.FLR_AREA].replace('Not Applicable', np.nan)
-        self.data[self.FLR_AREA] = self.data[self.FLR_AREA].astype('float64')
         new_area_col = self.col_name_to_weighted(self.FLR_AREA)
-        self.data[new_area_col] = self.data[self.FLR_AREA] * self.data[self.BLDG_WEIGHT]
+        area = self._to_float(self.FLR_AREA)
+        wtd_exprs = [
+            area.alias(self.FLR_AREA),
+            (area * weight).alias(new_area_col)
+        ]
 
         # Energy
-        new_col_dict = {}
         for col in (self.COLS_TOT_ANN_ENGY + self.COLS_ENDUSE_ANN_ENGY):
             # Skip end-use columns that aren't part of CBECS
-            if not col in self.data:
+            if col not in self.data.columns:
                 continue
-            # Ensure the energy column is numeric then create weighted column
-            self.data[col] = self.data[col].replace('Not Applicable', np.nan)
-            self.data[col] = self.data[col].astype('float64')
             new_col = self.col_name_to_weighted(col, self.weighted_energy_units)
 
-            # Weight and convert to TBtu
+            # Weight and convert to the target units (e.g. TBtu)
             old_units = self.units_from_col_name(col)
             new_units = self.weighted_energy_units
             conv_fact = self.conv_fact(old_units, new_units)
-            new_col_dict[new_col] = self.data[col] * self.data[self.BLDG_WEIGHT] * conv_fact
-        self.data = pd.concat([self.data, pd.DataFrame(new_col_dict)], axis=1)
+            wtd_exprs.append((self._to_float(col) * weight * conv_fact).alias(new_col))
+
+        self.data = self.data.with_columns(wtd_exprs)
 
     def add_primary_system_type_column(self):
-         # CBECS HVAC Data
-         file_name = f'cbecs_{self.year}_w_cstock_hvac_v3.csv'
-         file_path = os.path.join(self.truth_data_dir, file_name)
+        # CBECS HVAC Data
+        file_name = f'cbecs_{self.year}_w_cstock_hvac_v3.csv'
+        file_path = os.path.join(self.truth_data_dir, file_name)
 
-         # Check if file exists
-         if not os.path.exists(file_path):
-             print(f"File {file_name} does not exist. Skipping...")
-             return
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.info(f"File {file_name} does not exist. Skipping...")
+            return
 
-         # Read CSV file into a DataFrame
-         hvac_df = pd.read_csv(file_path)
+        # Read CSV file into a DataFrame
+        hvac_df = pl.read_csv(file_path, infer_schema_length=None)
 
-         # Select 'PUBID' and 'cstock_sys_type' columns
-         hvac_df = hvac_df[['PUBID', 'cstock_sys_type']]
+        # Select 'PUBID' and 'cstock_sys_type' columns and rename to match
+        hvac_df = hvac_df.select(['PUBID', 'cstock_sys_type']).rename({
+            'PUBID': self.BLDG_ID,
+            'cstock_sys_type': self.HVAC_SYS
+        })
 
-         # Rename 'PUBID' to 'bldg_id'
-         hvac_df = hvac_df.rename(columns={'PUBID': 'bldg_id'})
-         hvac_df = hvac_df.rename(columns={'cstock_sys_type':'in.hvac_system_type'})
-         # Merge HVAC data with existing data
-         self.data = pd.merge(self.data, hvac_df, on='bldg_id', how='left')
+        # Align the join key dtypes (bldg_id is an integer identifier)
+        hvac_df = hvac_df.with_columns(pl.col(self.BLDG_ID).cast(pl.Int64, strict=False))
+        self.data = self.data.with_columns(
+            pl.col(self.BLDG_ID).cast(pl.Utf8).str.strip_chars().cast(pl.Int64, strict=False)
+        )
+
+        # Merge HVAC data with existing data
+        self.data = self.data.join(hvac_df, on=self.BLDG_ID, how='left')
 
     def export_to_csv_wide(self):
         # Exports comstock data to CSV in wide format
@@ -546,6 +590,6 @@ class CBECS(NamingMixin, UnitsMixin, S3UtilitiesMixin):
         try:
             self.data.sink_csv(file_path)
         except pl.exceptions.InvalidOperationError:
-            logger.warn('Warning - sink_csv not supported for metadata write in current polars version')
-            logger.warn('Falling back to .collect.write_csv')
+            logger.warning('Warning - sink_csv not supported for metadata write in current polars version')
+            logger.warning('Falling back to .collect.write_csv')
             self.data.collect().write_csv(file_path)
