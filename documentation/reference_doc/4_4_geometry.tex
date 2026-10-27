@@ -17,7 +17,7 @@ A building's geometry influences several aspects of its associated building ener
 \pagebreak
 
 \subsection{Area}
-Building floor area is assigned to each model through the sampling process. Probability distributions were generated using CoStar \citep{costar} for most building types. HSIP \citep{hsip} was used for schools and hospitals, as neither are well represented in CoStar.
+Building floor area is assigned to each model through the sampling process. Probability distributions were generated using CoStar \citep{costar} for most building types. HSIP \citep{hsip} was used for schools and the AHA Annual Survey \citep{aha_annual_survey_2022} for hospitals (Section~\ref{sec:data_sources}), as neither are well represented in CoStar.
 
 Figure~\ref{fig:area_dist} shows the breakdown of each building type in the national building stock by building size category (referred to as ``rentable area'').  Notice that the categories are presented as ranges.  At this time, ComStock uses the area in the middle of the range, with the exception of "\_1000" and "over\_1mil," which use 1000 square feet and 1 million square feet, respectively.  This method could be improved by adding variability to the building areas by selecting a variety of areas within the range.
 
@@ -74,7 +74,7 @@ Floor height is represented in the models as floor-to-floor height. ComStock use
 \subsection{Number of Floors}
 ComStock assigns a number of floors to each model during the sampling process to create a distribution of building heights in the stock. This value represents the number of aboveground floors for a given model. No buildings in ComStock have belowground stories.
 
- For most of the building types, we generated probability distributions based on county and building type using CoStar \citep{costar}. We used HSIP \citep{hsip} for schools and hospitals, as neither are well-represented in CoStar.
+ For most of the building types, we generated probability distributions based on county and building type using CoStar \citep{costar}. We used HSIP \citep{hsip} for schools, and the hospital data described in Section~\ref{sec:data_sources} for hospitals, as neither are well-represented in CoStar.
  
  Figure~\ref{fig:nfloors_dist} shows the breakdown of the national building stock by number of floors and building type.
 
