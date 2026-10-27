@@ -1449,14 +1449,15 @@ class AddHeatPumpRtuTest < Minitest::Test
     announce_test('test_rated_cop_regression_records')
     measure = AddHeatPumpRtu.new
     w_per_ton = 3516.852842
-    # rated COP at 3, 10 and 30 tons; the values the measure's RATED_COP_REGRESSIONS constant gave before the regressions moved into the
-    # jsons, except cchpc_2027_spec, which uses the line fitted through the ten lab-tested Challenge units (the same records as the Challenge
-    # typical unit's json), cooling held inside 35.80-72.45 kW and heating inside 18.98-89.61 kW
+    # rated COP at 3, 10 and 30 tons from the two lines each json holds, each held inside its own fitted capacity range:
+    # two-speed (Carrier/Lennox, 2023 federal minimum), cooling 10.26-81.47 kW and heating 9.73-80.30 kW, and variable-speed
+    # (the ten lab-tested Challenge units plus Daikin Rebel and NEXIO Max DVH, the same records as the Challenge typical unit's json),
+    # cooling 10.55-96.71 kW and heating 18.76-89.61 kW
     expected = {
-      'two_speed_standard_eff' => { 'cooling' => [3.77192, 3.51737, 3.02], 'heating' => [3.86802, 3.65872, 3.46] },
-      'two_speed_lab_data' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
-      'variable_speed_high_eff' => { 'cooling' => [4.05648, 3.87108, 3.41], 'heating' => [3.92, 3.81724, 3.63] },
-      'cchpc_2027_spec' => { 'cooling' => [3.85038, 3.85038, 3.94259], 'heating' => [4.09111, 3.9229, 3.35721] }
+      'two_speed_standard_eff' => { 'cooling' => [3.77192, 3.51737, 3.03857], 'heating' => [3.86802, 3.65872, 3.275] },
+      'two_speed_lab_data' => { 'cooling' => [3.77192, 3.51737, 3.03857], 'heating' => [3.86802, 3.65872, 3.275] },
+      'variable_speed_high_eff' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] },
+      'cchpc_2027_spec' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] }
     }
     SCENARIO_PERFORMANCE_JSON.each_key do |scenario|
       table = scenario_json(scenario)['tables']['curves']['table']
