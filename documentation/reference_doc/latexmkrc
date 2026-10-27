@@ -1,0 +1,13 @@
+# latexmk configuration for the ComStock Reference Documentation.
+#
+# Build with:   latexmk            (from this directory)
+# Clean with:   latexmk -C
+#
+# The nrel class needs pdfTeX (it uses \pdfinterwordspaceon and the pdfcomment package),
+# and the bibliography is biblatex with the biber backend. latexmk detects biber from the
+# .bcf file and runs pdflatex -> biber -> pdflatex as many times as the references need.
+$pdf_mode = 1;
+$pdflatex = 'pdflatex -synctex=1 -interaction=nonstopmode -file-line-error %O %S';
+$bibtex_use = 2;
+$out_dir = 'output';
+@default_files = ('main.tex');

@@ -16,8 +16,12 @@
 % Create Options
 % -------------------------------------------------------------
 %% PDF properties
-\pdfinterwordspaceon
-\pdfminorversion=6
+% pdfTeX-only primitives, guarded so the class also loads under other engines
+\RequirePackage{iftex}
+\ifpdftex
+  \pdfinterwordspaceon
+  \pdfminorversion=6
+\fi
 % for processing of conditional statements
 \RequirePackage{xifthen}
 % Mark as draft
@@ -99,8 +103,6 @@
   \monthname[\THEMONTH], \THEYEAR}
 % for multiple authors/affils
 \RequirePackage{authblk}
-% NAG: check for outdated packages
-\RequirePackage[l2tabu, orthodox]{nag}
 % GEOMETRY: set page size
 % \RequirePackage[head=0.125in,top=0.9in,bottom=1in,inner=1in,outer=1in,includefoot]{geometry}
 \RequirePackage[letterpaper, top=0.5in,bottom=1in,inner=1in,outer=1in,includefoot]{geometry}
