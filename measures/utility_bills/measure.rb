@@ -326,6 +326,12 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
       tract_to_elec_util[row[0]] = row[1]
     end
 
+    # Load the state each URDB rate file applies in, where known (see resources/build_elec_rate_states.py)
+    elec_rate_states = {}
+    CSV.foreach(File.join(File.dirname(__FILE__), 'resources', 'elec_rate_states.csv'), headers: true) do |row|
+      elec_rate_states[row['label']] = row['state'] unless row['state'].nil? || row['state'].empty?
+    end
+
     # Look up the utility EIA IDs based on the potential census tracts for the sampling region
     state_eia_map = Hash.new { |h, k| h[k] = [] }
     elec_eia_ids = []
@@ -396,6 +402,24 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
       elec_eia_ids.each do |elec_eia_id|
         # Find all the electric rates for this utility
         all_rates = Dir.glob(File.join(File.dirname(__FILE__), "resources/elec_rates/#{elec_eia_id}/*.json"))
+        # A utility serving several states keeps every state's tariffs in one folder. Keep the ones
+        # assigned to this state and the ones assigned to no state; a building none of them applies
+        # to gets the state-average bill below, like any building without an applicable rate. A state
+        # with no rate file assigned to it keeps them all, as every state did before the assignments.
+        unless all_rates.empty?
+          state_rates = all_rates.select do |rate_path|
+            rate_state = elec_rate_states[File.basename(rate_path, '.json')]
+            rate_state.nil? || rate_state == state_abbreviation
+          end
+          if state_rates.empty?
+            runner.registerWarning("None of the #{all_rates.size} URDB electric rates for EIA utility #{elec_eia_id} are assigned to #{state_abbreviation}; using all of them.")
+          else
+            if state_rates.size < all_rates.size
+              runner.registerInfo("#{state_rates.size} of #{all_rates.size} URDB electric rates for EIA utility #{elec_eia_id} apply in #{state_abbreviation}.")
+            end
+            all_rates = state_rates
+          end
+        end
         if all_rates.empty?
           unless elec_eia_id.nil?
             runner.registerWarning("No URDB electric rates found for EIA utility #{elec_eia_id}, using EIA average electric price.")
@@ -546,13 +570,14 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
           stats_energycharge = get_utility_rates_statistics(runner, elec_bills_energycharge)
           stats_fixedcharge = get_utility_rates_statistics(runner, elec_bills_fixedcharge)
 
-          # Concatenate bill statistics in certain format
+          # Concatenate bill statistics in certain format. The state comes last: a utility serving
+          # tracts in several states of the sampling region has one block per state.
           electricity_bill_results += stats_total[0..8].join(":") + ":"
           electricity_bill_results += stats_demandcharge_flat[0..8].join(":") + ":"
           electricity_bill_results += stats_demandcharge_tou[0..8].join(":") + ":"
           electricity_bill_results += stats_energycharge[0..8].join(":") + ":"
           electricity_bill_results += stats_fixedcharge[0..8].join(":") + ":"
-          electricity_bill_results += "#{stats_total[9]}|"
+          electricity_bill_results += "#{stats_total[9]}:#{state_abbreviation}|"
         end
       end
 
@@ -593,6 +618,8 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     end
 
     runner.registerValue('electricity_utility_bill_results', "#{electricity_bill_results}")
+    # Which version of the rate-file state assignments (resources/elec_rate_states.csv) billed this run
+    runner.registerValue('electricity_rate_files_by_state', 'v1')
     runner.registerValue('state_avg_electricity_cost_results', "#{state_avg_elec_results}")
     runner.registerValue('state_avg_naturalgas_cost_results', "#{state_avg_ng_results}")
     runner.registerValue('state_avg_propane_cost_results', "#{state_avg_propane_results}")
