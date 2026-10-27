@@ -161,16 +161,18 @@ def main():
     print(f'Resampling {to_resample.shape[0]} tracts that are not contained in the geospatial lookup file')
 
     # Resample required enteries. Replacements are restricted to tracts that are actually in the lookup,
-    # otherwise a replacement can itself be unjoinable and the assertion below fails after the run. Where the
-    # county contributed no joinable tract to the sample, fall back to the county's tracts in the lookup.
+    # otherwise a replacement can itself be unjoinable and the assertion below fails after the run. The pool
+    # keeps every sampled row (duplicates included), so a tract sampled often is drawn as the replacement
+    # more often, as before; the unjoinable tract itself is never in the pool because it is not in the lookup.
+    # Where the county contributed no joinable tract to the sample, fall back to the county's tracts in the lookup.
     lkup_tracts = set(df_geospatial_lkup.nhgis_tract_gisjoin)
     lkup_tracts_by_county = df_geospatial_lkup.groupby('nhgis_county_gisjoin')['nhgis_tract_gisjoin'].apply(list)
     resample_lkup = dict()
     for tr in to_resample.gisjoin.unique().tolist():
-        samplefrom = sorted({
+        samplefrom = [
             gj for gj in df_buildstock.loc[df_buildstock.county_id == tr[:8], 'gisjoin'].tolist()
             if gj in lkup_tracts
-        })
+        ]
         if not samplefrom:
             samplefrom = lkup_tracts_by_county.get(tr[:8], [])
         if not samplefrom:
