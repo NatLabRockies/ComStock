@@ -1,14 +1,23 @@
-\begin{table}
-\small
+\begin{table}[h!]
+\scriptsize
 \centering
-\caption[Gas Equipment Power Density]{Gas Equipment Power Density (Btu/hr*ft\textsuperscript{2})}
+\caption[Gas Equipment Power Density]{Gas equipment power density (Btu/hr-ft\textsuperscript{2}) by space type. Kitchen (food preparation) values are the placeholder loads that the kitchen equipment measure replaces with counted appliances, as described in Section~\ref{sec:kitchen_equipment}.}
 \label{tab:gas_equip}
-\begin{tabular}{|l|l|r|r|r|r|r|r|}
+\begin{tabular}{|p{2.2in}|p{1.3in}|r|r|r|r|}
 \hline
-\multicolumn{2}{|c|}{} & \multicolumn{6}{c|}{{\textbf{Template}}} \\ \hline
-\textbf{Building Type} & \textbf{Space Type} & \textbf{Pre-1980} & \textbf{1980--2004} & \textbf{90.1-2004} & \textbf{90.1-2007} & \textbf{90.1-2010} & \textbf{90.1-2013} \\ \hline
-LargeHotel & Laundry  & 170.0 & 170.0 & 170.0 & 170.0 & 170.0 & 170.0 \\ \hline
-Outpatient & OR      & 23.9 & 23.9 & 23.9 & 23.9 & 23.9 & 23.9 \\ \hline
-SmallHotel & Laundry  & 58.4 & 58.4 & 129.9 & 129.9 & 129.9 & 129.9 \\ \hline
+\textbf{Space Type} & \textbf{Building Type} & \textbf{Btu/hr-ft\textsuperscript{2}} & \textbf{Radiant} & \textbf{Latent} & \textbf{Lost} \\ \hline
+food preparation & FullServiceRestaurant & 205.8 & 0.2 & 0.1 & 0.7 \\ \hline
+ & Hospital & 51.2 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 767 & 0.2 & 0.1 & 0.7 \\ \hline
+ & QuickServiceRestaurant & 250.9 & 0.2 & 0.1 & 0.7 \\ \hline
+ & SuperMarket & 8.5 & 0.2 & 0.1 & 0.7 \\ \hline
+food preparation - deli/bakery & any & 100 & 0.2 & 0.1 & 0.7 \\ \hline
+food preparation - primary school & any & 453.7 & 0.2 & 0.1 & 0.7 \\ \hline
+food preparation - secondary school & any & 532.1 & 0.2 & 0.1 & 0.7 \\ \hline
+laundry/washing & LargeHotel & 170 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 129.9 & 0.2 & 0 & 0 \\ \hline
+laundry/washing - coin-operated laundries & LargeHotel & 170 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 129.9 & 0.2 & 0 & 0 \\ \hline
+operating room & any & 23.9 & 0 & 0 & 0.5 \\ \hline
 \end{tabular}
 \end{table}

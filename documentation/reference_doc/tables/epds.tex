@@ -1,180 +1,225 @@
 \begin{center}
 \scriptsize
-\begin{longtable}{p{1.25in}p{1in}p{0.5in}p{0.5in}p{0.5in}p{0.5in}p{0.5in}p{0.5in}}
-\caption[Electric Equipment Power Density]{Electric Equipment Power Density by Space Type} \\ \hline
+\begin{longtable}{|p{2.2in}|p{1.3in}|p{0.7in}|p{0.6in}|p{0.6in}|p{0.6in}|}
+\caption[Electric Equipment Power Density]{Electric equipment power density by space type. Where the source data distinguishes a building type, the row matching the model's primary building type is used; ``any'' rows apply to every building type; a space type with no row for the building type uses the median across the building types that have one. Densities do not vary by template.} \\ \hline
 \label{tab:epds}
-\textbf{Building Type} & \textbf{Space Type} & \textbf{Pre-1980} & \textbf{1980-2004} & \textbf{90.1-2004} & \textbf{90.1-2007} & \textbf{90.1-2010} & \textbf{90.1-2013} \\ \hline
+\textbf{Space Type} & \textbf{Building Type} & \textbf{EPD (W/ft\textsuperscript{2})} & \textbf{Fraction Radiant} & \textbf{Fraction Latent} & \textbf{Fraction Lost} \\ \hline
 \endfirsthead
-\multicolumn{2}{c} {\textbf{\textit{Continued from previous page}}} \\ \hline
-\textbf{Building Type} & \textbf{Space Type} & \textbf{Pre-1980} & \textbf{1980--2004} & \textbf{90.1-2004} & \textbf{90.1-2007} & \textbf{90.1-2010} & \textbf{90.1-2013} \\ \hline
+\multicolumn{6}{c}{{\bfseries \textit{Continued from previous page}}} \\ \hline
+\textbf{Space Type} & \textbf{Building Type} & \textbf{EPD (W/ft\textsuperscript{2})} & \textbf{Fraction Radiant} & \textbf{Fraction Latent} & \textbf{Fraction Lost} \\ \hline
 \endhead
-FullServiceRestaurant              & Dining                                & 2.5     & 2.5     & 2.5    & 2.5   & 2.5   & 2.5    \\
-                                   & Basement                             & 0.7     & 0.7     & 0.8    & 0.8   & 0.8   & 0.8    \\
-                                   & Corridor                             & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Dining                               & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & ER\_Exam                             & 1.5     & 1.5     & 1.5    & 1.5   & 1.5   & 1.5    \\
-                                   & ER\_NurseStn                         & 1.4     & 1.4     & 1.4    & 1.4   & 1.4   & 1.4    \\
-                                   & ER\_Trauma                           & 4.0     & 4.0     & 4.0    & 4.0   & 4.0   & 4.0    \\
-                                   & ER\_Triage                           & 2.7     & 2.7     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & HospitalOfficeFlr1                   &         &         &        &       &       & 1.1    \\
-                                   & HospitalOfficeFlr5                   &         &         &        &       &       & 1.0    \\
-                                   & ICU\_NurseStn                        & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & ICU\_Open                            & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & ICU\_PatRm                           & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & Lab                                  & 4.0     & 4.0     & 4.0    & 4.0   & 4.0   & 4.0    \\
-                                   & Lobby                                & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & NurseStn                             & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & Office                               & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & OR                                   & 4.0     & 4.0     & 4.0    & 4.0   & 4.0   & 4.0    \\
-                                   & PatCorridor                          & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & PatRoom                              & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & PhysTherapy                          & 1.5     & 1.5     & 1.5    & 1.5   & 1.5   & 1.5    \\
-Hospital                           & Radiology                            & 4.9     & 4.9     & 10.0   & 10.0  & 10.0  & 10.0   \\
-                                   & Banquet                              & 6.3     & 6.3     & 6.3    & 6.3   & 6.3   & 6.3    \\
-                                   & Basement                             & 0.5     & 0.5     & 0.5    & 0.5   & 0.5   & 0.5    \\
-                                   & Cafe                                 & 0.5     & 0.5     & 0.5    & 0.5   & 0.5   & 0.5    \\
-                                   & Corridor                             & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & GuestRoom                            & 1.3     & 1.3     & 0.6    & 0.6   & 0.6   & 0.6    \\
-                                   & GuestRoom2                           & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & GuestRoom3                           & 1.3     & 1.3     & 0.6    & 0.6   & 0.6   & 0.6    \\
-                                   & GuestRoom4                           & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & GuestRoom8                           &         &         & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & Laundry                              & 5.7     & 5.7     & 5.7    & 5.7   & 5.7   & 5.7    \\
-                                   & Lobby                                & 0.8     & 0.8     & 0.8    & 0.8   & 0.8   & 0.8    \\
-                                   & Mechanical                           & 0.5     & 0.5     & 0.5    & 0.5   & 0.5   & 0.5    \\
-                                   & Retail                               & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & Retail2                              & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-LargeHotel                         & Storage                              & 0.3     & 0.3     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & BreakRoom                            & 5.6     & 5.6     & 5.6    & 4.5   & 4.5   & 4.5    \\
-                                   & Classroom                            & 0.9     & 0.9     & 0.9    & 0.9   & 0.9   & 0.9    \\
-                                   & ClosedOffice                         & 0.9     & 0.9     & 0.9    & 0.6   & 0.6   & 0.6    \\
-                                   & Conference                           & 1.0     & 1.0     & 1.0    & 0.4   & 0.4   & 0.4    \\
-                                   & Corridor                             & 0.3     & 0.3     & 0.3    & 0.2   & 0.2   & 0.2    \\
-                                   & Dining                               & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & Elec/MechRoom                        & 0.3     & 0.3     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & IT\_Room                             & 2.0     & 2.0     & 2.0    & 1.6   & 1.6   & 1.6    \\
-                                   & Lobby                                & 0.3     & 0.3     & 0.3    & 0.1   & 0.1   & 0.1    \\
-                                   & MediumOffice - Breakroom             & 1.3     & 1.3     & 5.6    & 5.6   & 5.6   & 5.6    \\
-                                   & MediumOffice - Classroom             & 1.2     & 1.2     & 0.9    & 0.9   & 0.9   & 0.9    \\
-                                   & MediumOffice - ClosedOffice          & 1.2     & 1.2     & 0.9    & 0.9   & 0.9   & 0.9    \\
-                                   & MediumOffice - Conference            & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & MediumOffice - Corridor              & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & MediumOffice - Dining                & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & MediumOffice - Elec/MechRoom         & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & MediumOffice - Lobby                 & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & MediumOffice - OpenOffice            & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & MediumOffice - Restroom              & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & MediumOffice - Stair                 & 0.0     & 0.0     & 0.0    & 0.0   & 0     & 0.0    \\
-                                   & MediumOffice - Storage               & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & OfficeLarge Data Center              & 20.0    & 20.0    & 20.0   & 20.0  & 20.0  & 20.0   \\
-                                   & OfficeLarge Main Data Center         & 45.0    & 45.0    & 45.0   & 45.0  & 45.0  & 45.0   \\
-                                   & OpenOffice                           & 1.0     & 1.0     & 1.0    & 0.7   & 0.7   & 0.7    \\
-                                   & PrintRoom                            & 5.4     & 5.4     & 5.4    & 2.8   & 2.8   & 2.8    \\
-                                   & Restroom                             & 0.3     & 0.3     & 0.3    & 0.1   & 0.1   & 0.1    \\
-                                   & SmallOffice - Breakroom              & 1.3     & 1.3     & 5.6    & 5.6   & 5.6   & 5.6    \\
-                                   & SmallOffice - Classroom              & 1.2     & 1.2     & 0.9    & 0.9   & 0.9   & 0.9    \\
-                                   & SmallOffice - ClosedOffice           & 1.2     & 1.2     & 0.9    & 0.9   & 0.9   & 0.9    \\
-                                   & SmallOffice - Conference             & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & SmallOffice - Corridor               & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & SmallOffice - Dining                 & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & SmallOffice - Elec/MechRoom          & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & SmallOffice - Lobby                  & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & SmallOffice - OpenOffice             & 1.3     & 1.3     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & SmallOffice - Restroom               & 0.4     & 0.4     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & SmallOffice - Stair                  & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & SmallOffice - Storage                & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Stair                                & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Storage                              & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Vending                              & 3.9     & 3.9     & 3.9    & 3.9   & 3.9   & 3.9    \\
-                                   & WholeBuilding - Lg Office            & 1.0     & 1.0     & 0.8    & 0.8   & 0.8   & 0.8    \\
-                                   & WholeBuilding - Lg   Office-basement &         &         & 0.5    & 0.5   & 0.5   & 0.5    \\
-                                   & WholeBuilding - Lg   Office-others   &         &         & 0.8    & 0.8   & 0.8   & 0.8    \\
-                                   & WholeBuilding - Md Office            & 1.0     & 1.0     & 0.8    & 0.8   & 0.8   & 0.8    \\
-Office                             & WholeBuilding - Sm Office            & 1.0     & 1.0     & 0.6    & 0.6   & 0.6   & 0.6    \\
-                                   & Anesthesia                           & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & BioHazard                            & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Cafe                                 & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & CleanWork                            & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & Conference                           & 1.0     & 1.0     & 1.0    & 1.0   & 1.0   & 1.0    \\
-                                   & DressingRoom                         & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & Elec/MechRoom                        & 5.0     & 5.0     & 5.0    & 5.0   & 5.0   & 5.0    \\
-                                   & ElevatorPumpRoom                     & 0.0     & 0.0     & 5.3    & 5.3   & 3.5   & 2.1    \\
-                                   & Exam                                 & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & Hall                                 & 0.4     & 0.4     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & Hall\_infil                          & 0.4     & 0.4     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & IT\_Room                             & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & Janitor                              & 0.0     & 0.0     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Lobby                                & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & LockerRoom                           & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & Lounge                               & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & MedGas                               & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & MRI                                  & 53.3    & 53.3    & 10.0   & 10.0  & 10.0  & 10.0   \\
-                                   & MRI\_Control                         & 1.1     & 1.1     & 10.0   & 10.0  & 10.0  & 10.0   \\
-                                   & NurseStation                         & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & Office                               & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & OR                                   & 4.0     & 4.0     & 4.0    & 4.0   & 4.0   & 4.0    \\
-                                   & OutpatientFloor2Work                 &         &         &        &       &       & 0.9    \\
-                                   & PACU                                 & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & PhysicalTherapy                      & 1.5     & 1.5     & 1.5    & 1.5   & 1.5   & 1.5    \\
-                                   & PreOp                                & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & ProcedureRoom                        & 3.0     & 3.0     & 3.0    & 3.0   & 3.0   & 3.0    \\
-                                   & Reception                            & 1.1     & 1.1     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & Soil Work                            & 2.0     & 2.0     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & Stair                                & 0.0     & 0.0     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & Toilet                               & 0.7     & 0.7     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & Undeveloped                          & 0.0     & 0.0     & 1.1    & 1.1   & 1.1   & 1.1    \\
-Outpatient                         & Xray                                 & 1.3     & 1.3     & 10.0   & 10.0  & 10.0  & 10.0   \\
-                                   & Cafeteria                            & 0.3     & 0.3     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & Classroom                            & 0.2     & 0.2     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & ComputerRoom                         &         &         & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Corridor                             & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Gym                                  & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Library                              & 0.2     & 0.2     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Lobby                                & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Mechanical                           & 0.0     & 0.0     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Office                               & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-PrimarySchool                      & Restroom                             & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-QuickServiceRestaurant             & Dining                               & 5.5     & 5.5     & 5.6    & 5.6   & 5.6   & 5.6    \\
-                                   & Back\_Space                          & 0.6     & 0.6     & 0.6    & 0.6   & 0.6   & 0.6    \\
-                                   & Core\_Retail                         &         &         &        &       & 0.2   & 0.2    \\
-                                   & Entry                                & 0.2     & 0.2     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Front\_Retail                        &         &         &        &       & 0.2   & 0.2    \\
-                                   & Point\_of\_Sale                      & 1.5     & 1.5     & 1.5    & 1.5   & 1.5   & 1.5    \\
-Retail                             & Retail                               & 0.2     & 0.2     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Auditorium                           & 0.4     & 0.4     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Cafeteria                            & 0.1     & 0.1     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Classroom                            & 0.2     & 0.2     & 0.3    & 0.3   & 0.3   & 0.3    \\
-                                   & ComputerRoom                         &         &         & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Corridor                             & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Gym                                  & 0.2     & 0.2     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Gym - audience                       & 0.1     & 0.1     &        &       &       &        \\
-                                   & Library                              & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Lobby                                & 0.1     & 0.1     & 0.1    & 0.1   & 0.1   & 0.1    \\
-                                   & Mechanical                           & 0.1     & 0.1     & 0.2    & 0.2   & 0.2   & 0.2    \\
-                                   & Office                               & 0.2     & 0.2     & 0.1    & 0.1   & 0.1   & 0.1    \\
-SecondarySchool                    & Restroom                             & 0.1     & 0.1     & 1.2    & 1.2   & 1.2   & 1.2    \\
-                                   & Corridor                             & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Elec/MechRoom                        & 198.2   & 198.2   & 198.2  & 198.2 & 198.2 & 198.2  \\
-                                   & Exercise                             & 1.1     & 1.1     & 1.7    & 1.7   & 1.7   & 1.7    \\
-                                   & GuestLounge                          & 1.4     & 1.4     & 2.4    & 2.4   & 2.4   & 2.4    \\
-                                   & GuestRoom                            & 1.3     & 1.3     &        &       &       & 0.1    \\
-                                   & GuestRoom4Occ                        & 1.3     & 1.3     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & GuestRoom4Vac                        & 1.3     & 1.3     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & GuestRoom123Occ                      & 1.3     & 1.3     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & GuestRoom123Vac                      & 1.3     & 1.3     & 1.1    & 1.1   & 1.1   & 1.1    \\
-                                   & Laundry                              & 2.0     & 2.0     & 2.6    & 2.6   & 2.6   & 2.6    \\
-                                   & Mechanical                           & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Meeting                              & 1.2     & 1.2     & 0.6    & 0.6   & 0.6   & 0.6    \\
-                                   & Office                               & 1.2     & 1.2     & 1.3    & 1.3   & 1.3   & 1.3    \\
-                                   & PublicRestroom                       & 1.0     & 1.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & StaffLounge                          & 7.2     & 7.2     & 2.0    & 2.0   & 2.0   & 2.0    \\
-                                   & Stair                                & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-SmallHotel                         & Storage                              & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-                                   & Strip mall - type 1                  & 0.4     & 0.4     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & Strip mall - type 2                  & 0.4     & 0.4     & 0.4    & 0.4   & 0.4   & 0.4    \\
-StripMall                          & Strip mall - type 3                  & 0.4     & 0.4     & 0.4    & 0.4   & 0.4   & 0.4    \\
-                                   & Bulk                                 & 0.8     & 0.8     & 0.8    & 0.8   & 0.8   & 0.8    \\
-                                   & Fine                                 & 0.0     & 0.0     & 0.0    & 0.0   & 0.0   & 0.0    \\
-Warehouse                          & Office                               & 2.6     & 2.6     & 2.6    & 2.6   & 2.6   & 2.6    \\
+audience seating - gymnasium - secondary school & any & 0.64 & 0 & 0 & 0 \\ \hline
+audience seating - secondary school & SecondarySchool & 0.08 & 0.5 & 0 & 0 \\ \hline
+classroom/lecture/training & Office & 0.93 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.18 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.32 & 0.5 & 0 & 0 \\ \hline
+classroom/lecture/training - primary school & Office & 0.93 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.18 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.32 & 0.5 & 0 & 0 \\ \hline
+classroom/lecture/training - secondary school & Office & 0.93 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.18 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.32 & 0.5 & 0 & 0 \\ \hline
+computer room & PrimarySchool & 0.24 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+conference/meeting/multipurpose & Office & 0.37 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0.57 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+corridor & Hospital & 0 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.08 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+corridor - hospital & any & 0.3 & 0 & 0 & 0 \\ \hline
+corridor - primary school & Hospital & 0 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.08 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+corridor - secondary school & Hospital & 0 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.08 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+datacenter/high ite & any & 45 & 0.5 & 0 & 0 \\ \hline
+ & Office & 45 & 0.5 & 0 & 0 \\ \hline
+datacenter/low ite & any & 1.56 & 0.5 & 0 & 0 \\ \hline
+ & Office & 1.56 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.5 & 0 & 0 \\ \hline
+dining & FullServiceRestaurant & 2.52 & 0.3 & 0.25 & 0 \\ \hline
+ & Hospital & 1 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 6.3 & 0.5 & 0 & 0 \\ \hline
+ & Office & 1 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.3 & 0.5 & 0 & 0 \\ \hline
+ & QuickServiceRestaurant & 5.56 & 0.3 & 0.25 & 0 \\ \hline
+ & SecondarySchool & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 15.85 & 0.5 & 0 & 0 \\ \hline
+dining - cafeteria/fast food & any & 0.6 & 0.3 & 0.2 & 0 \\ \hline
+dining - primary school & FullServiceRestaurant & 2.52 & 0.3 & 0.25 & 0 \\ \hline
+ & Hospital & 1 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 6.3 & 0.5 & 0 & 0 \\ \hline
+ & Office & 1 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.3 & 0.5 & 0 & 0 \\ \hline
+ & QuickServiceRestaurant & 5.56 & 0.3 & 0.25 & 0 \\ \hline
+ & SecondarySchool & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 15.85 & 0.5 & 0 & 0 \\ \hline
+dining - secondary school & FullServiceRestaurant & 2.52 & 0.3 & 0.25 & 0 \\ \hline
+ & Hospital & 1 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 6.3 & 0.5 & 0 & 0 \\ \hline
+ & Office & 1 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.3 & 0.5 & 0 & 0 \\ \hline
+ & QuickServiceRestaurant & 5.56 & 0.3 & 0.25 & 0 \\ \hline
+ & SecondarySchool & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 15.85 & 0.5 & 0 & 0 \\ \hline
+electrical/mechanical & Hospital & 0.75 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0.5 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 5 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.12 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.17 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.2 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+emergency room & Hospital & 2 & 0.5 & 0 & 0 \\ \hline
+exam/treatment & Hospital & 1.5 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 2 & 0.5 & 0 & 0 \\ \hline
+exercise area & PrimarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.16 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 1.73 & 0.5 & 0 & 0 \\ \hline
+food preparation & FullServiceRestaurant & 15.65 & 0.3 & 0.25 & 0.2 \\ \hline
+ & Hospital & 7.5 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 47.2 & 0.5 & 0.2 & 0.1 \\ \hline
+ & PrimarySchool & 2.25 & 0.3 & 0.25 & 0.2 \\ \hline
+ & QuickServiceRestaurant & 12.9 & 0.3 & 0.25 & 0.3 \\ \hline
+ & SecondarySchool & 3.57 & 0.3 & 0.25 & 0.2 \\ \hline
+ & SuperMarket & 0.1 & 0.5 & 0 & 0 \\ \hline
+food preparation - deli/bakery & any & 25 & 0.5 & 0 & 0 \\ \hline
+food preparation - primary school & FullServiceRestaurant & 15.65 & 0.3 & 0.25 & 0.2 \\ \hline
+ & Hospital & 7.5 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 47.2 & 0.5 & 0.2 & 0.1 \\ \hline
+ & PrimarySchool & 2.25 & 0.3 & 0.25 & 0.2 \\ \hline
+ & QuickServiceRestaurant & 12.9 & 0.3 & 0.25 & 0.3 \\ \hline
+ & SecondarySchool & 3.57 & 0.3 & 0.25 & 0.2 \\ \hline
+ & SuperMarket & 0.1 & 0.5 & 0 & 0 \\ \hline
+food preparation - secondary school & FullServiceRestaurant & 15.65 & 0.3 & 0.25 & 0.2 \\ \hline
+ & Hospital & 7.5 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 47.2 & 0.5 & 0.2 & 0.1 \\ \hline
+ & PrimarySchool & 2.25 & 0.3 & 0.25 & 0.2 \\ \hline
+ & QuickServiceRestaurant & 12.9 & 0.3 & 0.25 & 0.3 \\ \hline
+ & SecondarySchool & 3.57 & 0.3 & 0.25 & 0.2 \\ \hline
+ & SuperMarket & 0.1 & 0.5 & 0 & 0 \\ \hline
+guest room & LargeHotel & 0.98 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 1.1 & 0.5 & 0 & 0 \\ \hline
+imaging & Hospital & 10 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 10 & 0.5 & 0 & 0 \\ \hline
+laboratory & Hospital & 4 & 0.5 & 0 & 0 \\ \hline
+laundry/washing & LargeHotel & 5.73 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 2.57 & 0.2 & 0 & 0 \\ \hline
+laundry/washing - coin-operated laundries & LargeHotel & 5.73 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 2.57 & 0.2 & 0 & 0 \\ \hline
+library - primary school & PrimarySchool & 0.18 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+library - secondary school & PrimarySchool & 0.18 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+lobby & Hospital & 0.07 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0.75 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+lobby - primary school & Hospital & 0.07 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0.75 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+lobby - secondary school & Hospital & 0.07 & 0.5 & 0 & 0 \\ \hline
+ & LargeHotel & 0.75 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+locker room & any & 3 & 0.5 & 0 & 0 \\ \hline
+lounge/breakroom & Office & 5.58 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 3 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 2 & 0.5 & 0 & 0 \\ \hline
+nurses station & Hospital & 1.36 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 2 & 0.5 & 0 & 0 \\ \hline
+office & Hospital & 1 & 0.5 & 0 & 0 \\ \hline
+ & any & 1.1 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0.75 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.5 & 0 & 0 \\ \hline
+ & PrimarySchool & 0.13 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 0.06 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 1.28 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+ & Warehouse & 2.59 & 0 & 0 & 0 \\ \hline
+operating room & Hospital & 4 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 4 & 0.5 & 0 & 0 \\ \hline
+patient room & Hospital & 2 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 3 & 0.5 & 0 & 0 \\ \hline
+physical therapy & any & 1.5 & 0.5 & 0 & 0 \\ \hline
+playing area - primary school & any & 0.51 & 0 & 0 & 0 \\ \hline
+playing area - secondary school & any & 0.51 & 0 & 0 & 0 \\ \hline
+recovery & Hospital & 2 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 3 & 0.5 & 0 & 0 \\ \hline
+restroom & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.3 & 0 & 0.7 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 1.23 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+restroom - primary school & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.3 & 0 & 0.7 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 1.23 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+restroom - secondary school & Office & 0.27 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.3 & 0 & 0.7 \\ \hline
+ & PrimarySchool & 0.05 & 0.5 & 0 & 0 \\ \hline
+ & SecondarySchool & 1.23 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0 & 0.5 & 0 & 0 \\ \hline
+retail & LargeOffice & 2 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & StripMall & 0.36 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0.21 & 0.5 & 0 & 0 \\ \hline
+retail - mass merchandising & LargeOffice & 2 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & StripMall & 0.36 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0.21 & 0.5 & 0 & 0 \\ \hline
+retail - supermarket & LargeOffice & 2 & 0.5 & 0 & 0 \\ \hline
+ & Retail & 0.22 & 0.5 & 0 & 0 \\ \hline
+ & StripMall & 0.36 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 0.21 & 0.5 & 0 & 0 \\ \hline
+shaft & -- & -- & -- & -- & -- \\ \hline
+stairwell & Office & 0 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 0.4 & 0.5 & 0 & 0 \\ \hline
+ & SmallHotel & 0 & 0.5 & 0 & 0 \\ \hline
+storage & LargeHotel & 0.25 & 0.5 & 0 & 0 \\ \hline
+ & Office & 0 & 0.5 & 0 & 0 \\ \hline
+ & Outpatient & 1.1 & 0.3 & 0 & 0.7 \\ \hline
+ & Retail & 0.55 & 0.5 & 0 & 0 \\ \hline
+ & SuperMarket & 1.28 & 0.5 & 0 & 0 \\ \hline
+ & Warehouse & 0.82 & 0 & 0 & 0 \\ \hline
+storage - warehouse - medium to bulky palletized items & any & 0.4 & 0 & 0 & 0 \\ \hline
+storage - warehouse - smaller hand-carried items & any & 0.4 & 0 & 0 & 0 \\ \hline
 \end{longtable}
 \end{center}

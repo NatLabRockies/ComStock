@@ -1,0 +1,19 @@
+\begin{table}[h!]
+\scriptsize
+\centering
+\caption[Zone Exhaust Rates by Space Type]{Zone exhaust rates (cfm per ft\textsuperscript{2} of space floor area) by space type, the prototype record each rate was carried over from, and the building-type overrides applied by the ComStock building type definitions. Kitchen exhaust draws half of its makeup air from the adjacent dining space.}
+\label{tab:exhaust_rates}
+\begin{tabular}{|p{2.2in}|p{0.8in}|p{1.6in}|p{1.4in}|}
+\hline
+\textbf{Space Type} & \textbf{Exhaust (cfm/ft\textsuperscript{2})} & \textbf{Carried Over From} & \textbf{Override} \\ \hline
+food preparation & 0.7 & FullServiceRestaurant Kitchen & -- \\ \hline
+food preparation - deli/bakery & 1.24 & SuperMarket Bakery & -- \\ \hline
+food preparation - primary school & 0.7 & PrimarySchool Kitchen & -- \\ \hline
+food preparation - secondary school & 0.7 & SecondarySchool Kitchen & -- \\ \hline
+imaging & 1 & Outpatient MRI & Hospital: 0 \\ \hline
+laundry/washing & 0.7 & LargeHotel Laundry & -- \\ \hline
+restroom & 1.14 & SmallHotel PublicRestroom & -- \\ \hline
+restroom - primary school & 0.29 & PrimarySchool Restroom & -- \\ \hline
+restroom - secondary school & 0.28 & SecondarySchool Restroom & -- \\ \hline
+\end{tabular}
+\end{table}

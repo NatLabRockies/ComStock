@@ -1,234 +1,234 @@
 \begin{center}
 \scriptsize
-\begin{longtable}[h!]
-{|p{1.25in}|p{1.25in}|p{1.25in}|p{1in}|p{1in}|}
-\caption[Space Type Ratios]{Space Type Ratios} \\ \hline
+\begin{longtable}{|p{1.0in}|p{1.05in}|p{1.1in}|p{1.9in}|p{0.55in}|p{0.95in}|}
+\caption[Space Type Ratios]{Space type ratios for every ComStock building type, subtype, and template family. Space types are space type names. A building-type-qualified name (``corridor - hospital'') carries its own schedules or loads; an unqualified name shares the stock-wide record for that use. The ``default'' space type absorbs floor area released by the minimum-area constraints, and the ``circulation'' space type is placed as a double-loaded corridor.} \\ \hline
 \label{tab:space_type_ratios_all}
-\textbf{Building Type}            & \textbf{Building Subtype}            & \textbf{Space Type}                   & \textbf{Fraction of Floor Area}  \\ \hline
+\textbf{Building Type} & \textbf{Subtype} & \textbf{Templates} & \textbf{Space Type} & \textbf{Fraction of Floor Area} & \textbf{Flags} \\ \hline
 \endfirsthead
-\multicolumn{2}{c} {{\bfseries \textit{Continued from previous page}}} \\ \hline
-\textbf{Building Type}            & \textbf{Building Subtype}            & \textbf{Space Type}                   & \textbf{Fraction of Floor Area}  \\
+\multicolumn{6}{c}{{\bfseries \textit{Continued from previous page}}} \\ \hline
+\textbf{Building Type} & \textbf{Subtype} & \textbf{Templates} & \textbf{Space Type} & \textbf{Fraction of Floor Area} & \textbf{Flags} \\ \hline
 \endhead
-Secondary School         & NA                          & Auditorium                   & 0.0504                     \\ \hline
-Secondary School         & NA                          & Cafeteria                    & 0.0319                     \\ \hline
-Secondary School         & NA                          & Classroom                    & 0.3041                     \\ \hline
-Secondary School         & NA                          & ComputerRoom                 & 0.0487                     \\ \hline
-Secondary School         & NA                          & Corridor                     & 0.2144                     \\ \hline
-Secondary School         & NA                          & Gym                          & 0.1646                     \\ \hline
-Secondary School         & NA                          & Kitchen                      & 0.011                      \\ \hline
-Secondary School         & NA                          & Library                      & 0.0429                     \\ \hline
-Secondary School         & NA                          & Lobby                        & 0.0214                     \\ \hline
-Secondary School         & NA                          & Mechanical                   & 0.0349                     \\ \hline
-Secondary School         & NA                          & Office                       & 0.0543                     \\ \hline
-Secondary School         & NA                          & Restroom                     & 0.0214                     \\ \hline
-Primary School           & NA                          & Cafeteria                    & 0.0458                     \\ \hline
-Primary School           & NA                          & Classroom                    & 0.04793                    \\ \hline
-Primary School           & NA                          & ComputerRoom                 & 0.0236                     \\ \hline
-Primary School           & NA                          & Corridor                     & 0.1633                     \\ \hline
-Primary School           & NA                          & Gym                          & 0.052                      \\ \hline
-Primary School           & NA                          & Kitchen                      & 0.0244                     \\ \hline
-Primary School           & NA                          & Library                      & 0.0581                     \\ \hline
-Primary School           & NA                          & Lobby                        & 0.0249                     \\ \hline
-Primary School           & NA                          & Mechanical                   & 0.0367                     \\ \hline
-Primary School           & NA                          & Office                       & 0.0642                     \\ \hline
-Primary School           & NA                          & Restroom                     & 0.0277                     \\ \hline
-Small Office             & NA                          & WholeBuilding - Sm Office    & 1                          \\ \hline
-Medium Office            & mediumoffice\_default       & WholeBuilding - Md Office    & 1                          \\ \hline
-Medium Office            & mediumoffice\_nodatacenter  & WholeBuilding - Md Office    & 1                          \\ \hline
-Medium Office            & mediumoffice\_datacenter    & WholeBuilding - Md Office    & 0.98                       \\ \hline
-Medium Office            & mediumoffice\_datacenter    & OfficeLarge Data Center      & 0.02                       \\ \hline
-Large Office             & largeoffice\_default        & WholeBuilding - Lg Office    & 0.09737                    \\ \hline
-Large Office             & largeoffice\_default        & OfficeLarge Data Center      & 0.0094                     \\ \hline
-Large Office             & largeoffice\_default        & OfficeLarge Main Data Center & 0.0169                     \\ \hline
-Large Office             & largeoffice\_datacenter     & WholeBuilding - Lg Office    & 0.09737                    \\ \hline
-Large Office             & largeoffice\_datacenter     & OfficeLarge Data Center      & 0.0094                     \\ \hline
-Large Office             & largeoffice\_datacenter     & OfficeLarge Main Data Center & 0.0169                     \\ \hline
-Large Office             & largeoffice\_nodatacenter   & WholeBuilding - Lg Office    & 1                          \\ \hline
-Large Office             & largeoffice\_datacenteronly & OfficeLarge Data Center      & 1                          \\ \hline
-Small Hotel              & NA                          & Corridor                     & 0.1313                     \\ \hline
-Small Hotel              & NA                          & Elec/MechRoom                & 0.0038                     \\ \hline
-Small Hotel              & NA                          & ElevatorCore                 & 0.0113                     \\ \hline
-Small Hotel              & NA                          & Exercise                     & 0.0081                     \\ \hline
-Small Hotel              & NA                          & GuestLounge                  & 0.0406                     \\ \hline
-Small Hotel              & NA                          & GuestRoom123Occ              & 0.4081                     \\ \hline
-Small Hotel              & NA                          & GuestRoom123Vac              & 0.2231                     \\ \hline
-Small Hotel              & NA                          & Laundry                      & 0.0244                     \\ \hline
-Small Hotel              & NA                          & Mechanical                   & 0.0081                     \\ \hline
-Small Hotel              & NA                          & Meeting                      & 0.02                       \\ \hline
-Small Hotel              & NA                          & Office                       & 0.0325                     \\ \hline
-Small Hotel              & NA                          & PublicRestroom               & 0.0081                     \\ \hline
-Small Hotel              & NA                          & StaffLounge                  & 0.0081                     \\ \hline
-Small Hotel              & NA                          & Stair                        & 0.04                       \\ \hline
-Small Hotel              & NA                          & Storage                      & 0.0325                     \\ \hline
-Large Hotel              & NA                          & Banquet                      & 0.0585                     \\ \hline
-Large Hotel              & NA                          & Basement                     & 0.1744                     \\ \hline
-Large Hotel              & NA                          & Cafe                         & 0.0166                     \\ \hline
-Large Hotel              & NA                          & Corridor                     & 0.1736                     \\ \hline
-Large Hotel              & NA                          & GuestRoom                    & 0.4099                     \\ \hline
-Large Hotel              & NA                          & Kitchen                      & 0.0091                     \\ \hline
-Large Hotel              & NA                          & Laundry                      & 0.0069                     \\ \hline
-Large Hotel              & NA                          & Lobby                        & 0.1153                     \\ \hline
-Large Hotel              & NA                          & Mechanical                   & 0.0145                     \\ \hline
-Large Hotel              & NA                          & Retail                       & 0.0128                     \\ \hline
-Large Hotel              & NA                          & Storage                      & 0.0084                     \\ \hline
-Warehouse                & NA                          & Bulk                         & 0.6628                     \\ \hline
-Warehouse                & NA                          & Fine                         & 0.2882                     \\ \hline
-Warehouse                & NA                          & Office                       & 0.049                      \\ \hline
-Retail Standalone        & NA                          & Back\_Space                  & 0.1656                     \\ \hline
-Retail Standalone        & NA                          & Entry                        & 0.0052                     \\ \hline
-Retail Standalone        & NA                          & Point\_of\_Sale              & 0.0657                     \\ \hline
-Retail Standalone        & NA                          & Retail                       & 0.7635                     \\ \hline
-Retail Stripmall         & strip\_mall\_default        & Strip mall - type 1          & 0.25                       \\ \hline
-Retail Stripmall         & strip\_mall\_default        & Strip mall - type 2          & 0.25                       \\ \hline
-Retail Stripmall         & strip\_mall\_default        & Strip mall - type 3          & 0.5                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant0    & Strip mall - type 1          & 0.25                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant0    & Strip mall - type 2          & 0.25                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant0    & Strip mall - type 3          & 0.5                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant10   & Strip mall - type 1          & 0.225                      \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant10   & Strip mall - type 2          & 0.225                      \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant10   & Strip mall - type 3          & 0.45                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant10   & Dining                       & 0.07272                    \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant10   & Kitchen                      & 0.02728                    \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant20   & Strip mall - type 1          & 0.2                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant20   & Strip mall - type 2          & 0.2                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant20   & Strip mall - type 3          & 0.4                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant20   & Dining                       & 0.14544                    \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant20   & Kitchen                      & 0.05456                    \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant30   & Strip mall - type 1          & 0.175                      \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant30   & Strip mall - type 2          & 0.175                      \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant30   & Strip mall - type 3          & 0.35                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant30   & Dining                       & 0.2182                     \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant30   & Kitchen                      & 0.8184                     \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant40   & Strip mall - type 1          & 0.15                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant40   & Strip mall - type 2          & 0.15                       \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant40   & Strip mall - type 3          & 0.3                        \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant40   & Dining                       & 0.29088                    \\ \hline
-Retail Stripmall         & strip\_mall\_restaurant40   & Kitchen                      & 0.10912                    \\ \hline
-Quick Service Restaurant & NA                          & Dining                       & 0.5                        \\ \hline
-Quick Service Restaurant & NA                          & Kitchen                      & 0.5                        \\ \hline
-Full Service Restaurant  & NA                          & Dining                       & 0.7272                     \\ \hline
-Full Service Restaurant  & NA                          & Kitchen                      & 0.2728                     \\ \hline
-Hospital                 & NA                          & Basement                     & 0.1667                     \\ \hline
-Hospital                 & NA                          & Corridor                     & 0.1741                     \\ \hline
-Hospital                 & NA                          & Dining                       & 0.0311                     \\ \hline
-Hospital                 & NA                          & ER\_Exam                     & 0.0099                     \\ \hline
-Hospital                 & NA                          & ER\_NurseStn                 & 0.0551                     \\ \hline
-Hospital                 & NA                          & ER\_Trauma                   & 0.0025                     \\ \hline
-Hospital                 & NA                          & ER\_Triage                   & 0.005                      \\ \hline
-Hospital                 & NA                          & ICU\_NurseStn                & 0.0298                     \\ \hline
-Hospital                 & NA                          & ICU\_Open                    & 0.0275                     \\ \hline
-Hospital                 & NA                          & ICU\_PatRm                   & 0.0115                     \\ \hline
-Hospital                 & NA                          & Kitchen                      & 0.0414                     \\ \hline
-Hospital                 & NA                          & Lab                          & 0.0236                     \\ \hline
-Hospital                 & NA                          & Lobby                        & 0.0657                     \\ \hline
-Hospital                 & NA                          & NurseStn                     & 0.1723                     \\ \hline
-Hospital                 & NA                          & Office                       & 0.0286                     \\ \hline
-Hospital                 & NA                          & OR                           & 0.0273                     \\ \hline
-Hospital                 & NA                          & PatCorridor                  & 0                          \\ \hline
-Hospital                 & NA                          & PatRoom                      & 0.0845                     \\ \hline
-Hospital                 & NA                          & PhysTherapy                  & 0.0217                     \\ \hline
-Hospital                 & NA                          & Radiology                    & 0.0217                     \\ \hline
-Outpatient               & NA                          & Anesthesia                   & 0.0026                     \\ \hline
-Outpatient               & NA                          & BioHazard                    & 0.0014                     \\ \hline
-Outpatient               & NA                          & Cafe                         & 0.0103                     \\ \hline
-Outpatient               & NA                          & CleanWork                    & 0.0071                     \\ \hline
-Outpatient               & NA                          & Conference                   & 0.0082                     \\ \hline
-Outpatient               & NA                          & DressingRoom                 & 0.0021                     \\ \hline
-Outpatient               & NA                          & Elec/MechRoom                & 0.0109                     \\ \hline
-Outpatient               & NA                          & ElevatorPumpRoom             & 0.0022                     \\ \hline
-Outpatient               & NA                          & Exam                         & 0.1029                     \\ \hline
-Outpatient               & NA                          & Hall                         & 0.1924                     \\ \hline
-Outpatient               & NA                          & IT\_Room                     & 0.0027                     \\ \hline
-Outpatient               & NA                          & Janitor                      & 0.0672                     \\ \hline
-Outpatient               & NA                          & Lobby                        & 0.0152                     \\ \hline
-Outpatient               & NA                          & LockerRoom                   & 0.019                      \\ \hline
-Outpatient               & NA                          & Lounge                       & 0.0293                     \\ \hline
-Outpatient               & NA                          & MedGas                       & 0.0014                     \\ \hline
-Outpatient               & NA                          & MRI                          & 0.0107                     \\ \hline
-Outpatient               & NA                          & MRI\_Control                 & 0.0041                     \\ \hline
-Outpatient               & NA                          & NurseStation                 & 0.0189                     \\ \hline
-Outpatient               & NA                          & Office                       & 0.1828                     \\ \hline
-Outpatient               & NA                          & OR                           & 0.0346                     \\ \hline
-Outpatient               & NA                          & PACU                         & 0.0232                     \\ \hline
-Outpatient               & NA                          & PhysicalTherapy              & 0.0462                     \\ \hline
-Outpatient               & NA                          & PreOp                        & 0.0129                     \\ \hline
-Outpatient               & NA                          & ProcedureRoom                & 0.007                      \\ \hline
-Outpatient               & NA                          & Reception                    & 0.0365                     \\ \hline
-Outpatient               & NA                          & Soil Work                    & 0.0088                     \\ \hline
-Outpatient               & NA                          & Stair                        & 0.0146                     \\ \hline
-Outpatient               & NA                          & Toilet                       & 0.0193                     \\ \hline
-Outpatient               & NA                          & Undeveloped                  & 0.0835                     \\ \hline
-Outpatient               & NA                          & Xray                         & 0.022                      \\ \hline
-DEER Education Primary School                      & NA                          & Classroom                    & 0.53                       \\ \hline
-DEER Education Primary School                      & NA                          & CorridorStairway             & 0.1                        \\ \hline
-DEER Education Primary School                      & NA                          & Dining                       & 0.15                       \\ \hline
-DEER Education Primary School                      & NA                          & Gymnasium                    & 0.15                       \\ \hline
-DEER Education Primary School                      & NA                          & Kitchen                      & 0.07                       \\ \hline
-DEER Education Secondary School                      & NA                          & Classroom                    & 0.488                      \\ \hline
-DEER Education Secondary School                      & NA                          & CompRoomClassRm              & 0.021                      \\ \hline
-DEER Education Secondary School                      & NA                          & CorridorStairway             & 0.1                        \\ \hline
-DEER Education Secondary School                      & NA                          & Dining                       & 0.15                       \\ \hline
-DEER Education Secondary School                      & NA                          & Gymnasium                    & 0.15                       \\ \hline
-DEER Education Secondary School                      & NA                          & Kitchen                      & 0.07                       \\ \hline
-DEER Education Secondary School                      & NA                          & OfficeGeneral                & 0.021                      \\ \hline
-DEER Hospital                      & NA                          & DEER HospitalSurgOutptLab              & 0.2317                     \\ \hline
-DEER Hospital                      & NA                          & Dining                       & 0.0172                     \\ \hline
-DEER Hospital                      & NA                          & Kitchen                      & 0.0075                     \\ \hline
-DEER Hospital                      & NA                          & OfficeGeneral                & 0.3636                     \\ \hline
-DEER Hospital                      & NA                          & PatientRoom                  & 0.38                       \\ \hline
-DEER Hotel                      & NA                          & Dining                       & 0.004                      \\ \hline
-DEER Hotel                      & NA                          & BarCasino                    & 0.005                      \\ \hline
-DEER Hotel                      & NA                          & HotelLobby                   & 0.0411                     \\ \hline
-DEER Hotel                      & NA                          & OfficeGeneral                & 0.0205                     \\ \hline
-DEER Hotel                      & NA                          & GuestRmCorrid                & 0.1011                     \\ \hline
-DEER Hotel                      & NA                          & Laundry                      & 0.0205                     \\ \hline
-DEER Hotel                      & NA                          & GuestRmOcc                   & 0.64224                    \\ \hline
-DEER Hotel                      & NA                          & GuestRmUnOcc                 & 0.16056                    \\ \hline
-DEER Hotel                      & NA                          & Kitchen                      & 0.005                      \\ \hline
-DEER Motel                      & NA                          & OfficeGeneral                & 0.02                       \\ \hline
-DEER Motel                      & NA                          & GuestRmCorrid                & 0.649                      \\ \hline
-DEER Motel                      & NA                          & Laundry                      & 0.016                      \\ \hline
-DEER Motel                      & NA                          & GuestRmOcc                   & 0.25208                    \\ \hline
-DEER Motel                      & NA                          & GuestRmUnOcc                 & 0.06302                    \\ \hline
-DEER Office Large                      & NA                          & LobbyWaiting                 & 0.0412                     \\ \hline
-DEER Office Large                      & NA                          & OfficeSmall                  & 0.3704                     \\ \hline
-DEER Office Large                      & NA                          & OfficeOpen                   & 0.5296                     \\ \hline
-DEER Office Large                      & NA                          & MechElecRoom                 & 0.0588                     \\ \hline
-DEER Office Small                      & NA                          & Hall                         & 0.3141                     \\ \hline
-DEER Office Small                      & NA                          & OfficeSmall                  & 0.6859                     \\ \hline
-DEER Restaurant Fast Food                      & NA                          & Dining                       & 0.3997                     \\ \hline
-DEER Restaurant Fast Food                      & NA                          & Kitchen                      & 0.4                        \\ \hline
-DEER Restaurant Fast Food                      & NA                          & LobbyWaiting                 & 0.1501                     \\ \hline
-DEER Restaurant Fast Food                      & NA                          & Restroom                     & 0.0501                     \\ \hline
-DEER Restaurant Sit Down                      & NA                          & Restroom                     & 0.0357                     \\ \hline
-DEER Restaurant Sit Down                      & NA                          & Dining                       & 0.5353                     \\ \hline
-DEER Restaurant Sit Down                      & NA                          & LobbyWaiting                 & 0.1429                     \\ \hline
-DEER Restaurant Sit Down                      & NA                          & Kitchen                      & 0.2861                     \\ \hline
-DEER Retail Three Story                      & NA                          & RetailSales                  & 1                          \\ \hline
-DEER Retail Large                      & NA                          & OfficeGeneral                & 0.0359                     \\ \hline
-DEER Retail Large                      & NA                          & Work                         & 0.04                       \\ \hline
-DEER Retail Large                      & NA                          & StockRoom                    & 0.091                      \\ \hline
-DEER Retail Large                      & NA                          & RetailSales                  & 0.8219                     \\ \hline
-DEER Retail Large                      & NA                          & Kitchen                      & 0.0113                     \\ \hline
-DEER Retail Small                      & NA                          & RetailSales                  & 0.8                        \\ \hline
-DEER Retail Small                      & NA                          & StockRoom                    & 0.2                        \\ \hline
-DEER Storage Conditioned                      & NA                          & WarehouseCond                & 1                          \\ \hline
-DEER Storage Unconditioned                      & NA                          & WarehouseUnCond              & 1                          \\ \hline
-Grocery                                & NA                          & Bakery                           & 0.05   \\ \hline
-Grocery                                & NA                          & Deli                                                     & 0.0537 \\ \hline
-Grocery                                & NA                          & DryStorage                                               & 0.1010 \\ \hline
-Grocery                                & NA                          & Office                                                   & 0.0067 \\ \hline
-Grocery                                & NA                          & Produce                                                  & 0.1701 \\ \hline
-Grocery                                & NA                          & Sales                                                    & 0.5495 \\ \hline
-Grocery                                & NA                          & Corridor                                                 & 0.0118 \\ \hline
-Grocery                                & NA                          & Dining                                                   & 0.0111 \\ \hline
-Grocery                                & NA                          & Elec/MechRoom                                            & 0.0133 \\ \hline
-Grocery                                & NA                          & Meeting                                                  & 0.0111 \\ \hline
-Grocery                                & NA                          & Restroom                                                 & 0.0150 \\ \hline
-Grocery                                & NA                          & Vestibule                                                & 0.0067 \\ \hline
-DEER Grocery                            & NA                          & GrocSales                                                & 0.800  \\ \hline
-DEER Grocery                            & NA                          & OfficeGeneral                                            & 0.070  \\ \hline
-DEER Grocery                            & NA                          & RefFoodPrep                                              & 0.073  \\ \hline
-DEER Grocery                            & NA                          & IndLoadDock                                              & 0.057  \\ \hline
+Full Service Restaurant & default & All & dining & 0.7272 & default \\ \hline
+Full Service Restaurant & default & All & food preparation & 0.2728 &  \\ \hline
+Hospital & default & All & electrical/mechanical & 0.1667 & no geometry \\ \hline
+Hospital & default & All & corridor - hospital & 0.1741 & circulation \\ \hline
+Hospital & default & All & dining - cafeteria/fast food & 0.0311 &  \\ \hline
+Hospital & default & All & exam/treatment & 0.0374 &  \\ \hline
+Hospital & default & All & nurses station & 0.2572 &  \\ \hline
+Hospital & default & All & emergency room & 0.0075 &  \\ \hline
+Hospital & default & All & patient room & 0.096 &  \\ \hline
+Hospital & default & All & food preparation & 0.0414 &  \\ \hline
+Hospital & default & All & laboratory & 0.0236 &  \\ \hline
+Hospital & default & All & lobby & 0.0657 &  \\ \hline
+Hospital & default & All & office & 0.0286 &  \\ \hline
+Hospital & default & All & operating room & 0.0273 &  \\ \hline
+Hospital & default & All & physical therapy & 0.0217 &  \\ \hline
+Hospital & default & All & imaging & 0.0217 &  \\ \hline
+Large Hotel & default & All & dining & 0.0751 &  \\ \hline
+Large Hotel & default & All & electrical/mechanical & 0.1889 & no geometry \\ \hline
+Large Hotel & default & All & corridor & 0.1736 & circulation \\ \hline
+Large Hotel & default & All & guest room & 0.4099 & default \\ \hline
+Large Hotel & default & All & food preparation & 0.0091 &  \\ \hline
+Large Hotel & default & All & laundry/washing & 0.0069 &  \\ \hline
+Large Hotel & default & All & lobby & 0.1153 &  \\ \hline
+Large Hotel & default & All & retail & 0.0128 &  \\ \hline
+Large Hotel & default & All & storage & 0.0084 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & lounge/breakroom & 0.0167 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & classroom/lecture/training & 0.0038 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & office & 0.64 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & conference/meeting/multipurpose & 0.0144 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & corridor & 0.0431 & circulation \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & dining & 0.0151 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & electrical/mechanical & 0.0885 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & lobby & 0.052 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & datacenter/low ite & 0.0077 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & datacenter/high ite & 0.055 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & restroom & 0.029 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & stairwell & 0.0169 &  \\ \hline
+Large Office & default & 90.1-2004 and later; DEER 2007 and later & storage & 0.0178 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & lounge/breakroom & 0.0178 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & classroom/lecture/training & 0.004 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & office & 0.683 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & conference/meeting/multipurpose & 0.0153 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & corridor & 0.046 & circulation \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & dining & 0.0161 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & electrical/mechanical & 0.0944 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & lobby & 0.0554 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & restroom & 0.031 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & stairwell & 0.018 &  \\ \hline
+Large Office & default & DOE Ref; DEER 2003 and earlier & storage & 0.019 &  \\ \hline
+Large Office & largeoffice\_datacenteronly & All & datacenter/low ite & 1 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & datacenter/low ite & 0.0169 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & datacenter/high ite & 0.0705 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & lounge/breakroom & 0.0163 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & classroom/lecture/training & 0.0037 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & office & 0.6232 & default \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & conference/meeting/multipurpose & 0.014 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & corridor & 0.042 & circulation \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & dining & 0.0147 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & electrical/mechanical & 0.0862 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & lobby & 0.0506 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & restroom & 0.0282 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & stairwell & 0.0165 &  \\ \hline
+Large Office & largeoffice\_datacenter & 90.1-2004 and later; DEER 2007 and later & storage & 0.0173 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & datacenter/low ite & 0.0094 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & datacenter/high ite & 0.0169 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & lounge/breakroom & 0.0173 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & classroom/lecture/training & 0.0039 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & office & 0.665 & default \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & conference/meeting/multipurpose & 0.0149 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & corridor & 0.0448 & circulation \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & dining & 0.0157 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & electrical/mechanical & 0.0919 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & lobby & 0.0539 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & restroom & 0.0302 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & stairwell & 0.0175 &  \\ \hline
+Large Office & largeoffice\_datacenter & DOE Ref; DEER 2003 and earlier & storage & 0.0185 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & lounge/breakroom & 0.0178 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & classroom/lecture/training & 0.0041 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & office & 0.6828 & default \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & conference/meeting/multipurpose & 0.0154 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & corridor & 0.046 & circulation \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & dining & 0.0161 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & electrical/mechanical & 0.0944 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & lobby & 0.0555 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & restroom & 0.0309 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & stairwell & 0.018 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & 90.1-2004 and later; DEER 2007 and later & storage & 0.019 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & lounge/breakroom & 0.0178 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & classroom/lecture/training & 0.004 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & office & 0.683 & default \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & conference/meeting/multipurpose & 0.0153 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & corridor & 0.046 & circulation \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & dining & 0.0161 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & electrical/mechanical & 0.0944 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & lobby & 0.0554 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & restroom & 0.031 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & stairwell & 0.018 &  \\ \hline
+Large Office & largeoffice\_nodatacenter & DOE Ref; DEER 2003 and earlier & storage & 0.019 &  \\ \hline
+Medium Office & default & All & classroom/lecture/training & 0.006 &  \\ \hline
+Medium Office & default & All & office & 0.6121 &  \\ \hline
+Medium Office & default & All & conference/meeting/multipurpose & 0.0519 &  \\ \hline
+Medium Office & default & All & corridor & 0.0896 & circulation \\ \hline
+Medium Office & default & All & dining & 0.0138 &  \\ \hline
+Medium Office & default & All & electrical/mechanical & 0.03 &  \\ \hline
+Medium Office & default & All & lobby & 0.055 &  \\ \hline
+Medium Office & default & All & restroom & 0.036 &  \\ \hline
+Medium Office & default & All & stairwell & 0.037 &  \\ \hline
+Medium Office & default & All & storage & 0.0686 &  \\ \hline
+Outpatient & default & All & exam/treatment & 0.1249 &  \\ \hline
+Outpatient & default & All & storage & 0.1521 &  \\ \hline
+Outpatient & default & All & dining & 0.0103 &  \\ \hline
+Outpatient & default & All & conference/meeting/multipurpose & 0.0082 &  \\ \hline
+Outpatient & default & All & electrical/mechanical & 0.0131 &  \\ \hline
+Outpatient & default & All & corridor & 0.1924 & circulation \\ \hline
+Outpatient & default & All & datacenter/low ite & 0.0027 &  \\ \hline
+Outpatient & default & All & lobby & 0.0517 &  \\ \hline
+Outpatient & default & All & locker room & 0.019 &  \\ \hline
+Outpatient & default & All & lounge/breakroom & 0.0293 &  \\ \hline
+Outpatient & default & All & imaging & 0.0368 &  \\ \hline
+Outpatient & default & All & nurses station & 0.0189 &  \\ \hline
+Outpatient & default & All & office & 0.1828 &  \\ \hline
+Outpatient & default & All & operating room & 0.0545 &  \\ \hline
+Outpatient & default & All & recovery & 0.0232 &  \\ \hline
+Outpatient & default & All & physical therapy & 0.0462 &  \\ \hline
+Outpatient & default & All & stairwell & 0.0146 &  \\ \hline
+Outpatient & default & All & restroom & 0.0193 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & dining - primary school & 0.0458 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & classroom/lecture/training - primary school & 0.4793 & default \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & computer room & 0.0236 & default \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & corridor - primary school & 0.1633 & circulation \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & playing area - primary school & 0.052 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & food preparation - primary school & 0.0244 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & library - primary school & 0.0581 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & lobby - primary school & 0.0249 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & electrical/mechanical & 0.0367 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & office & 0.0642 &  \\ \hline
+Primary School & default & 90.1-2004 and later; DEER 2007 and later & restroom - primary school & 0.0277 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & dining - primary school & 0.0458 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & classroom/lecture/training - primary school & 0.561 & default \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & corridor - primary school & 0.1633 & circulation \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & playing area - primary school & 0.052 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & food preparation - primary school & 0.0244 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & library - primary school & 0 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & lobby - primary school & 0.0249 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & electrical/mechanical & 0.0367 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & office & 0.0642 &  \\ \hline
+Primary School & default & DOE Ref; DEER 2003 and earlier & restroom - primary school & 0.0277 &  \\ \hline
+Quick Service Restaurant & default & All & dining & 0.5 & default \\ \hline
+Quick Service Restaurant & default & All & food preparation & 0.5 &  \\ \hline
+Retail Standalone & default & All & storage & 0.1656 &  \\ \hline
+Retail Standalone & default & All & lobby & 0.0052 &  \\ \hline
+Retail Standalone & default & All & retail - mass merchandising & 0.8292 &  \\ \hline
+Retail Strip Mall & default & All & retail & 1 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & audience seating - secondary school & 0.0504 & 26 ft story \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & dining - secondary school & 0.0319 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & classroom/lecture/training - secondary school & 0.3041 & default \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & computer room & 0.0487 & default \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & corridor - secondary school & 0.2144 & circulation \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & playing area - secondary school & 0.1009 & 26 ft story \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & audience seating - gymnasium - secondary school & 0.0637 & 26 ft story \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & food preparation - secondary school & 0.011 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & library - secondary school & 0.0429 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & lobby - secondary school & 0.0214 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & electrical/mechanical & 0.0349 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & office & 0.0543 &  \\ \hline
+Secondary School & default & 90.1-2004 and later; DEER 2007 and later & restroom - secondary school & 0.0214 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & audience seating - secondary school & 0.0504 & 26 ft story \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & dining - secondary school & 0.0319 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & classroom/lecture/training - secondary school & 0.3528 & default \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & corridor - secondary school & 0.2144 & circulation \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & playing area - secondary school & 0.1009 & 26 ft story \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & audience seating - gymnasium - secondary school & 0.0637 & 26 ft story \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & food preparation - secondary school & 0.011 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & library - secondary school & 0.0429 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & lobby - secondary school & 0.0214 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & electrical/mechanical & 0.0349 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & office & 0.0543 &  \\ \hline
+Secondary School & default & DOE Ref; DEER 2003 and earlier & restroom - secondary school & 0.0214 &  \\ \hline
+Small Hotel & default & All & corridor & 0.1313 & circulation \\ \hline
+Small Hotel & default & All & electrical/mechanical & 0.0119 &  \\ \hline
+Small Hotel & default & All & shaft & 0.0113 &  \\ \hline
+Small Hotel & default & All & exercise area & 0.0081 &  \\ \hline
+Small Hotel & default & All & lounge/breakroom & 0.0487 &  \\ \hline
+Small Hotel & default & All & guest room & 0.6312 & default \\ \hline
+Small Hotel & default & All & laundry/washing - coin-operated laundries & 0.0244 &  \\ \hline
+Small Hotel & default & All & conference/meeting/multipurpose & 0.02 &  \\ \hline
+Small Hotel & default & All & office & 0.0325 &  \\ \hline
+Small Hotel & default & All & restroom & 0.0081 &  \\ \hline
+Small Hotel & default & All & stairwell & 0.04 &  \\ \hline
+Small Hotel & default & All & storage & 0.0325 &  \\ \hline
+Small Office & default & All & office & 0.4984 &  \\ \hline
+Small Office & default & All & conference/meeting/multipurpose & 0.0818 &  \\ \hline
+Small Office & default & All & corridor & 0.1213 & circulation \\ \hline
+Small Office & default & All & electrical/mechanical & 0.0201 &  \\ \hline
+Small Office & default & All & lobby & 0.0818 &  \\ \hline
+Small Office & default & All & restroom & 0.0402 &  \\ \hline
+Small Office & default & All & stairwell & 0.0201 &  \\ \hline
+Small Office & default & All & storage & 0.1363 &  \\ \hline
+Grocery & default & All & food preparation - deli/bakery & 0.05 &  \\ \hline
+Grocery & default & All & retail - supermarket & 0.7733 &  \\ \hline
+Grocery & default & All & storage & 0.101 &  \\ \hline
+Grocery & default & All & office & 0.0067 &  \\ \hline
+Grocery & default & All & corridor & 0.0118 & default \\ \hline
+Grocery & default & All & dining & 0.0111 & default \\ \hline
+Grocery & default & All & electrical/mechanical & 0.0133 & default \\ \hline
+Grocery & default & All & conference/meeting/multipurpose & 0.0111 & default \\ \hline
+Grocery & default & All & restroom & 0.015 & default \\ \hline
+Grocery & default & All & lobby & 0.0067 & default \\ \hline
+Warehouse & default & All & storage - warehouse - medium to bulky palletized items & 0.6628 & default \\ \hline
+Warehouse & default & All & storage - warehouse - smaller hand-carried items & 0.2882 &  \\ \hline
+Warehouse & default & All & office & 0.049 & 14 ft story, WWR 0.71 \\ \hline
+Warehouse & warehouse\_bulk100 & All & storage - warehouse - medium to bulky palletized items & 1 & default \\ \hline
+Warehouse & warehouse\_bulk20 & All & storage - warehouse - medium to bulky palletized items & 0.2 & default \\ \hline
+Warehouse & warehouse\_bulk20 & All & storage - warehouse - smaller hand-carried items & 0.751 &  \\ \hline
+Warehouse & warehouse\_bulk20 & All & office & 0.049 & 14 ft story, WWR 0.71 \\ \hline
+Warehouse & warehouse\_bulk40 & All & storage - warehouse - medium to bulky palletized items & 0.4 & default \\ \hline
+Warehouse & warehouse\_bulk40 & All & storage - warehouse - smaller hand-carried items & 0.551 &  \\ \hline
+Warehouse & warehouse\_bulk40 & All & office & 0.049 & 14 ft story, WWR 0.71 \\ \hline
+Warehouse & warehouse\_bulk80 & All & storage - warehouse - medium to bulky palletized items & 0.8 & default \\ \hline
+Warehouse & warehouse\_bulk80 & All & storage - warehouse - smaller hand-carried items & 0.151 &  \\ \hline
+Warehouse & warehouse\_bulk80 & All & office & 0.049 & 14 ft story, WWR 0.71 \\ \hline
+Warehouse & warehouse\_fine100 & All & storage - warehouse - smaller hand-carried items & 1 & default \\ \hline
 \end{longtable}
 \end{center}
