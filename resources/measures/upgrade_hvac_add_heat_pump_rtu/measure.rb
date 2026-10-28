@@ -426,12 +426,12 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # read supply fan data from the scenario's performance json
   # the fan curve and impeller efficiency live alongside the compressor data so that defining a scenario
   # and defining its fan are the same action; fan_type selects behaviour and stays a discriminator here
-  # @return [Array] fan type, power coefficients, impeller efficiency; nils if absent
+  # @return [Array] fan type, power coefficients, impeller efficiency, minimum flow fraction; nils if absent
   def assign_fan_data(fan_data_json, std)
     fan_data = std.model_find_object(fan_data_json['tables']['curves'], 'name' => 'fan_data')
-    return [nil, nil, nil] if fan_data.nil?
+    return [nil, nil, nil, nil] if fan_data.nil?
 
-    [fan_data['fan_type'], fan_data['fan_power_coefficients'], fan_data['impeller_efficiency']]
+    [fan_data['fan_type'], fan_data['fan_power_coefficients'], fan_data['impeller_efficiency'], fan_data['minimum_flow_fraction']]
   end
 
   # read the rated COP regressions on rated capacity from the scenario's performance json
@@ -1685,8 +1685,13 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       design_cooling_airflow_m_3_per_s = oa_flow_m3_per_s if oa_flow_m3_per_s > design_cooling_airflow_m_3_per_s
       design_heating_airflow_m_3_per_s = oa_flow_m3_per_s if oa_flow_m3_per_s > design_heating_airflow_m_3_per_s
 
-      # minimum airflow ratio is 0.40, or higher as needed to maintain outdoor air requirements
-      min_flow = 0.40
+      # minimum airflow ratio is the scenario json's fan_data minimum_flow_fraction (0.3 for the variable-speed units, 0.40 for two-speed),
+      # or higher as needed to maintain outdoor air requirements
+      fan_type, fan_power_coefficients, fan_impeller_efficiency, min_flow = assign_fan_data(custom_data_json, std)
+      if min_flow.nil?
+        runner.registerWarning("No fan_data minimum_flow_fraction in the performance json for scenario #{hprtu_scenario}; using 0.40.")
+        min_flow = 0.40
+      end
       current_min_oa_flow_ratio = oa_flow_m3_per_s / design_heating_airflow_m_3_per_s
       min_airflow_ratio = [current_min_oa_flow_ratio, min_flow].max
       min_airflow_m3_per_s = min_airflow_ratio * design_airflow_for_sizing_m_3_per_s
@@ -1706,7 +1711,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # ---------------------------------------------------------
       # the lowest flow fraction the scenario's json specifies, captured before adjust_cfm_per_ton_per_limits changes the hashes in place
       # the cfm/ton limits are a numerical guard for the EnergyPlus operating range, not a statement of equipment turndown,
-      # so this is used below as a floor on the fan power minimum flow fraction
+      # so this is used below as a floor on the two-speed fan power minimum flow fraction
       specified_min_flow_fraction = (stage_flow_fractions_heating.values + stage_flow_fractions_cooling.values)
                                     .select { |v| v.is_a?(Numeric) && v > 0 }.min
 
@@ -1831,9 +1836,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_fan.setFanPowerMinimumFlowRateInputMethod('Fraction')
       new_fan.setPressureRise(fan_static_pressure) # from the original fan
 
-      # part-load curve and impeller efficiency come from the scenario's performance json, alongside the compressor data,
-      # so two-speed units are not credited with the continuous modulation of a variable-speed fan
-      fan_type, fan_power_coefficients, fan_impeller_efficiency = assign_fan_data(custom_data_json, std)
+      # part-load curve and impeller efficiency (read above with the minimum flow fraction) come from the scenario's performance json,
+      # alongside the compressor data, so two-speed units are not credited with the continuous modulation of a variable-speed fan
       if fan_power_coefficients.nil? || fan_power_coefficients.size < 5 || fan_impeller_efficiency.nil?
         # fall back to the more conservative two-speed representation and warn
         runner.registerWarning('No usable fan_data record in the performance json for scenario ' \
@@ -1866,21 +1870,26 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_fan.setMotorEfficiency(fan_motor_efficiency)
       new_fan.setFanTotalEfficiency(fan_impeller_efficiency * fan_motor_efficiency)
 
-      # the fan power minimum flow fraction is the lowest stage flow the equipment can deliver, from this scenario's staging
-      # (nominally 0.59 for two-speed units and 0.40 for four-stage units), with three floors:
-      # - the realised lowest stage airflow, which is absolute m3/s and so is divided by the loop design airflow
-      #   (the staging hashes are on a different basis and can hold false where a stage was removed)
-      # - the turndown the json specifies, because the cfm/ton guard can push a lowest stage below it
-      #   (e.g. variable-speed heating stage 1 from 0.40 to 0.28, roughly halving fan power) and must not credit unspecified turndown;
-      #   EnergyPlus still moves the lower airflow, only the power curve is floored, which is the conservative direction
-      # - the minimum OA ratio, which is a physical floor
+      # the fan power minimum flow fraction is the lowest flow the fan can deliver
+      # - variable-speed fans: the json's minimum_flow_fraction (0.3), or the minimum OA ratio when higher, i.e. min_airflow_ratio;
+      #   this is also the no-load airflow, which sits below the lowest compressor stage, so the stage airflows do not floor it
+      # - two-speed fans: the lowest stage flow the equipment can deliver, from this scenario's staging (nominally 0.59), with three floors:
+      #   - the realised lowest stage airflow, which is absolute m3/s and so is divided by the loop design airflow
+      #     (the staging hashes are on a different basis and can hold false where a stage was removed)
+      #   - the turndown the json specifies, because the cfm/ton guard can push a lowest stage below it and must not credit
+      #     unspecified turndown; EnergyPlus still moves the lower airflow, only the power curve is floored, which is the conservative direction
+      #   - the minimum OA ratio, which is a physical floor
       stage_flows_all = (stage_flows_heating.values + stage_flows_cooling.values).select { |v| v.is_a?(Numeric) && v > 0 }
       lowest_stage_flow_ratio = if stage_flows_all.empty? || design_airflow_for_sizing_m_3_per_s.to_f <= 0
                                   min_flow
                                 else
                                   stage_flows_all.min / design_airflow_for_sizing_m_3_per_s
                                 end
-      fan_min_flow_ratio = [lowest_stage_flow_ratio, specified_min_flow_fraction.to_f, current_min_oa_flow_ratio].max
+      fan_min_flow_ratio = if fan_type == 'variable_speed'
+                             min_airflow_ratio
+                           else
+                             [lowest_stage_flow_ratio, specified_min_flow_fraction.to_f, current_min_oa_flow_ratio].max
+                           end
       fan_min_flow_ratio = [fan_min_flow_ratio, 1.0].min
       new_fan.setFanPowerMinimumFlowFraction(fan_min_flow_ratio)
 

@@ -287,8 +287,12 @@ class AddHeatPumpRtuTest < Minitest::Test
   end
 
   # the turndown a scenario's json specifies, before any cfm/ton adjustment
-  # the measure clamps the fan power minimum flow fraction at this value, so the tests read it from the same place
+  # the measure clamps the fan power minimum flow fraction at this value, so the tests read it from the same place:
+  # fan_data minimum_flow_fraction for variable-speed fans, the lowest stage flow fraction in the staging data for two-speed fans
   def specified_min_flow_fraction_for(scenario)
+    fan_data = fan_data_for(scenario)
+    return fan_data['minimum_flow_fraction'] if fan_data && fan_data['fan_type'] == 'variable_speed'
+
     rec = scenario_json(scenario)['tables']['curves']['table'].find { |e| e.key?('stage_flow_fractions_heating') }
     return nil if rec.nil?
 
@@ -1499,11 +1503,11 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
-  # variable-speed units get the 90.1 Single Zone VAV curve and can turn down to the 0.40 lowest stage flow in their staging data
+  # variable-speed units get the 90.1 Single Zone VAV curve and can turn down to the 0.3 minimum_flow_fraction in their fan_data
   def test_fan_variable_speed_high_eff
     test_name = 'test_fan_variable_speed_high_eff'
     announce_test(test_name)
-    _model, fans = apply_and_get_supply_fans(test_name, '380_small_office_psz_gas_coil_7A.osm', 'NE_Kearney_Muni_725526_16.epw', 'variable_speed_high_eff')
+    model, fans = apply_and_get_supply_fans(test_name, '380_small_office_psz_gas_coil_7A.osm', 'NE_Kearney_Muni_725526_16.epw', 'variable_speed_high_eff')
     refute_empty(fans, 'no variable volume supply fans were created')
 
     fan_data = fan_data_for('variable_speed_high_eff')
@@ -1511,9 +1515,15 @@ class AddHeatPumpRtuTest < Minitest::Test
       label = "variable_speed_high_eff #{fan.name}"
       assert_fan_coefficients(fan, fan_data['fan_power_coefficients'], label)
       assert_efficiency_from_standards(fan, fan_data['impeller_efficiency'], label)
-      # on a one-zone small office the cfm/ton guard moved heating stage 1 from 0.40 to 0.28, and fan power at 0.28 flow is roughly
-      # half that at 0.40, so without the clamp this scenario would be credited turndown it was never specified to have
-      assert_fan_min_flow_at_least_specified(fan, 'variable_speed_high_eff', 0.40, label)
+      assert_fan_min_flow_at_least_specified(fan, 'variable_speed_high_eff', 0.3, label)
+
+      # the fan floor is the no-load airflow fraction (0.3, or the minimum OA ratio when higher), not the 0.40 lowest compressor stage,
+      # so fan power follows the airflow all the way down
+      unitary = model.getAirLoopHVACUnitarySystems.find { |us| us.supplyFan.is_initialized && us.supplyFan.get.handle == fan.handle }
+      no_load_flow = unwrap_optional(unitary.supplyAirFlowRateWhenNoCoolingorHeatingisRequired)
+      design_flow = unwrap_optional(unitary.airLoopHVAC.get.designSupplyAirFlowRate)
+      assert_in_delta(no_load_flow / design_flow, unwrap_optional(fan.fanPowerMinimumFlowFraction), 1e-6,
+                      "#{label}: fan power minimum flow fraction is not the no-load airflow fraction #{(no_load_flow / design_flow).round(4)}")
 
       # the variable-speed advantage must come from the part-load curve, not from an efficiency uplift:
       # the impeller is held at the openstudio-standards value for every scenario, so at design flow all these fans draw the same power
@@ -1523,6 +1533,9 @@ class AddHeatPumpRtuTest < Minitest::Test
              "#{label}: variable-speed power at half flow #{fan_power_at(vs_coeffs, 0.5).round(4)} is not " \
              "meaningfully below two-speed #{fan_power_at(ts_coeffs, 0.5).round(4)}")
     end
+    # guard that the 0.3 reaches the fan: before 2026-10-28 every fan here was floored at the 0.40 lowest stage
+    assert(fans.any? { |fan| unwrap_optional(fan.fanPowerMinimumFlowFraction) < 0.40 - 1e-6 },
+           'no variable_speed_high_eff fan is floored below 0.40; the fan_data minimum_flow_fraction is not reaching the fan')
   end
 
   # regression guard: the two scenarios must not share a fan representation
