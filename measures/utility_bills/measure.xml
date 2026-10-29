@@ -33,13 +33,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>60CC75EA</checksum>
+      <checksum>CA275879</checksum>
     </file>
     <file>
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>5E83F14E</checksum>
+      <checksum>C34B3DC0</checksum>
     </file>
     <file>
       <filename>calc_elec_bill.py</filename>
@@ -63675,7 +63675,7 @@
       <filename>utility_bills_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>1557D61C</checksum>
+      <checksum>E751988A</checksum>
     </file>
   </files>
 </measure>

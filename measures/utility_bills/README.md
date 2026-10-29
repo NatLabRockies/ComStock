@@ -6,6 +6,11 @@ tracts of that state. Electricity bills use URDB tariffs through PySAM (`resourc
 escalated from each tariff's start year to 2022 by the state's average yearly increase in commercial
 electricity prices; natural gas, propane and fuel oil use EIA state averages.
 
+A tariff applies to the building unless the building falls outside its URDB applicability window.
+The demand window (`peakkwcapacitymin`/`max`) is compared with the building's peak hourly demand,
+and the energy window (`peakkwhusagemin`/`max`), which URDB records per month, with its annual
+energy / 12.
+
 ## Outputs
 
 - `electricity_utility_bill_results`: one block per (state, utility),

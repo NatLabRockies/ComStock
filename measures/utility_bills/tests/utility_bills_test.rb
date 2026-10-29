@@ -678,6 +678,38 @@ class UtilityBillsTest < Minitest::Test
     end
   end
 
+  # URDB's demand window bounds peak demand, not the building's lowest hourly load
+  def test_rate_applicability_demand_window
+    measure = UtilityBills.new
+    rate = { 'peakkwcapacitymin' => 100, 'peakkwcapacitymax' => 500 }
+    assert_nil(measure.rate_not_applicable_reason(rate, 150, 50_000))
+    assert_match(/below minimum threshold of 100 kW/, measure.rate_not_applicable_reason(rate, 80, 50_000))
+    assert_match(/above maximum threshold of 500 kW/, measure.rate_not_applicable_reason(rate, 600, 50_000))
+
+    # NSTAR's G-2 is for demands of 100 to 500 kW. The test hotel peaks near 150 kW with a base load
+    # near 56 kW, so it qualifies on its peak.
+    hourly_kwh = File.readlines(File.join(__dir__, 'test_electricity_hourly.csv')).map(&:to_f)
+    peak_kw = hourly_kwh.max.round
+    monthly_kwh = (hourly_kwh.sum / 12.0).round
+    assert(hourly_kwh.min < 100)
+    nstar_g2 = JSON.parse(File.read(File.join(__dir__, '..', 'resources', 'elec_rates', '54913', '5cd47fa55457a39c5954e9d2.json')))
+    assert_nil(measure.rate_not_applicable_reason(nstar_g2, peak_kw, monthly_kwh))
+  end
+
+  # URDB's energy window bounds monthly energy, so it is compared against annual energy / 12
+  def test_rate_applicability_energy_window
+    measure = UtilityBills.new
+    # 10,000 kWh a month is 120,000 kWh a year: under a 15,000 kWh monthly cap, short of a 15,000 kWh monthly floor
+    assert_nil(measure.rate_not_applicable_reason({ 'peakkwhusagemax' => 15_000 }, 40, 10_000))
+    assert_match(/below minimum threshold of 15000 kWh/, measure.rate_not_applicable_reason({ 'peakkwhusagemin' => 15_000 }, 40, 10_000))
+    assert_match(/above maximum threshold of 15000 kWh/, measure.rate_not_applicable_reason({ 'peakkwhusagemax' => 15_000 }, 40, 20_000))
+
+    # Knoxville's GSA Part 1 is for up to 50 kW and up to 15,000 kWh in any month
+    kub_gsa1 = JSON.parse(File.read(File.join(__dir__, '..', 'resources', 'elec_rates', '10421', '5d1b88b35457a30d07a745b6.json')))
+    assert_nil(measure.rate_not_applicable_reason(kub_gsa1, 40, 10_000))
+    assert_match(/peak demand of 60 kW is above/, measure.rate_not_applicable_reason(kub_gsa1, 60, 10_000))
+  end
+
   # The state assignments cover exactly the rate files present (rebuild with resources/build_elec_rate_states.py)
   def test_elec_rate_states_match_rate_files
     resources = File.join(__dir__, '..', 'resources')
