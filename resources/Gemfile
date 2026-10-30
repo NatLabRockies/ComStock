@@ -12,9 +12,29 @@ gem 'rubocop-rspec'
 gem 'bcl', '= 0.9.1'
 gem 'openstudio-extension', '= 0.9.1'
 gem 'openstudio-workflow', '= 2.5.0'
-gem 'openstudio-standards', '= 0.8.6'
-# gem 'openstudio-standards', git: 'https://github.com/NREL/openstudio-standards.git', ref: 'cd105f8e8f5d0980b5d0bb2468ec89c9aa517f04'
-# gem 'openstudio-standards', path: "C:/GitRepos/openstudio-standards" # Use this format when testing openstudio-standards changes locally
+# comstock-typical replaces openstudio-standards. It is a fork of the openstudio-standards str2
+# branch that keeps the typical-building modules, the ASHRAE 90.1 and DEER template families and
+# the HVAC builders, and drops the prototype, PRM and NECB code. It keeps the
+# lib/openstudio-standards layout and the OpenstudioStandards namespace, so code written against
+# openstudio-standards needs no edits, but the measures require it by its own gem name:
+# `require 'comstock-typical'`. See the openstudio-geb note below for why that spelling matters.
+gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: 'c444e474ca3cdd6c1332c9b5dd4c4b73c09df772'
+# gem 'comstock-typical', path: 'C:/Repos/NREL/ComStock-Typical' # local checkout, for testing changes without a push
+
+# geb's gemspec declares a runtime dependency on the gem NAMED openstudio-standards ~> 0.8.2.
+# comstock-typical is a different gem name and cannot satisfy it, so Bundler installs
+# openstudio-standards 0.8.6 from rubygems alongside the fork and two gems then ship
+# lib/openstudio-standards.rb. A bare `require 'openstudio-standards'` takes whichever lib
+# directory sits first on the load path. That is not something this repository controls: measured
+# 2026-09-16 under the OpenStudio 3.10.0 CLI, upstream sits at load path index 5 and the fork at
+# 19, Gemfile declaration order changes nothing, and the bare require lands on upstream 0.8.6
+# where OpenstudioStandards::CreateTypical.create_custom_building_from_spec does not exist.
+#
+# `require 'comstock-typical'` sidesteps the ambiguity: it names a file only the fork ships, and
+# the fork's entry point reaches the rest of the library through require_relative. Ruby then treats
+# the feature 'openstudio-standards' as already provided, so a later bare require from a geb
+# measure is a silent no-op that leaves the fork in place.
+
 gem 'openstudio-geb', git: 'https://github.com/LBNL-ETA/Openstudio-GEB-gem.git', ref: '87da5c2678327b73eef54d2364f46225154bb956'
 gem 'tbd', '= 3.4.4'
 

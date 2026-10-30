@@ -9,7 +9,7 @@ require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
 
 # only necessary to include here if annual simulation request and the measure doesn't require openstudio-standards
-require 'openstudio-standards'
+require 'comstock-typical'
 
 class AddBlindsToSelectedWindowsTest < Minitest::Test
   # return file paths to test models in test directory

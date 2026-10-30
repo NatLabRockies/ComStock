@@ -36,7 +36,7 @@
 # *******************************************************************************
 
 require 'csv'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # require all .rb files in resources folder
 Dir[File.dirname(__FILE__) + '/resources/*.rb'].each { |file| require file }

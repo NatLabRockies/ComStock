@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_vrf_hr_doas/measure.rb'</error>
   <name>hvac_vrf_hr_doas</name>
   <uid>95ea1937-6b29-4af5-8946-0e271c828d10</uid>
-  <version_id>28e77eec-0010-4554-8c62-09cb162547e1</version_id>
-  <version_modified>2025-07-23T23:00:38Z</version_modified>
+  <version_id>beddc71b-c2fc-48b3-b09a-ca7bfca44edf</version_id>
+  <version_modified>2026-09-23T03:38:40Z</version_modified>
   <xml_checksum>D8B5A9EA</xml_checksum>
   <class_name>HvacVrfHrDoas</class_name>
   <display_name>hvac_vrf_hr_doas</display_name>
@@ -32,7 +33,6 @@
     <argument>
       <name>disable_defrost</name>
       <display_name>Disable defrost?</display_name>
-      <description></description>
       <type>Boolean</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
@@ -60,7 +60,6 @@
     <argument>
       <name>apply_measure</name>
       <display_name>Apply measure?</display_name>
-      <description></description>
       <type>Boolean</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
@@ -149,7 +148,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>4E93CB6F</checksum>
+      <checksum>0B68E96D</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -166,7 +165,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>8ED487BB</checksum>
+      <checksum>5F128284</checksum>
     </file>
     <file>
       <filename>performance_maps_Daikin_RELQ_100CR_120MBH.json</filename>
@@ -184,7 +183,7 @@
       <filename>measure_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>6E6B4CE9</checksum>
+      <checksum>9D3A1873</checksum>
     </file>
   </files>
 </measure>

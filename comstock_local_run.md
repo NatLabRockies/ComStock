@@ -65,11 +65,13 @@ sampler:
     sample_file: C:/my_effort/samples/buildstock.csv
 ```
 
-Optional: modify `ComStock/resources/Gemfile` to customize gems. You can comment out the rubygems source and point to a local checkout of `openstudio-standards` to enable quick testing.
+Optional: modify `ComStock/resources/Gemfile` to customize gems. The building-generation library is `comstock-typical`, a fork of `openstudio-standards` that keeps the `lib/openstudio-standards` layout, but measures should `require 'comstock-typical'` to avoid namespace collisions with other gems that have openstudio-standards dependencies (i.e. GEB gem). You can comment out the git source and point to a local checkout to enable quick testing.
 ```ruby
-# gem 'openstudio-standards', '= 0.4.0'
-gem 'openstudio-standards', path: "C:/GitRepos/openstudio-standards"
+# gem 'comstock-typical', git: 'https://github.com/NatLabRockies/ComStock-Typical.git', ref: '<sha>'
+gem 'comstock-typical', path: "C:/Repos/NREL/ComStock-Typical"
 ```
+
+Windows path lengths: Bundler clones git gems into `.custom_gems`, and a deep `buildstock_directory` can push those paths past the Windows limit. Runs here use a shallow checkout at `C:/csd` for that reason.
 
 __Windows: run Anaconda Prompt as Administrator. If you don't it will fail to install custom gems!__
 

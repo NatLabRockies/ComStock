@@ -105,6 +105,60 @@ class SetRoofTemplateTest < Minitest::Test
     return result
   end
 
+  # A small hotel's construction set carries an attic floor as its roof, and create_typical
+  # hard-assigns an IEAD roof to the outdoor-facing roof surfaces instead. The measure used to
+  # read the attic floor's WoodFramed type and ask the new template for a WoodFramed exterior
+  # roof, which no template has; 16 small hotels in the 2026-09 100k run failed that way.
+  def test_attic_floor_default_roof_is_replaced_on_the_hard_assigned_roof_surfaces
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    model = OpenStudio::Model::Model.new
+    model.getBuilding.setStandardsBuildingType('SmallHotel')
+    polygon = OpenStudio::Point3dVector.new
+    [[0.0, 0.0], [0.0, 10.0], [20.0, 10.0], [20.0, 0.0]].each { |x, y| polygon << OpenStudio::Point3d.new(x, y, 0.0) }
+    space = OpenStudio::Model::Space.fromFloorPrint(polygon, 3.0, model).get
+    roofs = space.surfaces.select { |s| s.surfaceType == 'RoofCeiling' }
+    assert_equal(1, roofs.size)
+
+    attic_floor = OpenStudio::Model::Construction.new(model)
+    attic_floor.setName('Typical Wood Joist Attic Floor')
+    attic_floor.insertLayer(0, OpenStudio::Model::MasslessOpaqueMaterial.new(model, 'Rough', 2.0))
+    attic_floor.standardsInformation.setIntendedSurfaceType('AtticFloor')
+    attic_floor.standardsInformation.setStandardsConstructionType('WoodFramed')
+    old_roof = OpenStudio::Model::Construction.new(model)
+    old_roof.setName('Old IEAD Roof')
+    old_roof.insertLayer(0, OpenStudio::Model::MasslessOpaqueMaterial.new(model, 'Rough', 1.0))
+    old_roof.standardsInformation.setIntendedSurfaceType('ExteriorRoof')
+    old_roof.standardsInformation.setStandardsConstructionType('IEAD')
+    roofs.first.setConstruction(old_roof)
+
+    ext_consts = OpenStudio::Model::DefaultSurfaceConstructions.new(model)
+    ext_consts.setRoofCeilingConstruction(attic_floor)
+    const_set = OpenStudio::Model::DefaultConstructionSet.new(model)
+    const_set.setDefaultExteriorSurfaceConstructions(ext_consts)
+    model.getBuilding.setDefaultConstructionSet(const_set)
+
+    measure = SetRoofTemplate.new
+    arguments = measure.arguments(model)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    { 'as_constructed_template' => 'ComStock DOE Ref Pre-1980', 'template' => 'ComStock DOE Ref 1980-2004', 'climate_zone' => 'ASHRAE 169-2013-6A' }.each do |name, value|
+      arg = arguments.find { |a| a.name == name }.clone
+      assert(arg.setValue(value))
+      argument_map[name] = arg
+    end
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    measure.run(model, runner, argument_map)
+    result = runner.result
+    show_output(result)
+    assert_equal('Success', result.value.valueName)
+
+    new_roof = ext_consts.roofCeilingConstruction.get
+    refute_equal(attic_floor.handle, new_roof.handle, 'the default set still points at the attic floor')
+    assert_equal('ExteriorRoof', new_roof.standardsInformation.intendedSurfaceType.get)
+    assert_equal('IEAD', new_roof.standardsInformation.standardsConstructionType.get)
+    assert_equal(new_roof.handle, roofs.first.construction.get.handle, 'the hard-assigned roof surface did not get the new construction')
+    refute_equal(old_roof.handle, roofs.first.construction.get.handle)
+  end
+
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
     puts "\n######\nTEST:#{__method__}\n######\n"

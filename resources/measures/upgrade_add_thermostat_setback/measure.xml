@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_add_thermostat_setback/measure.rb'</error>
   <name>upgrade_add_thermostat_setback</name>
   <uid>5f19c384-dbef-4747-90b7-f7500d315bd8</uid>
-  <version_id>edf853e9-fb49-4a34-8143-4a14e1d71e33</version_id>
-  <version_modified>2025-10-21T17:21:21Z</version_modified>
+  <version_id>167a95a3-88bb-4de1-bc7e-db8b5895a649</version_id>
+  <version_modified>2026-09-23T03:38:31Z</version_modified>
   <xml_checksum>B3180F38</xml_checksum>
   <class_name>UpgradeAddThermostatSetback</class_name>
   <display_name>Upgrade_Add_Thermostat_Setback</display_name>
@@ -118,13 +119,13 @@
       <filename>LICENSE.md</filename>
       <filetype>md</filetype>
       <usage_type>license</usage_type>
-      <checksum>CD7F5672</checksum>
+      <checksum>08D3D350</checksum>
     </file>
     <file>
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>AC270C1F</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -147,13 +148,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>37EA92F8</checksum>
+      <checksum>A82197BC</checksum>
     </file>
     <file>
       <filename>sched_methods.rb</filename>
       <filetype>rb</filetype>
       <usage_type>resource</usage_type>
-      <checksum>8788DDD5</checksum>
+      <checksum>D17C033A</checksum>
     </file>
     <file>
       <filename>example_model.osm</filename>
@@ -165,7 +166,7 @@
       <filename>upgrade_add_thermostat_setback_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>88063E80</checksum>
+      <checksum>3A00A9B9</checksum>
     </file>
   </files>
 </measure>

@@ -32,7 +32,7 @@ Second, lighting technologies are broken out into lighting generations depending
 
 Third, the coefficient of utilization depends on both the luminaire properties and the room geometry, which complicates the calculation in the LSM. The ComStock model associates the coefficient of utilization entirely with room propertiesthat are independent of lighting technology.  ComStock further assumes that rooms of the same space type have similar enough properties that they can use the same coefficient of utilization. To retain some of the variation from the luminaire properties, each kind of lighting system has a different coefficient of utilization for each space type.
 
-Table~\ref{tab:int_light_space_types} in Appendix~\ref{appendix:a} details the target horizontal illuminance value, the fraction of the target illuminance met by the kind of lighting system, and the lighting system coefficient of utilization for each lighting space type. Lighting space types are defined in 90.1 and are determined based on a mapping of openstudio-standards space types to prototype lighting space types.
+Table~\ref{tab:int_light_space_types} in Appendix~\ref{appendix:a} details the target horizontal illuminance value, the fraction of the target illuminance met by the kind of lighting system, and the lighting system coefficient of utilization for each lighting space type. Lighting space types are the space-by-space categories defined in ASHRAE 90.1, and every space type names its lighting space type directly, so no mapping from a building type's space types is involved. A space type's average ceiling height, computed from the model geometry, selects between standard and high bay fixtures for the general lighting system.
 
 Fourth, the LSM assumes a high fraction of non-general lighting systems for certain space types. For example, half of the illuminance in retail sales spaces is from supplemental and wall wash lighting systems. In older lighting generations, there is a significant difference in source efficacy between general and non-general lighting systems. In lighting generation 2, general lighting assumes T8 linear fluorescent lamps at 94 lumens per watt, and supplemental and wall wash lighting assume halogens at 15 lumens per watt.  For retail spaces using the LSM values, that means half the lighting comes from lighting technologies roughly 6 times less efficient than the general lighting technology.  Although this may be appropriate for setting a code lighting allowance, most retail spaces meet a much greater percentage of their illuminance from more efficient general lighting technologies.  ComStock adjusts the lighting system fractions for commonly used space types so that around 80\%--90\% of lighting comes from the general lighting system. These changes are reflected in Table~\ref{tab:int_light_space_types} in Appendix \ref{appendix:a}.
 
@@ -109,24 +109,24 @@ Figure \ref{fig:ltg_btype_dist} provides a breakdown of lighting generation dist
 
 \pagebreak
 
-\subsubsection{Default Interior Lighting Schedules}
-Default interior lighting schedules come from the openstudio-standards DOE prototype building models \citep{deru_2011}.  The End-Use Load Profiles project derived new default lighting schedules for restaurant, retail, education, office, and warehouse buildings, detailed in Section 3.3.1 of the EULP report: ``Interior Lighting Schedules'' \citep{eulp_final_report}. A full list of default ComStock schedules is available as a  \href{https://github.com/NREL/openstudio-standards/blob/master/lib/openstudio-standards/standards/ashrae_90_1/ashrae_90_1_2013/comstock_ashrae_90_1_2013/data/ashrae_90_1.schedules.json}{schedules .json file} on the openstudio-standards GitHub repository.
+\subsubsection{Interior Lighting Schedules}
+\label{sec:derived_schedules}
+Interior lighting schedules are part of each space type's parametric schedule set (Section~\ref{sec:parametric_schedules}). In occupied space types, the lighting schedule is not authored as a profile of its own but derived from the space type's occupancy schedule at every time step. Each lighting schedule record names a derivation type and a base and peak fraction; the derivation maps the normalized occupancy at a time step onto the interval between the base and the peak. Figure~\ref{fig:parametric_derivations} shows the derivation types in use. A linear derivation follows occupancy in proportion; an exponential derivation reaches its peak at low occupancy, as lights are switched on when the first occupants arrive and stay on until the last leave; an exponential-inverse derivation lags occupancy; a logistic derivation switches between base and peak around a midpoint; a saturating derivation holds its peak above a threshold; and a first-order derivation follows occupancy with separate rise and fall time constants. Lighting in most office, education, and retail space types uses an exponential or exponential-inverse derivation with a base of 0.05--0.12 and a peak of 0.66--0.9. The derivation parameters were fitted so that the derived profile reproduces the lighting schedule of the source data for that space type as closely as possible: the PNNL building energy standards support schedules, the ComStock prototype lighting schedules derived from end-use data during the EULP project (Section 3.3.1 of the EULP report \citep{eulp_final_report}), or the legacy prototype schedules \citep{deru_2011}.
 
-Additional changes to default schedules include:
-
-\begin{itemize}
-  \item The peak lighting value in the end-use data derived hourly schedule for office spaces is now 0.85 instead of the original ~0.5.
-  \item Quick service restaurants and kitchens use the FoodService\_Restaurant BLDG\_LIGHT\_EndUseData schedule rather than the prototype schedule.
-  \item All large hotel guest room lighting schedules use HotelLarge BLDG\_LIGHT\_GUESTROOM\_SCH\_2013.
-  \item All small hotel guest rooms follow the same default lighting schedule, with the midday lighting fraction changed from the prototype schedule value of ~0.3 to 0.15. Vacant guest rooms use an always off lighting schedule.
-\end{itemize}
-
-Interior lighting schedules are adjusted to correspond with the building's operating hours, as described in Section \ref{sec:hoo}.
+Space types with no occupancy of their own---corridors, restrooms, stairwells, mechanical rooms, and data centers---carry a lighting schedule authored directly as control points on the operating hours, in the same form as an occupancy schedule, fitted to the corresponding source lighting schedule. Hotel guest room lighting is derived from the guest room occupancy schedule and then gated by a fixed-clock sleep profile, so that lights are off while the room is occupied overnight; the guest room schedule set keeps a fixed shape rather than stretching to fit the building's sampled hours of operation. Table~\ref{tab:parametric_schedule_sets} lists the derivation type and the base and peak fraction of the lighting schedule for every space type. For most space types, because the lighting schedule is derived from occupancy, it is built around the building's sampled hours of operation without any separate adjustment.
 
 \subsubsection{Interior Lighting Schedule Magnitude Variability}
 Section 3.3.4 in the End-Use Load Profiles project report, ``Interior Lighting Schedule Magnitude Variability'' \citep{eulp_final_report}, details the derivation of base-to-peak values applied to the default lighting schedules.
 
-Figure \ref{fig:ltg_bpr} shows the distribution of base-to-peak ratios (BPRs) in the stock by building type for weekdays and weekends.  Note that this methodology was not applied to hospital, outpatient, small and large hotel, and warehouse building types, due to a lack of data.
+The sampled weekday and weekend base-to-peak ratios enter the model as a schedule override on the lighting schedule of every space type in the building. The override sets the schedule's base fraction to the sampled ratio times its peak fraction before the schedule is derived, so the ratio shapes the profile at the source rather than rescaling a finished schedule. A weekend base is held at or below the weekday base. Space types whose lighting schedule is authored flat (a data center, for example) are left unchanged by the override.
+
+Figure \ref{fig:ltg_bpr} shows the distribution of base-to-peak ratios (BPRs) in the stock by building type for weekdays and weekends.  Note that this methodology was not applied to hospital, outpatient, small and large hotel, and warehouse building types, due to a lack of data; their lighting schedules use the base and peak fractions of the space type data.
+
+\begin{figure}
+    \centering \includegraphics[width=0.9\textwidth]{figures/parametric_derivations.png}
+    \caption[Load schedule derivation types]{One occupancy profile and the load schedules derived from it by each derivation type, all with the same base and peak fractions. The derivation type and its parameters are properties of each space type's lighting, equipment, and hot water schedule records.}
+    \label{fig:parametric_derivations}
+\end{figure}
 
 \begin{figure}
     \centering \includegraphics[width=0.9\textwidth]{figures/ltg_sch_bpr.png}

@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_dcv/measure.rb'</error>
   <name>hvacdcv</name>
   <uid>680178e8-0356-45d1-94ff-89260586f36b</uid>
-  <version_id>54dcc659-dbba-494f-8d9c-6697c34fcf3c</version_id>
-  <version_modified>2025-07-23T23:00:35Z</version_modified>
+  <version_id>bd1c2fb5-09dc-497a-9f11-d7db11036642</version_id>
+  <version_modified>2026-09-23T03:38:26Z</version_modified>
   <xml_checksum>356BE47F</xml_checksum>
   <class_name>HVACDCV</class_name>
   <display_name>HVAC DCV</display_name>
@@ -48,7 +49,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>182E25B7</checksum>
+      <checksum>ECC28524</checksum>
     </file>
     <file>
       <filename>hvac_dcv_test.rb</filename>

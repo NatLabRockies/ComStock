@@ -522,4 +522,39 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
     output_file_path = "#{File.dirname(__FILE__)}//output/bldg0000082_infil_adj.osm"
     model.save(output_file_path, true)
   end
+
+  # A school's occupancy-derived HVAC schedule carries a summer-only weekday rule. The HVAC-off
+  # schedule must keep that rule to its dates and keep rule priority, so that on and off sum to
+  # one in every hour; it used to apply the rule all year.
+  def test_invert_schedule_ruleset_keeps_rule_dates_and_priority
+    model = OpenStudio::Model::Model.new
+    hvac = OpenStudio::Model::ScheduleRuleset.new(model, 0.0)
+    weekdays = OpenStudio::Model::ScheduleRule.new(hvac)
+    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| weekdays.send("setApply#{d}", true) }
+    weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 8, 0, 0), 0.0)
+    weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 16, 0, 0), 1.0)
+    summer = OpenStudio::Model::ScheduleRule.new(hvac)
+    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| summer.send("setApply#{d}", true) }
+    summer.setStartDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('July'), 1))
+    summer.setEndDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('September'), 1))
+
+    off = SetNISTInfiltrationCorrelations.new.invert_schedule_ruleset(hvac, 'Infiltration HVAC Off Schedule')
+    assert_equal(hvac.scheduleRules.map { |r| r.daySchedule.values.map { |v| 1.0 - v } },
+                 off.scheduleRules.map { |r| r.daySchedule.values })
+    hvac.scheduleRules.zip(off.scheduleRules).each do |src, inv|
+      assert_equal(src.startDate.get, inv.startDate.get)
+      assert_equal(src.endDate.get, inv.endDate.get)
+    end
+
+    year = model.getYearDescription.assumedYear
+    [[1, 15], [7, 16], [10, 15]].each do |month, day|
+      date = OpenStudio::Date.new(OpenStudio::MonthOfYear.new(month), day, year)
+      on_day = hvac.getDaySchedules(date, date).first
+      off_day = off.getDaySchedules(date, date).first
+      (0..23).each do |hr|
+        t = OpenStudio::Time.new(0, hr, 30, 0)
+        assert_in_delta(1.0, on_day.getValue(t) + off_day.getValue(t), 1e-9, "on + off != 1 on #{month}/#{day} #{hr}:30")
+      end
+    end
+  end
 end

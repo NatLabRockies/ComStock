@@ -6,7 +6,7 @@ require 'fileutils'
 require 'minitest/autorun'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
-require 'openstudio-standards' # remove if not using openstudio-standards methods
+require 'comstock-typical' # remove if not using openstudio-standards methods
 require_relative '../measure'
 
 class FaultHvacEconomizerChangeoverTemperatureTest < Minitest::Test

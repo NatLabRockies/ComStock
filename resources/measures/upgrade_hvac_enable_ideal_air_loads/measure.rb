@@ -38,7 +38,7 @@
 
 
 # dependencies
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class UpgradeHvacEnableIdealAirLoads < OpenStudio::Measure::ModelMeasure

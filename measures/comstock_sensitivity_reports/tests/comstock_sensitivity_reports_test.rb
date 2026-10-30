@@ -6,7 +6,7 @@ require 'fileutils'
 require 'minitest/autorun'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
-require 'openstudio-standards'
+require 'comstock-typical'
 require 'json'
 require_relative '../measure'
 

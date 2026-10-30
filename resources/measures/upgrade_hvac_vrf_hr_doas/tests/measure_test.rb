@@ -46,7 +46,7 @@ require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
 # only necessary to include here if annual simulation request and the measure doesn't require openstudio-standards
-# require 'openstudio-standards'
+# require 'comstock-typical'
 
 class HvacVrfHrDoasTest < Minitest::Test
   # return file paths to test models in test directory

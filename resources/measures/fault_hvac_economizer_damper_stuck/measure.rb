@@ -2,7 +2,7 @@
 # See top level LICENSE.txt file for license terms.
 
 require 'date'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class FaultHvacEconomizerDamperStuck < OpenStudio::Ruleset::ModelUserScript

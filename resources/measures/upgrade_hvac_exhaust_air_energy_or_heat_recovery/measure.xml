@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_exhaust_air_energy_or_heat_recovery/measure.rb'</error>
   <name>hvac_exhaust_air_energy_or_heat_recovery</name>
   <uid>8860830d-8741-4b5f-ac9c-3d011a523b96</uid>
-  <version_id>747fb3a3-a08d-4fcd-9dab-1aff7db29a4e</version_id>
-  <version_modified>2025-07-23T23:00:36Z</version_modified>
+  <version_id>94bd5b08-a505-4e69-ad5f-a07ce174d938</version_id>
+  <version_modified>2026-09-23T03:38:38Z</version_modified>
   <xml_checksum>215F538B</xml_checksum>
   <class_name>HVACExhaustAirEnergyOrHeatRecovery</class_name>
   <display_name>HVAC Exhaust Air Energy or Heat Recovery</display_name>
@@ -58,7 +59,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>1FE34868</checksum>
+      <checksum>0B68E96D</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -75,13 +76,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>CB2DFF9B</checksum>
+      <checksum>A7AC2BBA</checksum>
     </file>
     <file>
       <filename>hvac_exhaust_air_energy_or_heat_recovery_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>F792CCB5</checksum>
+      <checksum>4D10B521</checksum>
     </file>
   </files>
 </measure>

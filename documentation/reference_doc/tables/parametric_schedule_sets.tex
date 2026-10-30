@@ -1,0 +1,68 @@
+\begin{center}
+\scriptsize
+\begin{longtable}{|p{1.5in}|p{1.6in}|p{0.95in}|p{0.95in}|p{0.8in}|p{0.8in}|}
+\caption[Parametric Schedule Sets by Space Type]{Parametric schedule sets by space type. Occupancy lists the standalone start and end hour, the base and peak fractions, the number of control points, and the provenance of the fitted profile. Each load column lists the derivation type, the base and peak fractions, and the response parameter (r) where the derivation uses one.} \\ \hline
+\label{tab:parametric_schedule_sets}
+\textbf{Space Type} & \textbf{Occupancy} & \textbf{Lighting} & \textbf{Electric Equipment} & \textbf{Gas Equipment} & \textbf{Hot Water} \\ \hline
+\endfirsthead
+\multicolumn{6}{c}{{\bfseries \textit{Continued from previous page}}} \\ \hline
+\textbf{Space Type} & \textbf{Occupancy} & \textbf{Lighting} & \textbf{Electric Equipment} & \textbf{Gas Equipment} & \textbf{Hot Water} \\ \hline
+\endhead
+audience seating - gymnasium - secondary school & 15--20 h, 0--0.95, 8 points (legacy prototype) & exponential, 0.12--0.66, r 0.05 & exponential-inverse, 0.25--0.96, r 3 & -- & -- \\ \hline
+audience seating - secondary school & 15--20 h, 0--0.95, 8 points (legacy prototype) & exponential, 0.12--0.66, r 0.05 & exponential-inverse, 0.25--0.96, r 3 & -- & -- \\ \hline
+classroom/lecture/training & 8--16 h, 0--0.95, 8 points (ComStock prototype schedule) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.25--0.96, r 3 & -- & linear, 0.3--0.9, r 0.4 \\ \hline
+classroom/lecture/training - primary school & 8--16 h, 0--0.95, 8 points (ComStock prototype schedule) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.25--0.96, r 3 & -- & linear, 0.3--0.9, r 0.4 \\ \hline
+classroom/lecture/training - secondary school & 8--16 h, 0--0.95, 8 points (ComStock prototype schedule) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.25--0.96, r 3 & -- & linear, 0.3--0.9, r 0.4 \\ \hline
+computer room & 0--24 h, 0--0, 2 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & -- \\ \hline
+conference/meeting/multipurpose & 8--17 h, 0--0.95, 11 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & -- \\ \hline
+corridor & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 7--21 h, 0.05--0.9 & -- & -- \\ \hline
+corridor - hospital & none (unoccupied) & control points, 8--16 h, 0.5--0.9 & control points, 7--21 h, 0.05--0.9 & -- & -- \\ \hline
+corridor - primary school & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 7--21 h, 0.05--0.9 & -- & -- \\ \hline
+corridor - secondary school & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 7--21 h, 0.05--0.9 & -- & -- \\ \hline
+datacenter/high ite & none (unoccupied) & control points, 9--23 h, 0--0.9 & control points, 7--23 h, 0.05--0.9 & -- & -- \\ \hline
+datacenter/low ite & none (unoccupied) & control points, 9--23 h, 0--0.9 & control points, 7--23 h, 0.05--0.9 & -- & -- \\ \hline
+dining & 7--22 h, 0--0.8, 15 points (legacy prototype) & exponential, 0.26--0.77, r 0.15 & exponential, 0.03--0.55, r 0.15 & -- & -- \\ \hline
+dining - cafeteria/fast food & 10--15 h, 0--0.8, 15 points (ComStock prototype schedule) & exponential, 0.26--0.77, r 0.15 & exponential, 0.03--0.55, r 0.15 & -- & -- \\ \hline
+dining - primary school & 8--16 h, 0--0.8, 10 points (legacy prototype) & exponential, 0.26--0.77, r 0.15 & exponential, 0.03--0.55, r 0.15 & -- & -- \\ \hline
+dining - secondary school & 8--16 h, 0--0.8, 10 points (legacy prototype) & exponential, 0.26--0.77, r 0.15 & exponential, 0.03--0.55, r 0.15 & -- & -- \\ \hline
+electrical/mechanical & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 7--21 h, 0.24--0.9 & -- & -- \\ \hline
+emergency room & 9--17 h, 0.4--0.8, 9 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & logistic, 0.2--0.82, r 1 \\ \hline
+exam/treatment & 6--20 h, 0.05--0.9, 13 points (ComStock prototype schedule) & exponential, 0.1--0.9, r 0.8 & exponential, 0.3--0.99, r 1.95 & -- & linear, 0--0.62, r 1 \\ \hline
+exercise area & 6--23 h, 0--1, 9 points (legacy prototype) & linear, 0--1, r 1 & linear, 0--1, r 0.5 & -- & -- \\ \hline
+food preparation & 7--22 h, 0--0.8, 15 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.12--0.35, r 0.4 & linear, 0--0.57, r 1 \\ \hline
+food preparation - deli/bakery & 7--22 h, 0--0.8, 15 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.3--0.9, r 0.4 & linear, 0.1--0.52, r 1 \\ \hline
+food preparation - primary school & 8--16 h, 0--0.8, 10 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.12--0.35, r 0.4 & exponential, 0--0.83, r 0.8 \\ \hline
+food preparation - secondary school & 8--16 h, 0--0.8, 10 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.12--0.35, r 0.4 & exponential, 0--0.83, r 0.8 \\ \hline
+guest room & 9--17 h, 0.1--1, 9 points (authored) & logistic, 0.1--0.3 & logistic, 0.2--0.4 & -- & exponential, 0--0.8, r 3 \\ \hline
+imaging & 8--18 h, 0--0.8, 10 points (ComStock prototype schedule) & exponential-inverse, 0.1--0.9, r 1 & exponential-inverse, 0.35--0.88, r 1.7 & -- & linear, 0.28--0.73, r 1 \\ \hline
+laboratory & 8--16 h, 0--0.95, 8 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & exponential, 0.05--0.82, r 1.5 \\ \hline
+laundry/washing & 8--17 h, 0--0.18, 10 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.3--0.9, r 0.4 & exponential, 0--1, r 0.7 \\ \hline
+laundry/washing - coin-operated laundries & 8--17 h, 0--0.18, 10 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.3--0.9, r 0.4 & logistic, 0--1, r 1 \\ \hline
+library - primary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.25--0.96, r 3 & -- & -- \\ \hline
+library - secondary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.25--0.96, r 3 & -- & -- \\ \hline
+lobby & 8--16 h, 0--0.95, 8 points (legacy prototype) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.05--0.9, r 3 & -- & -- \\ \hline
+lobby - primary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.05--0.9, r 3 & -- & -- \\ \hline
+lobby - secondary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & exponential-inverse, 0.12--0.66, r 2.55 & exponential-inverse, 0.05--0.9, r 3 & -- & -- \\ \hline
+locker room & 8--17 h, 0--0.05, 2 points (legacy prototype) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & -- \\ \hline
+lounge/breakroom & 8--17 h, 0--0.95, 11 points (ComStock prototype schedule) & linear, 0.03--0.85, r 0.9 & linear, 0.54--0.89, r 0.65 & -- & linear, 0.05--0.44, r 1 \\ \hline
+nurses station & 6--20 h, 0.05--0.9, 13 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & -- \\ \hline
+office & 8--17 h, 0--0.95, 11 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & linear, 0.3--0.9, r 0.4 \\ \hline
+operating room & 8--18 h, 0--0.8, 10 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & linear, 0.3--0.9, r 0.4 & linear, 0--0.75, r 1 \\ \hline
+patient room & 9--17 h, 0.4--0.8, 9 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & exponential, 0.3--0.82, r 1.5 \\ \hline
+physical therapy & 6--20 h, 0.05--0.9, 13 points (ComStock prototype schedule) & exponential, 0.05--0.9, r 0.75 & linear, 0.3--0.9, r 1 & -- & linear, 0--0.62, r 1 \\ \hline
+playing area - primary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & linear, 0.12--0.66, r 2.5 & exponential-inverse, 0.25--0.96, r 3 & -- & exponential, 0--0.83, r 1.5 \\ \hline
+playing area - secondary school & 8--21 h, 0--0.95, 6 points (legacy prototype) & linear, 0.12--0.66, r 2.5 & exponential-inverse, 0.25--0.96, r 3 & -- & exponential, 0--0.83, r 1.5 \\ \hline
+recovery & 6--20 h, 0.05--0.9, 13 points (ComStock prototype schedule) & exponential, 0.1--0.9, r 0.8 & exponential, 0.3--0.99, r 1.95 & -- & linear, 0--0.62, r 1 \\ \hline
+restroom & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 8--18 h, 0.25--0.96 & -- & control points, 6--24 h, 0--0.57 \\ \hline
+restroom - primary school & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 8--18 h, 0.25--0.96 & -- & control points, 8--20 h, 0--0.83 \\ \hline
+restroom - secondary school & none (unoccupied) & control points, 7--18 h, 0.12--0.66 & control points, 8--18 h, 0.25--0.96 & -- & control points, 8--20 h, 0--0.83 \\ \hline
+retail & 8--21 h, 0--0.8, 12 points (legacy prototype) & exponential, 0.06--0.97, r 0.05 & exponential, 0.05--0.9, r 0.05 & -- & logistic, 0.1--0.65, r 1 \\ \hline
+retail - mass merchandising & 8--21 h, 0--0.8, 12 points (legacy prototype) & exponential, 0.06--0.97, r 0.05 & exponential, 0.05--0.9, r 0.05 & -- & logistic, 0.1--0.65, r 1 \\ \hline
+retail - supermarket & 9--19 h, 0--0.8, 15 points (ComStock prototype schedule) & linear, 0.05--0.9, r 1.15 & exponential-inverse, 0.77--0.89, r 1.35 & -- & linear, 0.05--1, r 1 \\ \hline
+shaft & none (unoccupied) & control points, 6--20 h, 0.05--0.3 & -- & -- & -- \\ \hline
+stairwell & none (unoccupied) & control points, 8--18 h, 0.05--0.81 & control points, 9--16 h, 0.54--0.89 & -- & -- \\ \hline
+storage & 6--18 h, 0--0.05, 2 points (legacy prototype) & exponential-inverse, 0.05--0.81, r 1.3 & linear, 0.3--0.9, r 1 & -- & linear, 0.3--0.9, r 0.4 \\ \hline
+storage - warehouse - medium to bulky palletized items & none (unoccupied) & control points, 7--18 h, 0.1--0.85 & control points, 8--17 h, 0.25--1 & -- & -- \\ \hline
+storage - warehouse - smaller hand-carried items & none (unoccupied) & control points, 7--18 h, 0.1--0.85 & control points, 8--17 h, 0.25--1 & -- & -- \\ \hline
+\end{longtable}
+\end{center}

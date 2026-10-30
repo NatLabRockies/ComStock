@@ -1,0 +1,55 @@
+\begin{center}
+\scriptsize
+\begin{longtable}{|p{1.7in}|p{1.6in}|p{0.9in}|p{0.7in}|p{0.75in}|p{0.55in}|}
+\caption[Service Water Heating Draws by Space Type]{Service water heating draws by space type: the stock record each space type resolves to, and the building-type overrides the ComStock building type definitions apply on top of it. Peak flow is gal/h per ft\textsuperscript{2} of the space's floor area. ``Shared'' draws are served by the building water heater, ``One Per Space'' draws by a point-of-use heater in the space, and ``Dishwasher Booster'' draws by the 180\textdegree F booster loop.} \\ \hline
+\label{tab:swh_flow_rates}
+\textbf{Space Type} & \textbf{Record} & \textbf{Equipment} & \textbf{Peak Flow (gal/h-ft\textsuperscript{2})} & \textbf{Loop} & \textbf{Mixed Temp. (\textdegree F)} \\ \hline
+\endfirsthead
+\multicolumn{6}{c}{{\bfseries \textit{Continued from previous page}}} \\ \hline
+\textbf{Space Type} & \textbf{Record} & \textbf{Equipment} & \textbf{Peak Flow} & \textbf{Loop} & \textbf{Mixed Temp.} \\ \hline
+\endhead
+emergency room & stock (Hospital ER\_Exam) & general & 0.00333 & Shared & 110 \\ \hline
+exam/treatment & stock (Outpatient ProcedureRoom) & general & 0.00702 & Shared & 110 \\ \hline
+ & Outpatient override & general & 0.00039 & as stock & as stock \\ \hline
+food preparation & stock (FullServiceRestaurant Kitchen) & Dishwasher Booster & 0.054 & Shared & 180 \\ \hline
+ & stock (FullServiceRestaurant Kitchen) & general & 0.036 & Shared & 120 \\ \hline
+ & Full Service Restaurant override & general & 0.009 & as stock & as stock \\ \hline
+ & Full Service Restaurant override & Dishwasher Booster & 0.014 & as stock & as stock \\ \hline
+ & Hospital override & general & 0.006 & as stock & as stock \\ \hline
+ & Hospital override & Dishwasher Booster & 0.009 & as stock & as stock \\ \hline
+ & Large Hotel override & general & 0.048 & as stock & as stock \\ \hline
+ & Large Hotel override & Dishwasher Booster & 0.072 & as stock & as stock \\ \hline
+ & Quick Service Restaurant override & general & 0.032 & as stock & 110 \\ \hline
+ & Quick Service Restaurant override & Dishwasher Booster & 0 & as stock & as stock \\ \hline
+food preparation - deli/bakery & stock (SuperMarket Bakery) & general & 0.00214 & Shared & 110 \\ \hline
+food preparation - primary school & stock (PrimarySchool Kitchen) & Dishwasher Booster & 0.033 & Shared & 180 \\ \hline
+ & stock (PrimarySchool Kitchen) & general & 0.022 & Shared & 120 \\ \hline
+food preparation - secondary school & stock (SecondarySchool Kitchen) & Dishwasher Booster & 0.034 & Shared & 180 \\ \hline
+ & stock (SecondarySchool Kitchen) & general & 0.023 & Shared & 120 \\ \hline
+guest room & stock (LargeHotel GuestRoom) & general & 0.00298 & Shared & 110 \\ \hline
+ & Small Hotel override & general & 0.00632 & as stock & as stock \\ \hline
+imaging & stock (Hospital Radiology) & general & 0.00019 & Shared & 110 \\ \hline
+ & Outpatient override & general & 0.00397 & as stock & as stock \\ \hline
+laboratory & stock (Hospital Lab) & general & 0.0007 & Shared & 110 \\ \hline
+laundry/washing & stock (LargeHotel Laundry) & general & 0.18643 & Shared & 110 \\ \hline
+laundry/washing - coin-operated laundries & stock (SmallHotel Laundry) & general & 0.0641 & One Per Space & 110 \\ \hline
+lounge/breakroom & stock (Courthouse Break Room) & general & 0.02 & Shared & 110 \\ \hline
+ & Outpatient override & general & 0 & as stock & as stock \\ \hline
+ & Small Hotel override & general & 0 & as stock & as stock \\ \hline
+operating room & stock (Hospital OR) & general & 0.00333 & Shared & 110 \\ \hline
+ & Outpatient override & general & 0.01884 & as stock & as stock \\ \hline
+patient room & stock (Hospital PatRoom) & general & 0.00357 & Shared & 110 \\ \hline
+physical therapy & stock (Outpatient PhysicalTherapy) & general & 0.00211 & Shared & 110 \\ \hline
+playing area - primary school & stock (SecondarySchool Gym) & general & 0.0075 & Shared & 110 \\ \hline
+playing area - secondary school & stock (SecondarySchool Gym) & general & 0.0075 & Shared & 110 \\ \hline
+recovery & stock (Outpatient PACU) & general & 0.00633 & Shared & 110 \\ \hline
+restroom & stock (Office Restroom) & general & 0.02 & Shared & 110 \\ \hline
+ & Outpatient override & general & 0 & as stock & as stock \\ \hline
+ & Small Hotel override & general & 0 & as stock & as stock \\ \hline
+restroom - primary school & stock (PrimarySchool Restroom) & general & 0.02 & Shared & 110 \\ \hline
+restroom - secondary school & stock (SecondarySchool Restroom) & general & 0.02 & Shared & 110 \\ \hline
+retail & stock (StripMall Strip mall - type 1) & general & -- & One Per Space & 110 \\ \hline
+retail - mass merchandising & stock (StripMall Strip mall - type 1) & general & -- & One Per Space & 110 \\ \hline
+ & Retail Standalone override & general & 0.00088 & Shared & 140 \\ \hline
+\end{longtable}
+\end{center}

@@ -38,7 +38,7 @@
 
 # dependencies
 require 'openstudio'
-require 'openstudio-standards'
+require 'comstock-typical'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'fileutils'
 require 'minitest/autorun'

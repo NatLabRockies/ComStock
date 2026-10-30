@@ -61,7 +61,7 @@ class ComStockQueryBuilder:
 
         if building_types:
             btype_list = ', '.join([f'"{bt}"' for bt in building_types])
-            where_conditions.append(f'"build_existing_model.create_bar_from_building_type_ratios_bldg_type_a" IN ({btype_list})')
+            where_conditions.append(f'"build_existing_model.create_custom_building_from_spec_bldg_type_a" IN ({btype_list})')
 
         where_clause = ' AND '.join(where_conditions)
 
@@ -78,7 +78,7 @@ class ComStockQueryBuilder:
                 SELECT
                     EXTRACT(MONTH from "time") as "month",
                     SUBSTRING("build_existing_model.county_id", 2, 2) AS "state_id",
-                    "build_existing_model.create_bar_from_building_type_ratios_bldg_type_a" as "building_type",
+                    "build_existing_model.create_custom_building_from_spec_bldg_type_a" as "building_type",
                     "upgrade",
                     "total_site_gas_kbtu",
                     "total_site_electricity_kwh"

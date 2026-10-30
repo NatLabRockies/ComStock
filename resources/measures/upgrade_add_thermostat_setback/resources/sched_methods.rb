@@ -38,7 +38,7 @@
 
 require 'openstudio'
 require 'date'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 def get_tstat_profiles_and_stats(tstat_schedule) # from add thermostat setpoint variability measure
   if tstat_schedule.to_ScheduleRuleset.empty?

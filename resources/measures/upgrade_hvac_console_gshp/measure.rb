@@ -36,7 +36,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # *******************************************************************************
 
-require 'openstudio-standards'
+require 'comstock-typical'
 require 'csv'
 
 # require all .rb files in resources folder

@@ -3,6 +3,7 @@
 # see the URL below for information on how to write OpenStudio measures
 # http://nrel.github.io/OpenStudio-user-documentation/reference/measure_writing_guide/
 
+require 'comstock-typical'
 Dir[File.dirname(__FILE__) + '/resources/*.rb'].each { |file| require file }
 # start the measure
 class UpgradeAddThermostatSetback < OpenStudio::Measure::ModelMeasure
@@ -204,36 +205,22 @@ class UpgradeAddThermostatSetback < OpenStudio::Measure::ModelMeasure
 
     std = Standard.build('90.1-2013') # build standard
 
+    # Space types that keep their thermostats, in the typical (all-level) space type vocabulary:
+    # patient care, laboratories, data centers, unoccupied support spaces and guest rooms. A level-1
+    # name covers every qualified variant; 'corridor - hospital' is the patient corridor alone.
+    # Prototype space type names resolve to these through the prototype space type crosswalk. The
+    # prototype list's 'Entry' (now 'lobby'), 'Toilet' (now every 'restroom') and 'BioHazard' (now
+    # 'storage') are not carried over: the typical names cover far more than they did.
     space_types_no_setback = [
-      # 'Kitchen',
-      # 'kitchen',
-      'PatRm',
-      'PatRoom',
-      'Lab',
-      'Exam',
-      'PatCorridor',
-      'BioHazard',
-      'Exam',
-      'OR',
-      'PreOp',
-      'Soil Work',
-      'Trauma',
-      'Triage',
-      # 'PhysTherapy',
-      'Data Center',
-      'data center',
-      # 'CorridorStairway',
-      # 'Corridor',
-      'Mechanical',
-      # 'Restroom',
-      'Entry',
-      # 'Dining',
-      'IT_Room',
-      # 'LockerRoom',
-      # 'Stair',
-      'Toilet',
-      'MechElecRoom',
-      'Guest Room',
+      'patient room',
+      'laboratory',
+      'exam/treatment',
+      'corridor - hospital',
+      'operating room',
+      'emergency room',
+      'datacenter/high ite',
+      'datacenter/low ite',
+      'electrical/mechanical',
       'guest room'
     ]
 
@@ -281,11 +268,7 @@ class UpgradeAddThermostatSetback < OpenStudio::Measure::ModelMeasure
           zone_space_types << space.spaceType.get.name.to_s
         end
 
-        skip_space_types = space_types_no_setback.any? do |substring|
-          zone_space_types.any? do |str|
-            str.include?(substring)
-          end
-        end
+        skip_space_types = OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, space_types_no_setback)
 
         no_people_obj = true if thermal_zone.numberOfPeople.zero?
 

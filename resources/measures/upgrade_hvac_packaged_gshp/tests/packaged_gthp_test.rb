@@ -42,7 +42,7 @@ require 'openstudio/measure/ShowRunnerOutput'
 require 'fileutils'
 require 'minitest/autorun'
 require 'open3'
-require 'openstudio-standards'
+require 'comstock-typical'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
