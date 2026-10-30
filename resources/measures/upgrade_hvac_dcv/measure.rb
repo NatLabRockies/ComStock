@@ -285,6 +285,7 @@ class HVACDCV < OpenStudio::Measure::ModelMeasure
       end
 
       std.air_loop_hvac_enable_demand_control_ventilation(air_loop_hvac, '')
+      air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir.controllerMechanicalVentilation.setAvailabilitySchedule(model.alwaysOnDiscreteSchedule)
       enabled_dcv += 1
     end
 

@@ -501,6 +501,7 @@ def run(model, runner, user_arguments)
 		end
 		end
         standard.air_loop_hvac_enable_demand_control_ventilation(air_loop_hvac, '')
+        controller_mv.setAvailabilitySchedule(model.alwaysOnDiscreteSchedule)
 	  end
 	  end
 	end
