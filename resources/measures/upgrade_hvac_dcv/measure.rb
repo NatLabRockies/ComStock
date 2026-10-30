@@ -225,7 +225,7 @@ class HVACDCV < OpenStudio::Measure::ModelMeasure
           tot_oa_cfm = floor_area * tot_oa_cfm_per_ft2
 
           # if space is ineligible type, convert all OA to per-area to avoid DCV being applied
-          if space_types_no_dcv.any? { |i| space.spaceType.get.name.to_s.include? i } & !dsn_oa.outdoorAirFlowperPerson.zero?
+          if OpenstudioStandards::SpaceType.space_matches?(space, space_types_no_dcv) & !dsn_oa.outdoorAirFlowperPerson.zero?
             runner.registerInfo("Space '#{space.name}' is an ineligable space type but is on an air loop that serves other DCV-eligible spaces. Converting all outdoor air to per-area.")
             dsn_oa.setOutdoorAirFlowperPerson(0.0)
             dsn_oa.setOutdoorAirFlowperFloorArea(tot_oa_per_m2)
