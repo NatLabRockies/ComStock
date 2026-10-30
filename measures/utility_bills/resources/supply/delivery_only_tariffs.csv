@@ -1,0 +1,240 @@
+state,eiaid,label,supply_class,class_evidence,status_evidence,name
+CT,4176,5d5eb7355457a3b821f1ab37,small,size_in_name,price,Rate 27- Small Time-of-Day General Electric Service
+CT,4176,5d5ebdf15457a3b020f1ab36,small,size_in_name,price,Rate 30 - Small General Electric Service
+CT,4176,5d5ec38c5457a34920f1ab35,small,kw_window,price,Rate 35 Intermediate General Electric Service
+CT,4176,5d5ec5375457a3a81df1ab38,small,kw_window,price,Rate 37 Intermediate Time-of-Day General Electric Service
+CT,4176,5d5ecf5c5457a3a755f1ab36,large,kw_window,supply_test,Rate 55 - Intermediate Time-Of-Day Electric Service Manufacturers 500 to 1000kW
+CT,4176,5d5ed73d5457a34920f1ab36,small,default_smallest,price,Rate 56 Intermediate Time-Of-Day Electric Service Non-Manufacturers
+CT,19497,5d23593f5457a30e7adc131d,small,single_class,price,General Service with Demand
+CT,19497,5d235bbf5457a35b7fdc131d,small,single_class,price,General Service Time-of-Use without Demand
+CT,19497,5d2360465457a3f77ddc131e,small,single_class,price,General Service Time-of-Use with Demand
+CT,19497,5d23642d5457a32379dc131e,small,single_class,price,General Service Time-of-Use Last Resort
+DC,15270,5d77d7145457a33c1b7db2ea,small,rate_schedule,price,General Service Low Voltage Non-Demand - Schedule GSLVND
+DC,15270,5d77fcff5457a3df2e7db2ec,large,rate_schedule,price_over_text,General Service Low Voltage Service - Schedule GSLV
+DC,15270,5d7804df5457a3ca2d7db2ea,small,default_smallest,price_over_text,General Service Primary Service - Schedule GS3A
+DC,15270,5d78096f5457a346607db2ec,large,rate_schedule,price,Time Metered General Service - Low Voltage Service - Schedule GTLV
+DC,15270,5d780f015457a346607db2ed,small,default_smallest,price,Time Metered General Service - Primary Service - Schedule GT3A
+DE,5027,5a8330175457a3ef3c914215,medium,size_in_name,supply_test,Medium General Off Peak Service - Secondary
+DE,5027,5d4aedb75457a3af38ddb2db,small,size_in_name,price,Small General Service - Secondary Non-Demand
+DE,5027,5d4af10e5457a3a340ddb2db,medium,size_in_name,price,Medium General Service - Secondary
+DE,5027,5d4afa645457a3043eddb2dc,large,size_in_name,price,Large General Service - Secondary (Unbundled)
+IL,4110,539f6cf9ec4f024411ecb033,large,hourly_service_in_name,text_in_band,BESH-Watt Hour Delivery Class(Unbundled)
+IL,4110,539f7209ec4f024411ecec91,small,rate_schedule,price,Small Load Delivery Class(Retail Delivery Service-Unbundled)
+IL,4110,539fbaadec4f024bc1dc303b,small,rate_schedule,price,Watt - Hour Delivery Class(Retail Delivery Service-Unbundled)
+IL,4110,539fc4b6ec4f024c27d8ca11,large,hourly_service_in_name,price,BESH-Medium Load Delivery Class(Unbundled)
+IL,4110,539fc89aec4f024d2f53e8ba,large,hourly_service_in_name,price,BESH-High Voltage Delivery Class(Unbundled)
+IL,4110,53a34fe95257a3f32f0add2f,large,hourly_service_in_name,price,BESH-Small Load Delivery Class (Unbundled)
+IL,4110,53a353415257a38e290add37,large,hourly_service_in_name,price,BESH-Medium Load Delivery Class (Unbundled)
+IL,4110,53a895575257a3941de58e66,large,hourly_service_in_name,price,BESH-Railroad Delivery Class(Unbundled)
+IL,4110,60e755475457a3463c8b456b,small,rate_schedule,price,RDS - Watt-Hour Delivery Class
+IL,4110,60e770635457a308138b4567,small,rate_schedule,price,RDS-Small Load Delivery Class (Secondary)
+IL,4110,60e773d05457a3ef668b4569,small,rate_schedule,price,RDS-Small Load Delivery Class (Primary)
+IL,4110,60e784a95457a323048b4568,small,rate_schedule,price,RDS-Medium Load Delivery Class (Secondary)
+IL,4110,60e853c15457a385538b4567,small,rate_schedule,price,RDS-Medium Load Delivery Class (Primary)
+IL,4110,60e854ef5457a323048b456a,small,rate_schedule,price,RDS-Large Load Delivery Class (Secondary)
+IL,4110,60e85a625457a32c758b456a,small,rate_schedule,price,RDS-Very Large Load Delivery Class (Secondary)
+IL,12341,59c15f305457a3034bbbb280,medium,rate_schedule,price,Rate GD - General Demand Service
+IL,12341,59c161085457a33652bbb27e,large,rate_schedule,price,Rate LST - Large Electric Time-of-Use Service
+IL,12341,59c162795457a3034bbbb281,large,rate_schedule,price,Rate VLT - Very Large Electric Time-of-Use Service
+IL,12341,59c165775457a3045fbbb27b,small,rate_schedule,price,Rate GET - General Energy Time-of-Use Service
+IL,12341,59c166a05457a3f65ebbb27b,medium,rate_schedule,price,Rate GDT - General Demand Time-of-Use Service
+IL,56697,5cdade015457a3f41d40c5d1,small,rate_schedule,price,DS-2 Small General Service - Zone 1 - Secondary Meter voltage
+IL,56697,5cdae2055457a3591f40c5d1,small,rate_schedule,price,DS-2 Small General Service - Zone 2 - Secondary Meter Voltage
+IL,56697,5cdae65b5457a35e2540c5d3,small,rate_schedule,price,DS-2 Small General Service - Zone 3 - Secondary Meter Voltage
+IL,56697,5cdaed345457a35c2640c5d3,small,rate_schedule,price,DS-2 Small General Service (Over 600 Volt) - Zone 1 - All other Electric Service
+IL,56697,5cdaf1bb5457a3622540c5d2,small,rate_schedule,price,DS-2 Small General Service (Over 600 Volt) - Zone 2 - All other Electric Service
+IL,56697,5cdaf3f55457a3f41d40c5d3,small,rate_schedule,price,DS-2 Small General Service (Over 600 Volt) - Zone 3 - All Other electric service
+IL,56697,5cdb25225457a3d42340c5d1,medium,rate_schedule,price,DS-3 General Service - Zone 1 - Primary Meter Voltage
+IL,56697,5cdb2ab65457a3ad1740c5d2,medium,rate_schedule,price,DS-3 General Service - Zone 2 - Primary Meter Voltage
+IL,56697,5cdb2e2d5457a3d42340c5d2,medium,rate_schedule,price,DS-3 General Service -  Zone 3 - Primary Meter Voltage
+IL,56697,5cdc35f45457a3616340c5d8,large,rate_schedule,price,DS-4 Large General Service - Zone 1 - Primary Voltage
+IL,56697,5cdc37c85457a3e86a40c5d4,large,rate_schedule,price,DS-4 Large General Service - Zone 2 - Primary Voltage
+IL,56697,5cdc39585457a3b42240c5d2,large,rate_schedule,price,DS-4 Large General Service - Zone 3 - Primary Voltage
+MA,11804,5cd5b76e5457a31e1754e9d1,small,rate_schedule,price,G-1 Metered Small Commercial and Industrial
+MA,11804,5cd5e7c25457a3eb4e54e9d1,large,rate_schedule,price,G-2 Demand SEMA Load Zone
+MA,11804,5cd5ed9d5457a3eb4e54e9d2,large,rate_schedule,price,G-2 Demand WCMA Load Zone
+MA,11804,5cd5efea5457a3100d54e9d2,large,rate_schedule,price,G-2 Demand NEMA Load Zone
+MA,11804,5cd97c2d5457a3705640c5d1,large,rate_schedule,price,G-3 Time of Use WCMA Load Zone
+MA,54913,5cd343a85457a3f73d54e9d9,small,rate_schedule,price,Greater Boston General Service without Demand Meter G-1 (A9)
+MA,54913,5cd34ccf5457a38e7454e9d3,small,rate_schedule,price,Greater Boston General Service G-2 (B2)
+MA,54913,5cd34dde5457a3f17454e9d5,small,rate_schedule,price,"Greater Boston General Service Time of Use G-3 (B3, G3)"
+MA,54913,5cd350935457a3f17454e9d7,small,rate_schedule,price,Greater Boston Optional General Time-of-Use T-1 (B5)
+MA,54913,5cd4444b5457a34c3e54e9d1,large,rate_schedule,price,Cambridge Electric Light Company General (Non-Demand) G-0 (06)
+MA,54913,5cd446945457a3250a54e9d3,large,rate_schedule,price,Cambridge Electric Light Company General Serivce (Demand) G-1 (02)
+MA,54913,5cd453125457a3480d54e9d4,large,rate_schedule,price,Cambridge Electric Light Company Optional General Time-of-Use Non-Demand G-6 (51)
+MA,54913,5cd47fa55457a39c5954e9d2,small,rate_schedule,price,South Shore Medium General Time-of-Use G-2 BS (84)
+MA,54913,5cd483c25457a3480d54e9d6,small,rate_schedule,price,Cape Cod and Martha's Vineyard Medium General Time-of-Use G-2 BS (84)
+MA,54913,5cd494885457a3250a54e9d5,small,rate_schedule,price,South Shore Optional General Time-of-Use G-7 BS (55)
+MA,54913,5cd496d45457a3c83d54e9d8,small,rate_schedule,price,Cape Cod and Martha's Vineyard Optional General Time-of-Use G-7 BS (55)
+MA,54913,5cd49f3c5457a30a3f54e9d5,small,rate_schedule,price,Western Massachusetts Small General Service Small General Service Time-Of-Use T-0
+MA,54913,5cd4a0855457a3ef4054e9db,small,rate_schedule,price,Western Massachusetts Primary General Service G-2
+MA,54913,5cd4a23f5457a3243b54e9d7,large,rate_schedule,price,Western Massachusetts Large Primary Service Time-Of-Use T-2 (350-1000 kW)
+MA,54913,5cd4a2dd5457a3250a54e9d8,large,rate_schedule,price,Western Massachusetts Large Primary Service Time-Of-Use T-2 (1000-1500 kW)
+MA,54913,5cd4a3b05457a34c3e54e9dd,large,rate_schedule,price,Western Massachusetts Large Primary Service Time-Of-Use  T-2 (Greater than 1500kW)
+MD,1167,539f6b9fec4f024411ec9f31,medium,rate_schedule,price,Schedule GS (Unbundled)
+MD,1167,539f704eec4f024411ecd85f,small,default_smallest,price,Schedule G (Unbundled) - Primary
+MD,1167,539fb5d4ec4f024bc1dbf93f,small,size_in_name,price,Schedule G (Unbundled) - Secondary
+MD,1167,539fb6c7ec4f024bc1dc042d,small,default_smallest,price,Schedule P (unbundled)
+MD,1167,539fc0a2ec4f024c27d89e1d,small,rate_schedule,price,Schedule GU (Unbundled)
+MD,1167,5d546a355457a3eb4635a086,small,size_in_name,sibling,Schedule G - Secondary
+MD,1167,5d546b255457a34d4435a086,small,default_smallest,sibling,Schedule G - Primary
+MD,1167,5d54716c5457a3674635a088,medium,rate_schedule,price,Schedule GL General Service Large - Secondary Voltage
+MD,1167,5d5474e05457a34e5c35a088,large,kw_window,price,Schedule P Primary Voltage Service
+MD,1167,5de98da65457a3da076a077d,small,kw_window,supply_test,Schedule G - POLR Type I -SOS
+MD,5027,559c0d855457a3b563271883,small,default_smallest,supply_test,"TELECOMMUNICATIONS NETWORK SERVICE ""TN"""
+MD,5027,5d3f522a5457a3dc0edc8c3d,small,rate_schedule,price,"SMALL GENERAL SERVICE - SECONDARY SERVICE ""SGS-S"" Type I customers"
+MD,5027,5d3f55225457a3d71ddc8c3e,small,rate_schedule,price,"SMALL GENERAL SERVICE - SECONDARY SERVICE ""SGS-S"", Type II Customers"
+MD,5027,5d3f583a5457a3f84fdc8c3e,medium,rate_schedule,price,"LARGE GENERAL SERVICE - SECONDARY ""LGS-S"""
+MD,5027,5d3f5e785457a3dc0edc8c3e,small,default_smallest,price,"GENERAL SERVICE - PRIMARY ""GS-P"""
+MD,15263,5bb518c85457a3585168a12a,medium,rate_schedule,price,"SCHEDULE C-A GENERAL SERVICE - ALL ELECTRIC, TYPE I SOS"
+MD,15263,5bb51abe5457a3121068a12d,medium,rate_schedule,price,"SCHEDULE C-A GENERAL SERVICE - ALL ELECTRIC, TYPE II SOS"
+MD,15263,5bb51de45457a3157168a12a,medium,rate_schedule,price,Schedule PH Light and Power Service Type II SOS (PLC less than 600 kW)
+MD,15270,5bad232a5457a38124c4a514,small,rate_schedule,price,General Service (Schedule GS)
+MD,15270,5bad315f5457a3193fc4a515,large,rate_schedule,price,"Time Metered Medium General, Low Voltage- Type II (Schedule MGT LV II)"
+MD,15270,5bad320e5457a3193fc4a516,large,rate_schedule,price,"Time Metered Medium General, Distribution Service - Low Voltage - Type III (Schedule MGT LV III)"
+MD,15270,5bad34de5457a38c68c4a515,large,rate_schedule,price,"Time Metered Medium General, Standard Offer Service - Primary Service - Type II (Schedule MGT 3A II)"
+MD,15270,5bad36405457a38d68c4a514,large,rate_schedule,price,"Time Metered General, Distribution Service - Low Voltage (Schedule GT LV)"
+ME,1179,5cdc8b105457a31b7940c5d1,medium,kw_window,price,General Service Rate
+ME,1179,5cdd719b5457a3552d40c5d2,medium,size_in_name,price,Medium Power Rate - Secondary
+ME,3266,5cd497af5457a39c5954e9d5,medium,kw_window,price,A-LM Load Management Service Variable Price
+ME,3266,5cd499c35457a3ef4054e9d7,small,size_in_name,price,SGS Small General Service Single Phase
+ME,3266,5cd49a4f5457a3ef4054e9d8,small,size_in_name,price,SGS Small General Service Three Phase Bundled Standard Offer
+ME,3266,5cd49aff5457a3481454e9d3,small,size_in_name,price,SGS-TOU Small General Service Time of Use Single Phase
+ME,3266,5cd49ba55457a39c5954e9d6,small,size_in_name,price,SGS-TOU Small General Service Time of Use Three Phase
+ME,3266,5cd49de55457a3480d54e9df,medium,size_in_name,price,MGS-S Medium General Service Secondary Three Phase
+ME,3266,5cd49ee25457a3183a54e9d7,medium,size_in_name,price,MGS-S-TOU Medium General Service Secondary Time of Use Single Phase
+ME,3266,5cd49f965457a3480d54e9e1,medium,size_in_name,price,MGS-S-TOU Medium General Service Secondary Time of Use Three Phase
+ME,3266,5cd4a0405457a3250a54e9d6,medium,size_in_name,price,MGS-P Medium General Service Primary Single Phase
+ME,3266,5cd4a0b05457a34c3e54e9db,medium,size_in_name,price,MGS-P Medium General Service Primary Three Phase
+ME,3266,5cd4a1a55457a3183a54e9d9,medium,size_in_name,price,MGS-P-TOU Medium General Service - Primary - Time-Of-Use (Single Phase)
+ME,3266,5cd4a2385457a3250a54e9d7,medium,size_in_name,price,MGS-P-TOU Medium General Service - Primary - Time-Of-Use (Three Phase)
+ME,3266,5cd4a32b5457a3183a54e9da,large,size_in_name,price,LGS-S-TOU Large General Service Secondary Time of Use
+ME,3266,5cd4a72b5457a3ef4054e9de,medium,size_in_name,price,IGS-S-TOU Intermediate General Service Secondary Time of Use
+ME,3266,5cd4a7c35457a3183a54e9db,small,default_smallest,price,IGS-P-TOU General Service Primary Time of Use
+NH,15472,5d4458235457a3694adc8c3b,small,default_smallest,price,General Service Single-Phase
+NH,15472,5d4459ac5457a36e4fdc8c3b,small,default_smallest,price,General Service Three Phase
+NH,15472,5d4469015457a3b94cdc8c3f,small,default_smallest,price,General Time-of-Day Service Single Phase
+NH,15472,5d446c425457a3604bdc8c3b,large,rate_schedule,price,GV Commercial and Industrial Service
+NH,15472,5d4471ab5457a32f4ddc8c3b,large,rate_schedule,price,"LG, Large Commercial and Industrial Service"
+NH,24590,5592b4c45457a39c3dce8271,small,rate_schedule,supply_test,Schedule G2 Regular General Service Rate
+NH,24590,5592bcf85457a34d47ce826f,small,rate_schedule,supply_test,Schedule G2 KWh Meter (Existing Customers Only)
+NJ,963,60c917a35457a35334f53d22,small,size_in_name,price,MGS Secondary Three Phase (Delivery Service)
+NJ,963,60c920095457a35334f53d23,large,hourly_service_in_name,price,MGS Secondary- Three Phase - BGS-CIEP
+NJ,963,60c920605457a35334f53d24,small,size_in_name,price,MGS Secondary Single Phase (Delivery Service)
+NJ,963,60ca2a705457a38845f53d22,large,hourly_service_in_name,price,MGS Secondary -Single Phase - BGS-CIEP
+NJ,963,60ca2afc5457a3a966f53d23,large,hourly_service_in_name,price,MGS Primary - Three Phase - BGS-CIEP
+NJ,963,60ca2b5c5457a38226f53d22,small,default_smallest,price,MGS Primary Three Phase (Delivery Service)
+NJ,963,60ca2b935457a3de30f53d23,small,default_smallest,price,MGS Primary Single Phase (Delivery Service)
+NJ,963,60cb5f775457a37f33f53d23,large,hourly_service_in_name,price,MGS Primary FP Single Phase-BGS-CIEP
+NJ,963,60cb6add5457a32424f53d23,small,size_in_name,supply_test,AGS Secondary- BGS-RSCP
+NJ,963,60cb6c3d5457a32c67f53d22,large,hourly_service_in_name,price,AGS Secondary- BGS-CIEP
+NJ,963,60cb6c7f5457a32424f53d24,small,size_in_name,price,AGS Secondary (Delivery Service)
+NJ,9726,5d5c482c5457a33233f1ab35,small,size_in_name,supply_test,General Service Secondary (Single Phase)
+NJ,9726,5d5c48925457a30a17f1ab38,small,size_in_name,supply_test,General Service Secondary (Three Phase)
+NJ,9726,5d5c4e975457a33033f1ab38,small,size_in_name,price,General Service Secondary Time-of-Day (Single Phase)
+NJ,9726,5d5c4f015457a33033f1ab39,small,size_in_name,price,General Service Secondary Time-of-Day (Three Phase)
+NJ,16213,54eb554f5357a36118d31519,small,size_in_name,price,General Service- Secondary Service
+NJ,16213,5bc78abf5457a3f06b3b43ec,small,default_smallest,price,General Service- Secondary Demand Billed
+NJ,16213,5bc78be55457a314553b43ed,small,default_smallest,price,General Service- Primary
+NY,3249,5bb64afe5457a3931968a129,small,default_smallest,price,S.C. No. 6 Residential Time-of-Use (Unbundled) (initiated before 12/1/17)
+NY,3249,5d4071e45457a37263dc8c3b,small,size_in_name,price,S.C. No. 2 - General Service Non-Demand (Unbundled)
+NY,3249,5d40744a5457a33e6bdc8c3c,small,size_in_name,price,S.C. No. 2 - General Service Secondary (Unbundled)
+NY,3249,5d4075fe5457a3dc65dc8c3c,small,default_smallest,price,S.C. No. 2 - General Service Primary (Unbundled)
+NY,3249,5d4077865457a3d164dc8c40,large,rate_schedule,supply_test,S.C. No. 3 - Large Power Primary
+NY,3249,5d407ac15457a3df46dc8c3d,small,default_smallest,text_in_band,S.C. No. 6 Residential Time-of-Use (Unbundled) (initiated after 12/1/17)
+NY,3249,5d407e645457a3056adc8c3c,large,rate_schedule,supply_test,S.C. No. 13 - Large Power Substation
+NY,3249,5d407f025457a3dc65dc8c3d,large,rate_schedule,supply_test,S.C. No. 13 - Large Power Transmission
+NY,11171,5d6828d05457a30234c68cdb,all,single_class,supply_test,280 (Small General Service)
+NY,11171,5d682ffe5457a3fb3bc68cdc,all,single_class,price,288 (Small General Service Time-Of-Use)
+NY,11171,5d6830e95457a3593cc68cdd,all,single_class,price,281 (Large General Service Secondary)
+NY,11171,5d6831fc5457a3593cc68cde,all,single_class,price,281 (Large General Service Primary)
+NY,11171,5d6834075457a3dc36c68cdc,all,single_class,supply_test,282 (Large General Service Secondary Time-Of-Use)
+NY,11171,5d68390b5457a3dc36c68cdd,all,single_class,supply_test,282 (Large General Service Primary Time-Of-Use)
+NY,11171,5d683b845457a38e1bc68cdd,all,single_class,price,285 - Secondary
+NY,11171,5d683c5a5457a30234c68cdc,all,single_class,price,285 - Primary
+NY,11171,5d683eb75457a3593cc68ce1,all,single_class,supply_test,284 - Secondary Service
+NY,11171,5d68446a5457a3ab71c68ce1,all,single_class,price,284 - Primary Service
+NY,13511,5994ed255457a39067e27213,all,single_class,price,SC-2
+NY,13511,5994edab5457a3dd28e27216,all,single_class,price,SC-3
+NY,13511,5994ee0b5457a3dd28e27217,all,single_class,price,SC-6
+NY,13511,5d309c9d5457a31167bef219,all,single_class,price,All Regions- SERVICE CLASSIFICATION NO. 2 - NYSEG 12002 - Non-Residential Demand - ESCO
+NY,13511,5d30aa485457a34e6abef219,all,single_class,supply_test,All Regions - SERVICE CLASSIFICATION NO. 6 General Service - ESCO
+NY,13511,5d30d5255457a3656abef21c,all,single_class,price,All Regions - SERVICE CLASSIFICATION NO. 9 General Service - Day Night Service -ESCO
+NY,13573,56f5b2f95457a3f8207112bd,small,kw_window,price,SC2- Zone B (Metered)
+NY,13573,56f5b3715457a3f8207112be,small,kw_window,price,SC2- Zone C (Metered)
+NY,13573,56f5b41a5457a303147112bd,small,kw_window,price,SC2- Zone D (Metered)
+NY,13573,56f5b4825457a326077112be,small,kw_window,price,SC2- Zone E (Metered)
+NY,13573,56f5b4f75457a332157112bd,small,kw_window,price,SC2- Zone F (Metered)
+NY,13573,56f5b7105457a3be307112be,small,kw_window,price,SC2- All Zones (Metered-Provision P)
+NY,13573,5d8cee1d5457a3af5c1dcd3f,small,kw_window,price,SC2- All Zones (Metered)
+NY,14154,539fb89bec4f024bc1dc1937,small,size_in_name,price,SC20 General Secondary Optional Time-of-Use Service - Unbundled
+NY,14154,539fb9a5ec4f024bc1dc24f3,large,rate_schedule,price,SC2 Commercial Secondary Demand Billed Service - Unbundled Service
+NY,14154,5592e78e5457a3a740ce8275,large,rate_schedule,price,SC2 Commercial Primary Demand Billed Service-Unbundled
+NY,14154,5592f6cf5457a3b525ce826f,large,rate_schedule,price,SC2 Commercial Secondary Demand Billed Service-Unbundled Retail
+NY,14154,559402275457a34034ce826c,medium,rate_schedule,price,SC3 General Primary Service - Unbundled
+NY,14154,559409ba5457a3dc34ce826d,large,rate_schedule,price,SC9 General Commercial Service over 1000kW primary service - Unbundled
+NY,14154,55940b6a5457a32d42ce826d,large,rate_schedule,price,SC9 General Commercial Service over 1000kW substation service - Unbundled
+NY,14154,559436bb5457a34034ce826e,small,default_smallest,price,SC21 General Primary Optional Time-of-use Service - unbundled
+NY,14154,559438e85457a3a634ce826e,large,rate_schedule,price,SC22 Large Commercial Service over 1000kW Primary - Unbundled
+NY,14154,559439cb5457a3be34ce8272,large,rate_schedule,price,SC22 Large Commercial Service over 1000kW Substation - Unbundled
+NY,14154,5bce3a335457a3e33f3037ae,large,rate_schedule,sibling,SC9 General Commercial Service over 1000kW Substation service - Bundled
+NY,14154,5bd0bd805457a380713037ac,large,rate_schedule,sibling,SC22 Large Commercial Service over 1000kW Substation - Bundled
+NY,14154,5bd0dd945457a3ad1f3037ab,large,rate_schedule,sibling,SC22 Large Commercial Service over 1000kW Substation
+NY,14154,5bd0ea925457a3a0333037ab,small,default_smallest,sibling,SC21 General Primary Optional Time-of-use Service
+NY,14154,5bd0ec265457a366523037ab,small,size_in_name,sibling,SC20 General Secondary Optional Time-of-Use Service
+NY,14154,5bd743615457a39c3f287d4a,large,rate_schedule,price,SC9 General Commercial Service over 1000kW Primary service - Delivery
+NY,14154,5bd744625457a36c20287d4a,large,rate_schedule,price,SC9 General Commercial Service over 1000kW Substation service - Delivery
+NY,14154,5bd7454b5457a37b5d287d4a,medium,rate_schedule,price,SC3 General Primary Service - Delivery
+NY,14154,5bd7494a5457a36838287d4a,large,rate_schedule,price,SC2 Commercial Secondary Demand Billed Service - Delivery
+NY,14154,5bd74e675457a39c3f287d4b,large,rate_schedule,price_over_text,SC2 Commercial Primary Demand Billed Service - Delivery
+NY,16183,5d8e4c125457a37f0a1dcd3e,all,single_class,price,SERVICE CLASSIFICATION NO. 2 GENERAL SERVICE - SMALL-USE RSS - ESCO
+NY,16183,5d8e4c485457a3092c1dcd3f,all,single_class,price,SERVICE CLASSIFICATION NO. 2 GENERAL SERVICE - SMALL-USE RSS (Non-Retail Access Rate Choice)
+NY,16183,5d8e4ca45457a3820a1dcd3e,all,single_class,price,SERVICE CLASSIFICATION NO. 3 GENERAL SERVICE - 100 KILOWATTS MINIMUM RSS
+NY,16183,5d8e4d165457a3d5431dcd3e,all,single_class,supply_test,SERVICE CLASSIFICATION NO. 3 GENERAL SERVICE - 100 KILOWATTS MINIMUM RSS (Non-Retail Access Rate Choice)
+OH,3542,5d8297d75457a3db05d27e60,medium,rate_schedule,price,Rate DS - SERVICE AT SECONDARY DISTRIBUTION VOLTAGE - Single Phase
+OH,3542,5d8299585457a3f10fd27e60,medium,rate_schedule,price,Rate DS - SERVICE AT SECONDARY DISTRIBUTION VOLTAGE - Three Phase
+OH,3542,5d82a1c35457a3cd0bd27e5e,small,rate_schedule,price,Rate DM - Secondary Distribution small - Three Phase
+OH,3542,5d82a3755457a3a66bd27e60,large,rate_schedule,price,Rate DP - Service at Primary Distribution Voltage
+OH,3755,5d80fd865457a3e871d27e5f,small,rate_schedule,price_over_text,GS (General Service-Secondary)
+OH,3755,5d8100085457a35f1bd27e5e,small,rate_schedule,price_over_text,"GS-TOD (General Service-Secondary, Time of Day)"
+OH,4922,5d7953885457a3c8447db2ea,all,default_smallest,price_over_text,Secondary Single Phase Service
+OH,4922,5d7956535457a321787db2ea,all,default_smallest,price_over_text,Secondary Three Phase Service
+OH,14006,5964ee0a5457a34b4a4c9f92,small,rate_schedule,price_over_text,Secondary General Service (GS-1)
+OH,14006,5964f3d15457a361024c9f92,large,rate_schedule,price_over_text,General Service Secondary Bundled (GS-2)
+OH,14006,5964f7d85457a34a4a4c9f93,large,rate_schedule,price_over_text,General Service Primary Bundled (GS-2)
+OH,14006,5964fd975457a30c144c9f92,large,rate_schedule,price_over_text,General Service Subtransmission Bundled (GS-2)
+OH,14006,596500e45457a34b4a4c9f94,large,rate_schedule,price_over_text,General Service Time-of-Day Bundled (GS-TOD)
+OH,14006,596505a65457a3494a4c9f92,large,rate_schedule,price_over_text,General Service Secondary Bundled (GS-3)
+OH,14006,596509c25457a3494a4c9f93,large,rate_schedule,price_over_text,General Service Transmission Bundled (GS-3)
+OH,14006,5bb271c65457a3735768a12c,large,rate_schedule,price_over_text,General Service Subtransmission (GS-3) Ohio Zone
+OH,14006,5bb275d85457a3115b68a12b,large,rate_schedule,price_over_text,General Service Primary (GS-3) Ohio Rate Zone
+OH,14006,5bb27a365457a3607f68a129,large,rate_schedule,price_over_text,General Service Secondary (GS-3) Ohio Zone
+OH,14006,5bb4fd165457a35a2168a129,large,rate_schedule,price_over_text,General Service Time-of-Day  (GS-TOD) Ohio Power Company Rate Zone
+OH,14006,5bb543605457a3464968a12d,large,rate_schedule,price_over_text,General Service Subtransmission (GS-2)
+OH,18997,599f42735457a3f83573790b,small,rate_schedule,price,GS (General Service-Secondary) - Three Phase
+OH,18997,5d9263a85457a3106161b9f2,small,rate_schedule,price_over_text,GS (General Service-Secondary)
+OH,18997,5d9265515457a31b1161b9f2,small,rate_schedule,price_over_text,GS (General Service-Secondary) Time of Day
+OH,18997,5d92667e5457a3511161b9f3,large,rate_schedule,price_over_text,GP (General Service-Primary)
+OH,18997,5d9268315457a3191161b9f4,large,rate_schedule,price_over_text,GP (General Service-Primary) Time of Day
+PA,5487,5d69569b5457a3b103c68cdd,medium,rate_schedule,price,GM - General Service Medium Less than 25 kW
+PA,5487,5d69572f5457a3a202c68cdb,medium,rate_schedule,price,GM - General Service Medium (Greater than or equal to 25 kW)
+PA,12390,5baa78515457a34079c4a518,small,default_smallest,supply_test,"Rate GS - Volunteer Fire Company and Non-Profit Ambulance Service, Rescue Squad and Senior Center Service Rate"
+PA,12390,5d76a6985457a3f2717db2ea,small,size_in_name,price,Rate GS - General Service Secondary Rate - Non Demand Metered
+PA,12390,5d76ac3a5457a38c147db2eb,small,default_smallest,price,"Rate GS -Medium Secondary Rate- Metered, Three Phase"
+PA,14715,5ed683185457a3367add15ad,large,rate_schedule,price,Large General Service (GS-3)
+PA,14940,5ba91a225457a3467cc4a515,large,kw_window,price,General Service Demand Measured (GSA) Single Phase Class 4
+PA,14940,5ba9253f5457a3832cc4a514,small,kw_window,price,General Service Polyphase Service (GSA) Delivery
+PA,14940,5ba94f525457a3832cc4a516,large,rate_schedule,price,GS-PD (Primary-Distribution Power) Procurement Delivery
+PA,14940,6113f8575457a3b00ff802c7,small,kw_window,price,General Service Not Demand Measured (GSA) Single Phase Class 2
+PA,14940,6113f98c5457a3f75af802cb,large,kw_window,price,General Service Not Demand Measured (GSA) Single Phase Class 3
+PA,14940,6113fcfe5457a33c08f802c7,large,kw_window,price,General Service Not Demand Measured (GSA) Single Phase Class 4
+PA,14940,6113fdda5457a3b00ff802c9,large,kw_window,price,General Service Demand Metered (GSA) Single Phase Class 4
+PA,14940,61140ef25457a3f75af802cc,small,kw_window,price,General Service Demand Measured (GSA) Single Phase Class 2
+PA,14940,61140f835457a30236f802c6,large,kw_window,price,General Service Polyphase Service (GSA) Class 3
+PA,14940,61141cb65457a30236f802c7,small,kw_window,price,General Service Polyphase Service (GSA) Class 2
+PA,14940,61141d515457a3d957f802c6,large,kw_window,price,General Service Polyphase Service (GSA) Class 4
+PA,20387,5d7fe23b5457a36312d27e5f,small,default_smallest,price,20 (General Service)
+PA,20387,5d7fe5fb5457a32712d27e5e,small,default_smallest,price,30 (General Power Service 400kW)
+RI,13214,5d434fd45457a3c72fdc8c3e,small,rate_schedule,price,Small Commercial (C-06)
+RI,13214,5d4351985457a38f63dc8c3d,medium,rate_schedule,price,G-02 (General C & I Rate)
+RI,13214,5d4352615457a3727bdc8c3c,large,rate_schedule,price,G-32 (Large Demand)
