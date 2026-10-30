@@ -107,6 +107,61 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     return elec_bills, list_of_labels_to_remove.uniq
   end
 
+  # Year of the supply prices added to delivery-only tariffs. Bills are reported in 2022 dollars,
+  # so supply is priced in 2022 and is not escalated like the tariffs' own charges.
+  SUPPLY_YEAR = 2022
+
+  # Load the supply (default service) prices for URDB tariffs that carry delivery charges only
+  # (see resources/supply/README.md). Returns the tariffs, {[state, label] => supply class}, and
+  # the prices, {[state, eiaid, class] => {min_kw:, max_kw:, usd_per_kwh: [12], usd_per_kw_month: [12]}}.
+  def load_supply_resources
+    supply_dir = File.join(File.dirname(__FILE__), 'resources', 'supply')
+    tariffs = {}
+    CSV.foreach(File.join(supply_dir, 'delivery_only_tariffs.csv'), headers: true) do |row|
+      tariffs[[row['state'], row['label']]] = row['supply_class']
+    end
+    prices = {}
+    CSV.foreach(File.join(supply_dir, 'supply_prices.csv'), headers: true) do |row|
+      next unless row['year'].to_i == SUPPLY_YEAR
+
+      key = [row['state'], row['eiaid'], row['supply_class']]
+      cls = prices[key] ||= {
+        min_kw: row['class_min_kw'].nil? ? nil : row['class_min_kw'].to_f,
+        max_kw: row['class_max_kw'].nil? ? nil : row['class_max_kw'].to_f,
+        usd_per_kwh: Array.new(12), usd_per_kw_month: Array.new(12, 0.0)
+      }
+      m = row['month'].to_i - 1
+      cls[:usd_per_kwh][m] = row['supply_usd_per_kwh'].to_f
+      cls[:usd_per_kw_month][m] = row['supply_usd_per_kw_month'].to_f unless row['supply_usd_per_kw_month'].nil?
+    end
+    # Only classes with a price in every month
+    prices.select! { |_, cls| cls[:usd_per_kwh].none?(&:nil?) }
+    return tariffs, prices
+  end
+
+  # Supply class for a building on a delivery-only tariff. The tariff's own class stands unless the
+  # utility defines classes by demand: a building outside its class's kW bounds moves to the class
+  # whose bounds contain its peak, and a building in an unbounded class moves to a class with a
+  # lower kW limit above zero that its peak reaches (e.g. hourly-priced service from 100 kW).
+  def supply_class_for(prices, state, eiaid, tariff_class, peak_kw)
+    classes = prices.select { |key, _| key[0] == state && key[1] == eiaid }
+    contains = ->(cls) { (cls[:min_kw].nil? || peak_kw >= cls[:min_kw]) && (cls[:max_kw].nil? || peak_kw < cls[:max_kw]) }
+    bounded = classes.reject { |_, cls| cls[:min_kw].nil? && cls[:max_kw].nil? }
+    own = classes[[state, eiaid, tariff_class]]
+    return nil if own.nil? && classes.empty?
+
+    if own && (own[:min_kw] || own[:max_kw])
+      return tariff_class if contains.call(own)
+
+      match = bounded.find { |_, cls| contains.call(cls) }
+      return match.nil? ? tariff_class : match[0][2]
+    end
+    above = bounded.select { |_, cls| cls[:min_kw].to_f > 0 && contains.call(cls) }
+    return above.max_by { |_, cls| cls[:min_kw] }[0][2] unless above.empty?
+
+    return own ? tariff_class : nil
+  end
+
   # return applicable utility rates statistics
   def get_utility_rates_statistics(runner, elec_bills)
     # Get bill values and sort
@@ -332,6 +387,9 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
       elec_rate_states[row['label']] = row['state'] unless row['state'].nil? || row['state'].empty?
     end
 
+    # Supply prices for tariffs that carry delivery charges only (retail choice states)
+    delivery_only_tariffs, supply_prices = load_supply_resources
+
     # Look up the utility EIA IDs based on the potential census tracts for the sampling region
     state_eia_map = Hash.new { |h, k| h[k] = [] }
     elec_eia_ids = []
@@ -509,6 +567,21 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
                  end
 
             command = "#{py} #{calc_elec_bill_py_path} #{elec_csv_path} #{rate_path}"
+
+            # A tariff with delivery charges only also pays the default service supply price
+            supply_note = nil
+            tariff_class = delivery_only_tariffs[[state_abbreviation, rate_label]]
+            unless tariff_class.nil?
+              supply_class = supply_class_for(supply_prices, state_abbreviation, elec_eia_id.to_s, tariff_class, max_kw)
+              supply = supply_class.nil? ? nil : supply_prices[[state_abbreviation, elec_eia_id.to_s, supply_class]]
+              if supply.nil?
+                runner.registerWarning("#{rate_name} carries delivery charges only, but no #{SUPPLY_YEAR} supply prices were found for utility #{elec_eia_id} in #{state_abbreviation}; billing delivery only.")
+              else
+                command += " --supply-usd-per-kwh #{supply[:usd_per_kwh].join(',')} --supply-usd-per-kw-month #{supply[:usd_per_kw_month].join(',')}"
+                supply_note = "#{supply_class} class #{SUPPLY_YEAR} supply"
+              end
+            end
+
             stdout_str, stderr_str, status = Open3.capture3(command)
             # Remove the warning string from the PySAM output if necessary.
             # The bills are typically reasonable despite this warning.
@@ -537,6 +610,16 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
               utility_bill_dollars_base_yr_dc_tou = (utility_bill_dollars_base_yr_dc_tou * (1.0 + pct_inc)).round.to_i
               utility_bill_dollars_base_yr_ec = (utility_bill_dollars_base_yr_ec * (1.0 + pct_inc)).round.to_i
               utility_bill_dollars_base_yr_fixed = (utility_bill_dollars_base_yr_fixed * (1.0 + pct_inc)).round.to_i
+
+              # Supply is already in SUPPLY_YEAR (2022) dollars: add it after escalating the delivery charges
+              unless supply_note.nil?
+                supply_energy = pysam_out['supply_energy_charge_dollars'].to_f
+                supply_demand = pysam_out['supply_demand_charge_dollars'].to_f
+                total_utility_bill_dollars_2022 = (total_utility_bill_dollars_2022 + supply_energy + supply_demand).round.to_i
+                utility_bill_dollars_base_yr_ec = (utility_bill_dollars_base_yr_ec + supply_energy).round.to_i
+                utility_bill_dollars_base_yr_dc_flat = (utility_bill_dollars_base_yr_dc_flat + supply_demand).round.to_i
+                runner.registerInfo("#{rate_name} carries delivery charges only: added #{supply_note}, $#{supply_energy.round} energy and $#{supply_demand.round} demand.")
+              end
 
               rate_results_total[rate_label] = total_utility_bill_dollars_2022
               rate_results_demandcharge_flat[rate_label] = utility_bill_dollars_base_yr_dc_flat
@@ -620,6 +703,8 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     runner.registerValue('electricity_utility_bill_results', "#{electricity_bill_results}")
     # Which version of the rate-file state assignments (resources/elec_rate_states.csv) billed this run
     runner.registerValue('electricity_rate_files_by_state', 'v1')
+    # Which version of the supply prices for delivery-only tariffs (resources/supply/) billed this run
+    runner.registerValue('electricity_supply_for_delivery_only_tariffs', 'v1')
     runner.registerValue('state_avg_electricity_cost_results', "#{state_avg_elec_results}")
     runner.registerValue('state_avg_naturalgas_cost_results', "#{state_avg_ng_results}")
     runner.registerValue('state_avg_propane_cost_results', "#{state_avg_propane_results}")

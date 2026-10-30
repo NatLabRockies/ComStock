@@ -6,6 +6,9 @@ tracts of that state. Electricity bills use URDB tariffs through PySAM (`resourc
 escalated from each tariff's start year to 2022 by the state's average yearly increase in commercial
 electricity prices; natural gas, propane and fuel oil use EIA state averages.
 
+Tariffs that carry delivery charges only, in retail choice states, also pay the utility's default
+service supply price for 2022, added after escalation (`resources/supply/`, see its README).
+
 ## Outputs
 
 - `electricity_utility_bill_results`: one block per (state, utility),
@@ -16,6 +19,9 @@ electricity prices; natural gas, propane and fuel oil use EIA state averages.
 - `state_avg_*_cost_results`: one block per state, `|<state>:<dollars>|`, for each fuel.
 - `electricity_rate_files_by_state`: the version of `resources/elec_rate_states.csv` applied (see below).
   Kept in the raw results for provenance; postprocessing does not export it.
+- `electricity_supply_for_delivery_only_tariffs`: the version of the supply prices in `resources/supply/`
+  applied. Runs made before it lack this output and billed delivery-only tariffs without supply. Kept in
+  the raw results for provenance; postprocessing does not export it.
 
 ## Resources and how to maintain them
 

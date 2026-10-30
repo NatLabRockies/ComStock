@@ -709,6 +709,130 @@ class UtilityBillsTest < Minitest::Test
     assert(pacificorp.count('UT') > 0)
   end
 
+  # Every delivery-only tariff in resources/supply/ is a rate file present, billed in its state, and
+  # its supply class has a price for each month of the supply year
+  def test_supply_resources_match_rate_files
+    resources = File.join(__dir__, '..', 'resources')
+    rate_states = {}
+    CSV.foreach(File.join(resources, 'elec_rate_states.csv'), headers: true) { |r| rate_states[r['label']] = r['state'].to_s }
+    tariffs_csv = CSV.read(File.join(resources, 'supply', 'delivery_only_tariffs.csv'), headers: true)
+    refute_empty(tariffs_csv)
+    tariffs, prices = UtilityBills.new.load_supply_resources
+    tariffs_csv.each do |r|
+      assert(File.exist?(File.join(resources, 'elec_rates', r['eiaid'], "#{r['label']}.json")), "#{r['label']}: no rate file")
+      assert_includes([r['state'], ''], rate_states[r['label']], "#{r['label']} is assigned to #{rate_states[r['label']]}, not #{r['state']}")
+      supply = prices[[r['state'], r['eiaid'], tariffs[[r['state'], r['label']]]]]
+      refute_nil(supply, "#{r['state']} #{r['eiaid']} #{r['supply_class']}: no #{UtilityBills::SUPPLY_YEAR} supply prices")
+      # New England's monthly-priced large-customer supply reached 33-49 cents/kWh in December 2022
+      supply[:usd_per_kwh].each { |p| assert(p > 0.02 && p < 0.60, "#{r['label']}: supply #{p} $/kWh") }
+    end
+  end
+
+  # calc_elec_bill.py bills supply as monthly kWh x $/kWh plus monthly peak kW x $/kW-month, and leaves
+  # the tariff's own bill unchanged
+  def test_calc_elec_bill_supply_charges
+    elec_csv_path = File.expand_path(File.join(__dir__, 'test_electricity_hourly.csv'))
+    calc_elec_bill_path = File.expand_path(File.join(__dir__, '..', 'resources', 'calc_elec_bill.py'))
+    # PECO General Service, a delivery-only tariff
+    tariffs = CSV.read(File.join(__dir__, '..', 'resources', 'supply', 'delivery_only_tariffs.csv'), headers: true)
+    peco = tariffs.find { |r| r['eiaid'] == '14940' }
+    rate_path = File.expand_path(File.join(__dir__, '..', 'resources', 'elec_rates', '14940', "#{peco['label']}.json"))
+    usd_per_kwh = (0..11).map { |m| 0.06 + 0.005 * m }
+    usd_per_kw = (0..11).map { |m| 1.0 + 0.25 * m }
+    run_py = lambda do |extra|
+      stdout_str, stderr_str, status = Open3.capture3("python #{calc_elec_bill_path} #{elec_csv_path} #{rate_path} #{extra}")
+      assert(status.success?, "stdout: #{stdout_str}, stderr: #{stderr_str}")
+      JSON.parse(stdout_str.gsub('Billing Demand Notice.', '').lines.last.strip)
+    end
+    base = run_py.call('')
+    with_supply = run_py.call("--supply-usd-per-kwh #{usd_per_kwh.join(',')} --supply-usd-per-kw-month #{usd_per_kw.join(',')}")
+    assert_equal(base['total_utility_bill_dollars'], with_supply['total_utility_bill_dollars'])
+    refute(base.key?('supply_energy_charge_dollars'))
+
+    kwh = File.readlines(elec_csv_path).map(&:to_f)
+    days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    energy = 0.0
+    demand = 0.0
+    i = 0
+    days.each_with_index do |d, m|
+      month = kwh[i, 24 * d]
+      energy += month.sum * usd_per_kwh[m]
+      demand += month.max * usd_per_kw[m]
+      i += 24 * d
+    end
+    assert_in_delta(energy, with_supply['supply_energy_charge_dollars'], 0.01)
+    assert_in_delta(demand, with_supply['supply_demand_charge_dollars'], 0.01)
+  end
+
+  # The supply class follows the tariff, except where the utility defines classes by demand
+  def test_supply_class_for
+    months = Array.new(12, 0.1)
+    cls = ->(min_kw, max_kw) { { min_kw: min_kw, max_kw: max_kw, usd_per_kwh: months, usd_per_kw_month: Array.new(12, 0.0) } }
+    measure = UtilityBills.new
+    # kW-defined classes (PECO-like): small < 100 kW, large from 100 kW
+    pa = { ['PA', '1', 'small'] => cls.call(nil, 100.0), ['PA', '1', 'large'] => cls.call(100.0, nil) }
+    assert_equal('small', measure.supply_class_for(pa, 'PA', '1', 'small', 40))
+    assert_equal('large', measure.supply_class_for(pa, 'PA', '1', 'small', 250))
+    assert_equal('small', measure.supply_class_for(pa, 'PA', '1', 'large', 40))
+    # classes by rate schedule only (MA-like): the tariff's class stands
+    ma = { ['MA', '2', 'small'] => cls.call(nil, nil), ['MA', '2', 'large'] => cls.call(nil, nil) }
+    assert_equal('small', measure.supply_class_for(ma, 'MA', '2', 'small', 900))
+    # an unbounded class moves to an hourly class with a kW floor its peak reaches (ComEd-like)
+    il = { ['IL', '3', 'small'] => cls.call(nil, nil), ['IL', '3', 'medium'] => cls.call(0.0, 100.0), ['IL', '3', 'large'] => cls.call(100.0, nil) }
+    assert_equal('small', measure.supply_class_for(il, 'IL', '3', 'small', 30))
+    assert_equal('large', measure.supply_class_for(il, 'IL', '3', 'small', 300))
+    # no prices for the utility
+    assert_nil(measure.supply_class_for(il, 'IL', '9', 'small', 30))
+  end
+
+  # A building on PECO's delivery-only tariffs pays default service supply on top of delivery
+  def test_sm_hotel_delivery_only_tariffs_get_supply
+    test_name = 'sm_hotel_delivery_only_supply'
+    model_in_path = "#{__dir__}/1004_SmallHotel_a.osm"
+    # Sampling region 29 covers southeastern PA; this Delaware County tract is served by PECO (EIA 14940)
+    sampling_region = '29'
+    census_tract = 'G4201010036303'
+    state_abbreviation = 'PA'
+    year = 1999
+    assert_equal('14940', get_utility_for_tract(census_tract))
+
+    measure = UtilityBills.new
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    arguments = measure.arguments
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    idf_output_requests = measure.energyPlusOutputRequests(OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new), argument_map)
+    setup_test(test_name, idf_output_requests, sampling_region, census_tract, state_abbreviation, year, model_in_path)
+    assert(File.exist?(sql_path(test_name)), "Could not find sql file at #{sql_path(test_name)}")
+    runner.setLastOpenStudioModelPath(OpenStudio::Path.new(model_out_path(test_name)))
+    runner.setLastEnergyPlusWorkspacePath(OpenStudio::Path.new(workspace_path(test_name)))
+    runner.setLastEpwFilePath('')
+    runner.setLastEnergyPlusSqlFilePath(OpenStudio::Path.new(sql_path(test_name)))
+    start_dir = Dir.pwd
+    begin
+      Dir.chdir(run_dir(test_name))
+      measure.run(runner, argument_map)
+      result = runner.result
+      assert_equal('Success', result.value.valueName)
+    ensure
+      Dir.chdir(start_dir)
+    end
+    rvs = {}
+    result.stepValues.each do |value|
+      name_val = JSON.parse(value.string)
+      rvs[name_val['name']] = name_val['value']
+    end
+    assert_equal('v1', rvs['electricity_supply_for_delivery_only_tariffs'])
+    supply_msgs = result.info.map(&:logMessage).select { |msg| msg.include?('carries delivery charges only: added') }
+    refute_empty(supply_msgs)
+    # The PECO block is billed, and the PA blocks average at least 6 cents/kWh once supply is in
+    blocks = rvs['electricity_utility_bill_results'].split('|').reject(&:empty?).map { |b| b.split(':') }
+    peco = blocks.find { |b| b[0] == '14940' && b[-1] == 'PA' }
+    refute_nil(peco)
+    # the measure writes the hourly kWh next to the EnergyPlus output
+    kwh = File.readlines(File.join(run_dir(test_name), 'run', 'electricity_hourly.csv')).map(&:to_f).sum
+    assert(peco[9].to_f / kwh > 0.06, "PECO mean bill #{peco[9]} for #{kwh.round} kWh")
+  end
+
   # A utility serving several states: a Utah building is billed under PacifiCorp's Utah rates only
   def test_sm_hotel_multistate_utility_rates_by_state
     test_name = 'sm_hotel_multistate_utility'

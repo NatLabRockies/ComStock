@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>utility_bills</name>
   <uid>eba532c2-efac-41fe-b7cb-b4538bb02c32</uid>
-  <version_id>5536f02a-2605-4960-b2e8-be1731ee2ed9</version_id>
-  <version_modified>2026-10-15T18:55:41Z</version_modified>
+  <version_id>332a13c2-1cd6-4795-8ece-e25652d92aa7</version_id>
+  <version_modified>2026-10-30T19:15:18Z</version_modified>
   <xml_checksum>15BF4E57</xml_checksum>
   <class_name>UtilityBills</class_name>
   <display_name>Utility Bills</display_name>
@@ -33,19 +33,19 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>60CC75EA</checksum>
+      <checksum>CC2AE2C5</checksum>
     </file>
     <file>
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>5E83F14E</checksum>
+      <checksum>53CE6AB3</checksum>
     </file>
     <file>
       <filename>calc_elec_bill.py</filename>
       <filetype>py</filetype>
       <usage_type>resource</usage_type>
-      <checksum>F638C0D3</checksum>
+      <checksum>DA160F33</checksum>
     </file>
     <file>
       <filename>build_elec_rate_states.py</filename>
@@ -58,6 +58,18 @@
       <filetype>csv</filetype>
       <usage_type>resource</usage_type>
       <checksum>A0A30AB7</checksum>
+    </file>
+    <file>
+      <filename>delivery_only_tariffs.csv</filename>
+      <filetype>csv</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>8CBF4343</checksum>
+    </file>
+    <file>
+      <filename>supply_prices.csv</filename>
+      <filetype>csv</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>416AB49B</checksum>
     </file>
     <file>
       <filename>eia_com_elec_avg_yrly_rate_increase.json</filename>
@@ -63675,7 +63687,7 @@
       <filename>utility_bills_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>1557D61C</checksum>
+      <checksum>F402404A</checksum>
     </file>
   </files>
 </measure>
