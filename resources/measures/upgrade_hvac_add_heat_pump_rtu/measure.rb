@@ -22,7 +22,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     'two_speed_standard_eff' => 'performance_maps_hprtu_std.json',
     'two_speed_lab_data' => 'performance_maps_hprtu_lab_data.json',
     'variable_speed_high_eff' => 'performance_maps_hprtu_variable_speed.json',
-    'cchpc_2027_spec' => 'performance_map_CCHP_spec_2027.json'
+    'cchpc_2027_spec' => 'performance_map_CCHP_spec_2027.json',
+    'cchpc_2027_typical' => 'performance_map_CCHP_typical_2027.json'
   }.freeze
 
   # performance curve names in each scenario's json, listed by stage (first entry is stage 1)
@@ -37,6 +38,16 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     heat_cap_ff: ['h_cap_allstages_ff'],
     heat_eir_ff: ['h_eir_allstages_ff']
   }.freeze
+  CCHP_CURVE_NAMES = {
+    cool_cap_ft: ['cool_cap_ft1', 'cool_cap_ft2', 'cool_cap_ft3', 'cool_cap_ft4'],
+    cool_eir_ft: ['cool_eir_ft1', 'cool_eir_ft2', 'cool_eir_ft3', 'cool_eir_ft4'],
+    cool_cap_ff: ['cool_cap_ff1'] * 4,
+    cool_eir_ff: ['cool_eir_ff1'] * 4,
+    heat_cap_ft: ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'],
+    heat_eir_ft: ['h_eir_low', 'h_eir_medium', 'h_eir_high', 'h_eir_boost'],
+    heat_cap_ff: ['h_cap_allstages_ff'] * 4,
+    heat_eir_ff: ['h_eir_allstages_ff'] * 4
+  }.freeze
   SCENARIO_CURVE_NAMES = {
     'two_speed_standard_eff' => TWO_SPEED_CURVE_NAMES,
     'two_speed_lab_data' => TWO_SPEED_CURVE_NAMES,
@@ -50,16 +61,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       heat_cap_ff: ['heat_cap_ff1'] * 4,
       heat_eir_ff: ['heat_eir_ff1'] * 4
     }.freeze,
-    'cchpc_2027_spec' => {
-      cool_cap_ft: ['cool_cap_ft1', 'cool_cap_ft2', 'cool_cap_ft3', 'cool_cap_ft4'],
-      cool_eir_ft: ['cool_eir_ft1', 'cool_eir_ft2', 'cool_eir_ft3', 'cool_eir_ft4'],
-      cool_cap_ff: ['cool_cap_ff1'] * 4,
-      cool_eir_ff: ['cool_eir_ff1'] * 4,
-      heat_cap_ft: ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'],
-      heat_eir_ft: ['h_eir_low', 'h_eir_medium', 'h_eir_high', 'h_eir_boost'],
-      heat_cap_ff: ['h_cap_allstages_ff'] * 4,
-      heat_eir_ff: ['h_eir_allstages_ff'] * 4
-    }.freeze
+    'cchpc_2027_spec' => CCHP_CURVE_NAMES,
+    'cchpc_2027_typical' => CCHP_CURVE_NAMES
   }.freeze
 
   # user-selectable heat pump heating sizing temperatures
@@ -156,7 +159,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     # heat pump RTU performance scenario
     hprtu_scenario = OpenStudio::Measure::OSArgument.makeChoiceArgument('hprtu_scenario', SCENARIO_PERFORMANCE_JSON.keys, true)
     hprtu_scenario.setDisplayName('Heat Pump RTU Performance Type')
-    hprtu_scenario.setDescription('Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification.  ')
+    hprtu_scenario.setDescription('Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification. cchpc_2027_typical is a 4-stage unit representing a typical product that passed the cold climate heat pump RTU challenge, based on lab test data from one middle-performing unit among the lab-tested challenge units.')
     hprtu_scenario.setDefaultValue('two_speed_standard_eff')
     args << hprtu_scenario
 

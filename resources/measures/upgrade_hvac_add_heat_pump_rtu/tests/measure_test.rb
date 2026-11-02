@@ -1455,13 +1455,14 @@ class AddHeatPumpRtuTest < Minitest::Test
     w_per_ton = 3516.852842
     # rated COP at 3, 10 and 30 tons from the two lines each json holds, each held inside its own fitted capacity range:
     # two-speed (Carrier/Lennox, 2023 federal minimum), cooling 10.26-81.47 kW and heating 9.73-80.30 kW, and variable-speed
-    # (the ten lab-tested Challenge units plus Daikin Rebel and NEXIO Max DVH, the same records as the Challenge typical unit's json),
-    # cooling 10.55-96.71 kW and heating 18.76-89.61 kW
+    # (the ten lab-tested Challenge units plus Daikin Rebel and NEXIO Max DVH, used by variable_speed_high_eff, cchpc_2027_spec and
+    # cchpc_2027_typical), cooling 10.55-96.71 kW and heating 18.76-89.61 kW
     expected = {
       'two_speed_standard_eff' => { 'cooling' => [3.77192, 3.51737, 3.03857], 'heating' => [3.86802, 3.65872, 3.275] },
       'two_speed_lab_data' => { 'cooling' => [3.77192, 3.51737, 3.03857], 'heating' => [3.86802, 3.65872, 3.275] },
       'variable_speed_high_eff' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] },
-      'cchpc_2027_spec' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] }
+      'cchpc_2027_spec' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] },
+      'cchpc_2027_typical' => { 'cooling' => [4.03845, 3.89862, 3.54905], 'heating' => [3.97754, 3.84479, 3.40438] }
     }
     SCENARIO_PERFORMANCE_JSON.each_key do |scenario|
       table = scenario_json(scenario)['tables']['curves']['table']
@@ -1643,5 +1644,24 @@ class AddHeatPumpRtuTest < Minitest::Test
   def test_dual_fuel_cchpc_spec_lockout_neg10F_option
     verify_dual_fuel_options_lookup_row('test_dual_fuel_cchpc_spec_lockout_neg10F_option', 'dual_fuel_cchpc_spec_lockout_neg10F',
                                         'cchpc_2027_spec', 4, ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'])
+  end
+
+  # scenario 3 (CCHPC typical dual fuel RTU): -10F gas backup lockout and the four cchpc_2027_typical heating stages
+  def test_dual_fuel_cchpc_typical_lockout_neg10F_option
+    test_name = 'test_dual_fuel_cchpc_typical_lockout_neg10F_option'
+    verify_dual_fuel_options_lookup_row(test_name, 'dual_fuel_cchpc_typical_lockout_neg10F',
+                                        'cchpc_2027_typical', 4, ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'])
+
+    # the spec and typical jsons share curve names, so check that the boost stage's
+    # table holds the typical json's values, in the order the measure sorts them
+    rec = scenario_json('cchpc_2027_typical')['tables']['curves']['table'].find { |e| e['name'] == 'h_cap_boost' }
+    expected = rec.select { |k, _v| k.include?('data_point') }.values.map { |v| v.split(',').map(&:to_f) }.sort.map(&:last)
+    applied = load_model(model_output_path(test_name))
+    applied.getAirLoopHVACUnitarySystems.each do |system|
+      boost = system.heatingCoil.get.to_CoilHeatingDXMultiSpeed.get.stages.last
+      actual = boost.heatingCapacityFunctionofTemperatureCurve.to_TableLookup.get.outputValues
+      assert_equal(expected.size, actual.size, "boost heating table size for #{system.name}")
+      expected.zip(actual).each { |e, a| assert_in_delta(e, a, 1e-6, "boost heating table for #{system.name} is not the typical json's") }
+    end
   end
 end
