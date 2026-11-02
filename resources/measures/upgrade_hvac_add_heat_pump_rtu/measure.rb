@@ -499,11 +499,13 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # adjust stage airflows and capacities to keep each stage within the rated cfm/ton limits
   # the rated stage is left as-is; lower stages are adjusted in order of preference:
   #   - flow/ton too low: increase stage airflow to the minimum
-  #   - flow/ton too high: reduce stage airflow if the minimum airflow ratio allows, otherwise increase the
+  #   - flow/ton too high: reduce stage airflow if the minimum airflow ratio and the minimum OA flow allow, otherwise increase the
   #     stage capacity up to 65% of the range to the next stage, otherwise remove the stage (set to false)
+  # the minimum OA flow takes priority over the cfm/ton limits: a stage is never reduced below it, even if that leaves it out of range
   # the stage hashes are modified in place and returned
   def adjust_cfm_per_ton_per_limits(stage_cap_fractions, stage_flows, stage_flow_fractions, dx_rated_cap_applied,
-                                    rated_stage_num, old_terminal_sa_flow_m3_per_s, min_airflow_ratio, air_loop_hvac, heating_or_cooling, runner, debug_verbose)
+                                    rated_stage_num, old_terminal_sa_flow_m3_per_s, min_airflow_ratio, min_oa_flow_m3_per_s, air_loop_hvac,
+                                    heating_or_cooling, runner, debug_verbose)
     m_3_per_s_per_w_min = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MIN_RATED)
     m_3_per_s_per_w_max = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MAX_RATED)
 
@@ -550,8 +552,9 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         ratio_allowance_50_pct = ratio + ((stage_cap_fractions[stage + 1] - ratio) * 0.65)
         required_stage_cap_ratio = airflow / m_3_per_s_per_w_max / (stage_cap_fractions[rated_stage_num] * dx_rated_cap_applied)
         stage_airflow_limit_max = m_3_per_s_per_w_max * stage_capacity
-        if (stage_airflow_limit_max / old_terminal_sa_flow_m3_per_s) >= min_airflow_ratio
-          # reduce the stage airflow without violating the minimum airflow ratio
+        # min_airflow_ratio is relative to the heating design airflow, so for cooling it alone can allow a cut below the OA flow
+        if ((stage_airflow_limit_max / old_terminal_sa_flow_m3_per_s) >= min_airflow_ratio) && (stage_airflow_limit_max >= min_oa_flow_m3_per_s)
+          # reduce the stage airflow without violating the minimum airflow ratio or the minimum OA flow
           stage_flows[stage] = stage_airflow_limit_max
           stage_flow_fractions[stage] = stage_airflow_limit_max / old_terminal_sa_flow_m3_per_s
           stage_caps[stage] = stage_capacity
@@ -596,6 +599,17 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     num_stages = stage_caps.length
 
     [stage_flows, stage_caps, stage_flow_fractions, stage_cap_fractions, num_stages]
+  end
+
+  # stages whose rated cfm/ton is outside the limits after sizing, as [stage, cfm/ton] pairs; removed stages (false) are skipped
+  def stages_outside_cfm_per_ton_limits(stage_flows, stage_caps)
+    stage_flows.sort.filter_map do |stage, flow|
+      cap = stage_caps[stage]
+      next unless flow.is_a?(Numeric) && cap.is_a?(Numeric) && cap.positive?
+
+      cfm_per_ton = m_3_per_sec_watts_to_cfm_per_ton(flow / cap)
+      [stage, cfm_per_ton] if cfm_per_ton.round(0) < CFM_PER_TON_MIN_RATED || cfm_per_ton.round(0) > CFM_PER_TON_MAX_RATED
+    end
   end
 
   # create the DX cooling coil; single speed for 1 stage, otherwise multispeed
@@ -1396,6 +1410,12 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     # ---------------------------------------------------------
     # replace existing applicable air loops with new heat pump rtu air loops
     # ---------------------------------------------------------
+    # air loops left with a stage outside the cfm/ton limits, in all and where a stage is held there by the minimum OA flow
+    air_loops_outside_cfm_per_ton = 0
+    air_loops_outside_cfm_per_ton_min_oa = 0
+    # air loops with a stage removed, in all and where OA sets the airflow floor
+    air_loops_with_removed_stages = 0
+    air_loops_with_removed_stages_min_oa = 0
     selected_air_loops.sort.each do |air_loop_hvac|
       thermal_zone = air_loop_hvac.thermalZones[0]
       hvac_operation_sched = air_loop_hvac.availabilitySchedule
@@ -1705,7 +1725,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
       if debug_verbose
         runner.registerInfo("sizing summary: design_airflow_for_sizing_m_3_per_s = #{design_airflow_for_sizing_m_3_per_s}")
-        runner.registerInfo("sizing summary: min_oa_flow_ratio = #{min_oa_flow_ratio} | min_flow = #{min_flow}")
+        runner.registerInfo("sizing summary: current_min_oa_flow_ratio = #{current_min_oa_flow_ratio} | min_flow = #{min_flow} | min_airflow_ratio = #{min_airflow_ratio}")
         runner.registerInfo("sizing summary: min_airflow_m3_per_s = #{min_airflow_m3_per_s}")
       end
 
@@ -1743,12 +1763,49 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # align stage cfm/ton with the limits where possible; this may remove some lower stages
       stage_flows_heating, stage_caps_heating, _, _, num_heating_stages = adjust_cfm_per_ton_per_limits(
         stage_cap_fractions_heating, stage_flows_heating, stage_flow_fractions_heating, dx_rated_htg_cap_applied, rated_stage_num_heating,
-        design_heating_airflow_m_3_per_s, min_airflow_ratio, air_loop_hvac, 'heating', runner, debug_verbose
+        design_heating_airflow_m_3_per_s, min_airflow_ratio, oa_flow_m3_per_s, air_loop_hvac, 'heating', runner, debug_verbose
       )
       stage_flows_cooling, stage_caps_cooling, _, _, num_cooling_stages = adjust_cfm_per_ton_per_limits(
         stage_cap_fractions_cooling, stage_flows_cooling, stage_flow_fractions_cooling, dx_rated_clg_cap_applied, rated_stage_num_cooling,
-        design_cooling_airflow_m_3_per_s, min_airflow_ratio, air_loop_hvac, 'cooling', runner, debug_verbose
+        design_cooling_airflow_m_3_per_s, min_airflow_ratio, oa_flow_m3_per_s, air_loop_hvac, 'cooling', runner, debug_verbose
       )
+
+      # the minimum OA flow takes priority over the cfm/ton limits, so a stage held at it can be left out of range;
+      # warn about every stage out of range, and count the air loops so a ComStock run shows how often it happens
+      # a stage is held by OA when it is above the maximum cfm/ton at the airflow floor and OA sets that floor
+      stage_flows_by_mode = { 'heating' => [stage_flows_heating, stage_caps_heating], 'cooling' => [stage_flows_cooling, stage_caps_cooling] }
+      stages_out_of_range = stage_flows_by_mode.to_h do |mode, (flows, caps)|
+        stages = stages_outside_cfm_per_ton_limits(flows, caps).map do |stage, cfm_per_ton|
+          held_by_oa = (current_min_oa_flow_ratio > min_flow) && (cfm_per_ton > CFM_PER_TON_MAX_RATED) && (flows[stage] <= min_airflow_m3_per_s * 1.001)
+          [stage, cfm_per_ton, held_by_oa]
+        end
+        [mode, stages]
+      end
+      stages_out_of_range.reject! { |_mode, stages| stages.empty? }
+      unless stages_out_of_range.empty?
+        air_loops_outside_cfm_per_ton += 1
+        air_loops_outside_cfm_per_ton_min_oa += 1 if stages_out_of_range.values.flatten(1).any? { |_stage, _cfm_per_ton, held_by_oa| held_by_oa }
+        stage_details = stages_out_of_range.map do |mode, stages|
+          "#{mode} " + stages.map { |stage, cfm_per_ton, held_by_oa| "stage #{stage} at #{cfm_per_ton.round(0)} cfm/ton#{' (held at the minimum OA flow)' if held_by_oa}" }.join(', ')
+        end
+        runner.registerWarning("#{air_loop_hvac.name}: #{stage_details.join('; ')}, outside the #{CFM_PER_TON_MIN_RATED} to #{CFM_PER_TON_MAX_RATED} " \
+                               "cfm/ton limits (minimum OA ratio #{current_min_oa_flow_ratio.round(3)}, minimum airflow ratio #{min_flow}).")
+      end
+
+      # stages removed because they could be neither cut to the maximum cfm/ton (the airflow floor) nor raised in capacity enough;
+      # the coil fills a removed stage with a copy of the lowest kept stage, so the unit loses turndown
+      # a removal is due to OA when OA sets the airflow floor
+      stages_removed = { 'heating' => stage_flows_heating, 'cooling' => stage_flows_cooling }.transform_values do |flows|
+        flows.select { |_stage, flow| flow == false }.keys.sort
+      end
+      stages_removed.reject! { |_mode, stages| stages.empty? }
+      unless stages_removed.empty?
+        air_loops_with_removed_stages += 1
+        air_loops_with_removed_stages_min_oa += 1 if current_min_oa_flow_ratio > min_flow
+        removed_details = stages_removed.map { |mode, stages| "#{mode} stage#{'s' if stages.size > 1} #{stages.join(', ')}" }
+        runner.registerWarning("#{air_loop_hvac.name}: #{removed_details.join('; ')} removed, above #{CFM_PER_TON_MAX_RATED} cfm/ton at the airflow floor " \
+                               "(minimum OA ratio #{current_min_oa_flow_ratio.round(3)}, minimum airflow ratio #{min_flow}).")
+      end
 
       if debug_verbose
         runner.registerInfo('sizing summary: after cfm/ton adjustments for lower stages')
@@ -1897,11 +1954,11 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_fan.setFanPowerMinimumFlowFraction(fan_min_flow_ratio)
 
       if debug_verbose
-        runner.registerInfo("fan summary: scenario=#{hprtu_scenario} | fan_type=#{fan_type} | impeller_eff=#{fan_impeller_efficiency.round(3)} | " \
+        runner.registerInfo("fan summary: air_loop=#{air_loop_hvac.name} | scenario=#{hprtu_scenario} | fan_type=#{fan_type} | impeller_eff=#{fan_impeller_efficiency.round(3)} | " \
                             "bhp=#{fan_brake_hp.round(2)} | nominal_hp=#{fan_nominal_hp} | motor_eff=#{fan_motor_efficiency.round(3)} | " \
                             "total_eff=#{(fan_impeller_efficiency * fan_motor_efficiency).round(3)} | " \
                             "lowest_stage_flow=#{lowest_stage_flow_ratio} | specified_min_flow=#{specified_min_flow_fraction} | " \
-                            "min_oa_ratio=#{current_min_oa_flow_ratio.round(3)} | " \
+                            "min_oa_ratio=#{current_min_oa_flow_ratio.round(3)} | min_flow=#{min_flow} | " \
                             "fan_min_flow=#{fan_min_flow_ratio.round(3)}")
       end
 
@@ -2050,6 +2107,13 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         hx.setNominalElectricPower(power)
       end
     end
+
+    # report how many air loops were left outside the cfm/ton limits, for the ComStock results
+    runner.registerValue('hprtu_air_loops_replaced', selected_air_loops.size)
+    runner.registerValue('hprtu_air_loops_outside_cfm_per_ton', air_loops_outside_cfm_per_ton)
+    runner.registerValue('hprtu_air_loops_outside_cfm_per_ton_min_oa', air_loops_outside_cfm_per_ton_min_oa)
+    runner.registerValue('hprtu_air_loops_with_removed_stages', air_loops_with_removed_stages)
+    runner.registerValue('hprtu_air_loops_with_removed_stages_min_oa', air_loops_with_removed_stages_min_oa)
 
     # report final condition of model
     condition_final_hprtu = "The building finished with heat pump RTUs replacing the HVAC equipment for #{selected_air_loops.size} air loops."

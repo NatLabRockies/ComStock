@@ -602,6 +602,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       assert(clg_coil_spd3.grossRatedTotalCoolingCapacity.get > clg_coil_spd2.grossRatedTotalCoolingCapacity.get)
       assert(clg_coil_spd2.grossRatedTotalCoolingCapacity.get > clg_coil_spd1.grossRatedTotalCoolingCapacity.get)
     end
+
+    # the hard-sized model is what EnergyPlus runs, so check the minimum OA airflow floors there
+    assert_airflows_meet_min_oa(model, test_name)
     result
   end
 
@@ -912,6 +915,88 @@ class AddHeatPumpRtuTest < Minitest::Test
     assert(min_flow <= 1.0 + 1e-6, "#{label}: minimum flow fraction #{min_flow.round(4)} exceeds 1.0")
   end
 
+  # the measure's debug_verbose fan summary lines, keyed by air loop name, each a field => value hash
+  def fan_summaries(result)
+    result.info.map(&:logMessage).select { |m| m.start_with?('fan summary: ') }.to_h do |m|
+      fields = m.delete_prefix('fan summary: ').split(' | ').to_h { |f| f.split('=', 2) }
+      [fields['air_loop'], fields]
+    end
+  end
+
+  # ---------------------------------------------------------
+  # minimum outdoor air helpers
+  # ---------------------------------------------------------
+
+  # minimum outdoor air flow of an air loop's outdoor air controller, hard-sized or autosized
+  def min_oa_flow_m3_per_s(air_loop_hvac)
+    controller_oa = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+    unwrap_optional(controller_oa.minimumOutdoorAirFlowRate) || unwrap_optional(controller_oa.autosizedMinimumOutdoorAirFlowRate)
+  end
+
+  # rated airflow of every stage of a single speed or multispeed DX coil
+  def dx_coil_stage_airflows(coil)
+    if coil.to_CoilHeatingDXMultiSpeed.is_initialized
+      coil.to_CoilHeatingDXMultiSpeed.get.stages.map { |st| unwrap_optional(st.ratedAirFlowRate) }
+    elsif coil.to_CoilCoolingDXMultiSpeed.is_initialized
+      coil.to_CoilCoolingDXMultiSpeed.get.stages.map { |st| unwrap_optional(st.ratedAirFlowRate) }
+    elsif coil.to_CoilHeatingDXSingleSpeed.is_initialized
+      [unwrap_optional(coil.to_CoilHeatingDXSingleSpeed.get.ratedAirFlowRate)]
+    elsif coil.to_CoilCoolingDXSingleSpeed.is_initialized
+      [unwrap_optional(coil.to_CoilCoolingDXSingleSpeed.get.ratedAirFlowRate)]
+    else
+      []
+    end
+  end
+
+  # assert every heat pump RTU moves at least its minimum outdoor air (OA) flow whenever its fan runs: the no-load airflow,
+  # every heating and cooling stage airflow, and the fan power floor (fan power minimum flow fraction x loop design airflow)
+  # unitary systems the measure skipped (no DX heating coil, e.g. kitchens) are left out
+  # @return [Array<Hash>] per RTU: air loop name, OA flow, loop design airflow, no-load airflow and fan power minimum flow fraction
+  def assert_airflows_meet_min_oa(model, label)
+    rtus = model.getAirLoopHVACUnitarySystems.sort.select do |us|
+      us.airLoopHVAC.is_initialized && us.heatingCoil.is_initialized &&
+        (us.heatingCoil.get.to_CoilHeatingDXMultiSpeed.is_initialized || us.heatingCoil.get.to_CoilHeatingDXSingleSpeed.is_initialized)
+    end
+    refute_empty(rtus, "#{label}: no heat pump RTUs to check")
+
+    rtus.map do |us|
+      air_loop_hvac = us.airLoopHVAC.get
+      name = "#{label} #{air_loop_hvac.name}"
+      oa = min_oa_flow_m3_per_s(air_loop_hvac)
+      design = unwrap_optional(air_loop_hvac.designSupplyAirFlowRate)
+      no_load = unwrap_optional(us.supplyAirFlowRateWhenNoCoolingorHeatingisRequired)
+      fan_floor = unwrap_optional(us.supplyFan.get.to_FanVariableVolume.get.fanPowerMinimumFlowFraction)
+      refute_nil(oa, "#{name}: no minimum OA flow")
+      refute_nil(design, "#{name}: no design supply airflow")
+      refute_nil(no_load, "#{name}: no no-load supply airflow")
+      tol = oa * 1e-6
+
+      assert(no_load >= oa - tol, "#{name}: no-load airflow #{no_load.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
+      stage_flows = dx_coil_stage_airflows(us.heatingCoil.get) + dx_coil_stage_airflows(us.coolingCoil.get)
+      stage_flows.each do |flow|
+        refute_nil(flow, "#{name}: a DX coil stage has no rated airflow")
+        assert(flow >= oa - tol, "#{name}: a DX coil stage airflow #{flow.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
+      end
+      assert(fan_floor * design >= oa - tol,
+             "#{name}: fan power floor #{fan_floor.round(4)} x design airflow #{design.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
+
+      { air_loop: air_loop_hvac.name.to_s, oa: oa, design: design, no_load: no_load, fan_floor: fan_floor }
+    end
+  end
+
+  # assert EnergyPlus never cut an air loop's outdoor air because its supply (mixed) airflow was too small,
+  # from the Outdoor Air Controller Limiting Factors by AirLoop table of an annual run
+  def assert_oa_never_limited_by_mixed_air_flow(test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+    query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName = 'OutdoorAirDetails' " \
+            "AND TableName = 'Outdoor Air Controller Limiting Factors by AirLoop' AND ColumnName = 'Mixed Air Flow' AND RowName != ''"
+    hours = sql.execAndReturnVectorOfString(query).get.map(&:to_f)
+    refute_empty(hours, "#{test_name}: no Outdoor Air Controller Limiting Factors rows in the sql")
+    assert(hours.all?(&:zero?), "#{test_name}: outdoor air limited by the mixed air flow for up to #{hours.max} hours in an air loop")
+  ensure
+    sql&.close
+  end
+
   # ---------------------------------------------------------
   # setback helpers
   # ---------------------------------------------------------
@@ -1040,6 +1125,7 @@ class AddHeatPumpRtuTest < Minitest::Test
       assert(curve_names.all? { |n| expected_heating_cap_curves.include?(n) },
              "heating coil for #{system.name} uses #{curve_names}, expected #{expected_hprtu_scenario} curves #{expected_heating_cap_curves}")
     end
+    assert_airflows_meet_min_oa(applied, option_name)
   end
 
   # ##########################################################################
@@ -1292,6 +1378,8 @@ class AddHeatPumpRtuTest < Minitest::Test
     model = load_model(model_output_path(__method__))
 
     verify_cfm_per_ton(model, result)
+    assert_airflows_meet_min_oa(model, __method__)
+    assert_oa_never_limited_by_mixed_air_flow(__method__)
   end
 
   # cfm/ton check for the upsized standard unit with a sizing run and an annual simulation, with a lookup table value check
@@ -1312,6 +1400,8 @@ class AddHeatPumpRtuTest < Minitest::Test
 
     verify_lookup_table_value(model, table_name: 'c_eir_high_T', ind1: 22.22, ind2: 35.0, dep: 0.9438)
     verify_cfm_per_ton(model, result)
+    assert_airflows_meet_min_oa(model, __method__)
+    assert_oa_never_limited_by_mixed_air_flow(__method__)
   end
 
   # ##########################################################################
@@ -1567,6 +1657,136 @@ class AddHeatPumpRtuTest < Minitest::Test
       # static pressure is a property of the duct system, not the equipment, and must be identical between scenarios and unchanged from the original fan
       assert_in_delta(ts.pressureRise, vs.pressureRise, 1e-6, "#{vs.name}: static pressure should not differ between scenarios")
     end
+  end
+
+  # the minimum outdoor air (OA) wins over the json's minimum airflow (minimum_flow_fraction: 0.3 variable speed, 0.40 two-speed)
+  # the restaurant's OA is up to about half its design airflow, so its no-load airflow and fan power floor must come out at the OA ratio
+  # the measure's OA ratio is OA / heating design airflow but is applied to the loop design airflow (the larger of heating and cooling),
+  # so the floor is at least the OA flow; the debug_verbose fan summary line gives each air loop's ratio
+  def test_min_oa_overrides_min_airflow
+    announce_test('test_min_oa_overrides_min_airflow')
+    osm_path = model_input_path('380_full_service_restaurant_psz_gas_coil.osm')
+    epw_path = epw_input_path('GA_ROBINS_AFB_722175_12.epw')
+    ['variable_speed_high_eff', 'cchpc_2027_spec', 'cchpc_2027_typical', 'two_speed_standard_eff'].each do |scenario|
+      test_name = "test_min_oa_overrides_min_airflow_#{scenario}"
+      measure = AddHeatPumpRtu.new
+      argument_map = build_argument_map(measure.arguments(load_model(osm_path)), 'hprtu_scenario' => scenario, 'debug_verbose' => true)
+      result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true)
+      rtus = assert_airflows_meet_min_oa(load_model(model_output_path(test_name)), scenario)
+
+      fan_data = fan_data_for(scenario)
+      min_flow = fan_data['minimum_flow_fraction']
+      summaries = fan_summaries(result)
+      oa_wins = 0
+      rtus.each do |rtu|
+        label = "#{scenario} #{rtu[:air_loop]}"
+        summary = summaries[rtu[:air_loop]]
+        refute_nil(summary, "#{label}: no fan summary line")
+        assert_in_delta(min_flow, summary['min_flow'].to_f, 1e-6, "#{label}: the measure did not use the json's minimum_flow_fraction")
+        oa_ratio = summary['min_oa_ratio'].to_f
+        expected_floor = [oa_ratio, min_flow].max
+
+        # the heating design airflow is no larger than the loop design airflow, so the measure's ratio is at least the model's OA / design
+        assert(oa_ratio >= (rtu[:oa] / rtu[:design]) - 1e-3,
+               "#{label}: OA ratio #{oa_ratio} is below the model's OA / design airflow #{(rtu[:oa] / rtu[:design]).round(4)}")
+        assert_in_delta(expected_floor, rtu[:no_load] / rtu[:design], 1e-3,
+                        "#{label}: no-load airflow fraction should be the larger of the OA ratio #{oa_ratio} and the minimum airflow #{min_flow}")
+        if fan_data['fan_type'] == 'variable_speed'
+          assert_in_delta(expected_floor, rtu[:fan_floor], 1e-3,
+                          "#{label}: fan power floor should be the larger of the OA ratio #{oa_ratio} and the minimum airflow #{min_flow}")
+        else
+          assert(rtu[:fan_floor] >= oa_ratio - 1e-3, "#{label}: fan power floor #{rtu[:fan_floor].round(4)} is below the OA ratio #{oa_ratio}")
+        end
+        oa_wins += 1 if oa_ratio > min_flow + 0.01
+      end
+      assert(oa_wins.positive?, "#{scenario}: no RTU has an OA ratio above the minimum airflow #{min_flow}, so OA winning is not tested")
+
+      # the counts reported for the ComStock results: OA holds no stage outside the cfm/ton limits here
+      # (the CCHP heating stages above the rated one can be out of range for other reasons, so the total is not checked)
+      values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s] }
+      assert_equal(rtus.size.to_s, values['hprtu_air_loops_replaced'], "#{scenario}: replaced air loop count")
+      refute_nil(values['hprtu_air_loops_outside_cfm_per_ton'], "#{scenario}: no count of air loops outside the cfm/ton limits")
+      assert_equal('0', values['hprtu_air_loops_outside_cfm_per_ton_min_oa'], "#{scenario}: air loops held outside the cfm/ton limits by OA")
+      refute_nil(values['hprtu_air_loops_with_removed_stages'], "#{scenario}: no count of air loops with removed stages")
+      refute_nil(values['hprtu_air_loops_with_removed_stages_min_oa'], "#{scenario}: no count of air loops with stages removed due to OA")
+    end
+  end
+
+  # a lower stage whose cfm/ton is too high may be cut to 450 cfm/ton, but never below the minimum OA flow
+  # the minimum airflow ratio is OA / heating design airflow while the cooling cut is judged against the cooling design airflow,
+  # so this checks the case where the heating design airflow is the larger: heating 1.0, cooling 0.8, OA 0.5 m3/s, json minimum 0.3,
+  # cooling rated at 400 cfm/ton; stage 1 (half the rated capacity) starts at the 0.5 m3/s floor, which is above 450 cfm/ton
+  def test_stage_cut_keeps_min_oa_airflow
+    announce_test('test_stage_cut_keeps_min_oa_airflow')
+    measure = AddHeatPumpRtu.new
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    heating_airflow = 1.0
+    cooling_airflow = 0.8
+    oa_flow = 0.5
+    min_airflow_ratio = [oa_flow / heating_airflow, 0.3].max
+    min_airflow = min_airflow_ratio * [heating_airflow, cooling_airflow].max
+    rated_cooling_cap = cooling_airflow / measure.cfm_per_ton_to_m_3_per_sec_watts(400)
+
+    stage_cap_fractions = { 1 => 0.5, 2 => 0.65, 3 => 0.8, 4 => 1.0 }
+    stage_flow_fractions = { 1 => 0.3, 2 => 0.5, 3 => 0.75, 4 => 1.0 }
+    stage_flows = stage_flow_fractions.transform_values { |ratio| [ratio * cooling_airflow, min_airflow].max }
+    stage_flows, = measure.adjust_cfm_per_ton_per_limits(stage_cap_fractions, stage_flows, stage_flow_fractions, rated_cooling_cap, 4,
+                                                         cooling_airflow, min_airflow_ratio, oa_flow, nil, 'cooling', runner, false)
+    stage_flows.each do |stage, flow|
+      next if flow == false
+
+      assert(flow >= oa_flow - 1e-9, "cooling stage #{stage} airflow #{flow.round(4)} m3/s is below the minimum OA flow #{oa_flow} m3/s")
+    end
+  end
+
+  # with OA at 80% or 95% of the design airflow, the lower stages can't be cut to the maximum cfm/ton, so stages are removed;
+  # at 95% the stage below the rated one also can't be raised enough, so it is held at the OA flow above the maximum cfm/ton
+  # OA still wins (every airflow at least the OA flow), and the measure warns about and counts both kinds of air loop
+  def test_min_oa_held_stage_is_counted
+    announce_test('test_min_oa_held_stage_is_counted')
+    osm_path = model_input_path('380_small_office_psz_gas_coil_7A.osm')
+    epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
+    { 0.8 => false, 0.95 => true }.each do |oa_fraction, expect_held|
+      test_name = "test_min_oa_held_stage_is_counted_#{(oa_fraction * 100).round}pct"
+      model = load_model(osm_path)
+      model.getAirLoopHVACs.each do |air_loop_hvac|
+        design_flow = unwrap_optional(air_loop_hvac.designSupplyAirFlowRate) || unwrap_optional(air_loop_hvac.autosizedDesignSupplyAirFlowRate)
+        air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir.setMinimumOutdoorAirFlowRate(oa_fraction * design_flow)
+      end
+      measure = AddHeatPumpRtu.new
+      argument_map = build_argument_map(measure.arguments(model), 'hprtu_scenario' => 'variable_speed_high_eff')
+      result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
+      rtus = assert_airflows_meet_min_oa(load_model(model_output_path(test_name)), test_name)
+      values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_i] }
+      warnings = result.warnings.map(&:logMessage)
+
+      # every unit loses stages to OA
+      assert_equal(rtus.size, values['hprtu_air_loops_with_removed_stages_min_oa'], "#{test_name}: air loops with stages removed due to OA")
+      assert_equal(rtus.size, values['hprtu_air_loops_with_removed_stages'], "#{test_name}: air loops with stages removed")
+      assert_equal(rtus.size, warnings.count { |w| w.include?(' removed, above ') }, "#{test_name}: one removal warning per air loop")
+
+      held = values['hprtu_air_loops_outside_cfm_per_ton_min_oa']
+      if expect_held
+        assert(held.positive?, "#{test_name}: no air loop counted as held outside the cfm/ton limits by OA")
+      else
+        assert_equal(0, held, "#{test_name}: at 80% OA the remaining stages should be inside the cfm/ton limits")
+      end
+      assert(held <= values['hprtu_air_loops_outside_cfm_per_ton'], "#{test_name}: more OA-held air loops than air loops outside the limits")
+      assert_equal(held, warnings.count { |w| w.include?('(held at the minimum OA flow)') }, "#{test_name}: one warning per OA-held air loop")
+    end
+  end
+
+  # the measure warns about and counts stages left outside the cfm/ton limits (the minimum OA flow wins over them)
+  def test_stages_outside_cfm_per_ton_limits
+    announce_test('test_stages_outside_cfm_per_ton_limits')
+    measure = AddHeatPumpRtu.new
+    cap_w = 10_000.0
+    flow_at = ->(cfm_per_ton) { measure.cfm_per_ton_to_m_3_per_sec_watts(cfm_per_ton) * cap_w }
+    stage_flows = { 1 => flow_at.call(600), 2 => false, 3 => flow_at.call(450), 4 => flow_at.call(250) }
+    stage_caps = { 1 => cap_w, 2 => false, 3 => cap_w, 4 => cap_w }
+    out_of_range = measure.stages_outside_cfm_per_ton_limits(stage_flows, stage_caps)
+    assert_equal([1, 4], out_of_range.map(&:first), 'stages 1 (600 cfm/ton) and 4 (250 cfm/ton) are out of range; 2 is removed, 3 is at the limit')
+    assert_in_delta(600, out_of_range.first.last, 1e-6)
   end
 
   # a backup coil matching the original fuel must burn the building's original fuel; fuel oil and propane coils are
