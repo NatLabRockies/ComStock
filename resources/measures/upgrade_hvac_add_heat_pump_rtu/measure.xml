@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_add_heat_pump_rtu/measure.rb'</error>
   <name>add_heat_pump_rtu</name>
   <uid>f4567a68-27f2-4a15-ae91-ba0f35cd08c7</uid>
-  <version_id>c9f84023-5c70-46a1-9a0f-d41872955f62</version_id>
-  <version_modified>2025-10-06T15:04:54Z</version_modified>
+  <version_id>1a4b9f2e-33fd-4e52-8100-49965f212c60</version_id>
+  <version_modified>2026-09-23T03:38:33Z</version_modified>
   <xml_checksum>5E2576E4</xml_checksum>
   <class_name>AddHeatPumpRtu</class_name>
   <display_name>add_heat_pump_rtu</display_name>
@@ -318,7 +319,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>39FE80C4</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -341,7 +342,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>F4B40836</checksum>
+      <checksum>792EFDBC</checksum>
     </file>
     <file>
       <filename>call_other_measures.rb</filename>
@@ -377,7 +378,7 @@
       <filename>sched_methods.rb</filename>
       <filetype>rb</filetype>
       <usage_type>resource</usage_type>
-      <checksum>8788DDD5</checksum>
+      <checksum>83EC021A</checksum>
     </file>
     <file>
       <filename>example_model.osm</filename>
@@ -389,7 +390,7 @@
       <filename>measure_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>6660D57F</checksum>
+      <checksum>5CD9E9E6</checksum>
     </file>
   </files>
 </measure>
