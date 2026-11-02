@@ -1,6 +1,6 @@
 \section{Service Water Heating}
 
-Service water heating (SWH) includes all water heating usage other than space heating and process requirements. This includes general water heating for uses such as sink faucets and showers, but also building-type-specific uses like commercial dish washing and laundry. This section describes how SWH equipment, fuel type, and usage is incorporated into ComStock models.   
+Service water heating (SWH) includes all water heating usage other than space heating and process requirements. This includes general water heating for uses such as sink faucets and showers, but also building-type-specific uses like commercial dish washing and laundry. This section describes how SWH equipment, fuel type, and usage is incorporated into ComStock models.
 
 \subsection{Service Water Heating Fuel Type}
 \label{sec:SWH_Fuel_Type}
@@ -23,30 +23,25 @@ To represent this variability, we used the CBECS 2012 data to create a distribut
   \label{fig:swh_fuel_area}
 \end{figure}
 
+\subsection{Service Water Heating Usage}
+\label{sec:swh_usage}
+
+Hot water use is a property of what happens in a space, not of the building that contains it, so SWH draws are defined per space type. Each space type that uses hot water resolves to a water use equipment record that lists one or more draws, each with a peak flow rate per square foot of the space's floor area, the mixed water temperature delivered at the fixture (110\textdegree F for hand washing and showers, 120\textdegree F for general kitchen use, 140\textdegree F for laundry, 180\textdegree F for dish sanitizing), the sensible and latent fractions of the draw that enter the space, and the type of loop that serves the draw. The records were carried over from the DOE prototype and reference building models and the DEER prototypes, with each prototype space type crosswalked onto its space type name so that exactly one record owns each space type. Table~\ref{tab:swh_flow_rates} lists the draws for every space type that uses hot water.
+
+Because one kitchen record cannot describe both a restaurant kitchen and a hospital kitchen---the restaurant draws roughly six times as much hot water per square foot---the building type definitions (Section~\ref{sec:building_spec}) override the draw where a building type uses a space differently from the generic type record. Restaurant, hotel, and hospital kitchens, outpatient treatment rooms, and hotel guest rooms carry such overrides, and they are listed alongside the stock records in Table~\ref{tab:swh_flow_rates}. An override states only the fields it changes; a draw it sets to zero is not created.
+
+Each draw is placed in every space of its space type and sized on that space's floor area. SWH usage for a given time step is the draw's peak flow rate multiplied by the usage fraction schedule for the time step. The usage fraction schedule is the hot water equipment schedule of the space type's parametric schedule set (Section~\ref{sec:parametric_schedules}), derived from the space type's occupancy schedule in the same way as its lighting and equipment schedules, so hot water draws follow the building's sampled hours of operation and the space type's own daily pattern. Space types with no hot water equipment schedule in their set draw no hot water.
+
 \subsection{Service Water Heating System Type}
 
-Service water heaters in ComStock models are all storage tank style, and are either fuel combustion (natural gas, fuel oil, or propane) or electric resistance, as discussed in  Section~\ref{sec:SWH_Fuel_Type}. Service water heaters with district heating as the fuel type receive hot water from off-site; therefore, these models do not include an on-site water heater. ComStock does not currently model instantaneous water heaters or heat pump water heaters. A single water heater is used to meet the demands of the entire building, unless a booster water loop is used, in which case a separate water heater system will be modeled for the boost loop. Booster loops are included for buildings with kitchen space types. These booster water heaters increase the temperature for some portion of the water for uses that need higher temperatures such as dishwashing. See Section~\ref{sec:space_type_ratios} for details on the space type ratios for each building type. In space types with booster water heaters, 60\% of peak flow is assigned to the booster water heater, and the remaining 40\% is assigned to the standard water heater.
+The loop type of each draw determines how it is served. Draws of the ``Shared'' type are connected to a single building service water loop with one storage water heater, sized on every draw it serves. The building water heater is a storage tank style heater, either fuel combustion (natural gas, fuel oil, or propane) or electric resistance, as discussed in Section~\ref{sec:SWH_Fuel_Type}; models with district heating as the fuel type receive hot water from off-site and include no on-site water heater. ComStock does not currently model instantaneous or heat pump water heaters. Offices, primary schools, outpatient buildings, hospitals, hotels, and full service restaurants are modeled with a recirculating loop and pump; other building types have a non-recirculating loop. Piping losses are included on the building loop.
 
-The design temperature of standard water heaters in ComStock is 140°F with a 3.6°F deadband temperature difference allowance. Booster water heaters for kitchens have a target temperature of 180°F; this assumption comes from the DOE prototype models to account for dishwashing in kitchens. The ambient air temperature for tank heat loss is assumed to be 72°F. No parasitic losses or part load performance modifiers are included at this time.
+Draws of the ``One Per Space'' type, which represent the point-of-use heaters under a restroom sink or in a tenant space, are served by a dedicated electric heater in the space, sized to that space's draws with a minimum under-counter tank size and no distribution piping. A point-of-use loop serving a multiplied zone serves every copy of the space.
 
-%TODO: Discuss heat exchanger for booster water heaters? AP: I don't think this is necessary right now.
+Dish sanitizing in food preparation space types is served by a booster water heater. The booster draw is placed on its own 180\textdegree F loop whose heat exchanger sits on the demand side of the building loop, so the building water heater preheats every gallon the booster delivers from the mains temperature to 140\textdegree F and the electric resistance booster heater adds only the final rise to 180\textdegree F. The building water heater is sized on the booster draws as well as its own, so that the preheat load is accounted for.
+
+The design temperature of the building water heater is 140\textdegree F, with a 3.6\textdegree F deadband. The booster loop runs slightly above its 180\textdegree F fixture target so that its tank still delivers 180\textdegree F at the low end of its cycling band. The ambient air temperature for tank heat loss is assumed to be 72\textdegree F. No parasitic losses or part load performance modifiers are included at this time.
 
 \subsection{Service Water Heating Efficiencies}
 
-ComStock water heater efficiencies follow the requirements of ASHRAE-90.1. ComStock currently only models non-condensing units, so water heaters with a combustion fuel source are all roughly 80\% efficient, whereas electric resistance water heaters are roughly 100\% efficient. The efficiency parameters used to calculate the exact water heater efficiencies are summarized in Table~\ref{tab:water_heater_eff} based on SWH template, SWH fuel type, and SWH heater capacity. 
-
-
-\subsection{Service Water Heating Usage and Schedules}
-
-SWH usage for a given time step is based on a design peak gal/min flow rate multiplied by a usage fraction schedule. For example, if a given model has a design SWH flow rate of 10 gal/min, and the schedule value for the time step is 0.5, the SWH flow rate for the time step will be 5 gal/min. The flow rate values in ComStock come from the DOE prototype/reference building models, and are summarized in Tables~\ref{tab:swh_flow_rates_p1} through \ref{tab:swh_flow_rates_p3}.
-
-In ComStock, the design flow rates are specified at the space type level. Then, these rates are aggregated to form a building-level design flow rate. The exception to this is SWH loads for kitchens, which are grouped into their own separate water heater system. These design flow rates are then multiplied by the usage fraction schedules, which specify the fraction of the design flow rate drawn for each time step. The usage fraction schedules in ComStock are derived from the DOE prototype/reference Buildings, and are summarized for each building type in Figures~\ref{fig:swh_sched_fsr} through ~\ref{fig:swh_sched_strip_mall}. The default schedule assignments for each space type and vintage are shown in Tables~\ref{tab:swh_flow_rates_p1} through ~\ref{tab:swh_flow_rates_p3}. However, these schedules are modified according to the hours of operation of the building, as described in Section~\ref{sec:hoo}. 
-
-%TODO: Describe where flow rates and schedules come from
-%TODO: Describe water heater tank and capacity sizing methods
-%TODO: Describe the HX things for booster water heaters.
-
-
-
-
-
+ComStock water heater efficiencies follow the requirements of ASHRAE-90.1. ComStock currently only models non-condensing units, so water heaters with a combustion fuel source are all roughly 80\% efficient, whereas electric resistance water heaters are roughly 100\% efficient. The efficiency parameters used to calculate the exact water heater efficiencies are summarized in Table~\ref{tab:water_heater_eff} based on SWH template, SWH fuel type, and SWH heater capacity.

@@ -222,6 +222,8 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
       'exhaust_overrides' => entry['exhaust_overrides'],
       'ventilation_overrides' => entry['ventilation_overrides'],
       'occupancy_overrides' => entry['occupancy_overrides'],
+      'schedule_overrides' => entry['schedule_overrides'],
+      'load_overrides' => entry['load_overrides'],
       'constructions' => constructions_for(building_type, template),
       'space_types' => row['space_types']
     }
@@ -790,9 +792,21 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
                           "#{thermostat_overrides.map { |o| o['space_type'] }.join(', ')}.")
     end
 
-    schedule_overrides = base_peak_ratio_overrides(runner, typed)
-    return false if schedule_overrides.nil?
+    # Schedule overrides come from two places. The building type definitions may carry
+    # schedule_overrides entries keyed on a space type, where a building type wants a load's
+    # parametric profile other than the typical data's default (none do at present). The
+    # sampled base-to-peak ratios ride on one wildcard entry. The typical path
+    # applies a specific entry's fields over the wildcard's field by field, so a building type's
+    # base and peak stand and a sampled ratio still applies everywhere the type says nothing.
+    schedule_overrides = merged_overrides(runner, 'schedule_overrides')
+    unless schedule_overrides.empty?
+      runner.registerInfo("Applying #{schedule_overrides.size} building type schedule override(s): " \
+                          "#{schedule_overrides.map { |o| o['space_type'] }.join(', ')}.")
+    end
+    sampled_ratios = base_peak_ratio_overrides(runner, typed)
+    return false if sampled_ratios.nil?
 
+    schedule_overrides += sampled_ratios
     spec['schedule_overrides'] = schedule_overrides unless schedule_overrides.empty?
 
     variability = thermostat_variability_overrides(runner, typed, ratios.map { |r| r['space_type'] })

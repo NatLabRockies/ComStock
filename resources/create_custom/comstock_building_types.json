@@ -57,6 +57,19 @@
           }
         }
       ],
+      "service_water_heating_overrides": [
+        {
+          "space_type": "food preparation",
+          "equipment": {
+            "*": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.009
+            },
+            "Dishwasher Booster": {
+              "peak_flow_rate_gph_per_floor_area_ft2": 0.014
+            }
+          }
+        }
+      ],
       "constructions": [
         {
           "applicable_templates": [
@@ -175,7 +188,7 @@
             "ComStock DOE Ref Pre-1980"
           ],
           "space_types": {
-            "apartment": {
+            "multifamily - dwelling unit": {
               "ratio": 0.8896,
               "space_type_gen": true,
               "default": true
@@ -412,6 +425,67 @@
               "space_type_gen": true,
               "default": false
             }
+          }
+        }
+      ],
+      "thermostat_overrides": [
+        {
+          "space_type": "*",
+          "thermostat": {
+            "heating_setback_delta_c": 0.0,
+            "cooling_setback_delta_c": 0.0
+          }
+        }
+      ],
+      "schedule_overrides": [
+        {
+          "space_type": "nurses station",
+          "occupancy": {
+            "schedule": "extended occupancy",
+            "follows_building_hours": false
+          },
+          "lighting": {
+            "base": 0.45
+          }
+        },
+        {
+          "space_type": "exam/treatment",
+          "occupancy": {
+            "schedule": "extended occupancy",
+            "follows_building_hours": false
+          }
+        },
+        {
+          "space_type": "patient room",
+          "occupancy": {
+            "follows_building_hours": false
+          },
+          "lighting": {
+            "base": 0.2
+          }
+        },
+        {
+          "space_type": "emergency room",
+          "occupancy": {
+            "follows_building_hours": false
+          }
+        },
+        {
+          "space_type": "food preparation",
+          "occupancy": {
+            "schedule": "extended occupancy",
+            "follows_building_hours": false
+          },
+          "lighting": {
+            "base": 0.1
+          }
+        }
+      ],
+      "occupancy_overrides": [
+        {
+          "space_type": "dining - cafeteria/fast food",
+          "occupancy": {
+            "people_per_1000_ft2": 10.0
           }
         }
       ],
@@ -1467,7 +1541,7 @@
             "ComStock DOE Ref Pre-1980"
           ],
           "space_types": {
-            "apartment": {
+            "multifamily - dwelling unit": {
               "ratio": 0.8727,
               "space_type_gen": true,
               "default": true
@@ -1886,7 +1960,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - primary school": {
               "ratio": 0.4793,
               "space_type_gen": true,
               "default": true
@@ -1955,7 +2029,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - primary school": {
               "ratio": 0.561,
               "space_type_gen": true,
               "default": true
@@ -2254,7 +2328,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "retail": {
+            "retail - mass merchandising": {
               "ratio": 0.8291999999999999,
               "space_type_gen": true,
               "default": false
@@ -2264,7 +2338,7 @@
       ],
       "service_water_heating_overrides": [
         {
-          "space_type": "retail",
+          "space_type": "retail - mass merchandising",
           "equipment": {
             "*": {
               "peak_flow_rate_gph_per_floor_area_ft2": 0.00088,
@@ -2499,7 +2573,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - secondary school": {
               "ratio": 0.3041,
               "space_type_gen": true,
               "default": true
@@ -2581,7 +2655,7 @@
               "space_type_gen": true,
               "default": false
             },
-            "classroom/lecture/training": {
+            "classroom/lecture/training - secondary school": {
               "ratio": 0.3528,
               "space_type_gen": true,
               "default": true
