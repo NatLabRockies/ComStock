@@ -47,7 +47,7 @@ Dir["#{File.dirname(__FILE__)}/resources/*.rb"].sort.each { |file| require file 
 
 # start the measure
 class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
-  require 'openstudio-standards'
+  require 'comstock-typical'
   require 'json'
   require 'open3'
   require 'csv'

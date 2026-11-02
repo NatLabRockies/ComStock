@@ -49,6 +49,19 @@ ENUM_DEFINITION_FILE_NAME = 'comstock_enumeration_definitions.csv'
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_DIR = os.path.join(CURRENT_DIR, 'resources')
 
+# Runs made before the spacetype refactor built the baseline with create_bar_from_building_type_ratios,
+# create_typical_building_from_model and add_thermostat_setpoint_variability. BuildExistingModel registers
+# each child measure's arguments under <measure name>_<argument>, so those runs carry the sampled
+# building inputs under the retired measure names. create_custom_building_from_spec now takes the same
+# arguments, and comstock_column_definitions.csv is keyed to its name. Legacy results.csv columns are
+# renamed to the current key on import so both generations of runs postprocess the same way.
+LEGACY_BUILD_EXISTING_MODEL_PREFIXES = [
+    'build_existing_model.create_bar_from_building_type_ratios_',
+    'build_existing_model.create_typical_building_from_model_',
+    'build_existing_model.add_thermostat_setpoint_variability_',
+]
+CURRENT_BUILD_EXISTING_MODEL_PREFIX = 'build_existing_model.create_custom_building_from_spec_'
+
 # ComStock in a constructor class for processing ComStock results
 class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixin):
     def __init__(self, s3_base_dir, comstock_run_name, comstock_run_version, comstock_year, athena_table_name,
@@ -1454,10 +1467,35 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             (~pl.col('location').is_in(['calculated', 'geospatial', 'cejst', 'ejscreen']))
         )
 
+    def rename_legacy_build_existing_model_columns(self, df):
+        # Rename build_existing_model columns registered by the measures that
+        # create_custom_building_from_spec replaced, so that pre-refactor runs match
+        # the keys in comstock_column_definitions.csv. Only columns whose current
+        # key is not already present are renamed; the rest of the legacy columns
+        # are not marked for export and are dropped by downselect_imported_columns.
+        renames = {}
+        for c in df.columns:
+            for legacy_prefix in LEGACY_BUILD_EXISTING_MODEL_PREFIXES:
+                if not c.startswith(legacy_prefix):
+                    continue
+                new_c = CURRENT_BUILD_EXISTING_MODEL_PREFIX + c[len(legacy_prefix):]
+                if new_c in df.columns or new_c in renames.values():
+                    logger.debug(f'Legacy column {c} not renamed, {new_c} already present')
+                else:
+                    renames[c] = new_c
+                break
+        if renames:
+            logger.info(f'Renamed {len(renames)} legacy build_existing_model columns to the {CURRENT_BUILD_EXISTING_MODEL_PREFIX} prefix')
+            for old, new in renames.items():
+                logger.debug(f'-- {old} -> {new}')
+            df = df.rename(renames)
+        return df
+
     def downselect_imported_columns(self, df):
         # Downselect to the imported columns: those marked for export in column definitions,
         # plus the utility bill result strings postprocessing parses
         logger.debug(f'Memory before downselect_columns: {df.estimated_size()}')
+        df = self.rename_legacy_build_existing_model_columns(df)
         col_defs_path = os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME)
         col_defs = pl.scan_csv(col_defs_path)
         col_def_names = self.imported_column_definitions(col_defs).select('original_col_name').collect()
@@ -3714,7 +3752,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                     SELECT
                     EXTRACT(MONTH from "time") as "month",
                     SUBSTRING("build_existing_model.county_id", 2, 2) AS "state_id",
-                    "build_existing_model.create_bar_from_building_type_ratios_bldg_type_a" as "building_type",
+                    "build_existing_model.create_custom_building_from_spec_bldg_type_a" as "building_type",
                     "upgrade",
                     "total_site_gas_kbtu",
                     "total_site_electricity_kwh"

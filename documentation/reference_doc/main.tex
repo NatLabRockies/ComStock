@@ -1,11 +1,11 @@
 \documentclass[]{nrel}
+\input{metadata}
 \usepackage{multirow}
 \usepackage{longtable}
 \usepackage{float}
 \usepackage[section]{placeins}
 \usepackage{pdflscape}
 \usepackage{soul}
-\usepackage{biblatex}
 \usepackage{threeparttable}
 \usepackage{bookmark}
 
@@ -19,8 +19,8 @@
     bookmarksopen=true,
     bookmarksopenlevel=1,
     pdfstartview=FitH,
-    pdftitle={ComStock Reference Documentation: 2025 Release 3},
-    pdfauthor={Andrew Parker and others},
+    pdftitle={\ReportTitle: \ReportRelease},
+    pdfauthor={\ReportPdfAuthor},
     pdfsubject={ComStock Building Energy Modeling},
     pdfkeywords={ComStock; Building Energy; Commercial Buildings; Energy Modeling}
 }
@@ -43,10 +43,10 @@
 % -----------------------------------
 % DOCUMENT PROPERTIES
 % -----------------------------------
-\title{ComStock Reference Documentation:\\[0.3em] 2025 Release 3}
+\title{\ReportTitle:\\[0.3em] \ReportRelease}
 
-\author{\mbox{Andrew Parker}, \mbox{Henry Horsey}, \mbox{Matthew Dahlhausen}, \mbox{Marlena Praprost}, \mbox{Christopher CaraDonna}, \mbox{Amy Van Sant}, \mbox{Janghyun Kim}, \mbox{Lauren Klun}, \mbox{Eric Ringold}, \mbox{Wenyi Kuang}, and \mbox{Landan Taylor}}
-\affil{National Renewable Energy Laboratory}
+\author{\ReportAuthors}
+\affil{\ReportAffiliation}
 
 \fancypagestyle{plain}{}
 \addbibresource{bibliography.bib}
