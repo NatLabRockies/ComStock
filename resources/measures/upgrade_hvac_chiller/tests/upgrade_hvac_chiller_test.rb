@@ -40,7 +40,7 @@ require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'minitest/autorun'
 require 'fileutils'
-require 'openstudio-standards'
+require 'comstock-typical'
 require_relative '../measure'
 
 class UpgradeHvacChillerTest < Minitest::Test
