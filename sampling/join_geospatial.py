@@ -164,13 +164,16 @@ def main():
     # otherwise a replacement can itself be unjoinable and the assertion below fails after the run. The pool
     # keeps every sampled row (duplicates included), so a tract sampled often is drawn as the replacement
     # more often, as before; the unjoinable tract itself is never in the pool because it is not in the lookup.
-    # Where the county contributed no joinable tract to the sample, fall back to the county's tracts in the lookup.
+    # The pool is matched on the join key's county, not on county_id: for a retired FIPS the two differ
+    # (gisjoin carries the replacement code, county_id the retired one), and matching on county_id would
+    # leave the pool empty. Where the county contributed no joinable tract to the sample, fall back to the
+    # county's tracts in the lookup.
     lkup_tracts = set(df_geospatial_lkup.nhgis_tract_gisjoin)
     lkup_tracts_by_county = df_geospatial_lkup.groupby('nhgis_county_gisjoin')['nhgis_tract_gisjoin'].apply(list)
     resample_lkup = dict()
     for tr in to_resample.gisjoin.unique().tolist():
         samplefrom = [
-            gj for gj in df_buildstock.loc[df_buildstock.county_id == tr[:8], 'gisjoin'].tolist()
+            gj for gj in df_buildstock.loc[df_buildstock.gisjoin.str[:8] == tr[:8], 'gisjoin'].tolist()
             if gj in lkup_tracts
         ]
         if not samplefrom:
