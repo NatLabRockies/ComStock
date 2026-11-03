@@ -2077,8 +2077,6 @@ function renderAnnual(){
     });
   });
   h+=enduseWaterfallPanel(bt);
-  h+=`<div class="panel"><h2>${bt} — every metric <span class="badge">${runShort(PRIMARY)}</span></h2>
-      <div class="scroll" id="t-all"></div></div>`;
   $("#view").innerHTML=h;
   renderEnduseWaterfalls(bt);
   groupedBar($("#c-fuels"), mk(D.fuelTotals), annualSeries(),
@@ -2101,53 +2099,6 @@ function renderAnnual(){
   });
   wireDimSig(renderAnnual);
   wireDimToggle("pDimCtl", "xDim", renderAnnual);
-
-  let t=`<p class="note">Every "% vs CBECS" is <b>${runLabel(PRIMARY)} minus CBECS, as a share of
-    CBECS</b>.${MULTI&&SECONDARY?` "Δ gap vs ${runShort(SECONDARY.key)}" is the change in the
-    absolute gap against that run; negative means closer to CBECS.`:""}</p>
-    <table><thead><tr><th>Metric</th><th>CBECS</th><th>CBECS 95% CI</th>
-    <th>${runHead(PRIMARY)}</th><th>% vs CBECS</th>
-    ${MULTI&&SECONDARY?`<th>Δ gap vs ${runHead(SECONDARY.key)} (pp)</th>`:""}
-    <th>within CI</th><th>CBECS basis</th></tr></thead><tbody>`;
-  const rows=src.filter(r=>r.run===PRIMARY&&r.category===bt);
-  rows.sort((a,b)=>a.metric.localeCompare(b.metric)).forEach(r=>{
-    const scale=r.metric==="sqft"?1e-6:1, unit=r.metric==="sqft"?" Mft²":"";
-    /* Why there is no interval differs by cause: CBECS does not publish the
-       metric at all; it publishes it and no surveyed building in this group uses
-       it (a zero total has no replicate variance); or the metric is a sum of
-       published ones for which no interval is carried. */
-    const noCb=r.cbecs_value===null||r.cbecs_value===undefined;
-    const ciWhy = noCb ? ["notPublished","CBECS does not publish this metric"]
-      : r.cbecs_value===0 ? ["noneSurveyed","no surveyed building in this group uses it, so there is no interval"]
-      : ["noValue","no interval is carried for this metric (a total derived from published ones)"];
-    const ci=(r.cbecs_ci95_low!==null&&r.cbecs_ci95_low!==undefined)
-      ? `${fmt(r.cbecs_ci95_low*scale)}–${fmt(r.cbecs_ci95_high*scale)}`
-      : absentTag(ciWhy[0], ciWhy[1]);
-    const w=r.within_cbecs_ci95;
-    const badge = w===true?`<span style="color:var(--good)">inside</span>`
-      : w===false?`<span style="color:var(--bad)">outside</span>`
-      : absentTag(ciWhy[0], ciWhy[1]);
-    let dcol="";
-    if(MULTI&&SECONDARY){
-      const o=src.find(x=>x.run===SECONDARY.key&&x.category===bt&&x.metric===r.metric);
-      const d=(o&&o.pct_diff!==null&&o.pct_diff!==undefined
-               &&r.pct_diff!==null&&r.pct_diff!==undefined)
-        ? Math.abs(r.pct_diff)-Math.abs(o.pct_diff) : null;
-      dcol=`<td>${d===null?absentTag("noValue"):`<span class="cell" style="background:${
-        d<-0.5?"rgba(26,127,90,.22)":d>0.5?"rgba(213,94,0,.22)":"transparent"}">${
-        (d>0?"+":"")+fmt(d,1)}</span>`}</td>`;
-    }
-    /* null*scale is 0 in JavaScript, so a metric CBECS does not publish printed
-       as "0.00" -- a measured zero. Absent stays absent. */
-    const num=v=>(v===null||v===undefined)?null:v*scale;
-    t+=`<tr><td>${r.metric}</td><td>${noCb
-        ? absentTag("notPublished","CBECS does not publish this metric")
-        : fmt(num(r.cbecs_value),2)+unit}</td><td>${ci}</td>
-      <td>${num(r.comstock_value)===null?absentTag("noValue"):fmt(num(r.comstock_value),2)+unit}</td>
-      <td><span class="cell" style="background:${diffColor(r.pct_diff)}">${pct(r.pct_diff)}</span></td>
-      ${dcol}<td>${badge}</td><td>${r.provenance||""}</td></tr>`;
-  });
-  $("#t-all").innerHTML=t+`</tbody></table>`;
 }
 
 /* Scope for the distribution boxes: the selected building type when the table
