@@ -45,6 +45,73 @@ Plan and findings: [PLAN.md](PLAN.md). Newest entry first.
 
 ## Log
 
+### 2026-11-03 (code-year research packaged; implementation brief)
+
+- Fixed-damper code-year research consolidated in `state_codes_research/` for SharePoint and a hand-off to an agent:
+  `FINDINGS.md`, `HANDOFF.md` (option b design for comstock-typical and `set_hvac_template`, tests, expected
+  results), state rule table, charts, PDFs, Georgia sources and scripts (PLAN 8.4 follow-up).
+- New numbers: the rule covers 40% of VAV/PVAV floor area (45% outside California); option b 30%, c 23%, d 11%;
+  62.1 rates arrive early for 12% of buildings outside California.
+
+### 2026-11-02 (main with comstock-typical merged in; DCV and fixed-damper assessment)
+
+- Owner merged `main` (PR #471, comstock-typical) into the branch (`df69bd43`, not pushed). Advanced RTU control was
+  hand-resolved correctly; no other file this branch changes was touched.
+- New local bundle at comstock-typical `c444e474` (`C:/tmp/csgems2`). The 10k yml's image carries `894f9d68`; a new
+  image is needed before the run (PLAN 8.4).
+- 50-state mechanical-code check for the fixed-damper rule (PLAN 8.4): a quarter of the affected buildings (national
+  weights) had HVAC installed after their state's code required VAV minimum outdoor air (IMC 2000+ 403.3.3.1);
+  about 2% after a 62.1-based code; options (a)-(d) for the fork owner.
+- Owner asked for consistent DCV across measures: HP RTU and RTU adv now use the DCV measure's eligibility and
+  per-loop logic (their flag-only DCV did nothing on hard-sized models); HP RTU test file fixed (missing `end`).
+- Fixed-damper evidence: half the affected buildings had HVAC replaced 2005-2018; EPA BASE offices mostly
+  over-ventilated (about 16-17% below 20 cfm per person); recommendation to revert for 2026R1 (PLAN 8.4).
+- DCV: PR #471's controller re-enable verified on typical models; before it, DCV removed minimum ventilation on loops
+  `hardsize_model` had switched off, inflating savings. The fork's fixed-damper rule (`d73a42c`, healthcare exempt
+  `f328daa`) under-ventilates pre-2004 multizone VAV baselines and flips DCV savings negative there; findings and
+  numbers in PLAN 8.4. Owner raised confidence in fault prevalence and impact as the concern.
+
+### 2026-10-19 (order agreed: typical into main, then this branch)
+
+- Owner: `spacetype_refactor` merges into `main` within days; then this branch updates from `main`, reruns the 10k
+  all-measure test and opens its PR into `main`. The PR does not include planning files (a final commit removes
+  `temp_plan/`, as on PR #468); the description is a self-contained summary built from MEASURE_CHANGES.md.
+- `main` has 16 new commits (PR #468 bills work, a `create_views` fix); typical has one more (`c671569e`). Merging
+  typical into `main` conflicts only in `postprocessing/comstockpostproc/comstock.py`; this branch merges cleanly
+  with `main` plus typical (`git merge-tree` preview); no file overlaps.
+- PLAN 8.1 and 8.2 rewritten for the new order; the 2026-10-14 `spacetype_refactor` target is superseded.
+
+### 2026-10-14 (merge target and pending decisions recorded)
+
+- Branch at `1c39445e` (owner committed the optimum start padding 2026-10-08), even with its remote.
+- `origin/spacetype_refactor` has 11 new commits and a comstock-typical bump (`12f0b21a` -> `f9989ff7`); no file
+  overlaps this branch; the fork's WSHP builder and optimum start code are unchanged. No PR exists from this
+  branch, from `spacetype_refactor`, or into it.
+- PLAN section 8 rewritten: 8.1 upstream update and retest list, 8.2 merge target (`spacetype_refactor`) with
+  the fixes also needed on `main` and the `temp_plan/` decision, 8.3 pending owner decisions (WSHP water flow
+  mode physics, location, test case; 8613 residual and the stale test).
+
+### 2026-10-08 (owner items assessed, plan for the upstream update)
+
+- Pulled run _5 datapoints 175 (unoccupied AHU) and 133 (wall insulation) with baselines (Slurm 18956410,
+  `C:/tmp/mf2026r1_run5`); both fail with the same signatures as in the 10k run.
+- Unoccupied AHU 8613: EnergyPlus 25.1 `AvailabilityManager:OptimumStart` scans the fan schedule with
+  `ts <= TimeStepsInHour` (one past the day array) and indexes the setpoint day values at
+  `(CEILING(start)+1) * TimeStepsInHour`; an all-off fan day (the measure's occupancy schedule on Sundays) reads
+  garbage and the zones get garbage setpoints in the pre-start window. Fixed upstream by `2d3b0ca6` (2026-08-18),
+  after v26.1.0. The manager never reads its applicability schedule in 25.1. Workaround tested locally: one "on"
+  timestep at 00:00 on all-off days. Applied to the measure (gated: EnergyPlus < 26.2, loops with an optimum-start
+  manager, all-off day profiles; OA schedule unpadded): 8613 baseline +547 kWh/yr (+0.1%, fans) vs the unpatched
+  measure, unmet 8/18 -> 7/16 (`C:/tmp/uahu8613/compare_versions.sh`). `test_constant_air_loop_sched` fails before
+  and after (data-center loop keeps its constant schedule since the CRAC skip). Details in MEASURE_CHANGES.md.
+- Wall insulation 5552: bisected to the top-story classroom A zone (`C:/tmp/wshp5552/bisect.log`); its 95 kW WSHP
+  cools at a few percent part load in the first warm-up step (all zones start at 23 C against a constant 22.2 C
+  cooling setpoint) and the 'Cycling' water flow mode gives a 423 C coil outlet. 'ConstantOnDemand' on the 23
+  units: both failing variants run. The fork's `model_add_water_source_hp` leaves the OpenStudio default
+  ('Cycling'). Baseline 133 with ConstantOnDemand on all 23 units (`C:/tmp/wshp5552/base133` vs `base133_cod`):
+  electricity -0.02%, gas -0.43%, pumps -0.01% (constant-speed loop pump), unmet hours unchanged.
+- Wrote `MEASURE_CHANGES.md` (per-measure summary for the PR) and PLAN section 8 (upstream update, next 10k run).
+
 ### 2026-10-07, afternoon (run _5 evaluated)
 
 - Run `_500_5` (`708e4ed3`): 2 upgrade-only failures, the owner items (unoccupied AHU, 10k id 8613; wall insulation,

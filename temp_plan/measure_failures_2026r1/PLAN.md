@@ -372,7 +372,7 @@ Carrier limits, ratio, borefield flow), with the owner's rule for assumption cha
 | 8 | Small-sample rerun on Kestrel of the affected upgrades (12, 13, 14, 22, 23, 26, 27, 28, 29, 30, 31, 43, 47, 48, 55, 56, 57, 59, 63, 64). The owner approves and runs the yml; I prepare it (sample of a few hundred buildings, the branch commit, `keep_run_folders` so the not-applicable messages can be tallied). Pass criteria: Fail limited to the owner items above | owner | yml, 500-building precomputed sample and id map uploaded to Kestrel `ymls/sdr_fy26/0_production_runs_2026R1/all_measure_10k/` (copies in this folder); needs the branch checked out on Kestrel as `buildstock_directory` |
 | 10 | Applicability shifts vs 2025R3: tallied every measure's not-applicable message from the rerun's `out.osw` files (Kestrel job 18904795) and compared applicability by HVAC system type and floor-area bin with the published R3 metadata in Athena, by distinct building and against the 10k run. No shift: the reference percentages were county-replicated rows; R3 and the 10k run agree within 3 points, the 500 sample within sampling noise. Second-order: VRF zoning tests, GHEDesigner errors registered as NA (15 datapoints). `rerun_applicability_tally.md`, `parse_osw.py`, `tally.py`, `compare_r3.py` | 8 | done |
 | 11 | CRAC / data-center exclusion audit, done. The fork's CRAC loops carry no AirLoopHVACUnitarySystem (OA system, DX coil, humidifier, constant-volume fan), so advanced RTU controls (unitary loops only) never selected them, and DOAS minisplits skipped them by the 'datacenter' name test only; both now also skip CRAC/CRAH loops and data-center zones by the fork helper (uncommitted; Success unchanged on pulled PSZ-AC 1 and 195, NA unchanged on 6252). Console GSHP: a CRAC loop does not trip its unitary test, but any air loop makes it skip the PTAC inventory, so a PTAC building with a data center would be NA (none in the 65 PTAC/PTHP/residential random buildings); owner's call. Hydronic GSHP skips CRAC units since the :756 fix | none | done |
-| 9 | PR from `ccaradon/spacetype_refactor_measure_failures` into `spacetype_refactor` (not main); flag that the class A fixes, the battery JSON and the meta_measure logging are needed on `main` too | 8 | |
+| 9 | PR from `ccaradon/spacetype_refactor_measure_failures` into `main`, after `spacetype_refactor` lands in `main`, this branch is updated from `main` and the 10k run is assessed; a final commit removes `temp_plan/` (section 8.2) | 8, section 8 | not opened (2026-10-19) |
 
 ## 4. Baseline failures (not this branch's scope, for the fork owner)
 
@@ -395,6 +395,220 @@ module functions (one file, deprecation warnings). It would unbreak every unport
 once, including ones outside this run, but hides the migration. Recommendation: port the
 measures explicitly (small, mechanical diffs) and decide separately whether the fork wants the
 shim as a safety net.
+
+## 8. Next: update from main, 10k run, PR into main (updated 2026-10-19)
+
+Status 2026-10-19: branch at `1c39445e`, even with its remote; PLAN.md and PROGRESS.md carry uncommitted
+edits; MEASURE_CHANGES.md is untracked (excluded, see 8.2).
+
+### 8.1 Upstream changes (as of 2026-10-19)
+
+- `origin/spacetype_refactor`: 12 commits since the merge base `0e4c8084` (2026-10-01 to 2026-10-15): hospital
+  occupancy, dining and lighting overrides; classroom space types with summer schedules; a retail mass merchandise
+  space type; infiltration schedules following schedule rules; an Apptainer build script; template cycling fans in
+  `add_hvac_nighttime_operation_variability` and `set_hvac_template` (`fb5ff39d`); renamed input columns with
+  legacy aliases in postprocessing (`c671569e`); two gemfile bumps. The comstock-typical gem moved from `12f0b21a`
+  to `f9989ff7` (30 files: schedules, ventilation data, ProportionalMinimum OA control for the DOE Ref templates,
+  fan motor efficiency, SWH, refrigeration); `model_add_water_source_hp` and the optimum start code are unchanged,
+  so both owner items in 8.3 stand.
+- `origin/main`: 16 commits not in typical, the utility bills state-tariff work (PR #468, merged 2026-10-19) and a
+  `create_views` fix. They change the `utility_bills` measure (rate files, state blocks, tests) and postprocessing.
+- No file this branch changes is touched on either side.
+
+### 8.2 Order and merge target (owner, 2026-10-19)
+
+1. `spacetype_refactor` merges into `main` (expected within days). As of 2026-10-19 that merge conflicts in one
+   file, `postprocessing/comstockpostproc/comstock.py` (typical's column renames `c671569e` against main's bills
+   postprocessing commits from PR #468); resolved by whoever merges typical.
+2. Update this branch from `main` with a merge, not a rebase (the branch is pushed, and `main` lands PRs as merge
+   commits). `git merge-tree` preview of this branch against main plus typical (2026-10-19): clean.
+3. Rebuild the local bundle (`C:/tmp/csgems`) at the gem ref `main` then pins and rerun the local test subsets:
+   GSHP (`gshp_fix/README.md`, "Round 4"), the ERV measure tests, the class A call sites (section 2). The gem bump
+   changes `Standards.AirLoopHVAC.rb` and the ventilation data the OA/ERV fixes (`993b611a`) read.
+4. Run the 10k all-measure test on the updated branch (owner): `C:/tmp/kestrel_jobs/2026R1_all_measure_10k.yml`
+   with a new output directory and S3 prefix. Score with `failure_summary_from_raw.py <run>` (add the run name to
+   RUNS) and `run3_failures.py <run>`; compare per upgrade with `failure_progress_by_upgrade.csv` (10k_all column:
+   78,299 upgrade-only failures) and with run _5 on the shared 500 buildings. Expected: the 5552 WSHP item unless
+   the fork change lands first, the two baseline failures (2537, 7223), plus anything the updates change. Main's
+   utility bills changes run in every datapoint next to this branch's zero-load guard, so the run tests them
+   together.
+5. Check beyond failures: GSHP applicability vs the 2025R3 published metadata by system type (`compare_r3.py`,
+   `r3_applicability_by_system.csv`); hydronic runtimes; `com_report_ghx_*` outputs (bore counts, per-bore design
+   flow); unmet hours by upgrade vs baseline (`run3_results_compare.py` pattern). Scan baseline and upgrade fatals
+   for "heating set-point higher than cooling set-point": the EnergyPlus 25.1 optimum start bug (8.3 item 2) can
+   hit any loop whose fan schedule has an all-off day, and the new school summer schedules may add such days in
+   baselines, which the unoccupied OA measure's padding does not cover (that measure skips schools).
+6. Final commit removes `temp_plan/` from the branch (owner: the PR does not include planning files; the same
+   pattern as `62ad91ef` on PR #468). `git rm -r --cached` keeps the files on disk; `temp_plan/` is in the shared
+   `.git/info/exclude`, so they then stay local and out of view.
+7. PR from this branch into `main`. With typical already in `main`, the PR shows only this branch's changes (25
+   files). Description: a self-contained summary built from `MEASURE_CHANGES.md` (what changed per measure and why,
+   testing and failure counts, open items, which fixes correct bugs that predate typical), without references to
+   the planning files, local or Kestrel paths, job ids or S3 prefixes (the repo is public).
+
+Superseded: the 2026-10-14 recommendation to merge into `spacetype_refactor`, which assumed typical would stay a
+separate branch for a while.
+
+Fixes that correct bugs present on `main` before typical (for the PR description): at least five measures calling
+the `Standard` helpers removed in openstudio-standards 0.8.5 (`ad147d38`); the packaged and console GSHP 'H:79.59'
+g-function header (all-zero g-function, infinite ground) and GSHP plant rounds 1-4; the utility bills zero-load
+division; the meta_measure exception logging; the battery JSON; the OA/ERV estimate and bypass (`993b611a`); the
+optimum start padding (`1c39445e`) where a baseline loop has an optimum start manager. Typical-only: the CRAC/CRAH
+skips, the LED lighting space type lookup, the ideal-loads names, the wall insulation nil-construction guard.
+
+`MEASURE_CHANGES.md` and the other untracked files here match the `temp_plan/` exclude rule, so git holds none of
+them; a dated copy of the folder is in `C:/tmp/mf_analysis/backup/`.
+
+### 8.3 Pending owner decisions
+
+1. **WSHP water flow mode** (wall insulation, 10k id 5552; a baseline item, not this branch). Owner checking
+   with the fork owner (2026-10-14).
+   - Where: comstock-typical, `lib/openstudio-standards/prototypes/common/objects/Prototype.hvac_systems.rb`,
+     `model_add_water_source_hp` (line 5640 in both `12f0b21a` and `f9989ff7`). The method never sets the coil
+     water flow mode, so every WSHP baseline ('DOAS with water source heat pumps ...') gets the OpenStudio
+     default 'Cycling'.
+   - Change: one line after each unit is created,
+     `water_to_air_hp_system.setHeatPumpCoilWaterFlowMode('ConstantOnDemand')` (OpenStudio 3.10 accepts
+     Constant, Cycling, ConstantOnDemand).
+   - Physics: 'Cycling' and 'ConstantOnDemand' model the same hardware, a two-position isolation valve interlocked
+     with the compressor (90.1 6.5.4.5.1 since 2010; manufacturers require rated water flow whenever the
+     compressor runs). 'Cycling' time-averages the valve over the timestep (flow = design x part load);
+     'ConstantOnDemand' gives full design flow for the whole timestep the compressor runs. The on-cycle water
+     temperature rise is the same (Q / m cp, about 14 K for these units); the 423 C outlet comes from the
+     'Cycling' implementation in the first warm-up iteration, before the plant delivers the small requested flow.
+     For a strictly single-speed unit 'Cycling' is the better time average, 'ConstantOnDemand' overstates average
+     coil flow. 'Constant' (flow through every unit with or without the compressor) would model a loop without
+     isolation valves; ComStock does not model that today and the change leaves it so.
+   - Effect: the heat pump loop pump is constant speed, so total loop flow and pump energy do not change; the mode
+     moves flow between the coils and the bypass. 5552 baseline: electricity -0.02%, gas -0.43%, pumps -0.01%,
+     unmet hours unchanged.
+   - Caveats: measured on one building (a WSHP-only sample run on the fork change is the proper check); if the
+     fork moves these loops to variable-speed pumps, 'ConstantOnDemand' overstates part-load pump energy against
+     'Cycling' and the choice should be revisited.
+   - Test case: `C:/tmp/wshp5552/bis_one_Zone_classroom_lecture_training_A_Story_top/in.idf` (two-day run period,
+     only that zone's walls insulated) fails in about 1 s; `C:/tmp/wshp5552/cod_*` are the same models with
+     'ConstantOnDemand' and run; `base133` / `base133_cod` are the annual baseline pair.
+   - Route: fork change, fork PR, gemfile bump on `spacetype_refactor`, merge into this branch.
+2. **Unoccupied AHU, 10k id 8613**: committed as `1c39445e` (2026-10-08). Residual: on padded loops the VAV fans
+   run at minimum flow for one timestep on each all-off day; 8613 +547 kWh a year (+0.1%), unmet hours 8/18 ->
+   7/16; a no-op from EnergyPlus 26.2. `test_constant_air_loop_sched` fails before and after the change: the test
+   model's data-center loop keeps its constant schedule since the CRAC skip (`a5822969`); the test should exclude
+   CRAC/CRAH loops.
+
+### 8.4 Post-merge checks (2026-11-02)
+
+The owner merged `main` (with PR #471, comstock-typical) into this branch as `df69bd43`. The only hand-resolved file,
+`upgrade_advanced_rtu_control`, keeps this branch's changes and PR #471's controller re-enable (variable in scope,
+tests pass). Local bundle at comstock-typical `c444e474`: `C:/tmp/csgems2`.
+
+Run prerequisites (owner):
+- The 10k yml pins image `os_310_typ_010`, which carries comstock-typical `894f9d68` (2026-09-22), 30 fork commits
+  behind `c444e474`: no fixed-damper rule, no new schedules, no fan efficiency fix. Build an image at `c444e474`
+  (`build/build_apptainer_image.ps1 -Tag <tag>`, sif `OpenStudio-<tag>.c444e474ca3c-Apptainer.sif`), set
+  `os_version` / `os_sha`, point `buildstock_directory` at this branch, new `output_directory` and S3 prefix.
+- yml check (`C:/tmp/dcv_check/validate_yml.py`): 83 of 88 options, measures and arguments match the merged repo; the
+  5 GEB options use measures from the openstudio-geb gem (present).
+
+DCV (PR #471; runs in `C:/tmp/dcv_check`):
+- `hardsize_model` switches off the Controller:MechanicalVentilation on FixedMinimum loops with a hard-sized minimum
+  (fewer warnings, same OA), and the fork's fixed-damper rule switches it off on multizone VAV loops with DOE Ref
+  HVAC templates. Enabling DCV zeroes the OA controller minimum, so the DCV measure and advanced RTU control now
+  switch the controller back on. Before PR #471 those loops kept only economizer air: on 147's hardsize-off loop DCV
+  cut OA 40% instead of 20%, and building savings read electricity 3.4% / gas 7.3% instead of 2.0% / 6.3%. DCV
+  results from the earlier 10k run and run _5 are overstated.
+- Packaged GSHP's `dcv` option runs the DCV measure, so it carries the fix. HP RTU and RTU adv had their own DCV
+  that only set the flag: with the controller off and the hard-sized minimum kept, it did nothing (12: dcv=true gave
+  the same OA as dcv=false). Applied (uncommitted, owner's request): the DCV measure's eligibility checks and
+  per-loop changes are class methods (`HVACDCV.building_ineligibility`, `.air_loop_ineligibility`, `.enable_dcv`),
+  its own output unchanged (identical IDFs on 147 and 3145, tests 2/173); HP RTU and RTU adv call them. On 12 their
+  dcv=true now cuts OA 42% and 40%, identical to the measure followed by the DCV measure. Only
+  `hvac_rtu|upgrade_rtu_hr_dcv` passes dcv=true, which the 2026R1 yml does not use.
+- FixedMinimum loops (147, HVAC template 90.1-2010): DCV cuts OA 5-20%, electricity -2.0%, gas -6.3%.
+- Fixed-damper loops (3145 office, 383 school; old-gem baselines with the merged rule applied, other fork changes
+  not emulated): the rule cuts baseline OA 28-44% and gas 13-23%; delivered OA goes from 1.3-1.7x to 0.70-0.92x the
+  occupancy-based zone-sum requirement (median, occupied fan-on hours; 40-60% of those hours below 0.9). DCV brings
+  it to the requirement (median 1.0): OA +5 to +15% and gas +1 to +5% against the merged baseline (OA -25 to -35%
+  against the old one). Affected: about 14.5% of buildings (47 of the 325 random buildings in the 500 sample,
+  unweighted), 45% of multizone VAV buildings, mostly offices, strip malls and schools.
+- Upgrades that rebuild these loops at design ventilation carry the same penalty: packaged GSHP (removes PVAV loops;
+  Packages 6, 10, 11) and VRF with DOAS. Upgrades that keep the OA controller keep the fixed damper.
+- Open for the owner and the fork owner: evidence for the prevalence and the impact of the fixed-damper rule, and
+  how measures that restore ventilation should be reported.
+- Evidence (2026-11-02): the rule keys on the energy code in force at the last HVAC replacement, so 23 of the 47
+  affected buildings in the random sample had their HVAC replaced 2005-2018 (states still on pre-2004 energy codes).
+  The VAV requirement to hold minimum outdoor air at every load came from the ventilation codes, not the energy code:
+  ASHRAE interpretation IC 62-1989-21 (1995) already read 62-1989 that way, IMC 2000 Section 403.3.3.1 (403.3.3 in
+  2006) required it, and 62-2001 Section 5.3 added the note on fixed dampers. EPA BASE (100 random U.S. offices, 1994-98; NIST
+  ventilation workbook on the BASE CD, owner's copy, `C:/tmp/dcv_check/base_by_system_type.py`): 88 of 97
+  mechanically ventilated buildings had fixed minimum OA dampers; at minimum OA (no air handler economizing) 48% of
+  VAV study-space measurements were below 10 L/s per person (CV 21%; as measured, economizers included: VAV 20%, CV
+  13%); VAV air handlers at minimum OA delivered a median 0.65 of design minimum OA, tracking supply flow
+  (correlation +0.70; CV 0.65 but +0.36). So the fixed-damper behavior is supported for systems of that era, not for
+  VAV installed after the state's mechanical code required the control (options in the 50-state bullet below).
+- Code adoption (2026-11-02): energy and mechanical codes are adopted separately (the IECC sends ventilation to IMC
+  Chapter 4; 90.1 cites 62.1 only for DCV and, from 2010, multiple-zone ventilation reset), and the order varies by
+  state.
+- 50-state check (2026-11-02; research files and scripts in `state_codes_research/`, table
+  `state_ventilation_codes.csv`): mechanical-code history of 49 states and DC (California uses DEER) against the
+  affected buildings in the post-processed national 100k run (`fanfix_e2e`, CBECS-scaled weights; multizone VAV,
+  DOE Ref HVAC code, hospital and outpatient excluded): 129,212 buildings, 2.9% of the stock, 49% of non-healthcare
+  multizone VAV; HVAC installed 2000 or earlier 28.5%, 2001-04 28.9%, 2005-08 33.5%, 2009 or later 9.1%.
+  - Installed after a statewide (or where-enforced) mechanical code required VAV minimum outdoor air: 24.8% of the
+    affected buildings (16.7% verified editions, 5.8% likely, 2.2% uncertain), plus 1.0% where a state code covers
+    only some building types. Local-only states (TX, MO, CO, KS, AZ, MD, NV, NE, DE, SD) hold 27.7%; giving each
+    the date of its largest city adds at most 13.4%. No state mechanical code with the rule: IL (Chicago's own code
+    lets VAV drop to a third of code air), MS, HI, VT, OK before 2012-11, ME before 2010-12.
+  - After a 62.1-based mechanical code: about 2%, because those codes (2009 IMC and later) mostly arrived after
+    90.1-2004-level energy codes. Exceptions: MN (62-2001 with addenda n and u from 2004-09-20), IA state buildings
+    (62.1-2004 from 2006-04-01), AL, AR, ND, WV, WY.
+  - Attributing weights to the allocated instead of the sampled state: 27.1% instead of 25.8%.
+  - Corrections to the earlier examples: Minnesota's 90.1-2004 energy code took effect 2009-06-01 and its mechanical
+    code required the 62-2001 VRP with addenda n and u from 2004-09-20, so ventilation led there. North Dakota's
+    state code, where enforced, carries the 2009 IECC from 2011 and the 2015 IECC from 2017. Texas mechanical codes
+    are local: Dallas, Fort Worth, San Antonio and El Paso on the IMC from 2004-2006; Houston and Austin on the UMC
+    with pre-62.1 local rates until 2016-2017.
+  - ComStock energy windows off by a year or more: too early (90.1-2004 level came later) LA, MI, CT, DC, OK, and AK
+    (no statewide commercial energy code); too late PA, IA, UT, RI, SC, Honolulu, ND where enforced, and the large
+    cities of TX, TN, AZ, NV and MO.
+  - Options for the fork owner, as shares of the 129,212 affected buildings kept on the fixed damper: (a) as is,
+    100%; (b) HVAC installed before the state's first mechanical code with the VAV rule, 74% (61% if local-only
+    states take their largest city's date; needs a state-year table); (c) HVAC installed 2004 or earlier, 57%;
+    (d) 2000 or earlier, 28.5%. A code requirement is not field practice: BASE found fixed dampers in the 1990s
+    although 62-1989 already required the control, and no comparable survey of 2000s VAV systems was found.
+- Follow-up (2026-11-03): findings, the implementation brief for comstock-typical and every research file are in
+  `state_codes_research/`, self-contained for SharePoint (`README.md`, `FINDINGS.md`, `HANDOFF.md`, the state rule
+  table `implementation/vav_min_oa_rule_by_state.csv`, charts as HTML and PNG, PDFs, Georgia sources, scripts).
+  - By floor area the rule covers 40% of multizone VAV/PVAV (8.8 of 22.0 billion ft2; 45% outside California, 54%
+    of the non-healthcare floor area outside California); option b leaves 30%, c 23%, d 11%. The share removed is
+    the same by count and by area (HVAC year is sampled independently of size); the rule table reproduces 74.2%.
+  - Neither the state nor the HVAC replacement year reaches any measure today (wildcard rows in
+    `options_lookup.tsv`). The brief passes both to `set_hvac_template`, which records a
+    `vav_minimum_outdoor_air_required` building property that the fork's DOE Ref templates read; unset keeps
+    today's behavior. On the not-applicable path (HVAC template = as-built) the measure must reapply the outdoor
+    air control, since `create_custom_building_from_spec` applies the fixed damper first.
+  - Georgia checked against DCA's adoption table and its 2001, 2005 and 2007 amendment packages: none changes the
+    VAV clause; 62-2001 addendum n was optional from 2005 and 62.1 from 2007.
+  - Ventilation rates: ComStock moves from 62-1999 to 62.1 rates at the same 90.1-2004 boundary, a median 3 years
+    before states' 62.1-based mechanical codes; 12% of buildings outside California get 62.1 rates early (office
+    rates differ about 15%). Recorded, no change proposed.
+
+Tests on `c444e474` (`C:/tmp/dcv_check/tests*`), every measure this branch changed:
+- Pass: DCV 2/173, advanced RTU control 3/25, economizer 3/75, ERV 2/22, GSHP subset 9/9 (packaged PSZ-HP and VAV
+  with DCV, console, hydronic), chiller 3/120, pump 11/286, VRF 3/126, LED 8/23, RTU adv 8 helper tests plus
+  `test_310_psz_ac_with_electric_coil` (26 assertions).
+- HP RTU: the test file has not parsed since #441 (2026-01-21): `test_biquadratic_format` lacks the `end` of its
+  `json_files.each` block. With that `end` added (scratch copy only), 21 of 21 tests pass, both ERV tests included.
+- Pre-existing, identical on the branch base `0e4c8084`: unoccupied OA `test_constant_air_loop_sched` (the CRAC
+  skip); wall insulation 5 of 7 (stale expected values, "Optional not initialized"; on the new bundle the whole file
+  segfaults, one test per process it matches the old bundle); DOAS minisplits (nil climate zone classification,
+  argument count); pvwatts (argument count, capacity 0); HP boiler `add_hpwh_test.rb` tests a class `AddHpwh`
+  that does not exist.
+- Not runnable locally: 7 RTU adv and 5 ideal-air-loads model tests need county weather files that `.gitignore`
+  excludes and no CI step fetches.
+Advanced RTU controls with DCV on 12 (30 RTU loops, 23 with the controller off from `hardsize_model`): total OA -30%,
+DCV on 24 loops; without PR #471's line -37%, with 23 loops left on economizer air only.
+Severe errors seen: 383 with DCV, warmup load convergence in two classrooms (temperatures converge); the ERV the ERV
+measure adds on 3145's 30 Zone PVAV, 11-14:1 supply to exhaust flow, as on 147's own baseline ERV.
 
 ## 7. Evidence trail
 
