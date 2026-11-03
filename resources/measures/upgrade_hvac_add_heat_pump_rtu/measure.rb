@@ -158,7 +158,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     hp_min_comp_lockout_temp_gas_backup_f = OpenStudio::Measure::OSArgument.makeDoubleArgument('hp_min_comp_lockout_temp_gas_backup_f', true)
     hp_min_comp_lockout_temp_gas_backup_f.setDisplayName('Minimum outdoor air temperature that locks out heat pump compressor with gas backup heat, F')
     hp_min_comp_lockout_temp_gas_backup_f.setDefaultValue(25.0)
-    hp_min_comp_lockout_temp_gas_backup_f.setDescription('Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This only applies when the backup heat type is set to match the original primary heating fuel and that fuel is gas; otherwise the electric backup lockout temperature is used. Heat pump heating does not operated below this temperature and backup heating will operate if heating is still needed.')
+    hp_min_comp_lockout_temp_gas_backup_f.setDescription('Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and that fuel is gas or another combustion fuel; with electric resistance backup, the electric backup lockout temperature is used instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.')
     args << hp_min_comp_lockout_temp_gas_backup_f
 
     # heat pump RTU performance scenario
