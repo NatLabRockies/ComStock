@@ -99,7 +99,7 @@ def main():
     # What is on this disk and what this pass will do with it: one log line per
     # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
     # Keep the versions here in step with the objects below.
-    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2025R3'])
+    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2026R1'])
     # First ComStock run
     comstock_a = cspp.ComStock(
         s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
@@ -135,11 +135,12 @@ def main():
         )
 
     # ---- ONE STOCK ESTIMATE PER RUN ---------------------------------------
-    # Each run must use the estimate it was SAMPLED against. Verify with the tract
-    # check in the module docstring rather than assuming from the run name -- runs in
-    # the same project folder, even with near-identical names, can differ here.
-    stock_estimate_a = stock_estimate('2025R3')
-    stock_estimate_b = stock_estimate('2025R3')   # <-- change to the estimate run B used
+    # Each run must use the estimate it was SAMPLED against: the one its bucket file was
+    # generated from (sampling/README.md lists each bucket file with its estimate). Verify
+    # with the tract check in the module docstring rather than assuming from the run name --
+    # runs in the same project folder, even with near-identical names, can differ here.
+    stock_estimate_a = stock_estimate('2026R1')
+    stock_estimate_b = stock_estimate('2026R1')   # <-- change to the estimate run B used
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock_a.get_sim_outs_for_upgrade(0)

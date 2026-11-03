@@ -124,7 +124,8 @@ DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrow
 #                                output/ComStock <run>). Never rename a cache folder once it exists.
 #                   s3_base_dir  bucket/prefix the run was uploaded to (from its buildstockbatch
 #                                yml); the run's data is at s3://<s3_base_dir>/<run>/<run>/
-#                   estimate     stock estimate the run's sample was drawn against
+#                   estimate     stock estimate the run's sample was drawn against: the one its bucket
+#                                file was generated from (sampling/README.md lists each pair)
 #                   database     where its tables are crawled to and read from
 #                   color        hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
 #                   optional     label (display name), version (cache folder), rebuild=True
@@ -141,9 +142,9 @@ DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrow
 #                   color; optional label (default 'ComStock <run>')
 #   kind='release'  key, label, md_table, database, color; optional md_county_table, ts_table
 RUNS = [
-    dict(kind='process', run='<s3_run_name_a>', s3_base_dir='eulp/euss_com', estimate='2025R3',
+    dict(kind='process', run='<s3_run_name_a>', s3_base_dir='eulp/euss_com', estimate='2026R1',
          database='enduse', color='#D55E00'),
-    dict(kind='process', run='<s3_run_name_b>', s3_base_dir='eulp/euss_com', estimate='2025R3',
+    dict(kind='process', run='<s3_run_name_b>', s3_base_dir='eulp/euss_com', estimate='2026R1',
          database='enduse', color='#8C510A'),
     dict(kind='athena',  run='<existing_run_a>', database='enduse', color='#E69F00'),
     # dict(kind='athena',  run='<existing_run_b>', database='enduse', color='#56B4E9',
