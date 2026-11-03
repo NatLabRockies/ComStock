@@ -79,23 +79,28 @@ There are two steps for generating a ComStock sample file. First, the `tsv_sampl
 #### Generating a sample of the TSVs using `tsv_sampling.py`
 National sample using `tsv_sampling.py` now relies on an input CSV file called the bucket definition file. Functionally, this file looks like a buildstock.csv file but only with the columns `Building`, `sampling_region`, `building_type`, `size_bin`, `heating_fuel`, and `hvac_system_type`. This file has one row for each sample, just like the `buildstock.csv` file, however this file is generated using the `comstock_allocation.py` file in the ComStockPostProcessing package. This file specifies what combinations of the previously listed attributes will be sampled (based on the combination of column values) and how often (the number of rows with a specific combination determines how many samples will be drawn.)
 
-Currently two bucket definition files are available. Both were generated for EUSS 2024 R2. They are a test file, named `sample_input_20250916-1309_8602.csv`, and a production file named `sample_input_20250916-1309_103224.csv`. The only difference betwen these two files is the number of building energy model samples per bucket, with test having one per building energy model sample and productions runs 12 per combination of primary variables.
+Bucket definition files come in pairs: a test file with one building energy model sample per bucket, and a production file with 12 per combination of primary variables. Each pair is generated from one stock estimate, and a `buildstock.csv` sampled from a pair must be apportioned in postprocessing to that same estimate (`stock_estimation_version` in the `postprocessing/*.py.template` files). Apportionment matches the estimate's buildings to the sample's models bucket by bucket. With another estimate, models in buckets that estimate lacks are dropped without a message, and the weights follow that estimate's buildings, so a change in the estimate (such as the AHA hospitals in `2026R1`) does not reach the results.
+
+| Test file | Production file | Stock estimate | Notes |
+|---|---|---|---|
+| `sample_input_20260919-1409_8634.csv` | `sample_input_20260919-1409_103608.csv` | `2026R1` | Current. Hospitals from the corrected AHA 2022 survey; sample with the v34 TSVs |
+| `sample_input_20250916-1309_8602.csv` | `sample_input_20250916-1309_103224.csv` | `2025R3` | Previous pair; kept so the 2025 R3 samples can be reproduced |
 
 To start the TSV generation process do the following:
 
 - From this directory, run the following command:
 
 ```
-$ python tsv_sampling.py tsv_version sim_year n_samples n_buckets hvac_sizing -p sample_input_20250916-1309_XXX.csv
+$ python tsv_sampling.py tsv_version sim_year n_samples n_buckets hvac_sizing -p sample_input_20260919-1409_XXX.csv
 ```
 
 - Where:
-    - `tsv_version` is the version of tsv files to sample from (e.g., v26)
+    - `tsv_version` is the version of tsv files to sample from (e.g., v34)
     - `sim_year` is the simulation year (2015-2019)
-    - `n_samples` is the number of samples you wish to generate. If using a bucket definition file, which is expected for allocation sampling, this number needs to match the number of samples in the bucket definition file (~10k sample, n_samples = 8602, full sample, n_samples = 103224). 
+    - `n_samples` is the number of samples you wish to generate. If using a bucket definition file, which is expected for allocation sampling, this number needs to match the number of samples in the bucket definition file (~10k sample, n_samples = 8634, full sample, n_samples = 103608). 
     - `n_buckets` is an speed optimization for the allocation sampling approach. If using the testing bucket definition file or not using a bucket allocation file set this value to 1. If using a production bucket definition file set this value to the number of samples per bucket, which is found by looking at the number of repeated values in the production bucket allocation file (~10k sample, n_buckets =1, full sample, n_buckets = 12).
     - `hvac_sizing` dictates whether the HVAC systems in the models are autosized or hardsized (use "autosize" or "hardsize" for this argument).
-    - `sample_input_20250916-1309_XXX.csv` is the CSV file that specifies which combination of primary attributes need to be sampled and how often they should be sampled. Choose the file name corresponding to the size of the sample you want to generate (~10k sample = 'sample_input_20250916-1309_8602.csv', full sample = 'sample_input_20250916-1309_103224.csv')
+    - `sample_input_20260919-1409_XXX.csv` is the CSV file that specifies which combination of primary attributes need to be sampled and how often they should be sampled. Choose the file name corresponding to the size of the sample you want to generate (~10k sample = 'sample_input_20260919-1409_8634.csv', full sample = 'sample_input_20260919-1409_103608.csv')
 - This will generate a buildstock.csv file and save it to `.\output-buildstocks\intermediate`.
 - The name of the file will include the date, tsv version, simulation year, your username, and number of samples. For example: `buildstock_20221020_v17_2018_alebar_500.csv`.
 
@@ -136,10 +141,10 @@ Next, the `Apportionment` class needs to be loaded and the `generate_sampling_in
 ```py
 import comstockpostproc as cspp
 stock_estimate = cspp.Apportion(
-    stock_estimation_version='2024R2',  # Only updated when a new stock estimate is published
+    stock_estimation_version='2026R1',  # The estimate the new bucket files are generated from
     truth_data_version='v01'  # Typically don't change this
 )
 stock_estimate.generate_sampling_input()
 ```
 
-This will write two files to this sampling directory,
+This will write two files to this sampling directory, `sample_input_<timestamp>_<rows>.csv`, one with one sample per bucket and one with 12. Add the new pair and its stock estimate to the table of bucket definition files above.
