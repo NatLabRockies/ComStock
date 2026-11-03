@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_rtu_adv/measure.rb'</error>
   <name>upgrade_hvac_rtu_adv</name>
   <uid>16167f07-446a-4b8e-bbf1-0fc2240decb9</uid>
-  <version_id>63d43331-74c4-497a-9201-f793e3c67530</version_id>
-  <version_modified>2025-09-18T19:52:50Z</version_modified>
+  <version_id>6a53a3b7-5330-45df-b5e3-c1c91976db27</version_id>
+  <version_modified>2026-09-23T03:38:35Z</version_modified>
   <xml_checksum>67CFAACE</xml_checksum>
   <class_name>UpgradeHvacRtuAdv</class_name>
   <display_name>upgrade_hvac_rtu_adv</display_name>
@@ -149,7 +150,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>9A3DBE11</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -166,7 +167,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>C8954BB4</checksum>
+      <checksum>25D4AA8C</checksum>
     </file>
     <file>
       <filename>lookup_rtu_adv_capacity_0_11_high.json</filename>
@@ -373,106 +374,10 @@
       <checksum>2F3A7C2E</checksum>
     </file>
     <file>
-      <filename>310_PSZ-AC with district hot water.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>E016168E</checksum>
-    </file>
-    <file>
-      <filename>310_PSZ-AC with electric coil.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>E2A49A8C</checksum>
-    </file>
-    <file>
-      <filename>310_PSZ-AC with gas boiler.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>33AACF46</checksum>
-    </file>
-    <file>
-      <filename>310_PSZ-AC with gas coil.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>C6F250CA</checksum>
-    </file>
-    <file>
-      <filename>310_PSZ-HP.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>B3E0B82C</checksum>
-    </file>
-    <file>
-      <filename>370_strip_mall_psz_gas_some_erv_4a.osm</filename>
-      <filetype>osm</filetype>
-      <usage_type>test</usage_type>
-      <checksum>DDDD8102</checksum>
-    </file>
-    <file>
-      <filename>G1000030.ddy</filename>
-      <filetype>ddy</filetype>
-      <usage_type>test</usage_type>
-      <checksum>1F550B36</checksum>
-    </file>
-    <file>
-      <filename>G1000030.epw</filename>
-      <filetype>epw</filetype>
-      <usage_type>test</usage_type>
-      <checksum>4E861EB6</checksum>
-    </file>
-    <file>
-      <filename>G2000050.ddy</filename>
-      <filetype>ddy</filetype>
-      <usage_type>test</usage_type>
-      <checksum>04E70C9A</checksum>
-    </file>
-    <file>
-      <filename>G2000050.epw</filename>
-      <filetype>epw</filetype>
-      <usage_type>test</usage_type>
-      <checksum>D8945511</checksum>
-    </file>
-    <file>
-      <filename>G2001730.ddy</filename>
-      <filetype>ddy</filetype>
-      <usage_type>test</usage_type>
-      <checksum>AAF46D7D</checksum>
-    </file>
-    <file>
-      <filename>G2001730.epw</filename>
-      <filetype>epw</filetype>
-      <usage_type>test</usage_type>
-      <checksum>CE05B881</checksum>
-    </file>
-    <file>
-      <filename>G2901890.ddy</filename>
-      <filetype>ddy</filetype>
-      <usage_type>test</usage_type>
-      <checksum>8C728836</checksum>
-    </file>
-    <file>
-      <filename>G2901890.epw</filename>
-      <filetype>epw</filetype>
-      <usage_type>test</usage_type>
-      <checksum>E6FA86DF</checksum>
-    </file>
-    <file>
-      <filename>G5101530.ddy</filename>
-      <filetype>ddy</filetype>
-      <usage_type>test</usage_type>
-      <checksum>7CC7C379</checksum>
-    </file>
-    <file>
-      <filename>G5101530.epw</filename>
-      <filetype>epw</filetype>
-      <usage_type>test</usage_type>
-      <checksum>DA3AEA3E</checksum>
-    </file>
-    <file>
       <filename>measure_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>074D02FA</checksum>
+      <checksum>BEE9F1CD</checksum>
     </file>
   </files>
 </measure>

@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_unoccupied_oa_controls/measure.rb'</error>
   <name>unoccupied_oa_controls</name>
   <uid>795882f6-7521-454e-a68b-ddbfe67e10b0</uid>
-  <version_id>5e9420cd-cb49-4a02-97d2-acf04e75f102</version_id>
-  <version_modified>2025-07-23T23:00:39Z</version_modified>
+  <version_id>e74d2941-1e43-4b84-bc2d-b78df37a175e</version_id>
+  <version_modified>2026-09-23T03:38:29Z</version_modified>
   <xml_checksum>B3180F38</xml_checksum>
   <class_name>UnoccupiedOAControls</class_name>
   <display_name>Unoccupied OA Controls</display_name>
@@ -53,7 +54,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>24264A44</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -76,7 +77,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>EC77D708</checksum>
+      <checksum>98B13833</checksum>
     </file>
     <file>
       <filename>example_model.osm</filename>

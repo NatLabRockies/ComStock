@@ -43,7 +43,7 @@ ComStock is under an open source license. See [LICENSE.txt](https://github.com/N
 You are welcome to use this repository for your own use. However, we do not provide technical support. Please refer to our [technical assistance documentation](https://nrel.github.io/ComStock.github.io/docs/resources/resources.html) instead. We strongly suggest and support using the public datasets instead of attempting to run millions of building energy models yourself.
 
 ## Developer Installation
-This is needed if you are a developer making changes to `openstudio-standards` or `openstudio-geb` gems or are running simulations locally using [BuildStock Batch](https://buildstockbatch.readthedocs.io/en/stable/).
+This is needed if you are a developer making changes to the `comstock-typical` gem (the fork of `openstudio-standards` that builds ComStock's models; see `resources/Gemfile`) or are running simulations locally using [BuildStock Batch](https://buildstockbatch.readthedocs.io/en/stable/).
 
 1. Install the [latest version of OpenStudio](https://github.com/NREL/OpenStudio/releases). ComStock requires **OpenStudio 3.8.0** or newer.
 2. Install the Ruby version that corresponds to your OpenStudio install. See the [OpenStudio SDK Version Compatibility Matrix](https://github.com/NREL/OpenStudio/wiki/OpenStudio-SDK-Version-Compatibility-Matrix).

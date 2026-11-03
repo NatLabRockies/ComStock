@@ -5,7 +5,7 @@
 
 # see the URL below for information on how to write OpenStudio measures
 # http://nrel.github.io/OpenStudio-user-documentation/reference/measure_writing_guide/
-require 'openstudio-standards'
+require 'comstock-typical'
 Dir["#{File.dirname(__FILE__)}/resources/*.rb"].sort.each { |file| require file }
 
 # start the measure
@@ -71,21 +71,26 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
   # air loop name fragments used for applicability screening
   HP_NAME_WORDS = ['HP', 'hp', 'heat pump', 'Heat Pump'].freeze
   DATA_CENTER_NAME_WORDS = ['Data Center', 'DataCenter', 'data center', 'datacenter', 'DATACENTER', 'DATA CENTER'].freeze
-  KITCHEN_NAME_WORDS = ['Kitchen', 'KITCHEN'].freeze
   VAV_NAME_WORDS = ['VAV', 'PVAV'].freeze
 
   # supply component types used for applicability screening
   EVAPORATIVE_COOLER_TYPES = ['OS_EvaporativeCooler_Direct_ResearchSpecial', 'OS_EvaporativeCooler_Indirect_ResearchSpecial', 'OS_EvaporativeFluidCooler_SingleSpeed', 'OS_EvaporativeFluidCooler_TwoSpeed'].freeze
   UNITARY_SYSTEM_TYPES = ['OS_AirLoopHVAC_UnitarySystem', 'OS_AirLoopHVAC_UnitaryHeatPump_AirToAir', 'OS_AirLoopHVAC_UnitaryHeatPump_AirToAir_MultiSpeed', 'OS_AirLoopHVAC_UnitaryHeatCool_VAVChangeoverBypass'].freeze
 
-  # space type name fragments for zones whose heating setbacks are not modified
-  SPACE_TYPES_NO_SETBACK = ['PatRm', 'PatRoom', 'Lab', 'Exam', 'PatCorridor', 'BioHazard', 'OR', 'PreOp', 'Soil Work', 'Trauma',
-                            'Triage', 'Data Center', 'Mechanical', 'Entry', 'IT_Room', 'Toilet', 'MechElecRoom', 'Guest Room',
-                            'guest room'].freeze
+  # space types whose heating setbacks are not modified, in the typical (all-level) space type vocabulary:
+  # patient care, laboratories, data centers, unoccupied support spaces and guest rooms. A level-1
+  # name covers every qualified variant; 'corridor - hospital' is the patient corridor alone.
+  # Prototype space type names resolve to these through the prototype space type crosswalk. The
+  # prototype list's 'Entry' (now 'lobby'), 'Toilet' (now every 'restroom') and 'BioHazard' (now
+  # 'storage') are not carried over: the typical names cover far more than they did.
+  SPACE_TYPES_NO_SETBACK = ['patient room', 'laboratory', 'exam/treatment', 'corridor - hospital', 'operating room', 'emergency room',
+                            'datacenter/high ite', 'datacenter/low ite', 'electrical/mechanical', 'guest room'].freeze
+  # space types served by air loops the measure skips
+  KITCHEN_SPACE_TYPES = ['food preparation'].freeze
 
   # energy recovery applicability; building types are compared in lowercase
   ERV_EXCLUDED_BUILDING_TYPES = ['rff', 'rsd', 'quickservicerestaurant', 'fullservicerestaurant'].freeze
-  ERV_EXCLUDED_ZONE_NAME_WORDS = ['Kitchen', 'kitchen', 'KITCHEN', 'Dining', 'dining', 'DINING'].freeze
+  ERV_EXCLUDED_SPACE_TYPES = ['food preparation', 'dining'].freeze
 
   # human readable name
   def name
@@ -874,8 +879,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
     air_loop_hvac.thermalZones.sort.each do |thermal_zone|
       # skip zones with space types excluded from setback modification
-      zone_space_types = thermal_zone.spaces.map { |space| space.spaceType.get.name.to_s }
-      next if SPACE_TYPES_NO_SETBACK.any? { |substring| zone_space_types.any? { |str| str.include?(substring) } }
+      next if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, SPACE_TYPES_NO_SETBACK)
 
       next unless thermal_zone.thermostatSetpointDualSetpoint.is_initialized
 
@@ -1173,9 +1177,9 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
       # skip existing heat pumps, by DX heating component or by name
       next if is_hp || name_matches_any?(air_loop_name, HP_NAME_WORDS)
-      # skip data centers, kitchens, and VAV systems by name
+      # skip data centers and VAV systems by name, and kitchens by space type
       next if name_matches_any?(air_loop_name, DATA_CENTER_NAME_WORDS)
-      next if name_matches_any?(air_loop_name, KITCHEN_NAME_WORDS)
+      next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, KITCHEN_SPACE_TYPES)
       next if name_matches_any?(air_loop_name, VAV_NAME_WORDS)
       # skip residential systems; no outdoor air system is also an indication of a residential system
       next if air_loop_res?(air_loop_hvac)
@@ -2023,8 +2027,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # add energy recovery if specified by user and if the building type is applicable
       next unless hr && btype_erv_applicable
 
-      # skip air loops serving non-applicable space types and warn user
-      if name_matches_any?(thermal_zone.name.to_s, ERV_EXCLUDED_ZONE_NAME_WORDS)
+      # skip zones serving non-applicable space types (kitchens and dining) and warn user
+      if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, ERV_EXCLUDED_SPACE_TYPES)
         runner.registerWarning("The user selected to add energy recovery to the HP-RTUs, but thermal zone #{thermal_zone.name} is a non-applicable space type for energy recovery. Any existing energy recovery will remain for consistancy, but no new energy recovery will be added.")
         next
       end

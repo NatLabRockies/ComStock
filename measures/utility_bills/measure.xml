@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>utility_bills</name>
   <uid>eba532c2-efac-41fe-b7cb-b4538bb02c32</uid>
-  <version_id>def15f36-f28b-4111-aa1c-5cef548860fd</version_id>
-  <version_modified>2025-07-16T21:43:37Z</version_modified>
+  <version_id>5536f02a-2605-4960-b2e8-be1731ee2ed9</version_id>
+  <version_modified>2026-10-15T18:55:41Z</version_modified>
   <xml_checksum>15BF4E57</xml_checksum>
   <class_name>UtilityBills</class_name>
   <display_name>Utility Bills</display_name>
@@ -33,13 +33,31 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>0008674F</checksum>
+      <checksum>60CC75EA</checksum>
+    </file>
+    <file>
+      <filename>README.md</filename>
+      <filetype>md</filetype>
+      <usage_type>readme</usage_type>
+      <checksum>5E83F14E</checksum>
     </file>
     <file>
       <filename>calc_elec_bill.py</filename>
       <filetype>py</filetype>
       <usage_type>resource</usage_type>
       <checksum>F638C0D3</checksum>
+    </file>
+    <file>
+      <filename>build_elec_rate_states.py</filename>
+      <filetype>py</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>909FEFBE</checksum>
+    </file>
+    <file>
+      <filename>elec_rate_states.csv</filename>
+      <filetype>csv</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>A0A30AB7</checksum>
     </file>
     <file>
       <filename>eia_com_elec_avg_yrly_rate_increase.json</filename>
@@ -2430,12 +2448,6 @@
       <checksum>3FBFCC99</checksum>
     </file>
     <file>
-      <filename>elec_rates/10650/539f74e5ec4f024411ed0de7.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>2F77E2A0</checksum>
-    </file>
-    <file>
       <filename>elec_rates/10650/539fb972ec4f024bc1dc22e1.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -3972,12 +3984,6 @@
       <checksum>0C083A39</checksum>
     </file>
     <file>
-      <filename>elec_rates/11124/539f74b2ec4f024411ed0b6b.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>B45EE715</checksum>
-    </file>
-    <file>
       <filename>elec_rates/11124/539fb57cec4f024bc1dbf537.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -4006,12 +4012,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>C2DFFC89</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/11124/539fc46dec4f024c27d8c6b9.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>6F9E0035</checksum>
     </file>
     <file>
       <filename>elec_rates/11125/539f6d6dec4f024411ecb5a7.json</filename>
@@ -4372,12 +4372,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>09BBB9C9</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/11211/539fc851ec4f024d2f53e544.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>88178C8B</checksum>
     </file>
     <file>
       <filename>elec_rates/11222/539f7349ec4f024411ecfb0f.json</filename>
@@ -11514,12 +11508,6 @@
       <checksum>6B85523F</checksum>
     </file>
     <file>
-      <filename>elec_rates/13604/539f736aec4f024411ecfc6f.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>00405E36</checksum>
-    </file>
-    <file>
       <filename>elec_rates/13604/539fc15eec4f024c27d8a64d.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -11632,18 +11620,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>A0E1097D</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/13651/58e684415457a31c573d4588.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>F957DBC8</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/13651/58e6852f5457a308283d4586.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>EF37B0DF</checksum>
     </file>
     <file>
       <filename>elec_rates/1366/539f6d2cec4f024411ecb293.json</filename>
@@ -13224,12 +13200,6 @@
       <checksum>143268D8</checksum>
     </file>
     <file>
-      <filename>elec_rates/13839/539f6bfbec4f024411eca41b.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>6D1A3612</checksum>
-    </file>
-    <file>
       <filename>elec_rates/13839/539fc410ec4f024c27d8c2a5.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -14122,12 +14092,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>37E4D91A</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/14151/539fc4efec4f024c27d8cc17.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>91FD8446</checksum>
     </file>
     <file>
       <filename>elec_rates/14154/539fb89bec4f024bc1dc1937.json</filename>
@@ -23016,24 +22980,6 @@
       <checksum>814CC58C</checksum>
     </file>
     <file>
-      <filename>elec_rates/16655/5b194a545457a3160dce813b.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>E2516390</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/16655/5b1958e35457a36c71ce813b.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>1590A731</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/16655/5b1964d85457a36f27ce813b.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>8E12E508</checksum>
-    </file>
-    <file>
       <filename>elec_rates/16667/539f6ae9ec4f024411ec9595.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -23308,12 +23254,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>0C709905</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/16780/539fbf46ec4f024c27d88feb.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>A0A3394D</checksum>
     </file>
     <file>
       <filename>elec_rates/16788/539f72d2ec4f024411ecf56f.json</filename>
@@ -25056,12 +24996,6 @@
       <checksum>A7460748</checksum>
     </file>
     <file>
-      <filename>elec_rates/1736/5550e1e15457a31c7e8b4569.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>61CF2951</checksum>
-    </file>
-    <file>
       <filename>elec_rates/174/539fba44ec4f024bc1dc2bfb.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -25816,12 +25750,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>343E3A9F</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/17603/53c69fbe5257a3ef42f17bd4.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>EB51B648</checksum>
     </file>
     <file>
       <filename>elec_rates/17603/53c6a71e5257a34045f17bd2.json</filename>
@@ -31824,12 +31752,6 @@
       <checksum>850F8257</checksum>
     </file>
     <file>
-      <filename>elec_rates/19324/539fcb35ec4f024d2f5403cc.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>4B7F365D</checksum>
-    </file>
-    <file>
       <filename>elec_rates/19325/539fb4afec4f024bc1dbec89.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -32194,12 +32116,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>76CC8C33</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/19445/539fc445ec4f024c27d8c4df.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>523E41CB</checksum>
     </file>
     <file>
       <filename>elec_rates/19446/5b05d4cd5457a3d2360b0e3a.json</filename>
@@ -32982,12 +32898,6 @@
       <checksum>23857CE0</checksum>
     </file>
     <file>
-      <filename>elec_rates/19790/539f723fec4f024411ecef63.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>63C13FDE</checksum>
-    </file>
-    <file>
       <filename>elec_rates/19790/539fbdfeec4f024c27d8816d.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -33226,12 +33136,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>14A3DAC8</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/19820/53a9d57b5257a318362c8965.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>714CB010</checksum>
     </file>
     <file>
       <filename>elec_rates/19820/53a9d6bc5257a318362c8966.json</filename>
@@ -34758,12 +34662,6 @@
       <checksum>DBEF6806</checksum>
     </file>
     <file>
-      <filename>elec_rates/20213/55ba80c75457a3e449995e98.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>D0E5BDE5</checksum>
-    </file>
-    <file>
       <filename>elec_rates/20214/539f6c59ec4f024411eca8e9.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -35928,12 +35826,6 @@
       <checksum>5419A1BE</checksum>
     </file>
     <file>
-      <filename>elec_rates/20509/539f6aeaec4f024411ec9623.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>75D2F15D</checksum>
-    </file>
-    <file>
       <filename>elec_rates/20509/539f6f75ec4f024411ecce41.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -36088,12 +35980,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>4C65D4A0</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/2054/539f6e5cec4f024411ecc159.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>4897B565</checksum>
     </file>
     <file>
       <filename>elec_rates/2054/539f6e9dec4f024411ecc437.json</filename>
@@ -37242,12 +37128,6 @@
       <checksum>AA41FACB</checksum>
     </file>
     <file>
-      <filename>elec_rates/20927/539fb503ec4f024bc1dbefbd.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>4380AE8F</checksum>
-    </file>
-    <file>
       <filename>elec_rates/20927/539fbd13ec4f024c27d87743.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -37378,12 +37258,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>E10B3FB7</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/20980/53ab11565257a3dd4b1cfe38.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>82357D98</checksum>
     </file>
     <file>
       <filename>elec_rates/20996/539f713aec4f024411ece351.json</filename>
@@ -38400,24 +38274,6 @@
       <checksum>484EAD69</checksum>
     </file>
     <file>
-      <filename>elec_rates/22053/5d40b4b55457a37263dc8c3e.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>9BE94757</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/22053/5d40b5755457a38664dc8c3c.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>7CB6F064</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/22053/5d40b7755457a33e6bdc8c3f.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>ADB9849B</checksum>
-    </file>
-    <file>
       <filename>elec_rates/2206/539f75e6ec4f024411ed192f.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -39100,12 +38956,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>D5E2D37D</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/2272/539f7437ec4f024411ed0579.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>2C06D4E9</checksum>
     </file>
     <file>
       <filename>elec_rates/2273/539f70f6ec4f024411ece081.json</filename>
@@ -45198,12 +45048,6 @@
       <checksum>49448ADF</checksum>
     </file>
     <file>
-      <filename>elec_rates/3989/5d2614a25457a3607bdc131d.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>CD82816C</checksum>
-    </file>
-    <file>
       <filename>elec_rates/4003/539f6b07ec4f024411ec9769.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -49770,12 +49614,6 @@
       <checksum>7118DC63</checksum>
     </file>
     <file>
-      <filename>elec_rates/5416/6112939e5457a3fb29f802c8.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>566FC531</checksum>
-    </file>
-    <file>
       <filename>elec_rates/5416/6112a67b5457a3035af802c8.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -51952,12 +51790,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>E015566F</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/5862/539fc022ec4f024c27d898e1.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>4ADAF5DE</checksum>
     </file>
     <file>
       <filename>elec_rates/5862/539fc4efec4f024c27d8cc23.json</filename>
@@ -57594,12 +57426,6 @@
       <checksum>227EAA8B</checksum>
     </file>
     <file>
-      <filename>elec_rates/7627/539fbfa1ec4f024c27d89397.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>2B8842A1</checksum>
-    </file>
-    <file>
       <filename>elec_rates/7630/539f6d7cec4f024411ecb64b.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -59880,12 +59706,6 @@
       <checksum>C09424DC</checksum>
     </file>
     <file>
-      <filename>elec_rates/8571/539f6b82ec4f024411ec9ded.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>A45B8303</checksum>
-    </file>
-    <file>
       <filename>elec_rates/8571/539f6f43ec4f024411eccc49.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -60154,12 +59974,6 @@
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
       <checksum>22108C55</checksum>
-    </file>
-    <file>
-      <filename>elec_rates/8700/53f4c8e55257a3381ce7a2a5.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>19B63E29</checksum>
     </file>
     <file>
       <filename>elec_rates/8700/53f4c9aa5257a3111ce7a2a4.json</filename>
@@ -62028,12 +61842,6 @@
       <checksum>C9754C0E</checksum>
     </file>
     <file>
-      <filename>elec_rates/9336/5b44f87e5457a37455a907eb.json</filename>
-      <filetype>json</filetype>
-      <usage_type>resource</usage_type>
-      <checksum>B695DCDF</checksum>
-    </file>
-    <file>
       <filename>elec_rates/9336/5b44fb985457a32c5ea907ed.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
@@ -63867,7 +63675,7 @@
       <filename>utility_bills_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>36A381D3</checksum>
+      <checksum>1557D61C</checksum>
     </file>
   </files>
 </measure>
