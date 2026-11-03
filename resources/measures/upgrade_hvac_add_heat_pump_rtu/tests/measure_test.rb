@@ -603,8 +603,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       assert(clg_coil_spd2.grossRatedTotalCoolingCapacity.get > clg_coil_spd1.grossRatedTotalCoolingCapacity.get)
     end
 
-    # the hard-sized model is what EnergyPlus runs, so check the minimum OA airflow floors there
-    assert_airflows_meet_min_oa(model, test_name)
+    # check the minimum OA airflow floors on the measure's output model, which is what EnergyPlus runs after the upgrade;
+    # hard-sizing writes EnergyPlus's default stage airflows (25/50/75/100% of design) over the measure's values
+    assert_airflows_meet_min_oa(load_model(model_output_path(test_name)), test_name)
     result
   end
 
