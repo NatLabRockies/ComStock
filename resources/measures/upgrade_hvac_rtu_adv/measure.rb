@@ -1814,13 +1814,15 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       # add dcv to air loop if dcv flag is true
       if dcv == true
-        if debug_verbose
-          runner.registerInfo('--- adding DCV')
+        runner.registerInfo('--- adding DCV') if debug_verbose
+        # the DCV measure's eligibility and per-loop changes, so this option matches upgrade_hvac_dcv
+        require_relative '../upgrade_hvac_dcv/measure'
+        reason = HVACDCV.building_ineligibility(model) || HVACDCV.air_loop_ineligibility(air_loop_hvac)
+        if reason.nil?
+          HVACDCV.enable_dcv(model, air_loop_hvac, std, runner)
+        else
+          runner.registerInfo("DCV not added to '#{air_loop_hvac.name}': #{HVACDCV::INELIGIBILITY_TEXT[reason]}.")
         end
-        oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get
-        controller_oa = oa_system.getControllerOutdoorAir
-        controller_mv = controller_oa.controllerMechanicalVentilation
-        controller_mv.setDemandControlledVentilation(true)
       end
 
       # -------------------------------------------------------
