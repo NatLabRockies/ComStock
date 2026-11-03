@@ -1,0 +1,53 @@
+name: Reference documentation
+
+on:
+  push:
+    paths:
+      - 'documentation/reference_doc/**'
+      - '.github/workflows/reference_doc.yml'
+  pull_request:
+    paths:
+      - 'documentation/reference_doc/**'
+      - '.github/workflows/reference_doc.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Cheap checks before the slow compile: dangling \ref targets, missing figures or
+      # \input files, duplicate labels, and generated tables whose rows do not match
+      # their column specification.
+      - name: Check references and tables
+        run: |
+          python documentation/reference_doc/scripts/check_refs.py
+          python documentation/reference_doc/scripts/check_tables.py
+
+      # Full TeX Live with biber in a container; the nrel class needs pdfTeX. The build
+      # settings (pdflatex, biber, output directory) come from reference_doc/latexmkrc.
+      - name: Compile PDF
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: documentation/reference_doc
+          root_file: main.tex
+          latexmk_use_pdf: true
+          args: -interaction=nonstopmode -file-line-error
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: ComStock_Reference_Documentation
+          path: documentation/reference_doc/output/main.pdf
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latex-log
+          path: documentation/reference_doc/output/main.log

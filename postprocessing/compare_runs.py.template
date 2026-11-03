@@ -35,7 +35,7 @@ def main():
     # What is on this disk and what this pass will do with it: one log line per
     # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
     # Keep the versions here in step with the objects below.
-    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2025R3'])
+    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2026R1'])
     # First ComStock run
     comstock_a = cspp.ComStock(
         s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
@@ -70,12 +70,12 @@ def main():
         include_upgrades=False  # False if not looking at upgrades
         )
 
-    # Stock Estimation for Apportionment. The cache is per stock_estimation_version
-    # and reload_from_cache=True RAISES when it is absent -- after both runs above
-    # have been downloaded and processed -- so whether it exists is detected rather
-    # than remembered (stock_estimate() below). Only updated when a new estimate is
-    # published.
-    stock_estimate = apportionment('2025R3')
+    # Stock Estimation for Apportionment. Both runs use it, so both samples must be drawn
+    # from this estimate: the one their bucket file was generated from (sampling/README.md
+    # lists each bucket file with its estimate). The cache is per stock_estimation_version
+    # and reload_from_cache=True RAISES when it is absent, so apportionment() below detects
+    # it rather than remembering.
+    stock_estimate = apportionment('2026R1')
 
     # If the runs were sampled against DIFFERENT stock estimates, this file is the wrong
     # starting point -- use compare_runs_different_samples.py.template instead.
