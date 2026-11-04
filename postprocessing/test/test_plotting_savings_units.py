@@ -2,7 +2,7 @@
 # See top level LICENSE.txt file for license terms.
 """Site EUI savings distributions plot kBtu/ft2, the units on their axes. No data, no S3.
 
-The savings intensity columns are ..kwh_per_ft2. write_image is stubbed out, so kaleido never
+The savings intensity columns are ..kwh_per_ft2. queue_figure is stubbed out, so kaleido never
 runs: each figure is kept under the file name it would have been written to.
 """
 
@@ -10,7 +10,6 @@ import os
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 
 from comstockpostproc.naming_mixin import NamingMixin
@@ -65,10 +64,11 @@ def test_eui_columns_convert_from_kwh_to_kbtu_per_ft2():
 def test_site_eui_savings_figures_plot_the_kbtu_per_ft2_on_their_axes(method, groupings, tmp_path, monkeypatch):
     written = {}
 
-    def keep(fig, path, **kwargs):
-        written[os.path.basename(path)] = fig
+    def keep(self, fig, file_path, scale=None):
+        written[os.path.basename(file_path)] = fig
 
-    monkeypatch.setattr(go.Figure, 'write_image', keep)
+    # The plot methods hand each figure to queue_figure for a batched export
+    monkeypatch.setattr(Plotter, 'queue_figure', keep)
 
     getattr(P, method)(df=_frame(), output_dir=str(tmp_path))
 
