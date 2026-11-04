@@ -16,8 +16,8 @@ EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Ta
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False writes only
-                                   # the wide CSVs and the dashboard
+MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False leaves them to
+                                   # the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
                                    # and the run's <run>_timeseries table (from buildstockbatch's crawl)
 COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
@@ -113,7 +113,6 @@ def main():
                                         upgrade_id='All',
                                         make_comparison_plots=MAKE_COMPARISON_PLOTS,
                                         make_hvac_plots=False)
-    comp.export_to_csv_wide()  # May comment this out after run once
 
     # ---- Results dashboard --------------------------------------
     # The assessment reads this run's Athena tables and creates none of its own,
