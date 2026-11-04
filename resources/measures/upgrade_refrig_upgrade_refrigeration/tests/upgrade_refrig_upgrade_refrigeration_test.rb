@@ -3,7 +3,7 @@
 
 # dependencies
 require 'openstudio'
-require 'openstudio-standards'
+require 'comstock-typical'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'fileutils'
 require 'minitest/autorun'
@@ -77,11 +77,12 @@ class UpgradeRefrigAdvancedRefrigerationTest < Minitest::Test
   end
 
   def energy_metrics_from_sql(sql)
-    total_site_j = sql.totalSiteEnergy
-    assert(total_site_j.is_initialized, 'Total site energy was not available from SQL file.')
+    # SqlFile#totalSiteEnergy already reports GJ.
+    total_site_gj = sql.totalSiteEnergy
+    assert(total_site_gj.is_initialized, 'Total site energy was not available from SQL file.')
 
     {
-      total_site_gj: OpenStudio.convert(total_site_j.get, 'J', 'GJ').get,
+      total_site_gj: total_site_gj.get,
       refrigeration_electricity_gj: sql_refrigeration_electricity_gj(sql)
     }
   end
@@ -93,6 +94,8 @@ class UpgradeRefrigAdvancedRefrigerationTest < Minitest::Test
     run_period.setEndMonth(1)
     run_period.setEndDayOfMonth(14)
     run_period.setNumTimePeriodRepeats(1)
+    # The test model ships with weather-file run periods off, so only the sizing periods would run.
+    model.getSimulationControl.setRunSimulationforWeatherFileRunPeriods(true)
   end
 
   def run_model_and_get_sql(model, std, run_directory)
@@ -127,6 +130,11 @@ class UpgradeRefrigAdvancedRefrigerationTest < Minitest::Test
 
     # Ensure the measure is applicable for this model.
     model.getBuilding.additionalProperties.setFeature('refrigeration_technology_level', 'old')
+
+    # Build the baseline the way ComStock does: typical refrigeration at the 'old' level. The model's
+    # own refrigeration comes from the prototype method, which sizes cases differently.
+    UpgradeRefrigeration.new.remove_existing_refrigeration(model)
+    OpenstudioStandards::Refrigeration.create_typical_refrigeration(model, template: 'old')
 
     epw_file = OpenStudio::EpwFile.new(OpenStudio::Path.new(epw_path))
     OpenStudio::Model::WeatherFile.setWeatherFile(model, epw_file)
