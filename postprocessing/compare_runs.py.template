@@ -44,11 +44,12 @@ def main():
         include_upgrades=False  # False if not looking at upgrades
         )
 
-    # Stock Estimation for Apportionment:
+    # Stock Estimation for Apportionment. Both runs use it, so both samples must be drawn from this estimate. To compare
+    # runs drawn from different estimates, create one Apportion per estimate and pass each run its own.
     stock_estimate = cspp.Apportion(
-        stock_estimation_version='2025R3',  # Only updated when a new stock estimate is published
+        stock_estimation_version='2026R1',  # The estimate the samples (their bucket file) were generated from; see sampling/README.md
         truth_data_version='v01',  # Typically don't change this
-        reload_from_cache=True # Set to "True" if you have already run apportionment and would like to keep consistant values between postprocessing runs.
+        reload_from_cache=False  # Set to "True" only after this estimate's apportionment cache exists (output/Stock Estimation <version>/); True with no cache raises FileNotFoundError.
     )
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
