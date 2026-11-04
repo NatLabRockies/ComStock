@@ -245,7 +245,7 @@ def run_measure(model, measure, argument_map, runner)
       runner.registerInfo("The measure was successful - value.valueName return was `#{result_child.value.valueName}`")
     end
   rescue ScriptError, StandardError, NoMemoryError => e
-    runner.registerError("Measure Failed with Error: #{e.backtrace.join("\n")}")
+    runner.registerError("Measure Failed with Error: #{e.class}: #{e.message}\n#{e.backtrace.join("\n")}")
     return false
   end
   return true

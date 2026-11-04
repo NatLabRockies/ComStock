@@ -533,7 +533,7 @@ module MakePerformanceCurves
       # basic data set info
       rated_cooling_capacity_watts = 94.1 * 1000
       rated_cooling_eir = 0.21505 # 5K delta
-      0.00443 # 5k delta (same delta t and same working fluid, so same flow rate)
+      rated_source_flow_rate = 0.00443 # m3/s, 5 K delta T on both sides at the rated point
 
     when 'Carrier_61WG_Glycol_90kW'
       valid_object_types = ['OS_HeatPump_PlantLoop_EIR_Heating']
@@ -556,7 +556,9 @@ module MakePerformanceCurves
       glycol_fraction = 0.3
       density_evap = ((1 - glycol_fraction) * density_water) + (glycol_fraction * density_glycol)
       cp_evap = ((1 - glycol_fraction) * cp_water) + (glycol_fraction * cp_glycol)
-      (rated_htg_load_flow_rate * density_water * cp_water * htg_cond_delta_t) / (density_evap * cp_evap * htg_evap_delta_t)
+      # the evaporator takes the heating output less the compressor power, at the catalog's 3 K across it
+      rated_source_flow_rate = (rated_htg_load_flow_rate * density_water * cp_water * htg_cond_delta_t) * (1 - rated_heating_eir) /
+                               (density_evap * cp_evap * htg_evap_delta_t)
     else
       runner.registerError("#{data_set_name} is not supported by add_lookup_performance_data method")
       return false
@@ -605,7 +607,9 @@ module MakePerformanceCurves
 
     when 'OS_HeatPump_PlantLoop_EIR_Cooling'
       # read in csv data
-      cooling_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_clg.csv"
+      # the catalog stops at 25 C source water; the _extended file adds 10-20 C points (COP from a fit in lift over the
+      # catalog points, capped at the catalog's best; capacity from each row's slope), where the loop actually runs
+      cooling_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_clg_extended.csv"
       # create lookup tables and supporting objects
       table_lookup_clg_cap = create_table_lookup(model, 'table_lookup_clg_cap', 'hydronic_gshp', 'clg_cap',
                                                  rated_cooling_capacity_watts, cooling_data_path, runner)
@@ -616,10 +620,19 @@ module MakePerformanceCurves
       hvac_object.setElectricInputtoOutputRatioModifierFunctionofTemperatureCurve(table_lookup_clg_eir)
       # set coil inputs
       hvac_object.setReferenceCoefficientofPerformance(1 / rated_cooling_eir)
+      # variable flow to match the loop's variable speed pump; with ConstantFlow EnergyPlus set the source outlet
+      # temperature for a different flow than the loop carried, adding heat that is not there (85 MWh/yr in a small hotel)
+      hvac_object.setFlowMode('VariableSpeedPumping')
+      # catalog source flow scaled to this heat pump; autosizing used the condenser loop's 11 K OpenStudio default
+      if hvac_object.referenceCapacity.is_initialized
+        hvac_object.setSourceSideReferenceFlowRate(hvac_object.referenceCapacity.get * rated_source_flow_rate / rated_cooling_capacity_watts)
+      end
 
     when 'OS_HeatPump_PlantLoop_EIR_Heating'
       # read in csv data
-      heating_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_htg.csv"
+      # the catalog stops at 0 C source water; the _extended file adds 5-25 C points (COP from a fit in lift over the
+      # catalog points, capped at the catalog's best; capacity from each row's slope), where the loop actually runs
+      heating_data_path = "#{File.dirname(__FILE__)}/#{data_set_name}_htg_extended.csv"
       # create lookup tables and supporting objects
       table_lookup_htg_cap = create_table_lookup(model, 'table_lookup_htg_cap', 'hydronic_gshp', 'htg_cap',
                                                  rated_heating_capacity_watts, heating_data_path, runner)
@@ -630,6 +643,13 @@ module MakePerformanceCurves
       hvac_object.setElectricInputtoOutputRatioModifierFunctionofTemperatureCurve(table_lookup_htg_eir)
       # set coil inputs
       hvac_object.setReferenceCoefficientofPerformance(1 / rated_heating_eir)
+      # variable flow to match the loop's variable speed pump; with ConstantFlow EnergyPlus set the source outlet
+      # temperature for a different flow than the loop carried, adding heat that is not there (85 MWh/yr in a small hotel)
+      hvac_object.setFlowMode('VariableSpeedPumping')
+      # catalog source flow scaled to this heat pump; autosizing used the condenser loop's 11 K OpenStudio default
+      if hvac_object.referenceCapacity.is_initialized
+        hvac_object.setSourceSideReferenceFlowRate(hvac_object.referenceCapacity.get * rated_source_flow_rate / rated_heating_capacity_watts)
+      end
 
     else
       runner.registerError("Unexpected object type (#{hvac_object_type}) for lookup table performance data set #{data_set_name}")

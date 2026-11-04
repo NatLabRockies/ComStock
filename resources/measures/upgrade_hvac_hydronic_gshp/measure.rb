@@ -440,7 +440,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
 
     # runner.registerInfo("looping thru unitary systems: #{Time.now} ")
     model.getAirLoopHVACUnitarySystems.each do |unit|
-      flowmethod = unit.supplyAirFlowRateMethodDuringHeatingOperation.get
+      # OpenStudio 3.7+ returns a String here (older SDKs an optional); .get raised on every model with a
+      # unitary system. Accept either shape; blank becomes '' so the branch below assigns a method.
+      flowmethod_raw = unit.supplyAirFlowRateMethodDuringHeatingOperation
+      flowmethod = if flowmethod_raw.respond_to?(:is_initialized)
+                     flowmethod_raw.is_initialized ? flowmethod_raw.get.to_s : ''
+                   else
+                     flowmethod_raw.to_s
+                   end
       # runner.registerInfo("flow method is #{flowmethod} ")
       if flowmethod == ''
         if model.version < OpenStudio::VersionString.new('3.7.0')
@@ -505,7 +512,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ground_pump.setName('Ground loop circulation pump')
     ground_pump.setRatedPumpHead(66_955.1) # #Set this based on modified version of example in Table 6.15 in ASHRAE geothermal design guide (subtracted out heat pumps and headers to them)
     ground_pump.addToNode(ground_loop.supplyInletNode)
-    ground_pump.setPumpControlType('Continuous')
+    # run only while the heat pumps draw water, as water-loop heat pump systems shut flow off with the compressors
+    # (as in the console measure); 'Continuous' ran this constant speed pump at full flow all year
+    ground_pump.setPumpControlType('Intermittent')
 
     # Create a scheduled setpoint manager
     # TODO determine if a schedule that follows the monthly ground temperature
@@ -547,6 +556,8 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     heat_exchanger.setHeatExchangeModelType('Ideal')
     heat_exchanger.setControlType('UncontrolledOn')
     heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
+    # OpenStudio's 0 C default is the water freeze limit; it switches the HX off and the condenser loop runs away
+    heat_exchanger.setOperationMinimumTemperatureLimit(-6.0) # C, above 20% propylene glycol's -7 C freeze point
     # heat_exchanger.addToNode(inlet) ##AA commented this out and added line below 7/12
     ground_loop.addDemandBranchForComponent(heat_exchanger) # #AA added this 7/13
 
@@ -573,6 +584,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     cond_loop_sizing = cond_loop.sizingPlant
     cond_loop_sizing.setLoopType('Condenser Loop')
     cond_loop_sizing.setDesignLoopExitTemperature((cond_loop_setpoint_high + cond_loop_setpoint_low) / 2) # #AA updated this, averaging the range
+    # the heat pumps pull this loop below 0 C in cold climates; use the ground loop's 20% propylene glycol
+    cond_loop.setFluidType('PropyleneGlycol')
+    cond_loop.setGlycolConcentration(20)
     cond_loop.addSupplyBranchForComponent(heat_exchanger) # #AA will need to refine this
     cond_loop_setpoint_manager = OpenStudio::Model::SetpointManagerScheduledDualSetpoint.new(model) # , cond_loop_temp_sch)
 
@@ -700,6 +714,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       # pump_clg_intermed_loop.setRatedPumpHead(44834.7) # 15 ftf for primary pump for a primary-secondary system based on Appendix G
       pump_chw_loop.addToNode(chw_loop.supplyInletNode)
 
+    else
+      # the coil conversion below needs the loop; the typical models have one and unitary systems
+      chw_loop = chw_loops.first
     end
 
     # go thru air loops and replace DX coils with chw coils
@@ -721,18 +738,19 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     if no_unit_sys == false
       # iterate thru unitary sys
       model.getAirLoopHVACUnitarySystems.each do |sys|
-        # get sizes of existing equipmetn
-        # create CHW and HHW coils and add to loop
-        coil = sys.coolingCoil.get
-        coil = coil.to_CoilCoolingDXSingleSpeed.get
-        # runner.registerInfo("unitary coil class: #{coil.class}")
-        # runner.registerInfo("unitary coil: #{coil}")
-        # get supplemental htg coil if there is one
-        sup_htg_coil = sys.supplementalHeatingCoil.get
-        # runner.registerInfo("sup heating coil : #{sup_htg_coil}")
-        sup_htg_coil = sup_htg_coil.to_CoilHeatingElectric.get
-        sys.resetSupplementalHeatingCoil
-        sup_htg_coil.remove
+        # data center CRAC/CRAH units stay as they are (same test as the other HVAC measures)
+        if sys.airLoopHVAC.is_initialized
+          crac_loop = sys.airLoopHVAC.get
+          next if crac_loop.name.to_s.match?(/(CRAC|CRAH)/i) || crac_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        end
+        # only single-speed DX units are converted; the typical models also carry other unitary types
+        next unless sys.coolingCoil.is_initialized && sys.coolingCoil.get.to_CoilCoolingDXSingleSpeed.is_initialized
+        coil = sys.coolingCoil.get.to_CoilCoolingDXSingleSpeed.get
+        if sys.supplementalHeatingCoil.is_initialized && sys.supplementalHeatingCoil.get.to_CoilHeatingElectric.is_initialized
+          sup_htg_coil = sys.supplementalHeatingCoil.get.to_CoilHeatingElectric.get
+          sys.resetSupplementalHeatingCoil
+          sup_htg_coil.remove
+        end
         # deal with clg coil
         if coil.to_CoilCoolingDXSingleSpeed.is_initialized # check for autosized capacity, too--should this be autosized?
           unitary_cap += coil.ratedTotalCoolingCapacity.get.to_f if coil.ratedTotalCoolingCapacity.is_initialized
@@ -828,12 +846,16 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       htg_loop_sizing.setLoopDesignTemperatureDifference(11.1) # AA updated this 9/14
       # create HHW coils in main air loops
       model.getCoilCoolingWaters.each do |coil|
-        # get sizes of existing equipmetn
-        # create CHW and HHW coils and add to loop
+        # only coils sitting directly on an air loop get a hot water coil behind them; coils inside fan coil
+        # units, coil systems or data center CRAH units, and coils without a node outlet, are left alone
+        next if coil.containingZoneHVACComponent.is_initialized || coil.containingHVACComponent.is_initialized
+        next unless coil.airLoopHVAC.is_initialized
+        coil_loop = coil.airLoopHVAC.get
+        next if coil_loop.name.to_s.match?(/(CRAC|CRAH)/i) || coil_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        next unless coil.airOutletModelObject.is_initialized && coil.airOutletModelObject.get.to_Node.is_initialized
         # autosize water and air flow rates
         coil.autosizeDesignWaterFlowRate
         coil.autosizeDesignAirFlowRate
-        # runner.registerInfo("coil  #{coil}")
         outlet_node = coil.airOutletModelObject.get.to_Node.get
         # runner.registerInfo("coil outlet node #{outlet_node}")
         hhw_coil = OpenStudio::Model::CoilHeatingWater.new(model)
@@ -884,13 +906,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       # calculate # of hps required
       working_des_cap_htg = [hp_des_cap_htg * 1000, elec_htg_cap].max
 
-      if working_des_cap_htg > hp_des_cap_htg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_htg
+      if working_des_cap_htg > hp_des_cap_htg * 1000
         no_hps = (working_des_cap_htg / (hp_des_cap_htg * 1000)).to_f.ceil
         # no_hps = (working_des_cap/(hp_des_cap_htg*1000)).round(0)
         working_hp_cap_htg = hp_des_cap_htg * 1000
       else
         no_hps = 1
-        working_hp_cap_htg = elec_htg_cap
+        working_hp_cap_htg = elec_htg_cap.positive? ? elec_htg_cap : hp_des_cap_htg * 1000
       end
 
 
@@ -964,14 +987,15 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     working_des_cap_clg = [hp_des_cap_clg * 1000, cap_coils_comb].max
     # runner.registerInfo("cap coils comb: #{cap_coils_comb}")
 
-    if working_des_cap_clg > hp_des_cap_clg
+    # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_clg
+    if working_des_cap_clg > hp_des_cap_clg * 1000
       no_hps = (working_des_cap_clg / (hp_des_cap_clg * 1000)).to_f.ceil
       # runner.registerInfo("no. hps: #{no_hps}")
       # no_hps = (working_des_cap_clg/(hp_des_cap_clg*1000)).round(0)
       working_hp_cap_clg = hp_des_cap_clg * 1000
     else
       no_hps = 1
-      working_hp_cap_clg = cap_coils_comb
+      working_hp_cap_clg = cap_coils_comb.positive? ? cap_coils_comb : hp_des_cap_clg * 1000
     end
 
     # runner.registerInfo("working_hp_cap_clg: #{working_hp_cap_clg}")
@@ -1059,14 +1083,15 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       working_des_cap_clg = [hp_des_cap_clg * 1000, cap_chiller].max
       # runner.registerInfo("cap chiller: #{cap_chiller}")
 
-      if working_des_cap_clg > hp_des_cap_clg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_clg
+      if working_des_cap_clg > hp_des_cap_clg * 1000
         no_hps = (working_des_cap_clg / (hp_des_cap_clg * 1000)).to_f.ceil
         # runner.registerInfo("no. hps: #{no_hps}")
         # no_hps = (working_des_cap_clg/(hp_des_cap_clg*1000)).round(0)
         working_hp_cap_clg = hp_des_cap_clg * 1000
       else
         no_hps = 1
-        working_hp_cap_clg = cap_chiller
+        working_hp_cap_clg = cap_chiller.positive? ? cap_chiller : hp_des_cap_clg * 1000
       end
       (1..no_hps).each do |hp| # adding heat pumps to the loop
         # create water source heat pump object
@@ -1155,13 +1180,14 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
 
       working_des_cap_htg = [hp_des_cap_htg * 1000, cap_boiler].max
 
-      if working_des_cap_htg > hp_des_cap_htg
+      # compare in W; the kW argument made this always true, so every heat pump was hp_des_cap_htg
+      if working_des_cap_htg > hp_des_cap_htg * 1000
         no_hps = (working_des_cap_htg / (hp_des_cap_htg * 1000)).to_f.ceil
         # no_hps = (working_des_cap/(hp_des_cap_htg*1000)).round(0)
         working_hp_cap_htg = hp_des_cap_htg * 1000
       else
         no_hps = 1
-        working_hp_cap_htg = cap_boiler
+        working_hp_cap_htg = cap_boiler.positive? ? cap_boiler : hp_des_cap_htg * 1000
       end
 
       # no_hps = 1 ##AA setting it this way for now
@@ -1282,6 +1308,45 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # runner.registerInfo("end of autosizing #{Time.now} ")
     # END HARDWARE ----------------------------------------------------------------------------------------------------
 
+    # EnergyPlus registers each EIR heat pump's source flow twice for loop sizing ('/ 0.5' where its comment says half,
+    # PlantLoopHeatPumpEIR.cc), so set the condenser and ground side design flows to the heat pumps' total
+    heat_pumps = cond_loop.demandComponents(OpenStudio::Model::HeatPumpPlantLoopEIRHeating.iddObjectType).map { |c| c.to_HeatPumpPlantLoopEIRHeating.get } +
+                 cond_loop.demandComponents(OpenStudio::Model::HeatPumpPlantLoopEIRCooling.iddObjectType).map { |c| c.to_HeatPumpPlantLoopEIRCooling.get }
+    src_flows = heat_pumps.map(&:sourceSideReferenceFlowRate)
+    if !src_flows.empty? && src_flows.all?(&:is_initialized)
+      total_src_flow = src_flows.sum(&:get)
+      cond_loop.setMaximumLoopFlowRate(total_src_flow)
+      heat_exchanger.setLoopSupplySideDesignFlowRate(total_src_flow)
+      heat_exchanger.setLoopDemandSideDesignFlowRate(total_src_flow)
+
+      # a source pump per heat pump, as documented; EnergyPlus floors an EIR heat pump's source flow only at a pump on its
+      # own branch (without one it fell to ~1% and the loop ran away) and allows no pumps on both loop sides
+      cond_loop.supplyComponents(OpenStudio::Model::PumpVariableSpeed.iddObjectType).each { |p| p.to_PumpVariableSpeed.get.remove }
+      heat_pumps.each do |hp|
+        src_flow = hp.sourceSideReferenceFlowRate.get
+        hp_pump = OpenStudio::Model::PumpVariableSpeed.new(model)
+        hp_pump.setName("#{hp.name} Source Pump")
+        hp_pump.addToNode(hp.sourceSideWaterInletNode.get)
+        hp_pump.setRatedFlowRate(src_flow)
+        hp_pump.setMinimumFlowRate(0.3 * src_flow) # within the Carrier 30WG/61WG minimums and above the 90.1 25% floor
+        hp_pump.setRatedPumpHead(44_834.7) # the removed loop pump's 15 ft
+        hp_pump.setPumpControlType('Intermittent')
+        # openstudio-standards 'VSD DP Reset' curve (18.5% power at 50% flow; 90.1 allows at most 30%)
+        hp_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+        hp_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+        hp_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+        hp_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
+      end
+
+      # EnergyPlus 25.1 updates an EIR heating heat pump's source outlet with the wrong sign (fixed in 26.1); at the default
+      # 2-8 plant iterations 9-51% of the condenser loop's heat went unbalanced, at 10-20 it closes within the pump heat
+      convergence = model.getConvergenceLimits
+      convergence.setMinimumSystemTimestep(1) # blank would mean the zone timestep and switch off HVAC sub-stepping
+      convergence.setMaximumHVACIterations(20)
+      convergence.setMinimumPlantIterations(10)
+      convergence.setMaximumPlantIterations(20)
+    end
+
     # Register final condition
     # move down
     whs_ic = model.getBoilerHotWaters.size
@@ -1385,36 +1450,51 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       borefield_defaults['soil']['undisturbed_temp'] = undisturbed_ground_temp.to_f.round(2)
     end
 
+    # design the borefield at 0.2 L/s per borehole, or at the heat pumps' flow where that carries more: at 0.2 L/s small
+    # fields starved the condenser loop through the heat exchanger, at the full flow large fields went laminar
+    ghx_design_flow = cond_loop.maximumLoopFlowRate
+    ghx_design_flow = cond_loop.autosizedMaximumLoopFlowRate if ghx_design_flow.empty?
+    ghx_design_flow = ghx_design_flow.is_initialized ? ghx_design_flow.get : 0.0
+
     # add timeseries ground loads to json file
     borefield_defaults['loads'] = {}
     borefield_defaults['loads']['ground_loads'] = ground_loads
     ghe_in_path = "#{ghedesigner_run_dir}/ghedesigner_input.json"
-    File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
-    runner.registerInfo('GHEDesigner input JSON file created.')
-    runner.registerInfo("ghe in path: #{ghe_in_path}") # #AA added
-    runner.registerInfo("ann env pd #{ann_env_pd}") # #AA added
+    2.times do
+      File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
+      runner.registerInfo('GHEDesigner input JSON file created.')
+      runner.registerInfo("ghe in path: #{ghe_in_path}") # #AA added
+      runner.registerInfo("ann env pd #{ann_env_pd}") # #AA added
 
-    # Make system call to run GHEDesigner
-    start_time = Time.new
-    require 'open3'
-    require 'etc'
-    # TODO: remove conda activate andrew
-    # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
-    command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
-    if status.success?
-      runner.registerInfo("Successfully ran ghedesigner: #{command}")
-    else
-      # runner.registerError("Error running ghedesigner: #{command}")
-      # runner.registerError("stdout: #{stdout_str}")
-      # runner.registerError("stderr: #{stderr_str}")
-      # return false
-      runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
-      return true
+      # Make system call to run GHEDesigner
+      start_time = Time.new
+      require 'open3'
+      require 'etc'
+      # TODO: remove conda activate andrew
+      # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
+      command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
+      if status.success?
+        runner.registerInfo("Successfully ran ghedesigner: #{command}")
+      else
+        # runner.registerError("Error running ghedesigner: #{command}")
+        # runner.registerError("stdout: #{stdout_str}")
+        # runner.registerError("stderr: #{stderr_str}")
+        # return false
+        runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
+        return true
+      end
+      end_time = Time.new
+      runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
+
+      number_of_boreholes = JSON.parse(File.read("#{ghedesigner_run_dir}/SimulationSummary.json"))['ghe_system']['number_of_boreholes']
+      break if borefield_defaults['design']['flow_type'] == 'SYSTEM' ||
+               number_of_boreholes * borefield_defaults['design']['flow_rate'] / 1000.0 >= ghx_design_flow
+
+      borefield_defaults['design']['flow_rate'] = (ghx_design_flow * 1000.0).round(4) # L/s
+      borefield_defaults['design']['flow_type'] = 'SYSTEM'
     end
-    end_time = Time.new
-    runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
 
     # Get some information from borefield inputs to set GHX param values
     pipe_thermal_conductivity_w_per_m_k = borefield_defaults['pipe']['conductivity']
@@ -1470,6 +1550,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ghx.setGroundThermalConductivity(soil_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setGroundThermalHeatCapacity(soil_volumetric_heat_capacity_j_per_m3_k) # J/m3-K
     ghx.setGroundTemperature(soil_undisturbed_ground_temp_c) # C
+    # setGroundTemperature only fills a legacy field; EnergyPlus reads the undisturbed ground temperature model
+    kusuda = ghx.undisturbedGroundTemperatureModel.to_SiteGroundTemperatureUndisturbedKusudaAchenbach
+    kusuda.get.setAverageSoilSurfaceTemperature(soil_undisturbed_ground_temp_c) if kusuda.is_initialized
     ghx.setGroutThermalConductivity(grout_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeThermalConductivity(pipe_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeOutDiameter(pipe_outer_diameter_m) # m
@@ -1493,6 +1576,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # Replace temperature source with ground heat exchanger
     ground_loop.addSupplyBranchForComponent(ghx)
     ground_loop.removeSupplyBranchWithComponent(ground_temp_source)
+    # adding the vertical ground heat exchanger resets the loop fluid to Water; restore the 20% propylene glycol
+    ground_loop.setFluidType('PropyleneGlycol')
+    ground_loop.setGlycolConcentration(20)
     runner.registerInfo("Replaced temporary ground temperature source with vertical ground heat exchanger #{ghx}.")
 
     runner.registerInfo("end of ghx measure #{Time.now} ")

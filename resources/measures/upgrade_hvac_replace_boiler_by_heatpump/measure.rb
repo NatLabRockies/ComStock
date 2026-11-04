@@ -729,6 +729,16 @@ class ReplaceBoilerWithHeatPump < OpenStudio::Measure::ModelMeasure
 
         # autosizing the Maximum Hot Water/steam Flow Rate.
         model.getAirTerminalSingleDuctVAVReheats.each(&:autosizeMaximumHotWaterOrSteamFlowRate)
+        # other terminals and zone equipment keep the flow hard-sized at the old setpoint; EnergyPlus sizes their coils to
+        # it and fails at 140F when loads drop (Package_3 fan coils: 'Autosizing of heating coil UA failed')
+        hw_coil = ->(coil) { coil.to_CoilHeatingWater.is_initialized }
+        (model.getZoneHVACFourPipeFanCoils + model.getZoneHVACUnitHeaters + model.getAirTerminalSingleDuctConstantVolumeFourPipeInductions).each do |e|
+          e.autosizeMaximumHotWaterFlowRate if hw_coil.call(e.heatingCoil)
+        end
+        (model.getAirTerminalSingleDuctConstantVolumeReheats + model.getAirTerminalSingleDuctParallelPIUReheats +
+         model.getAirTerminalSingleDuctSeriesPIUReheats + model.getAirTerminalSingleDuctVAVHeatAndCoolReheats).each do |t|
+          t.autosizeMaximumHotWaterorSteamFlowRate if hw_coil.call(t.reheatCoil)
+        end
       end
     end
 

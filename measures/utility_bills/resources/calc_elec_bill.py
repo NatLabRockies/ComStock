@@ -62,7 +62,9 @@ try:
 
     out = {
        'total_utility_bill_dollars': int(round(ur.Outputs.elec_cost_without_system_year1, 0)),
-       'average_rate_dollars_per_kwh': round(ur.Outputs.elec_cost_without_system_year1 / sum(hourly_kwh), 2),
+       # A building whose PV and battery cover every hour buys no electricity; the bill is then the fixed
+       # charges alone and the average rate is undefined, so report 0 instead of dividing by zero.
+       'average_rate_dollars_per_kwh': (round(ur.Outputs.elec_cost_without_system_year1 / sum(hourly_kwh), 2) if sum(hourly_kwh) > 0 else 0.0),
        'charge_wo_sys_dc_fixed': int(round(ur.Outputs.charge_wo_sys_dc_fixed[1],0)),
        'charge_wo_sys_dc_tou': int(round(ur.Outputs.charge_wo_sys_dc_tou[1],0)),
        'charge_wo_sys_ec': int(round(ur.Outputs.charge_wo_sys_ec[1],0)),
@@ -70,7 +72,7 @@ try:
        }    
 
     print(json.dumps(out))
-except:
-    msg = f'PySAM error calculating bills with rate {args.kwhpath}'
+except Exception as e:
+    msg = f'PySAM error calculating bills with rate {args.kwhpath}: {type(e).__name__}: {e}'
     print(msg)
     exit(code=1)
