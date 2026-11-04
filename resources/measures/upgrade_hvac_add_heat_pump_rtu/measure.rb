@@ -2113,11 +2113,19 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     end
 
     # report how many air loops were left outside the cfm/ton limits, for the ComStock results
-    runner.registerValue('hprtu_air_loops_replaced', selected_air_loops.size)
-    runner.registerValue('hprtu_air_loops_outside_cfm_per_ton', air_loops_outside_cfm_per_ton)
-    runner.registerValue('hprtu_air_loops_outside_cfm_per_ton_min_oa', air_loops_outside_cfm_per_ton_min_oa)
-    runner.registerValue('hprtu_air_loops_with_removed_stages', air_loops_with_removed_stages)
-    runner.registerValue('hprtu_air_loops_with_removed_stages_min_oa', air_loops_with_removed_stages_min_oa)
+    # an upgrade measure's own registered values don't reach results.csv (run_measure in resources/meta_measure.rb
+    # doesn't copy them), so the counts are also stored on the building, where comstock_sensitivity_reports reads them
+    hprtu_counts = {
+      'hprtu_air_loops_replaced' => selected_air_loops.size,
+      'hprtu_air_loops_outside_cfm_per_ton' => air_loops_outside_cfm_per_ton,
+      'hprtu_air_loops_outside_cfm_per_ton_min_oa' => air_loops_outside_cfm_per_ton_min_oa,
+      'hprtu_air_loops_with_removed_stages' => air_loops_with_removed_stages,
+      'hprtu_air_loops_with_removed_stages_min_oa' => air_loops_with_removed_stages_min_oa
+    }
+    hprtu_counts.each do |name, count|
+      runner.registerValue(name, count)
+      model.getBuilding.additionalProperties.setFeature(name, count.to_i)
+    end
 
     # report final condition of model
     condition_final_hprtu = "The building finished with heat pump RTUs replacing the HVAC equipment for #{selected_air_loops.size} air loops."

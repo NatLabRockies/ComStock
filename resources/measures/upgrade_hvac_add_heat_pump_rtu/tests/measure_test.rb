@@ -949,6 +949,20 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
+  # assert the five air loop counts are stored on the output model's building, matching the measure's registered values,
+  # since comstock_sensitivity_reports reads them from there to put them in the ComStock results
+  HPRTU_COUNT_NAMES = ['hprtu_air_loops_replaced', 'hprtu_air_loops_outside_cfm_per_ton', 'hprtu_air_loops_outside_cfm_per_ton_min_oa',
+                       'hprtu_air_loops_with_removed_stages', 'hprtu_air_loops_with_removed_stages_min_oa'].freeze
+  def assert_counts_stored_on_building(model, result, label)
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_i] }
+    props = model.getBuilding.additionalProperties
+    HPRTU_COUNT_NAMES.each do |name|
+      stored = props.getFeatureAsInteger(name)
+      assert(stored.is_initialized, "#{label}: #{name} not stored on the building")
+      assert_equal(values[name], stored.get, "#{label}: #{name} on the building differs from the registered value")
+    end
+  end
+
   # assert every heat pump RTU moves at least its minimum outdoor air (OA) flow whenever its fan runs: the no-load airflow,
   # every heating and cooling stage airflow, and the fan power floor (fan power minimum flow fraction x loop design airflow)
   # unitary systems the measure skipped (no DX heating coil, e.g. kitchens) are left out
@@ -1673,7 +1687,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       measure = AddHeatPumpRtu.new
       argument_map = build_argument_map(measure.arguments(load_model(osm_path)), 'hprtu_scenario' => scenario, 'debug_verbose' => true)
       result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true)
-      rtus = assert_airflows_meet_min_oa(load_model(model_output_path(test_name)), scenario)
+      output_model = load_model(model_output_path(test_name))
+      rtus = assert_airflows_meet_min_oa(output_model, scenario)
+      assert_counts_stored_on_building(output_model, result, scenario)
 
       fan_data = fan_data_for(scenario)
       min_flow = fan_data['minimum_flow_fraction']
@@ -1757,7 +1773,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       measure = AddHeatPumpRtu.new
       argument_map = build_argument_map(measure.arguments(model), 'hprtu_scenario' => 'variable_speed_high_eff')
       result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
-      rtus = assert_airflows_meet_min_oa(load_model(model_output_path(test_name)), test_name)
+      output_model = load_model(model_output_path(test_name))
+      rtus = assert_airflows_meet_min_oa(output_model, test_name)
+      assert_counts_stored_on_building(output_model, result, test_name)
       values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_i] }
       warnings = result.warnings.map(&:logMessage)
 

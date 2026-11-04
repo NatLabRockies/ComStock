@@ -3047,6 +3047,18 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     end
     runner.registerValue('com_report_hvac_dx_heating_load_during_hybrid_heating_j', com_report_hvac_dx_heating_load_during_hybrid_heating_j)
 
+    # air loop counts from upgrade_hvac_add_heat_pump_rtu, which stores them on the building because an upgrade
+    # measure's own registered values don't reach the ComStock results; 0 when that measure did not change the model
+    building_props = model.getBuilding.additionalProperties
+    ['hprtu_air_loops_replaced',
+     'hprtu_air_loops_outside_cfm_per_ton',
+     'hprtu_air_loops_outside_cfm_per_ton_min_oa',
+     'hprtu_air_loops_with_removed_stages',
+     'hprtu_air_loops_with_removed_stages_min_oa'].each do |name|
+      count = building_props.getFeatureAsInteger(name)
+      runner.registerValue("com_report_hvac_#{name}", count.is_initialized ? count.get : 0)
+    end
+
     # Get the outdoor air temp timeseries and calculate heating and cooling degree days
     # Per ISO 15927-6, "Accumulated hourly temperature differences shall be calculated according to 4.4 when hourly data are available. When hourly data are not available, the approximate method given in 4.5, based on the maximum and minimum temperatures each day, may be used."
     # Method 4.4 is used here, summing hour values over/under a threshold and then dividing by 24
