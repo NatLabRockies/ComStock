@@ -51,7 +51,11 @@ setup(
         'natsort',
         'nbformat',
         'pandas',
-        'plotly',
+        # Batched figure export (plotly.io.write_images) needs plotly >=6.1 backed by
+        # Kaleido v1. Kaleido is a hard requirement rather than a platform extra now,
+        # because v1 dropped the per-platform binaries the old pins were working around.
+        'plotly>=6.1.0',
+        'kaleido>=1.1.0',
         'polars==1.32.2',
         'pyarrow',
         'pyyaml',
@@ -85,15 +89,5 @@ setup(
             'openpyxl',
             'better @ git+https://github.com/LBNL-JCI-ICF/better@packageready'
         ],
-        ':sys_platform == "win32"': [
-            'kaleido==0.1.0post1',  # kaleido version for Windows
-        ],
-        ':sys_platform == "linux"': [
-            'kaleido==0.1.0',  # kaleido version for Linux
-        ],
-        ':sys_platform == "darwin"': [
-            'kaleido==0.2.0',  # kaleido version for MacOS
-        ],
-
     }
 )

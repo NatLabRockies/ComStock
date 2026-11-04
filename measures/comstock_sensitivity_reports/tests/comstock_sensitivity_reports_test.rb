@@ -32,7 +32,9 @@ class ComStockSensitivityReportsTest < Minitest::Test
     return "#{run_dir(test_name)}/reports/eplustbl.html"
   end
 
-  def run_test(test_name, osm_path, epw_path)
+  # setup_model: optional block applied to the test model before it is saved and simulated
+  # @return [OpenStudio::Measure::OSResult] the measure result (truthy)
+  def run_test(test_name, osm_path, epw_path, setup_model: nil)
     # create run directory if it does not exist
     FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
@@ -74,6 +76,7 @@ class ComStockSensitivityReportsTest < Minitest::Test
       assert(!model.empty?)
       model = model.get
       model.addObjects(request_model.objects)
+      setup_model&.call(model)
       model.save(model_output_path(test_name), true)
 
       # set model weather file
@@ -120,7 +123,7 @@ class ComStockSensitivityReportsTest < Minitest::Test
       Dir.chdir(start_dir)
     end
 
-    return true
+    return result
   end
 
   def test_number_of_arguments_and_argument_names
@@ -268,7 +271,34 @@ class ComStockSensitivityReportsTest < Minitest::Test
     puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/hp_rtu_gas_backup.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
-    assert(run_test(__method__, osm_path, epw_path))
+    result = run_test(__method__, osm_path, epw_path)
+    assert(result)
+
+    # the model carries no counts from upgrade_hvac_add_heat_pump_rtu, so each is reported as 0
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s] }
+    HPRTU_COUNTS.each_key do |name|
+      assert_equal('0', values["com_report_hvac_#{name}"], "#{name} should be reported as 0 when not stored on the building")
+    end
+  end
+
+  # the air loop counts upgrade_hvac_add_heat_pump_rtu stores on the building are reported as they are
+  HPRTU_COUNTS = { 'hprtu_air_loops_replaced' => 5, 'hprtu_air_loops_outside_cfm_per_ton' => 4,
+                   'hprtu_air_loops_outside_cfm_per_ton_min_oa' => 3, 'hprtu_air_loops_with_removed_stages' => 2,
+                   'hprtu_air_loops_with_removed_stages_min_oa' => 1 }.freeze
+  def test_hp_rtu_counts_reported
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    osm_path = "#{__dir__}/hp_rtu_gas_backup.osm"
+    epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
+    store_counts = lambda do |model|
+      HPRTU_COUNTS.each { |name, count| model.getBuilding.additionalProperties.setFeature(name, count) }
+    end
+    result = run_test(__method__, osm_path, epw_path, setup_model: store_counts)
+    assert(result)
+
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s] }
+    HPRTU_COUNTS.each do |name, count|
+      assert_equal(count.to_s, values["com_report_hvac_#{name}"], "#{name} reported differently from the value on the building")
+    end
   end
 
   def test_vrf_cold_climate

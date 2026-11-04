@@ -148,6 +148,12 @@ class LazyFramePlotter(NamingMixin):
             kwargs2["df"] = df
             assert df is not None, "df is None"
             result = plot_method(*args2, **kwargs2)
+            # Plot methods queue their figures rather than writing them one at a time,
+            # so export whatever this method produced before moving on. Flushing here
+            # keeps every plot method batched without each one having to remember.
+            owner = getattr(plot_method, "__self__", None)
+            if owner is not None and hasattr(owner, "flush_figures"):
+                owner.flush_figures()
             logger.info(f"{plot_method.__name__} took {pd.Timestamp.now() - time_start} to plot.")
             return result
 

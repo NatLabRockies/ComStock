@@ -20,14 +20,14 @@ ModelMeasure
 
 
 ### Backup Heat Type
-Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup.
+Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.
 **Name:** backup_ht_fuel_scheme,
 **Type:** Choice,
 **Units:** ,
 **Required:** true,
 **Model Dependent:** false
 
-**Choice Display Names** ["match_original_primary_heating_fuel", "electric_resistance_backup"]
+**Choice Display Names** ["match_original_primary_heating_fuel", "electric_resistance_backup", "dual_fuel_gas_furnace_backup"]
 
 
 ### Maximum Performance Oversizing Factor
@@ -68,9 +68,18 @@ At rated conditions, a compressor will generally have slightly more cooling capa
 **Model Dependent:** false
 
 
-### Minimum outdoor air temperature that locks out heat pump compressor, F
-Specifies minimum outdoor air temperature for locking out heat pump compressor. Heat pump heating does not operated below this temperature and backup heating will operate if heating is still needed.
-**Name:** hp_min_comp_lockout_temp_f,
+### Minimum outdoor air temperature that locks out heat pump compressor with electric backup heat, F
+Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is electric resistance. Heat pump heating does not operated below this temperature and backup heating will operate if heating is still needed.
+**Name:** hp_min_comp_lockout_temp_elec_backup_f,
+**Type:** Double,
+**Units:** ,
+**Required:** true,
+**Model Dependent:** false
+
+
+### Minimum outdoor air temperature that locks out heat pump compressor with gas backup heat, F
+Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and that fuel is gas or another combustion fuel; with electric resistance backup, the electric backup lockout temperature is used instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.
+**Name:** hp_min_comp_lockout_temp_gas_backup_f,
 **Type:** Double,
 **Units:** ,
 **Required:** true,
@@ -78,14 +87,14 @@ Specifies minimum outdoor air temperature for locking out heat pump compressor. 
 
 
 ### Heat Pump RTU Performance Type
-Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification.  
+Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification. cchpc_2027_typical is a 4-stage unit representing a typical product that passed the cold climate heat pump RTU challenge, based on lab test data from one middle-performing unit among the lab-tested challenge units.
 **Name:** hprtu_scenario,
 **Type:** Choice,
 **Units:** ,
 **Required:** true,
 **Model Dependent:** false
 
-**Choice Display Names** ["two_speed_standard_eff", "two_speed_lab_data", "variable_speed_high_eff", "cchpc_2027_spec"]
+**Choice Display Names** ["two_speed_standard_eff", "two_speed_lab_data", "variable_speed_high_eff", "cchpc_2027_spec", "cchpc_2027_typical"]
 
 
 ### Add Energy Recovery?

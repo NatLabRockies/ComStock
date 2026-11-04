@@ -46,6 +46,10 @@ logger.setLevel(logging.INFO)
 
 COLUMN_DEFINITION_FILE_NAME = 'comstock_column_definitions.csv'
 ENUM_DEFINITION_FILE_NAME = 'comstock_enumeration_definitions.csv'
+# Cap on joblib workers for file writes. Each worker receives a pickled copy of a
+# collected DataFrame, so the memory cost scales with worker count while the writes
+# themselves are IO bound.
+MAX_WRITE_WORKERS = 4
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_DIR = os.path.join(CURRENT_DIR, 'resources')
 
@@ -124,13 +128,14 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.timeseries_locations_to_plot = timeseries_locations_to_plot
         self.unweighted_weighted_map = {}
         self.cached_parquet = [] # List of parquet files to reload and export
+        self.base_agg_cache = {} # Baseline aggregates keyed by aggregation level, reused across upgrades
         # TODO our current credential setup aren't playing well with this approach but does with the s3 ServiceResource
         # We are currently unable to list the HeadObject for automatically uploaded data
         # Consider migrating all usage to s3 ServiceResource instead.
         # self.s3_client = boto3.client('s3', config=botocore.client.Config(max_pool_connections=50))
         # self.s3_resource = boto3.resource('s3')
         if self.athena_table_name is not None:
-            self.athena_client = BuildStockQuery(workgroup='comcore',
+            self.athena_client = BuildStockQuery(workgroup='buildstock',
                                                  db_name='enduse',
                                                  buildstock_type='comstock',
                                                  table_name=self.athena_table_name,
@@ -401,7 +406,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def download_timeseries_data_for_ami_comparison(self, ami, reload_from_csv=True, save_individual_regions=False):
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup='buildstock',
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',
@@ -2737,6 +2742,40 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         return wtd_agg_outs
 
+    def baseline_aggregate_for_geography(self, base_alloc_wts, geography_filters, geographic_aggregation_levels):
+        """Aggregate the baseline allocated weights, reusing the result across upgrades.
+
+        Callers always pass the upgrade 0 allocated weights, which do not change for
+        the life of the run, but export_metadata_and_annual_results_for_upgrade is
+        invoked once per upgrade and would otherwise rebuild this from the tract-level
+        data every time.
+
+        Only the unfiltered case is cached. When geography_filters is set the caller is
+        iterating first-level geographies at census tract resolution, where each entry
+        would hold a tract-level frame and the cache would grow with every state.
+        """
+        if geography_filters:
+            return self.aggregate_allocated_weights_to_geography(
+                base_alloc_wts,
+                geography_filters,
+                geographic_aggregation_levels
+            ).collect().lazy()
+
+        cache_key = tuple(str(lvl) for lvl in geographic_aggregation_levels)
+        base_agg_alloc_wts = self.base_agg_cache.get(cache_key)
+        if base_agg_alloc_wts is None:
+            logger.info(f'Aggregating baseline allocated weights for: {list(cache_key)}')
+            base_agg_alloc_wts = self.aggregate_allocated_weights_to_geography(
+                base_alloc_wts,
+                geography_filters,
+                geographic_aggregation_levels
+            ).collect()
+            self.base_agg_cache[cache_key] = base_agg_alloc_wts
+        else:
+            logger.info(f'Reusing cached baseline aggregate for: {list(cache_key)}')
+
+        return base_agg_alloc_wts.lazy()
+
     def create_weighted_aggregate_output(self,
                                         up_alloc_wts,
                                         sim_outs,
@@ -2745,15 +2784,21 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                                         geographic_aggregation_levels=[],
                                         column_downselection=None):
 
-        # Aggregate the upgrade's allocated weights for this geographic resolution
+        # Aggregate the upgrade's allocated weights for this geographic resolution.
+        # Collecting is a deliberate materialization barrier, not a convenience. The
+        # aggregate is small (one row per building x geography) but its source is the
+        # tract-level allocated weights, which run to tens of millions of rows. Left
+        # lazy, the savings math below references this frame from branches that polars
+        # cannot common-subexpression across, so the tract-level scan and group_by get
+        # replanned and re-executed once per reference.
         up_agg_alloc_wts = self.aggregate_allocated_weights_to_geography(
                                                 up_alloc_wts,
                                                 geography_filters,
                                                 geographic_aggregation_levels
-        )
+        ).collect().lazy()
 
         # Aggregate the baseline's allocated weights for this geographic resolution
-        base_agg_alloc_wts = self.aggregate_allocated_weights_to_geography(
+        base_agg_alloc_wts = self.baseline_aggregate_for_geography(
                                                 base_alloc_wts,
                                                 geography_filters,
                                                 geographic_aggregation_levels
@@ -2822,6 +2867,32 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Return the LazyFrame for use by plotting, etc.
         assert isinstance(wtd_agg_outs, pl.LazyFrame)
         return wtd_agg_outs
+
+    def write_geo_data_files(self, combos_to_write, n_parallel):
+        """Write the queued geography files, in parallel only where that helps.
+
+        Each combo carries a fully collected DataFrame that joblib has to pickle into
+        a worker process, so the peak cost is roughly the frame plus the pickle buffer
+        plus the worker's copy. The national_by_state export queues exactly one file,
+        where that round trip buys nothing.
+        """
+        if not combos_to_write:
+            return
+
+        if len(combos_to_write) == 1:
+            logger.info('Writing 1 file in process')
+            write_tstart = datetime.datetime.now()
+            write_geo_data(combos_to_write[0])
+            logger.info(f"Write time: {(datetime.datetime.now() - write_tstart).total_seconds()} seconds")
+            return
+
+        n_jobs = MAX_WRITE_WORKERS if n_parallel < 0 else n_parallel
+        n_jobs = min(n_jobs, len(combos_to_write))
+        logger.info(f'Writing {len(combos_to_write)} files using {n_jobs} workers')
+        write_tstart = datetime.datetime.now()
+        with Parallel(n_jobs=n_jobs) as parallel:
+            parallel(delayed(write_geo_data)(combo) for combo in combos_to_write)
+        logger.info(f"Write time: {(datetime.datetime.now() - write_tstart).total_seconds()} seconds")
 
     def export_metadata_and_annual_results_for_upgrade(self, upgrade_id, geo_exports, n_parallel=-1, output_dir=None):
         # Use self.output_dir if output_dir is not specified
@@ -3042,11 +3113,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                                     combos_to_write.append(combo)
 
                             self.create_and_export_long_loads_data(geo_data)
-                        # Write files in parallel
-                        logger.info(f'Writing {len(combos_to_write)} files in parallel')
+                        # Write the queued files
                         write_tstart = datetime.datetime.now()
-                        with Parallel(n_jobs=n_parallel) as parallel:
-                            parallel(delayed(write_geo_data)(combo) for combo in combos_to_write)
+                        self.write_geo_data_files(combos_to_write, n_parallel)
                         logger.info(f"Write time for {first_geo_combo}: {(datetime.datetime.now() - write_tstart).total_seconds()} seconds")
                         # # Attempting to avoid crashes
                         # wtd_agg_outs.clear()
@@ -3114,11 +3183,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                                 combo = (data_type_df, output_dir, file_type, file_path)
                                 combos_to_write.append(combo)
 
-                    # Write files in parallel
-                    logger.info(f'Writing {len(combos_to_write)} files in parallel')
+                    # Write the queued files
                     write_tstart = datetime.datetime.now()
-                    with Parallel(n_jobs=n_parallel) as parallel:
-                        parallel(delayed(write_geo_data)(combo) for combo in combos_to_write)
+                    self.write_geo_data_files(combos_to_write, n_parallel)
                     logger.info(f"Write time for {aggregation_level}: {(datetime.datetime.now() - write_tstart).total_seconds()} seconds")
 
             ge_tend = datetime.datetime.now()
@@ -3537,31 +3604,35 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 input_lf = input_lf.with_columns(pl.lit(0.0).alias(weighted_col))
             return input_lf
 
-        val_and_id_cols = val_cols + geo_agg_cols + [self.BLDG_ID]
+        # Join the baseline values on by building and geography, then derive both the
+        # absolute and percent savings in a single pass.
+        #
+        # This previously built the two savings frames with pl.concat(how='horizontal')
+        # over separately sorted upgrade and baseline frames, then joined both back on.
+        # That aligned rows by position rather than by key, and because horizontal
+        # concat is a fully materializing barrier that polars cannot common-
+        # subexpression across, each of the four references replanned the tract-level
+        # scan and group_by behind these frames. Joining on the keys is both cheaper
+        # and correct if the two sides ever stop lining up row for row.
+        join_cols = [self.BLDG_ID] + geo_agg_cols
 
-        base_vals = baseline_lf.select(val_and_id_cols).sort([self.BLDG_ID] + geo_agg_cols).clone()
-        base_vals = base_vals.rename(lambda col_name: col_name + '_base')
+        base_vals = baseline_lf.select(val_cols + join_cols).rename(
+            {col: f'{col}_base' for col in val_cols}
+        ).cast({self.BLDG_ID: pl.Int64})
 
-        up_vals = input_lf.select(val_and_id_cols).sort([self.BLDG_ID] + geo_agg_cols).clone()
+        input_lf = input_lf.cast({self.BLDG_ID: pl.Int64})
+        input_lf = input_lf.join(base_vals, how='left', on=join_cols)
 
-        # absolute savings
-        abs_svgs = pl.concat([up_vals, base_vals], how='horizontal').with_columns(
+        # Percent savings are filled to 0.0 where the baseline is null or the division
+        # produced NaN. Absolute savings are deliberately left unfilled, and a zero
+        # baseline still yields an infinite percent, both matching prior behavior.
+        input_lf = input_lf.with_columns(
             [(pl.col(f'{col}_base') - pl.col(col)).alias(abs_svgs_cols[col]) for col in val_cols]
-        ).select(list(abs_svgs_cols.values()) + geo_agg_cols + [self.BLDG_ID])
+            + [((pl.col(f'{col}_base') - pl.col(col)) / pl.col(f'{col}_base') * 100)
+               .fill_nan(0.0).fill_null(0.0).alias(pct_svgs_cols[col]) for col in val_cols]
+        )
 
-        # percent savings
-        pct_svgs = pl.concat([up_vals, base_vals], how='horizontal').with_columns(
-            [((pl.col(f'{col}_base') - pl.col(col)) / pl.col(f'{col}_base') * 100).alias(pct_svgs_cols[col]) for col in val_cols]
-        ).select(list(pct_svgs_cols.values()) + geo_agg_cols + [self.BLDG_ID])
-
-        pct_svgs = pct_svgs.fill_null(0.0)
-        pct_svgs = pct_svgs.fill_nan(0.0)
-
-        abs_svgs = abs_svgs.cast({self.BLDG_ID: pl.Int64})
-        pct_svgs = pct_svgs.cast({self.BLDG_ID: pl.Int64})
-
-        input_lf = input_lf.join(abs_svgs, how='left', on=[self.BLDG_ID] + geo_agg_cols)
-        input_lf = input_lf.join(pct_svgs, how='left', on=[self.BLDG_ID] + geo_agg_cols)
+        input_lf = input_lf.drop([f'{col}_base' for col in val_cols])
 
         return input_lf
 
@@ -4621,7 +4692,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
     @staticmethod
     def create_views(
-            dataset_name: str, database_name: str = "vizstock", workgroup: str = "eulp"
+            dataset_name: str, database_name: str = "vizstock", workgroup: str = "buildstock"
         ):
             glue = boto3.client("glue", region_name="us-west-2")
 
@@ -4857,7 +4928,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             weight_view_table = f'{self.comstock_run_name}_md_agg_national_by_state_vu'
 
         # Initialize Athena client
-        athena_client = BuildStockQuery(workgroup='comcore',
+        athena_client = BuildStockQuery(workgroup='buildstock',
                                     db_name='enduse',
                                     table_name=self.comstock_run_name,
                                     buildstock_type='comstock',

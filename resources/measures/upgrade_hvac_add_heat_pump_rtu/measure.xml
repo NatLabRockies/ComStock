@@ -1,11 +1,10 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
-  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_add_heat_pump_rtu/measure.rb'</error>
   <name>add_heat_pump_rtu</name>
   <uid>f4567a68-27f2-4a15-ae91-ba0f35cd08c7</uid>
-  <version_id>1a4b9f2e-33fd-4e52-8100-49965f212c60</version_id>
-  <version_modified>2026-09-23T03:38:33Z</version_modified>
+  <version_id>96377d1d-3309-468c-9889-bf5a1d911833</version_id>
+  <version_modified>2026-11-04T16:01:58Z</version_modified>
   <xml_checksum>5E2576E4</xml_checksum>
   <class_name>AddHeatPumpRtu</class_name>
   <display_name>add_heat_pump_rtu</display_name>
@@ -15,7 +14,7 @@
     <argument>
       <name>backup_ht_fuel_scheme</name>
       <display_name>Backup Heat Type</display_name>
-      <description>Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup.</description>
+      <description>Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.</description>
       <type>Choice</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
@@ -28,6 +27,10 @@
         <choice>
           <value>electric_resistance_backup</value>
           <display_name>electric_resistance_backup</display_name>
+        </choice>
+        <choice>
+          <value>dual_fuel_gas_furnace_backup</value>
+          <display_name>dual_fuel_gas_furnace_backup</display_name>
         </choice>
       </choices>
     </argument>
@@ -86,18 +89,27 @@
       <default_value>1</default_value>
     </argument>
     <argument>
-      <name>hp_min_comp_lockout_temp_f</name>
-      <display_name>Minimum outdoor air temperature that locks out heat pump compressor, F</display_name>
-      <description>Specifies minimum outdoor air temperature for locking out heat pump compressor. Heat pump heating does not operated below this temperature and backup heating will operate if heating is still needed.</description>
+      <name>hp_min_comp_lockout_temp_elec_backup_f</name>
+      <display_name>Minimum outdoor air temperature that locks out heat pump compressor with electric backup heat, F</display_name>
+      <description>Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is electric resistance. Heat pump heating does not operated below this temperature and backup heating will operate if heating is still needed.</description>
       <type>Double</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
       <default_value>0</default_value>
     </argument>
     <argument>
+      <name>hp_min_comp_lockout_temp_gas_backup_f</name>
+      <display_name>Minimum outdoor air temperature that locks out heat pump compressor with gas backup heat, F</display_name>
+      <description>Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and that fuel is gas or another combustion fuel; with electric resistance backup, the electric backup lockout temperature is used instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>25</default_value>
+    </argument>
+    <argument>
       <name>hprtu_scenario</name>
       <display_name>Heat Pump RTU Performance Type</display_name>
-      <description>Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification.  </description>
+      <description>Determines performance assumptions. two_speed_standard_eff is a standard efficiency system with 2 staged compressors (2 stages cooling, 1 stage heating). two_speed_lab_data is similar to two_speed_standard_eff but uses lab testing data to inform performance rather than public curves from manufacturers. variable_speed_high_eff is a higher efficiency variable speed system. cchpc_2027_spec is a hypothetical 4-stage unit intended to meet the requirements of the cold climate heat pump RTU challenge 2027 specification. cchpc_2027_typical is a 4-stage unit representing a typical product that passed the cold climate heat pump RTU challenge, based on lab test data from one middle-performing unit among the lab-tested challenge units.</description>
       <type>Choice</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
@@ -118,6 +130,10 @@
         <choice>
           <value>cchpc_2027_spec</value>
           <display_name>cchpc_2027_spec</display_name>
+        </choice>
+        <choice>
+          <value>cchpc_2027_typical</value>
+          <display_name>cchpc_2027_typical</display_name>
         </choice>
       </choices>
     </argument>
@@ -319,7 +335,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>01DF739F</checksum>
+      <checksum>DEE735B6</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -342,7 +358,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>792EFDBC</checksum>
+      <checksum>D2461C1F</checksum>
     </file>
     <file>
       <filename>call_other_measures.rb</filename>
@@ -354,25 +370,31 @@
       <filename>performance_map_CCHP_spec_2027.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
-      <checksum>A388157B</checksum>
+      <checksum>136B4C14</checksum>
+    </file>
+    <file>
+      <filename>performance_map_CCHP_typical_2027.json</filename>
+      <filetype>json</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>F62C91D4</checksum>
     </file>
     <file>
       <filename>performance_maps_hprtu_lab_data.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
-      <checksum>0B53278D</checksum>
+      <checksum>67114863</checksum>
     </file>
     <file>
       <filename>performance_maps_hprtu_std.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
-      <checksum>26B87E0E</checksum>
+      <checksum>6D77BB67</checksum>
     </file>
     <file>
       <filename>performance_maps_hprtu_variable_speed.json</filename>
       <filetype>json</filetype>
       <usage_type>resource</usage_type>
-      <checksum>9B14A248</checksum>
+      <checksum>C52BD904</checksum>
     </file>
     <file>
       <filename>sched_methods.rb</filename>
@@ -390,7 +412,7 @@
       <filename>measure_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>5CD9E9E6</checksum>
+      <checksum>7A990052</checksum>
     </file>
   </files>
 </measure>
