@@ -9,6 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from better.model import InverseModel
 from buildstock_query import BuildStockQuery
+from comstockpostproc.athena_config import ATHENA_WORKGROUP
 from comstockpostproc.gap.eia861 import EIA861
 from comstockpostproc.gap.degreedays import DegreeDays
 from comstockpostproc.gap.ba_geography import BAGeography
@@ -73,7 +74,7 @@ class ResidentialProfile(GapPlottingMixin,S3UtilitiesMixin):
         Queries resstock for timestep total net energy by county. Not used here - generates a multi-GB file that times out when attempting to download.
         """
 
-        run = BuildStockQuery(workgroup='comcore',
+        run = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                              db_name='buildstock_sdr',
                              table_name=(
                                  f'resstock_{self.resstock_version}_metadata_state_vu',
@@ -117,7 +118,7 @@ class ResidentialProfile(GapPlottingMixin,S3UtilitiesMixin):
         Queries resstock for ending-hour total net electricity by state. 
         """
 
-        run = BuildStockQuery(workgroup='comcore',
+        run = BuildStockQuery(workgroup=ATHENA_WORKGROUP,
                               db_name='buildstock_sdr',
                               table_name=(
                                 f'resstock_{self.resstock_version}_metadata_state_vu',
