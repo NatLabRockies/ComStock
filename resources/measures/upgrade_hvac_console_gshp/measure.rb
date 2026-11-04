@@ -380,6 +380,12 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     condenser_loop_sizing = condenser_loop.sizingPlant
     condenser_loop_sizing.setLoopType('Condenser')
     condenser_loop_sizing.setDesignLoopExitTemperature(cond_loop_setpoint_c)
+    # EnergyPlus sizes the heat pump water flow as heating capacity / (delta T rho cp), with heating sized to cooling;
+    # 5.9 K gives the Trane rated flow (9 gpm at 45.9 kBtu/h cooling, 20% propylene glycol), about 3 gpm/ton
+    condenser_loop_sizing.setLoopDesignTemperatureDifference(5.9)
+    # the heat pumps pull this loop below 0 C in cold climates; use the ground loop's 20% propylene glycol
+    condenser_loop.setFluidType('PropyleneGlycol')
+    condenser_loop.setGlycolConcentration(20)
 
     # Create a scheduled setpoint manager
     # TODO determine if a schedule that follows the monthly ground temperature
@@ -401,6 +407,12 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     condenser_pump.setName('Condenser loop circulation pump')
     condenser_pump.setPumpControlType('Intermittent')
     condenser_pump.setRatedPumpHead(44_834.7) # 15 ft for primary pump for a primary-secondary system based on Appendix G; does this need to change?
+    # openstudio-standards 'VSD DP Reset' curve (18.5% power at 50% flow; 90.1 6.5.4.5.2 allows at most 30% for water-loop
+    # heat pumps); the default linear curve gave 50%
+    condenser_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+    condenser_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+    condenser_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+    condenser_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
     condenser_pump.addToNode(condenser_loop.supplyInletNode)
 
     # Create new loop connecting heat pump and ground heat exchanger.
@@ -428,6 +440,8 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     fluid_fluid_heat_exchanger.setHeatExchangeModelType('Ideal')
     fluid_fluid_heat_exchanger.setControlType('UncontrolledOn')
     fluid_fluid_heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
+    # OpenStudio's 0 C default is the water freeze limit; it switches the HX off and the condenser loop runs away
+    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-6.0) # C, above 20% propylene glycol's -7 C freeze point
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 
@@ -499,9 +513,11 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
       # using 10 ton units for packaged unit performance data
       # using 1 ton units for console
-      # add new single speed cooling coil
+      # add new single speed cooling and heating coils with the catalog performance tables and rating conditions;
+      # they go on before the sizing run so EnergyPlus sizes the coils with them instead of OpenStudio's default curves
       new_cooling_coil = OpenStudio::Model::CoilCoolingWaterToAirHeatPumpEquationFit.new(model)
       new_cooling_coil.setName("#{thermal_zone.name} Heat Pump Cooling Coil")
+      add_lookup_performance_data(model, new_cooling_coil, 'console_gshp', 'Trane_3_ton_GWSC036H', runner)
       # new_cooling_coil.setRatedCoolingCoefficientofPerformance(3.4)
       # new_cooling_coil.setTotalCoolingCapacityCoefficient1(-4.30266987344639)
       # new_cooling_coil.setTotalCoolingCapacityCoefficient2(7.18536990534372)
@@ -521,9 +537,9 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       # new_cooling_coil.setCoolingPowerConsumptionCoefficient5(-0.168727936032429)
       condenser_loop.addDemandBranchForComponent(new_cooling_coil)
 
-      # add new single speed heating coil
       new_heating_coil = OpenStudio::Model::CoilHeatingWaterToAirHeatPumpEquationFit.new(model)
       new_heating_coil.setName("#{thermal_zone.name} Heat Pump Heating Coil")
+      add_lookup_performance_data(model, new_heating_coil, 'console_gshp', 'Trane_3_ton_GWSC036H', runner)
       # new_heating_coil.setRatedHeatingCoefficientofPerformance(4.2)
       # new_heating_coil.setHeatingCapacityCoefficient1(0.237847462869254)
       # new_heating_coil.setHeatingCapacityCoefficient2(-3.35823796081626)
@@ -674,90 +690,12 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     # apply sizing values
     model.applySizingValues
 
-    # scale coil performance data and assign lookup tables
+    # finish the heat pump systems after sizing
     model.getAirLoopHVACUnitarySystems.each do |unitary_sys|
-      # puts "*************************************"
-      # puts "*************************************"
-      # puts "Assigning performance curve data for unitary system (#{unitary_sys.name})"
-      # get cooling coil
-      # get heating coil
-      # get fan
-      heating_air_flow = 0
-      heating_water_flow = 0
-      cooling_air_flow = 0
-      cooling_water_flow = 0
-
-      # heating coil
-      if unitary_sys.heatingCoil.is_initialized
-        if unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized
-          coil = unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.get
-          # capacity
-          if coil.ratedHeatingCapacity.is_initialized
-            coil.ratedHeatingCapacity.get
-          else
-            runner.registerError("Unable to retrieve reference capacity for coil (#{coil.name})")
-            return false
-          end
-          # air flow
-          if coil.ratedAirFlowRate.is_initialized
-            heating_air_flow = coil.ratedAirFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference air flow for coil (#{coil.name})")
-            return false
-          end
-          # water flow
-          if coil.ratedWaterFlowRate.is_initialized
-            heating_water_flow = coil.ratedWaterFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference water flow for coil (#{coil.name})")
-            return false
-          end
-          # add performance data
-          add_lookup_performance_data(model, coil, 'console_gshp', 'Trane_3_ton_GWSC036H', heating_air_flow,
-                                      heating_water_flow, runner)
-        else
-          runner.registerError("Expecting heating coil of type CoilHeatingWaterToAirHeatPumpEquationFits for (#{unitary_sys.name})")
-          return false
-        end
-      else
-        runner.registerError("Could not find heating coil for unitary system (#{unitary_sys.name})")
-        return false
-      end
-
-      # cooling coil
-      if unitary_sys.coolingCoil.is_initialized
-        if unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.is_initialized
-          coil = unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.get
-          # capacity
-          if coil.ratedTotalCoolingCapacity.is_initialized
-            coil.ratedTotalCoolingCapacity.get
-          else
-            runner.registerError("Unable to retrieve reference capacity for coil (#{coil.name})")
-            return false
-          end
-          # air flow
-          if coil.ratedAirFlowRate.is_initialized
-            cooling_air_flow = coil.ratedAirFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference air flow for coil (#{coil.name})")
-            return false
-          end
-          # water flow
-          if coil.ratedWaterFlowRate.is_initialized
-            cooling_water_flow = coil.ratedWaterFlowRate.get
-          else
-            runner.registerError("Unable to retrieve reference water flow for coil (#{coil.name})")
-            return false
-          end
-          # add performance data
-          add_lookup_performance_data(model, coil, 'console_gshp', 'Trane_3_ton_GWSC036H', cooling_air_flow,
-                                      cooling_water_flow, runner)
-        else
-          runner.registerError("Expecting cooling coil of type CoilCoolingWaterToAirHeatPumpEquationFits for (#{unitary_sys.name})")
-          return false
-        end
-      else
-        runner.registerError("Could not find cooling coil for unitary system (#{unitary_sys.name})")
+      # the catalog performance tables were assigned at coil creation, before the sizing run
+      unless unitary_sys.heatingCoil.is_initialized && unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized &&
+             unitary_sys.coolingCoil.is_initialized && unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.is_initialized
+        runner.registerError("Expecting water-to-air heat pump heating and cooling coils for unitary system (#{unitary_sys.name})")
         return false
       end
 
@@ -864,33 +802,48 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       borefield_defaults['soil']['undisturbed_temp'] = undisturbed_ground_temp.to_f.round(2)
     end
 
+    # design the borefield at 0.2 L/s per borehole, or at the heat pumps' flow where that carries more: at 0.2 L/s small
+    # fields starved the condenser loop through the heat exchanger, at the full flow large fields went laminar
+    ghx_design_flow = condenser_loop.maximumLoopFlowRate
+    ghx_design_flow = condenser_loop.autosizedMaximumLoopFlowRate if ghx_design_flow.empty?
+    ghx_design_flow = ghx_design_flow.is_initialized ? ghx_design_flow.get : 0.0
+
     borefield_defaults['loads'] = {}
     borefield_defaults['loads']['ground_loads'] = ground_loads
     ghe_in_path = "#{ghedesigner_run_dir}/ghedesigner_input.json"
-    File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
-    runner.registerInfo('GHEDesigner input JSON file created.')
+    2.times do
+      File.write(ghe_in_path, JSON.pretty_generate(borefield_defaults))
+      runner.registerInfo('GHEDesigner input JSON file created.')
 
-    # Make system call to run GHEDesigner
-    start_time = Time.new
-    # TODO: remove conda activate andrew
-    require 'open3'
-    require 'etc'
-    # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
-    command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
-    _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
-    if status.success?
-      runner.registerInfo("Successfully ran ghedesigner: #{command}")
-    else
-      # runner.registerError("Error running ghedesigner: #{command}")
-      # runner.registerError("stdout: #{stdout_str}")
-      # runner.registerError("stderr: #{stderr_str}")
-      # return false
-      runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
-      return true
+      # Make system call to run GHEDesigner
+      start_time = Time.new
+      # TODO: remove conda activate andrew
+      require 'open3'
+      require 'etc'
+      # command = "C:/Users/#{Etc.getlogin}/Anaconda3/Scripts/activate.bat && conda activate #{envname} && ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      # command = "conda activate base && ghedesigner '#{ghe_in_path}' '#{ghedesigner_run_dir}'"
+      command = "ghedesigner #{ghe_in_path} #{ghedesigner_run_dir}"
+      _, _, status = Open3.capture3(command, chdir: ghedesigner_run_dir)
+      if status.success?
+        runner.registerInfo("Successfully ran ghedesigner: #{command}")
+      else
+        # runner.registerError("Error running ghedesigner: #{command}")
+        # runner.registerError("stdout: #{stdout_str}")
+        # runner.registerError("stderr: #{stderr_str}")
+        # return false
+        runner.registerAsNotApplicable("Error running ghedesigner: #{command}. Measure will be logged as not applicable.")
+        return true
+      end
+      end_time = Time.new
+      runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
+
+      number_of_boreholes = JSON.parse(File.read("#{ghedesigner_run_dir}/SimulationSummary.json"))['ghe_system']['number_of_boreholes']
+      break if borefield_defaults['design']['flow_type'] == 'SYSTEM' ||
+               number_of_boreholes * borefield_defaults['design']['flow_rate'] / 1000.0 >= ghx_design_flow
+
+      borefield_defaults['design']['flow_rate'] = (ghx_design_flow * 1000.0).round(4) # L/s
+      borefield_defaults['design']['flow_type'] = 'SYSTEM'
     end
-    end_time = Time.new
-    runner.registerInfo("Running GHEDesigner took #{end_time - start_time} seconds")
 
     # Get some information from borefield inputs
     pipe_thermal_conductivity_w_per_m_k = borefield_defaults['pipe']['conductivity']
@@ -946,6 +899,9 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     ghx.setGroundThermalConductivity(soil_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setGroundThermalHeatCapacity(soil_volumetric_heat_capacity_j_per_m3_k) # J/m3-K
     ghx.setGroundTemperature(soil_undisturbed_ground_temp_c) # C
+    # setGroundTemperature only fills a legacy field; EnergyPlus reads the undisturbed ground temperature model
+    kusuda = ghx.undisturbedGroundTemperatureModel.to_SiteGroundTemperatureUndisturbedKusudaAchenbach
+    kusuda.get.setAverageSoilSurfaceTemperature(soil_undisturbed_ground_temp_c) if kusuda.is_initialized
     ghx.setGroutThermalConductivity(grout_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeThermalConductivity(pipe_thermal_conductivity_w_per_m_k) # W/m-K
     ghx.setPipeOutDiameter(pipe_outer_diameter_m) # m
@@ -957,13 +913,18 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     # G function
     ghx.removeAllGFunctions # Rempve the default gfunction inputs
     gfunc_data = CSV.read("#{ghedesigner_run_dir}/Gfunction.csv", headers: true)
+    # GHEDesigner names the g-function column after the borehole length (H:118.85); the fixed 'H:79.59' key read nil, so every g value was 0
+    g_col = gfunc_data.headers.find { |h| h.to_s.start_with?('H:') && !h.to_s.end_with?('_bhw') } || gfunc_data.headers[1]
     gfunc_data.each do |r|
-      ghx.addGFunction(r['ln(t/ts)'].to_f, r['H:79.59'].to_f) # addGFunction(double gFunctionLN, double gFunctionGValue)
+      ghx.addGFunction(r['ln(t/ts)'].to_f, r[g_col].to_f) # addGFunction(double gFunctionLN, double gFunctionGValue)
     end
 
     # Replace temperature source with ground heat exchanger
     ground_loop.addSupplyBranchForComponent(ghx)
     ground_loop.removeSupplyBranchWithComponent(ground_temp_source)
+    # adding the vertical ground heat exchanger resets the loop fluid to Water; restore the 20% propylene glycol
+    ground_loop.setFluidType('PropyleneGlycol')
+    ground_loop.setGlycolConcentration(20)
     runner.registerInfo("Replaced temporary ground temperature source with vertical ground heat exchanger #{ghx}.")
 
     runner.registerFinalCondition('Replaced existing HVAC system with console water-to-air ground source heat pumps.')

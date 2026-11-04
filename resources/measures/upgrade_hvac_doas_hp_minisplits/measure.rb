@@ -223,6 +223,8 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
       next if (is_hp==true) | (((air_loop_hvac.name.to_s.include?("HP")) || (air_loop_hvac.name.to_s.include?("hp")) || (air_loop_hvac.name.to_s.include?("heat pump")) || (air_loop_hvac.name.to_s.include?("Heat Pump"))))
       # skip data centers
       next if ['Data Center', 'DataCenter', 'data center', 'datacenter', 'DATACENTER', 'DATA CENTER'].any? { |word| (air_loop_hvac.name.get).include?(word) }
+      # typical models put data centers on their own CRAC/CRAH; the fork helper also catches computer/server room names
+      next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
       # skip kitchens
       next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
@@ -336,18 +338,18 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
             supply_outlet_node = air_loop_hvac.supplyOutletNode
 
             # add new cooling coil
-            clg_coil = std.create_coil_cooling_dx_single_speed(model,
+            clg_coil = OpenstudioStandards::HVAC.create_coil_cooling_dx_single_speed(model,
                         air_loop_node: supply_outlet_node,
                         name: "#{air_loop_hvac.name} 1spd DX AC Clg Coil",
                         type: 'PSZ-AC')
 
             # add new electric heating coil
-            htg_coil = std.create_coil_heating_electric(model,
+            htg_coil = OpenstudioStandards::HVAC.create_coil_heating_electric(model,
                         air_loop_node: supply_outlet_node,
                         name: "#{air_loop_hvac.name} Electric Htg Coil")
 
             # add new fan
-            fan = std.create_fan_constant_volume(model,
+            fan = OpenstudioStandards::HVAC.create_fan_constant_volume(model,
                         fan_name: "#{air_loop_hvac.name} Constant Volume Supply Fan",
                         pressure_rise: fan_static_pressure)
             fan.addToNode(supply_outlet_node) unless supply_outlet_node.nil?
@@ -558,22 +560,9 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
         # get zone design people
         num_people = thermal_zone.numberOfPeople * thermal_zone.multiplier
 
-        dsn_oa_m3_per_s= 0
-        if space.designSpecificationOutdoorAir.is_initialized
-          dsn_spec_oa = space.designSpecificationOutdoorAir.get
-
-          # add floor area component
-          oa_area = dsn_spec_oa.outdoorAirFlowperFloorArea
-          dsn_oa_m3_per_s = oa_area * fa
-
-          # add per person component
-          oa_person = dsn_spec_oa.outdoorAirFlowperPerson
-          dsn_oa_m3_per_s += oa_person * num_people
-
-          # add air change component
-          oa_ach = dsn_spec_oa.outdoorAirFlowAirChangesperHour
-          dsn_oa_m3_per_s += (oa_ach * vol) / 60
-        end
+        # design OA via the standards helper: it honours the Maximum method (Title 24 zones) and divides air changes
+        # per hour by 3600; the old hand sum always added per-area and per-person and divided air changes by 60
+        dsn_oa_m3_per_s = OpenstudioStandards::ThermalZone.thermal_zone_get_outdoor_airflow_rate(thermal_zone) * thermal_zone.multiplier
         # delete air loop if less than minimum flow rate
         next unless dsn_oa_m3_per_s < 1.0000E-003
         runner.registerWarning("#{air_loop_hvac.name} has an outdoor air flow rate of #{dsn_oa_m3_per_s.round(3)} m3/s which is less than the required 0.001 m3/s. This DOAS will be deleted, but these zone equipment will remain.")

@@ -141,7 +141,7 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
       pump_motor_eff = pump.motorEfficiency
 
       # pump motor BHP
-      pump_motor_bhp = std.pump_brake_horsepower(pump)
+      pump_motor_bhp = OpenstudioStandards::HVAC.pump_get_brake_horsepower(pump)
 
       # get partload curve coefficients from variable speed pump
       if pump.to_PumpVariableSpeed.is_initialized

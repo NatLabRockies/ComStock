@@ -392,6 +392,7 @@ class AddHeatPumpRtuTest < Minitest::Test
       rescue JSON::ParserError => e
         flunk "JSON parsing failed for #{file_path}: #{e.message}"
       end
+    end
   end
 
   def calc_cfm_per_ton_singlespdcoil_heating(model, cfm_per_ton_min, cfm_per_ton_max)
