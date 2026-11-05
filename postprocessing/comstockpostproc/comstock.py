@@ -1636,8 +1636,19 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         Parquet otherwise takes whatever type the data happens to infer: a baseline-only export
         writes all-zero float columns as integers, measure arguments arrive as strings, and types
         drift between releases. Columns without a definition, or with a blank data_type, are left
-        as they are. Casts are strict, so a value that cannot be converted fails the export
-        instead of becoming a silent null.
+        as they are, and columns defined as boolean are not cast.
+
+        Only conversions that keep every value are made:
+        - integer to float, categorical to text, and text to a number. Text casts are strict, so
+          text that is not a number fails the export instead of becoming a silent null.
+        - float to integer, for whole numbers only. polars drops decimals even in a strict cast
+          (2.5 becomes 2), so a value with decimals is turned into NaN first and the strict cast
+          then fails the export when it is written; the polars error names the column and shows
+          the value as NaN.
+        A number or a true/false value is never turned into text (2.0 would be written as '2.0',
+        and an ID would lose its leading zeros), and a true/false value is never turned into a
+        number: such columns raise a TypeError before anything is cast, so the definitions or the
+        data get fixed instead.
         """
         type_map = {'float': pl.Float64, 'integer': pl.Int64, 'string': pl.Utf8, 'boolean': pl.Boolean}
         col_defs = pl.read_csv(os.path.join(RESOURCE_DIR, COLUMN_DEFINITION_FILE_NAME))
@@ -1648,22 +1659,35 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             def_types[name] = type_map[dtype]
 
         casts = []
+        kinds = {}  # 'Int64 to Float64' -> number of columns, for the log
+        refused = []
         for col, current in input_lf.collect_schema().items():
             target = def_types.get(col.split('..')[0], def_types.get(col))
             if target is None or current == target:
                 continue
-            if target == pl.Boolean and current != pl.Boolean:
+            if target == pl.Boolean:
                 # No exported column needs this today; a string-to-boolean mapping is a judgment call
                 logger.warning(f'Not casting {col} from {current} to Boolean; update the column definitions or the data')
+                continue
+            if current == pl.Boolean or (current.is_numeric() and target == pl.Utf8):
+                refused.append(f'{col} ({current} to {target})')
                 continue
             expr = pl.col(col)
             if current in (pl.Categorical, pl.Enum) or isinstance(current, (pl.Categorical, pl.Enum)):
                 expr = expr.cast(pl.Utf8)
-            casts.append(expr.cast(target).alias(col))
+            if current.is_float() and target.is_integer():
+                expr = pl.when(expr.is_null() | (expr == expr.round(0))).then(expr).otherwise(float('nan'))
+            casts.append(expr.cast(target, strict=True).alias(col))
+            kind = f'{current} to {target}'
+            kinds[kind] = kinds.get(kind, 0) + 1
             logger.debug(f'Casting {col} from {current} to {target} per {COLUMN_DEFINITION_FILE_NAME}')
 
+        if refused:
+            raise TypeError(f'Not casting these exported columns to the types in {COLUMN_DEFINITION_FILE_NAME}, '
+                            f'because their values would change; fix the definitions or the data: {", ".join(refused)}')
         if casts:
-            logger.info(f'Casting {len(casts)} exported columns to the data types in {COLUMN_DEFINITION_FILE_NAME}')
+            summary = ', '.join(f'{n} {kind}' for kind, n in sorted(kinds.items(), key=lambda kv: -kv[1]))
+            logger.info(f'Casting {len(casts)} exported columns to the data types in {COLUMN_DEFINITION_FILE_NAME}: {summary}')
             input_lf = input_lf.with_columns(casts)
 
         return input_lf
