@@ -114,6 +114,11 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
         runner.registerInfo("Air loop #{air_loop_hvac.name} is a evaporative cooler and cannot economize.")
         next
       end
+      # skip data center CRAC/CRAH loops: the typical builders already decide their economizer by climate zone
+      if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        runner.registerInfo("Air loop #{air_loop_hvac.name} is a data center CRAC/CRAH; its economizer was decided by the baseline and is left alone.")
+        next
+      end
 
       oa_controller = oa_system.getControllerOutdoorAir
       economizer_type = oa_controller.getEconomizerControlType

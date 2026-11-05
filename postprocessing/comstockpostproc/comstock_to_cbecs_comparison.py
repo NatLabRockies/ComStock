@@ -311,16 +311,6 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
                                         columns=(self.lazyframe_plotter.QOI_COLUMNS + [column_for_grouping]))(**BASIC_PARAMS)
         # self.plot_qoi_min_use(df, column_for_grouping, color_map, output_dir)
 
-    def export_to_csv_wide(self):
-        file_name = 'ComStock wide.csv'
-        file_path = os.path.join(self.output_dir, file_name)
-
-        try:
-            self.data.collect().write_csv(file_path)
-            logger.info(f'Exported comparison data to {file_path}')
-        except Exception as e:
-            logger.error(f"CSV export failed: {e}")
-
     def _validate_building_type(self, building_type: str | None) -> str | None:
         """
         Validates that the provided building type is a recognized ComStock building type.

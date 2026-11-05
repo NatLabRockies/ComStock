@@ -1141,4 +1141,141 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   #     model = load_model(model_output_path("#{test_name}_#{idx_run}_u"))
   #   end
   # end
+
+  # ---------------------------------------------------------------------------
+  # Fan representation and backup fuel. Both of these were defects measured on
+  # this model before the fix; see upgrade_hvac_add_heat_pump_rtu/docs for the
+  # matching work on the heat pump RTU measure.
+  # ---------------------------------------------------------------------------
+
+  # 90.1-2019 enclosed 4-pole nominal full-load motor efficiencies. A real total fan
+  # efficiency must be an impeller efficiency times one of these.
+  ASHRAE_MOTOR_EFFICIENCIES_ADV = [0.855, 0.865, 0.895, 0.917, 0.924, 0.93, 0.936,
+                                   0.941, 0.95, 0.954, 0.958].freeze
+
+  # The OpenStudio FanVariableVolume default. Seeing this as a FINAL total efficiency
+  # means setFanTotalEfficiency was never reached.
+  OPENSTUDIO_DEFAULT_FAN_TOTAL_EFF = 0.6045
+
+  # The G*.epw files the rest of this suite references are excluded by .gitignore and
+  # are absent from a fresh checkout, so those tests cannot run. This one uses weather
+  # that is actually in the repo. It has to be a file whose .ddy carries design days
+  # named the way set_weather_and_apply_measure_and_run's filter expects, or that helper
+  # strips every design day and its own assertion fails - the NY TMY3 .ddy here contains
+  # no design days at all. Los Angeles is the only in-repo option that qualifies without
+  # being a climate extreme. Climate does not affect what these tests assert: fan
+  # efficiency, part-load coefficients, flow floor and coil fuel are all climate
+  # independent.
+  def adv_fan_test_paths
+    [model_input_path('370_strip_mall_psz_gas_some_erv_4a.osm'),
+     epw_input_path('CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw')]
+  end
+
+  def adv_apply(test_name, model: nil)
+    osm_path, epw_path = adv_fan_test_paths
+    measure = UpgradeHvacRtuAdv.new
+    src = model || load_model(osm_path)
+    arguments = measure.arguments(src)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    wanted = { 'hr' => false, 'dcv' => false, 'debug_verbose' => false }
+    arguments.each_with_index do |arg, idx|
+      if wanted.key?(arg.name)
+        cloned = arguments[idx].clone
+        cloned.setValue(wanted[arg.name])
+        argument_map[arg.name] = cloned
+      else
+        argument_map[arg.name] = arg.clone
+      end
+    end
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                          run_model: false, apply: true, model: src)
+    load_model(model_output_path(test_name))
+  end
+
+  # Total efficiency must be a real impeller times a real motor, and the motor must
+  # come from the 90.1 table rather than being inherited from the fan being replaced.
+  #
+  # Before the fix, setMotorEfficiency followed by fan_change_motor_efficiency was a
+  # no-op - that helper derives the impeller from the fan's current total efficiency,
+  # which was still the OpenStudio default - so all 48 supply fans on this model came
+  # out at exactly 0.6045 regardless of size.
+  def test_fan_efficiency_is_impeller_times_motor
+    puts "\n######\nTEST:test_fan_efficiency_is_impeller_times_motor\n######\n"
+    applied = adv_apply('test_adv_fan_efficiency')
+    fans = applied.getFanVariableVolumes
+    refute_empty(fans, 'no variable volume supply fans were created')
+
+    fans.each do |fan|
+      label = "adv rtu #{fan.name}"
+      total = fan.fanEfficiency
+      motor = fan.motorEfficiency
+
+      refute_in_delta(OPENSTUDIO_DEFAULT_FAN_TOTAL_EFF, total, 1e-6,
+                      "#{label}: total efficiency is still the OpenStudio default " \
+                      "#{OPENSTUDIO_DEFAULT_FAN_TOTAL_EFF}; setFanTotalEfficiency was never reached")
+      assert(ASHRAE_MOTOR_EFFICIENCIES_ADV.any? { |m| (m - motor).abs < 1e-6 },
+             "#{label}: motor efficiency #{motor} is not a 90.1 table value")
+
+      impeller = total / motor
+      assert_in_delta(0.65, impeller, 1e-6,
+                      "#{label}: implied impeller #{impeller.round(4)} is not the " \
+                      'openstudio-standards 0.65')
+    end
+  end
+
+  # An efficiency upgrade must not change what the building burns. CoilHeatingGas
+  # covers natural gas, propane and fuel oil and defaults to NaturalGas, so a fuel oil
+  # building previously came out of this measure with natural gas backup coils.
+  def test_backup_coil_matches_original_fuel
+    puts "\n######\nTEST:test_backup_coil_matches_original_fuel\n######\n"
+    osm_path, = adv_fan_test_paths
+    %w[FuelOilNo2 Propane NaturalGas].each do |fuel|
+      model = load_model(osm_path)
+      coils = model.getCoilHeatingGass
+      refute_empty(coils, 'test model has no gas-type heating coils to relabel')
+      coils.each { |c| c.setFuelType(fuel) }
+
+      applied = adv_apply("test_adv_backup_fuel_#{fuel}", model: model)
+      fuels = applied.getCoilHeatingGass.map(&:fuelType).uniq.sort
+      refute_empty(fuels, "no gas-type coil survived for original fuel #{fuel}")
+      assert_equal([fuel], fuels,
+                   "original fuel #{fuel} produced coils burning #{fuels.join(', ')}; " \
+                   'this measure must not switch fuels')
+    end
+  end
+
+  # Static pressure belongs to the duct system, not the equipment, and the 90.1-2016
+  # Appendix G Single Zone VAV curve is the sourced representation for this measure.
+  # Guard both against drift, and keep the flow floor at or above the 0.40 it specifies.
+  def test_fan_curve_and_pressure_are_unchanged
+    puts "\n######\nTEST:test_fan_curve_and_pressure_are_unchanged\n######\n"
+    applied = adv_apply('test_adv_fan_curve')
+    fans = applied.getFanVariableVolumes
+    refute_empty(fans)
+
+    expected = UpgradeHvacRtuAdv::SINGLE_ZONE_VAV_FAN_POWER_COEFFICIENTS
+    fans.each do |fan|
+      label = "adv rtu #{fan.name}"
+      actual = [fan.fanPowerCoefficient1, fan.fanPowerCoefficient2, fan.fanPowerCoefficient3,
+                fan.fanPowerCoefficient4, fan.fanPowerCoefficient5].map do |c|
+        c.is_a?(Numeric) ? c : (c.respond_to?(:is_initialized) && c.is_initialized ? c.get : 0.0)
+      end
+      expected.each_with_index do |exp, i|
+        assert_in_delta(exp, actual[i], 1e-6, "#{label}: fan power coefficient #{i + 1} drifted")
+      end
+      # Both RTU measures must keep the same variable-speed representation.
+      assert_equal([0.027827882, 0.026583195, -0.0870687, 1.03091975, 0.0], expected,
+                   'the 90.1-2016 Appendix G Single Zone VAV coefficients have been changed')
+      full = actual.each_with_index.sum { |c, i| c * (1.0**i) }
+      assert_in_delta(1.0, full, 0.01,
+                      "#{label}: part-load curve returns #{full.round(4)} at full flow, expected 1.0")
+
+      min_flow = fan.fanPowerMinimumFlowFraction
+      min_flow = min_flow.get if min_flow.respond_to?(:is_initialized) && min_flow.is_initialized
+      assert(min_flow >= 0.40 - 1e-6,
+             "#{label}: minimum flow fraction #{min_flow} is below the specified 0.40")
+      assert(min_flow <= 1.0 + 1e-6, "#{label}: minimum flow fraction #{min_flow} exceeds 1.0")
+      assert(fan.pressureRise > 0, "#{label}: static pressure was not carried over")
+    end
+  end
 end

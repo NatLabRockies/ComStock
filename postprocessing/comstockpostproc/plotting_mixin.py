@@ -9,6 +9,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import plotly.express as px
+import plotly.io as pio
 import seaborn as sns
 import plotly.graph_objects as go
 import matplotlib.colors as mcolors
@@ -23,7 +24,69 @@ logger = logging.getLogger(__name__)
 color_violin = "#EFF2F1"
 color_interquartile = "#6A9AC3"
 
+# Kaleido v1 renders through a real Chrome process launched by choreographer, and
+# plotly starts and tears down one browser per write_image() call. That teardown is
+# unreliable on Windows: it raises "Couldn't close or kill browser subprocess" from
+# Kaleido's __aexit__, which discards the already-rendered bytes and aborts the run.
+# Queueing figures and exporting them through pio.write_images() reuses one browser
+# for the whole batch, so there are far fewer teardowns to fail.
+# The batch is capped so a long plotting loop does not hold many figures in memory.
+FIGURE_BATCH_SIZE = 8
+
+
 class PlottingMixin():
+
+    def queue_figure(self, fig, file_path, scale=None):
+        """Queue a figure for batched export instead of writing it immediately.
+
+        Call flush_figures() once the enclosing plot method has queued everything it
+        intends to write. Queued figures are also flushed automatically whenever the
+        batch reaches FIGURE_BATCH_SIZE.
+        """
+        if getattr(self, '_figure_queue', None) is None:
+            self._figure_queue = []
+        self._figure_queue.append((fig, file_path, scale))
+        if len(self._figure_queue) >= FIGURE_BATCH_SIZE:
+            self.flush_figures()
+
+    def flush_figures(self):
+        """Write every queued figure, preferring a single batched export.
+
+        Falls back to writing figures one at a time if the batch fails or if plotly is
+        too old to provide write_images. A figure that still cannot be written is
+        logged and skipped rather than aborting a plotting run that may have hours of
+        work behind it.
+        """
+        queued = getattr(self, '_figure_queue', None)
+        if not queued:
+            return
+        # Clear first so a failure part way through cannot re-write earlier figures
+        self._figure_queue = []
+
+        figs = [fig for fig, _, _ in queued]
+        paths = [path for _, path, _ in queued]
+        scales = [scale for _, _, scale in queued]
+
+        if hasattr(pio, 'write_images'):
+            try:
+                pio.write_images(figs, paths, scale=scales)
+                return
+            except Exception as e:
+                logger.warning(
+                    f'Batched export of {len(figs)} figures failed ({type(e).__name__}: {e}). '
+                    'Retrying one figure at a time.'
+                )
+        else:
+            logger.warning(
+                'plotly.io.write_images is unavailable; install plotly>=6.1 with '
+                'kaleido>=1.1 for batched figure export. Writing figures individually.'
+            )
+
+        for fig, path, scale in queued:
+            try:
+                fig.write_image(path, scale=scale)
+            except Exception as e:
+                logger.error(f'Could not write {path} ({type(e).__name__}: {e}). Skipping.')
 
     # plot energy consumption by fuel type and enduse
     """
@@ -174,8 +237,8 @@ class PlottingMixin():
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
             fig_path_html = os.path.abspath(os.path.join(fig_sub_dir, fig_name_html))
-            fig.write_image(fig_path, scale=10)
-            fig.write_html(fig_path_html)
+            self.queue_figure(fig, fig_path, scale=10)
+            #fig.write_html(fig_path_html)
             df_emi_gb_long.to_csv(os.path.join(fig_sub_dir, f'{title.replace(" ", "_").lower()}_{applicable_scenario}.csv'), index=False)
 
     # plot for GHG emissions by fuel type for baseline and upgrade
@@ -1729,7 +1792,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
         return
 
@@ -1821,7 +1884,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.join(fig_sub_dir, fig_name)
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
         return
 
@@ -1913,7 +1976,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.join(fig_sub_dir, fig_name)
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
         return
 
@@ -2005,7 +2068,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.join(fig_sub_dir, fig_name)
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
         return
 
@@ -2102,7 +2165,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
         return
 
@@ -2199,7 +2262,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
 
         return
@@ -2294,7 +2357,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
 
     ######
@@ -2388,7 +2451,7 @@ class PlottingMixin():
             if not os.path.exists(fig_sub_dir):
                 os.makedirs(fig_sub_dir)
             fig_path = os.path.join(fig_sub_dir, fig_name)
-            fig.write_image(fig_path, scale=10)
+            self.queue_figure(fig, fig_path, scale=10)
 
 
     ######
@@ -2427,7 +2490,7 @@ class PlottingMixin():
         if not os.path.exists(fig_sub_dir):
             os.makedirs(fig_sub_dir)
         fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-        violin_qoi_timing.write_image(fig_path, scale=10)
+        self.queue_figure(violin_qoi_timing, fig_path, scale=10)
 
     def plot_qoi_max_use(self, df, column_for_grouping, color_map, output_dir):
 
@@ -2463,7 +2526,7 @@ class PlottingMixin():
         if not os.path.exists(fig_sub_dir):
             os.makedirs(fig_sub_dir)
         fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-        violin_qoi_timing.write_image(fig_path, scale=10)
+        self.queue_figure(violin_qoi_timing, fig_path, scale=10)
 
     def plot_qoi_min_use(self, df, column_for_grouping, color_map, output_dir):
 
@@ -2499,7 +2562,7 @@ class PlottingMixin():
         if not os.path.exists(fig_sub_dir):
             os.makedirs(fig_sub_dir)
         fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
-        violin_qoi_timing.write_image(fig_path, scale=10)
+        self.queue_figure(violin_qoi_timing, fig_path, scale=10)
 
 
     def plot_unmet_hours(self, df, column_for_grouping, color_map, output_dir):
@@ -2573,8 +2636,8 @@ class PlottingMixin():
         fig_name_html = f'{title.replace(" ", "_").lower()}.html'
         fig_path = os.path.abspath(os.path.join(output_dir, fig_name))
         fig_path_html = os.path.abspath(os.path.join(output_dir, fig_name_html))
-        fig.write_image(fig_path, scale=10)
-        fig.write_html(fig_path_html)
+        self.queue_figure(fig, fig_path, scale=10)
+        #fig.write_html(fig_path_html)
 
         return fig
 
@@ -3387,8 +3450,8 @@ class PlottingMixin():
                 fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
                 fig_path_html = os.path.abspath(os.path.join(fig_sub_dir, fig_name_html))
 
-                fig.write_image(fig_path, scale=6)
-                fig.write_html(fig_path_html)
+                self.queue_figure(fig, fig_path, scale=6)
+                #fig.write_html(fig_path_html)
             # save timeseries data
             dfs_merged.to_csv(f"{fig_sub_dir}/timeseries_data_{location_name}.csv")
 
@@ -3597,8 +3660,8 @@ class PlottingMixin():
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
             fig_path_html = os.path.abspath(os.path.join(fig_sub_dir, fig_name_html))
 
-            fig.write_image(fig_path, scale=6)
-            fig.write_html(fig_path_html)
+            self.queue_figure(fig, fig_path, scale=6)
+            #fig.write_html(fig_path_html)
 
     def plot_measure_timeseries_annual_average_by_state_and_enduse(self, df, output_dir, timeseries_locations_to_plot, color_map, comstock_run_name, comstock_obj=None):
 
@@ -3801,5 +3864,5 @@ class PlottingMixin():
             fig_path = os.path.abspath(os.path.join(fig_sub_dir, fig_name))
             fig_path_html = os.path.abspath(os.path.join(fig_sub_dir, fig_name_html))
 
-            fig.write_image(fig_path, scale=6)
-            fig.write_html(fig_path_html)
+            self.queue_figure(fig, fig_path, scale=6)
+            #fig.write_html(fig_path_html)

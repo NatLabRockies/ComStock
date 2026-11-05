@@ -318,6 +318,8 @@ def run(model, runner, user_arguments)
 	  next if ((air_loop_hvac.name.to_s.include?("residential")) || (air_loop_hvac.name.to_s.include?("Residential")) || (sizing_system.allOutdoorAirinCooling && sizing_system.allOutdoorAirinHeating))
 	  #skip VAV systems
 	  next if ['VAV', 'PVAV'].any? { |word| (air_loop_hvac.name.get).include?(word) } || vav_terminals?(air_loop_hvac)
+	  # data center CRAC/CRAH units keep their controls (typical models give data centers their own unit)
+	  next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
 	  next if !(air_loop_hvac_unitary_system?(air_loop_hvac)) #select unitary systems only
 	  overall_sel_air_loops << air_loop_hvac
 	end
@@ -388,7 +390,9 @@ def run(model, runner, user_arguments)
 			fan.setMaximumFlowRate(fan_flow) #keep it the same as the existing fan, since the fan itself will be the same
 			fan.setFanTotalEfficiency(fan_motor_eff * fan_eff)
 			#set fan curve coefficients
-			standard.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
+			# Module function since openstudio-standards 0.8.5. The old 'Single Zone VAV Fan ' string matched nothing
+			# (no-op through 2025R3); 'Single Zone VAV' applies the intended curve. Delete the call for 2025R3 parity.
+			OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
 			fan.setFanPowerMinimumFlowFraction(min_flow_fraction) #resetting minimum flow fraction to be appropriate for retrofit as opposed to 10% in method above
 			#Add it to the unitary sys
 			component.setSupplyFan(fan)

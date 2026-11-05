@@ -83,7 +83,7 @@ ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `data
                                    # elsewhere in the package hard-code it
 MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
 MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures over the 'process' runs
-                                   # (slow); False writes only their wide CSVs and the dashboard
+                                   # (slow); False leaves them to the dashboard
 INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
 MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
@@ -276,7 +276,7 @@ def main():
             obj.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
     cbecs.export_to_csv_wide()             # the dashboard reads 'CBECS wide.csv'
 
-    # 5. The processed runs against each other and CBECS: figures (optional) and wide CSVs.
+    # 5. The processed runs against each other and CBECS: figures (optional).
     #    COMPARISON_NAME is the output folder; the dashboard is written inside it.
     comparison = None
     if objects:
@@ -285,7 +285,6 @@ def main():
             comstock_list=list(objects.values()),
             name=COMPARISON_NAME,
             make_comparison_plots=MAKE_COMPARISON_PLOTS)
-        comparison.export_to_csv_wide()
 
     if not MAKE_RESULTS_DASHBOARD:
         return

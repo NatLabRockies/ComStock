@@ -10,6 +10,25 @@ require 'json'
 
 # start the measure
 class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
+  # ASHRAE 90.1-2016 Appendix G, System Type 11 (Single Zone VAV) fan part-load curve -
+  # the reference case for packaged single-zone equipment, and the same coefficients
+  # OpenstudioStandards::HVAC.fan_variable_volume_set_control_type installs for control
+  # type 'Single Zone VAV'.
+  #
+  # This replaces a curve previously carried inline here as
+  # [0.259905264, -1.569867715, 4.819732387, -3.904544154, 1.394774218], commented only
+  # as "from Daikin Rebel E+ file" - one vendor's numbers of unknown provenance, taken from an
+  # EnergyPlus file the manufacturer sent, with no record of how they were derived, in a file
+  # not in this repository and so not checkable. The two curves differ materially: at 40%
+  # flow the Daikin curve returns 0.189 against 0.091 here, a factor of 2.1. Standardising
+  # on the citable source keeps this measure and upgrade_hvac_add_heat_pump_rtu, which
+  # both install variable-speed RTU fans, on one representation.
+  #
+  # Note the direction: this LOWERS part-load fan power and so increases the fan savings
+  # this measure reports.
+  SINGLE_ZONE_VAV_FAN_POWER_COEFFICIENTS = [0.027827882, 0.026583195, -0.0870687,
+                                            1.03091975, 0.0].freeze
+
   # human readable name
   def name
     return 'upgrade_hvac_rtu_adv'
@@ -615,6 +634,59 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
 
   # define what happens when the measure is run
   # rubocop:disable Naming/PredicateMethod
+  # Real energy recovery units stop the wheel and open bypass dampers when recovery would not help (90.1 section 6.5.6.1),
+  # which removes the wheel's added fan pressure; EnergyPlus charges Nominal Electric Power whenever the HX is available.
+  # An EMS program keeps the HX available only when it would warm or cool the outdoor air toward its outlet setpoint.
+  # @param model [OpenStudio::Model::Model]
+  # @param hx [OpenStudio::Model::HeatExchangerAirToAirSensibleAndLatent] HX in the air loop's outdoor air system
+  # @param oa_sys [OpenStudio::Model::AirLoopHVACOutdoorAirSystem] the outdoor air system holding the HX
+  # @param deadband_c [Double] temperature margin before the wheel runs, deg C
+  # @return [Boolean] true if the bypass control was added
+  def add_erv_bypass_control(model, hx, oa_sys, deadband_c = 0.5)
+    oa_node = oa_sys.outboardOANode
+    ra_node = oa_sys.returnAirModelObject
+    hx_out = hx.primaryAirOutletModelObject
+    return false unless oa_node.is_initialized && ra_node.is_initialized && hx_out.is_initialized
+
+    avail = OpenStudio::Model::ScheduleConstant.new(model)
+    avail.setName("#{hx.name} Bypass Control")
+    avail.setValue(1.0)
+    hx.setAvailabilitySchedule(avail)
+
+    tag = "erv_bypass_#{model.getEnergyManagementSystemPrograms.size + 1}"
+    sensors = { 'toa' => ['System Node Temperature', oa_node.get.name.to_s],
+                'tra' => ['System Node Temperature', ra_node.get.name.to_s],
+                'tsp' => ['System Node Setpoint Temperature', hx_out.get.name.to_s] }
+    sensors.each do |var, (output, key)|
+      sensor = OpenStudio::Model::EnergyManagementSystemSensor.new(model, output)
+      sensor.setName("#{tag}_#{var}")
+      sensor.setKeyName(key)
+    end
+    actuator = OpenStudio::Model::EnergyManagementSystemActuator.new(avail, 'Schedule:Constant', 'Schedule Value')
+    actuator.setName("#{tag}_avail")
+
+    # heating: outdoor air below both the return air and the HX outlet setpoint; cooling: above both
+    program = OpenStudio::Model::EnergyManagementSystemProgram.new(model)
+    program.setName("#{tag}_program")
+    program.setBody(<<~ERL)
+      IF (#{tag}_toa < (#{tag}_tra - #{deadband_c})) && (#{tag}_toa < (#{tag}_tsp - #{deadband_c}))
+        SET #{tag}_avail = 1
+      ELSEIF (#{tag}_toa > (#{tag}_tra + #{deadband_c})) && (#{tag}_toa > (#{tag}_tsp + #{deadband_c}))
+        SET #{tag}_avail = 1
+      ELSE
+        SET #{tag}_avail = 0
+      ENDIF
+    ERL
+    manager = model.getEnergyManagementSystemProgramCallingManagers.find { |m| m.name.to_s == 'ERV Bypass Control' }
+    if manager.nil?
+      manager = OpenStudio::Model::EnergyManagementSystemProgramCallingManager.new(model)
+      manager.setName('ERV Bypass Control')
+      manager.setCallingPoint('AfterPredictorAfterHVACManagers')
+    end
+    manager.addProgram(program)
+    true
+  end
+
   def run(model, runner, user_arguments)
     super
 
@@ -1209,6 +1281,9 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       orig_htg_coil_gross_cap = nil
       orig_clg_coil_rated_airflow_m_3_per_s = nil
       orig_htg_coil_obj_existing = nil
+      # Original combustion fuel, carried through to the backup coil below. This is an
+      # efficiency upgrade, not a fuel switch.
+      orig_htg_coil_fuel_type = nil
       supply_airflow_during_cooling = nil
       supply_airflow_during_heating = nil
       hot_water_loop = nil
@@ -1358,6 +1433,10 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           elsif orig_htg_coil.to_CoilHeatingGas.is_initialized
             orig_htg_coil = orig_htg_coil.to_CoilHeatingGas.get
             orig_htg_coil_obj_existing = orig_htg_coil.clone(model).to_CoilHeatingGas.get
+            # CoilHeatingGas covers natural gas, propane and fuel oil - the fuel is a
+            # field, not a separate class. Read as-is so it is by construction a valid
+            # fuel string for this model's OpenStudio version.
+            orig_htg_coil_fuel_type = orig_htg_coil.fuelType
             if orig_htg_coil.isNominalCapacityAutosized == true
               orig_htg_coil_gross_cap = orig_htg_coil.autosizedNominalCapacity.get
             elsif orig_htg_coil.nominalCapacity.is_initialized
@@ -1547,14 +1626,56 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       new_fan = OpenStudio::Model::FanVariableVolume.new(model, always_on)
       new_fan.setAvailabilitySchedule(supply_fan_avail_sched)
       new_fan.setName("#{air_loop_hvac.name} VFD Fan")
-      new_fan.setMotorEfficiency(fan_mot_eff) # from Daikin Rebel E+ file
       new_fan.setFanPowerMinimumFlowRateInputMethod('Fraction')
-      std.fan_change_motor_efficiency(new_fan, fan_mot_eff)
-      new_fan.setFanPowerCoefficient1(0.259905264) # from Daikin Rebel E+ file
-      new_fan.setFanPowerCoefficient2(-1.569867715) # from Daikin Rebel E+ file
-      new_fan.setFanPowerCoefficient3(4.819732387) # from Daikin Rebel E+ file
-      new_fan.setFanPowerCoefficient4(-3.904544154) # from Daikin Rebel E+ file
-      new_fan.setFanPowerCoefficient5(1.394774218) # from Daikin Rebel E+ file
+
+      # Total fan efficiency is impeller x motor, and it has to be set explicitly.
+      #
+      # The previous two lines here were setMotorEfficiency(fan_mot_eff) followed by
+      # std.fan_change_motor_efficiency(new_fan, fan_mot_eff), which is a no-op: that
+      # helper derives the impeller from the fan's CURRENT total efficiency, and at this
+      # point that is still the OpenStudio FanVariableVolume default of 0.6045 because
+      # setFanTotalEfficiency has never been called. It therefore computes
+      # 0.6045 / motor x motor and writes 0.6045 straight back. Measured on the strip
+      # mall test model, all 48 supply fans came out at exactly 0.6045 regardless of
+      # size, with an implied impeller efficiency of 0.733 that is an artefact of that
+      # arithmetic rather than a property of any fan.
+      #
+      # Impeller comes from openstudio-standards and the motor from the 90.1 table by
+      # brake horsepower, so the motor tracks fan size. Brake horsepower is air power
+      # divided by impeller efficiency, which is what that lookup expects. This matches
+      # upgrade_hvac_add_heat_pump_rtu so the two RTU measures represent fans the same way.
+      fan_impeller_efficiency = std.fan_baseline_impeller_efficiency(new_fan)
+      fan_brake_hp = (fan_static_pressure * old_terminal_sa_flow_m3_per_s) /
+                     (fan_impeller_efficiency * 745.7)
+      # Size the motor the way openstudio-standards sizes BASELINE fan motors, or the
+      # upgraded fan can come out less efficient than the fan it replaces. The 90.1
+      # motor table is indexed by nominal nameplate size, and brake horsepower is about
+      # 90% of it (Thornton et al. 2011), so prototype_fan_apply_prototype_fan_efficiency
+      # looks up at brake_hp * 1.1. Looking up at brake horsepower instead lands one
+      # motor size low near a bin boundary: at 2 bhp that is motor 0.865 against the
+      # baseline's 0.895, and at 5 bhp 0.895 against 0.917. The rounding nudge is copied
+      # from that method so ties break the same way.
+      fan_nominal_motor_hp = fan_brake_hp * 1.1
+      if fan_nominal_motor_hp > 0.1
+        fan_nominal_motor_hp = fan_nominal_motor_hp.round(2) + 0.0001
+      elsif fan_nominal_motor_hp < 0.01
+        fan_nominal_motor_hp = 0.01
+      end
+      fan_motor_efficiency, fan_nominal_hp =
+        std.fan_standard_minimum_motor_efficiency_and_size(new_fan, fan_nominal_motor_hp)
+      new_fan.setMotorEfficiency(fan_motor_efficiency)
+      new_fan.setFanTotalEfficiency(fan_impeller_efficiency * fan_motor_efficiency)
+      if debug_verbose
+        runner.registerInfo("fan summary: #{air_loop_hvac.name} | impeller=#{fan_impeller_efficiency.round(3)} | "                             "bhp=#{fan_brake_hp.round(2)} | nominal_hp=#{fan_nominal_hp} | "                             "motor_eff=#{fan_motor_efficiency.round(3)} | "                             "total_eff=#{(fan_impeller_efficiency * fan_motor_efficiency).round(4)}")
+      end
+
+      # 90.1-2016 Appendix G Single Zone VAV; see the constant for provenance.
+      c1, c2, c3, c4, c5 = SINGLE_ZONE_VAV_FAN_POWER_COEFFICIENTS
+      new_fan.setFanPowerCoefficient1(c1)
+      new_fan.setFanPowerCoefficient2(c2)
+      new_fan.setFanPowerCoefficient3(c3)
+      new_fan.setFanPowerCoefficient4(c4)
+      new_fan.setFanPowerCoefficient5(c5)
 
       # set minimum flow rate to 0.40, or higher as needed to maintain outdoor air requirements
       min_flow = 0.40
@@ -1698,7 +1819,18 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       else
         new_backup_heating_coil = OpenStudio::Model::CoilHeatingGas.new(model)
         new_backup_heating_coil.setGasBurnerEfficiency(0.80)
-        new_backup_heating_coil.setName("#{air_loop_hvac.name} gas backup coil")
+        # Match the building's original combustion fuel rather than defaulting to natural
+        # gas. prim_ht_fuel_type only distinguishes 'electric' from 'gas', and a new
+        # CoilHeatingGas defaults to NaturalGas, so a fuel oil or propane building was
+        # silently switched to gas. Measured on the strip mall test model relabelled to
+        # FuelOilNo2, the result contained NaturalGas backup coils.
+        if orig_htg_coil_fuel_type.nil? || orig_htg_coil_fuel_type.to_s.empty?
+          runner.registerWarning("Could not determine the original combustion fuel for #{air_loop_hvac.name}; backup coil defaults to #{new_backup_heating_coil.fuelType}.")
+        else
+          new_backup_heating_coil.setFuelType(orig_htg_coil_fuel_type)
+        end
+        backup_fuel_label = new_backup_heating_coil.fuelType.to_s
+        new_backup_heating_coil.setName("#{air_loop_hvac.name} #{backup_fuel_label} backup coil")
       end
       # set availability schedule
       new_backup_heating_coil.setAvailabilitySchedule(always_on)
@@ -1761,13 +1893,15 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       # add dcv to air loop if dcv flag is true
       if dcv == true
-        if debug_verbose
-          runner.registerInfo('--- adding DCV')
+        runner.registerInfo('--- adding DCV') if debug_verbose
+        # the DCV measure's eligibility and per-loop changes, so this option matches upgrade_hvac_dcv
+        require_relative '../upgrade_hvac_dcv/measure'
+        reason = HVACDCV.building_ineligibility(model) || HVACDCV.air_loop_ineligibility(air_loop_hvac)
+        if reason.nil?
+          HVACDCV.enable_dcv(model, air_loop_hvac, std, runner)
+        else
+          runner.registerInfo("DCV not added to '#{air_loop_hvac.name}': #{HVACDCV::INELIGIBILITY_TEXT[reason]}.")
         end
-        oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get
-        controller_oa = oa_system.getControllerOutdoorAir
-        controller_mv = controller_oa.controllerMechanicalVentilation
-        controller_mv.setDemandControlledVentilation(true)
       end
 
       # -------------------------------------------------------
@@ -1813,35 +1947,9 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
         # get design outdoor air flow rate
         # this is used to estimate wheel "fan" power
         # loop through thermal zones
-        oa_flow_m3_per_s = 0
-        air_loop_hvac.thermalZones.each do |tz|
-          space = tz.spaces[0]
-
-          # get zone area
-          fa = tz.floorArea * tz.multiplier
-
-          # get zone volume
-          vol = tz.airVolume * tz.multiplier
-
-          # get zone design people
-          num_people = tz.numberOfPeople * tz.multiplier
-
-          next unless space.designSpecificationOutdoorAir.is_initialized
-
-          dsn_spec_oa = space.designSpecificationOutdoorAir.get
-
-          # add floor area component
-          oa_area = dsn_spec_oa.outdoorAirFlowperFloorArea
-          oa_flow_m3_per_s += oa_area * fa
-
-          # add per person component
-          oa_person = dsn_spec_oa.outdoorAirFlowperPerson
-          oa_flow_m3_per_s += oa_person * num_people
-
-          # add air change component
-          oa_ach = dsn_spec_oa.outdoorAirFlowAirChangesperHour
-          oa_flow_m3_per_s += (oa_ach * vol) / 60
-        end
+        # design OA via the standards helper: it honours the Maximum method (Title 24 zones) and divides air changes
+        # per hour by 3600; the old hand sum always added per-area and per-person and divided air changes by 60
+        oa_flow_m3_per_s = air_loop_hvac.thermalZones.sum { |z| OpenstudioStandards::ThermalZone.thermal_zone_get_outdoor_airflow_rate(z) * z.multiplier }
 
         oa_sys.oaComponents.each do |oa_comp|
           next unless oa_comp.to_HeatExchangerAirToAirSensibleAndLatent.is_initialized
@@ -1907,6 +2015,9 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             (oa_flow_m3_per_s * 174.188 / default_fan_efficiency) +
             ((oa_flow_m3_per_s * 0.9 * 124.42) / default_fan_efficiency)
           hx.setNominalElectricPower(power)
+          # size the wheel to the outdoor air it handles; autosizing used the supply air flow, about 4x larger
+          hx.setNominalSupplyAirFlowRate(oa_flow_m3_per_s) if oa_flow_m3_per_s > 0
+          add_erv_bypass_control(model, hx, oa_sys)
         end
       end
     end
