@@ -1268,7 +1268,7 @@ results.csv,simulation_output_report.electricity_water_systems_kwh,out.electrici
 results.csv,simulation_output_report.fuel_oil_heating_mbtu,out.fuel_oil.heating.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual heating energy consumption for fuel oil no2
 results.csv,simulation_output_report.fuel_oil_interior_equipment_mbtu,out.fuel_oil.interior_equipment.energy_consumption,FALSE,FALSE,float,million_btu,kwh,Annual interior equipment energy consumption for fuel oil no2 in million BTUs
 results.csv,simulation_output_report.fuel_oil_water_systems_mbtu,out.fuel_oil.water_systems.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual service water heating energy consumption for fuel oil no2
-results.csv,simulation_output_report.fuel_oil_generators_mbtu,out.fuel_oil.generators.energy_consumption,FALSE,FALSE,float,million_btu,kwh,Annual generator fuel oil no2 energy consumption in million BTUs
+results.csv,simulation_output_report.fuel_oil_generators_mbtu,out.fuel_oil.generators.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual generator energy consumption for fuel oil no2
 results.csv,simulation_output_report.purchased_site_electricity_kwh,out.electricity.purchased.energy_consumption,TRUE,TRUE,float,kwh,kwh,Annual purchased electricity which does not include negative net metering from onsite generation.
 results.csv,simulation_output_report.hours_cooling_setpoint_not_met,out.params.hours_cooling_setpoint_not_met,TRUE,FALSE,float,hr,hr,Annual number of hours the building was not meeting the cooling thermostat setpoint tolerance for all of its zones
 results.csv,simulation_output_report.hours_heating_setpoint_not_met,out.params.hours_heating_setpoint_not_met,TRUE,FALSE,float,hr,hr,Annual number of hours the building was not meeting the heating thermostat setpoint tolerance for all of its zones
@@ -1288,7 +1288,7 @@ results.csv,simulation_output_report.other_fuel_generators_mbtu,out.other_fuel.g
 results.csv,simulation_output_report.propane_heating_mbtu,out.propane.heating.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual heating energy consumption for propane
 results.csv,simulation_output_report.propane_interior_equipment_mbtu,out.propane.interior_equipment.energy_consumption,FALSE,FALSE,float,million_btu,kwh,Annual interior equipment energy consumption for propane in million BTUs
 results.csv,simulation_output_report.propane_water_systems_mbtu,out.propane.water_systems.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual service water heating energy consumption for propane
-results.csv,simulation_output_report.propane_generators_mbtu,out.propane.generators.energy_consumption,FALSE,FALSE,float,million_btu,kwh,Annual generator propane energy consumption in million BTUs
+results.csv,simulation_output_report.propane_generators_mbtu,out.propane.generators.energy_consumption,TRUE,FALSE,float,million_btu,kwh,Building annual generator energy consumption for propane
 results.csv,simulation_output_report.total_site_district_cooling_therm,out.district_cooling.total.energy_consumption,TRUE,FALSE,float,therm,kwh,Building annual total site district cooling consumption
 results.csv,simulation_output_report.total_site_district_heating_therm,out.district_heating.total.energy_consumption,TRUE,FALSE,float,therm,kwh,Building annual total site district heating consumption
 results.csv,simulation_output_report.total_site_electricity_kwh,out.electricity.total.energy_consumption,TRUE,FALSE,float,kwh,kwh,Building annual total site electricity energy consumption
