@@ -29,6 +29,7 @@ class NamingMixin():
     CZ_ASHRAE_CEC_MIXED = 'in.ashrae_or_cec_climate_zone'
     CZ_CEC = 'in.cec_climate_zone'
     UPGRADE_NAME = 'in.upgrade_name'
+    UPGRADE_MEASURE_ID = 'in.upgrade_measure_id'
     UPGRADE_ID = 'upgrade'
     UPGRADE_APPL = 'applicability'
     BASE_NAME = 'Baseline'

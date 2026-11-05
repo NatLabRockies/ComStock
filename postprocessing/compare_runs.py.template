@@ -17,11 +17,11 @@ ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into 
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # the comparison folder under postprocessing/output/:
-                                   # plots, CSVs and results_dashboard/ all land in it. Name it here; the class's
-                                   # own default is built for ONE run and its upgrades and misnames anything else.
+                                   # plots, CSVs and results_dashboard/ all land in it. A comparison of several
+                                   # runs needs this name; nothing makes one up from the run names.
                                    # On Windows keep it short: the deepest plot path beneath it must stay under
                                    # 260 characters, and the plot filenames alone take about 100 of those
-MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
 MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False leaves them to
                                    # the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
@@ -141,7 +141,7 @@ def main():
             comparison_runs=(
                 [cspp.AthenaRunRef.from_comstock(comstock_b, database=ATHENA_DATABASE)]
                 + [cspp.AthenaRunRef(**r) for r in COMPARE_TO_RELEASES]),
-            comparison=comparison,       # -> <comparison folder>/results_dashboard/
+            comparison=comparison,       # -> output/<COMPARISON_NAME>/results_dashboard/
             database=ATHENA_DATABASE,
             )
         if dashboard.skipped_reason:

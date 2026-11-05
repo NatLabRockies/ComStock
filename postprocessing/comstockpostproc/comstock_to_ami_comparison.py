@@ -12,6 +12,7 @@ from comstockpostproc.units_mixin import UnitsMixin
 from comstockpostproc.plotting_mixin import PlottingMixin
 from comstockpostproc.ami import AMI
 from comstockpostproc.comstock import ComStock
+from comstockpostproc.output_folders import comparison_folder
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,8 @@ class ComStockToAMIComparison(NamingMixin, UnitsMixin, PlottingMixin):
             self.color_map[dataset.dataset_name] = dataset.color
             dataset_names.append(dataset.dataset_name)
 
-        # Name the comparison
-        if self.name is None:
-            self.name = ' vs '.join(dataset_names)
+        # Where it writes (output_folders.py): this run's folder, ami_comparison/, unless the driver names it
+        self.output_dir = comparison_folder([comstock_object], self.name, 'ami_comparison')
 
         # Combine into a single dataframe for convenience
         if len(dfs_to_concat) == 0:
@@ -60,8 +60,6 @@ class ComStockToAMIComparison(NamingMixin, UnitsMixin, PlottingMixin):
             self.ami_timeseries_data = pd.concat(dfs_to_concat, join='outer')
 
         # Make directories
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.output_dir = os.path.join(current_dir, '..', 'output', self.name)
         for p in [self.output_dir]:
             if not os.path.exists(p):
                 os.makedirs(p)

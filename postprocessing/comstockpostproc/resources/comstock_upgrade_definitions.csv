@@ -1,0 +1,71 @@
+upgrade_name,measure_id,plot_alias
+Baseline,baseline,Baseline
+"Variable Speed HP RTU, Electric Backup",hvac_0005,HPRTU_E_Backup
+"Variable Speed HP RTU, Original Heating Fuel Backup",hvac_0004,HPRTU_OF_Backup
+"Variable Speed HP RTU, Electric Backup, Energy Recovery",hvac_0013,HPRTU+ER
+"Standard Performance HP RTU, Electric Backup",hvac_0018,HPRTU_Std_Perf
+"Standard Performance HP RTU, Original Heating Fuel Backup, 30F Fuel and 0F Electric Lockout",hvac_0032,HPRTU_Std_Perf_OF_Backup
+"Standard Performance HP RTU using Lab Data, Electric Backup",hvac_0025,HPRTU_Lab_Data
+"Standard Performance HP RTU, Electric Backup + Roof Insulation",hvac_0019,Std_Perf_w_Roof
+"Standard Performance HP RTU, Electric Backup + New Windows",hvac_0011,HPRTU_Std_Perf_w_Window
+"Standard Performance HP RTU, Electric Backup, 32F Lockout",hvac_0020,Std_Perf_32F_Lockout
+"Standard Performance HP RTU, Electric Backup, 2F Unoccupied Htg Thermostat Setback",hvac_0023,HPRTU_Reduced_Setback
+"Commercial HVAC Challenge HP RTU, Electric Backup, -10F Lockout",hvac_0021,CCHPC_spec
+"Commercial HVAC Challenge HP RTU, Original Heating Fuel Backup, -10F Lockout",hvac_0033,CCHPC_spec_OF_Backup
+"Commercial HVAC Challenge HP RTU, Typical Performance, Original Heating Fuel Backup, -10F Lockout",hvac_0034,CCHPC_typical_OF_Backup
+Advanced RTU,hvac_0028,Adv_RTU
+VRF with DOAS,hvac_0006,VRF_with_DOAS
+VRF with 25pct Upsizing Allowance,hvac_0010,VRF_with_25pct_Upsizing_Allowance
+DOAS HP Minisplits,hvac_0003,DOAS_HP_Minisplits
+"HP Boiler, Electric Backup",hvac_0001,HP_Boiler_E_Backup
+"HP Boiler, Gas Backup",hvac_0002,HP_Boiler_G_Backup
+Condensing Gas Boilers,hvac_0026,Condensing Boilers
+Electric Resistance Boilers,hvac_0027,Electric Resistance Boilers
+Air Side Economizers for AHUs,hvac_0009,Economizer
+Demand Control Ventilation,hvac_0007,DCV
+Energy Recovery for AHUs,hvac_0008,Energy_Recovery
+Advanced RTU Controls,hvac_0014,Advanced_RTU_Controls
+Unoccupied AHU Control,hvac_0012,Unoccupied_AHU_Control
+Fan Static Pressure Reset for Multizone VAV,hvac_0031,Fan_SP_Reset_MZVAV
+Thermostat Setbacks,hvac_0030,Thermostat_Setbacks
+VFD Pumps,hvac_0029,Pmp
+Ideal Thermal Air Loads,hvac_0022,Ideal_Thermal_Loads
+Hydronic Water-to-Water Geothermal Heat Pump,hvac_0015,Hydronic_GHP
+Packaged Water-to-Air Geothermal Heat Pump,hvac_0016,Packaged_GHP
+Console Water-to-Air Geothermal Heat Pump,hvac_0017,Console_GHP
+Chiller Replacement,hvac_0024,Chiller_Replacement
+"Demand Flexibility, Thermostat Control, Load Shed for Daily Bldg Peak Reduction",dr_0001,df_tstat_shed
+"Demand Flexibility, Thermostat Control, Load Shift for Daily Bldg Peak Reduction",dr_0002,df_tstat_shift
+"Demand Flexibility, Lighting Control, Load Shed for Daily Bldg Peak Reduction",dr_0003,df_light_shed
+"Demand Flexibility, Lighting Control, Load Shed for Daily GHG Emission Reduction",dr_0004,df_light_emission
+"Demand Flexibility, Thermostat Control, Load Shed for Grid Peak Reduction",dr_0005,df_tstat_shed_grid
+"Demand Flexibility, Lighting Control, Load Shed for Grid Peak Reduction",dr_0006,df_light_shed_grid
+"Demand Flexibility, Plug Load Control (GEB Gem), Load Shed for Grid Peak Reduction",dr_0007,GEB_DF_Plug
+"Demand Flexibility, Lighting Control (GEB Gem), Load Shed for Grid Peak Reduction",dr_0008,GEB_DF_Lighting
+"Demand Flexibility, Thermostat Control (GEB Gem), Load Shed for Grid Peak Reduction",dr_0009,GEB_DF_Thermostat
+"Demand Flexibility, Preheat (GEB Gem), Load Shift for Grid Peak Reduction",dr_0010,GEB_DF_Preheat
+"Demand Flexibility, Precool (GEB Gem), Load Shift for Grid Peak Reduction",dr_0011,GEB_DF_Precool
+LED Lighting,ltg_0001,LED_Lighting
+Lighting Controls,ltg_0002,Lighting Controls
+Electric Kitchen Equipment,ppl_0001,Electric_Kitchen_Equipment
+Upgrade Refrigeration,ref_0001,Upgrade Refrigeration
+Photovoltaics with 40pct Roof Coverage,gen_0001,Add_PV_40pct
+Photovoltaics with 40pct Roof Coverage + Battery Storage,gen_0002,Add_PV_40pct_w_batt
+Wall Insulation,env_0001,Wall_Insulation
+Roof Insulation,env_0002,Roof_Insulation
+Secondary Windows,env_0003,Secondary_Windows
+Window Film,env_0004,Window_Film
+New Windows,env_0005,New_Windows
+Code Envelope,env_0006,Code_Envelope
+"Package 1, Wall + Roof Insulation + New Windows",pkg_0001,Package_1
+"Package 2, LED Lighting + Variable Speed HP RTU or HP Boilers",pkg_0002,Package_2
+"Package 3, Package 1 + Package 2",pkg_0003,Package_3
+"Package 4, Package 2 with Standard Performance HP RTU",pkg_0004,Package_4
+"Package 5, Variable Speed HP RTU or HP Boilers + Economizer + DCV + Energy Recovery",pkg_0005,Package_5
+"Package 6, Hydronic GHP or Packaged GHP or Console GHP",pkg_0006,Package_6
+"Package 7, Demand Flexibility, Lighting + Thermostat Control, Load Shed for Grid Peak Reduction",pkg_0007,Package_7
+"Package 8, Demand Flexibility, Lighting + Thermostat Control Load Shed for Daily Bldg Peak Reduction + PV",pkg_0008,Package_8
+"Package 9, Demand Flexibility, Lighting + Thermostat Control, Load Shed for Daily Bldg Peak Reduction",pkg_0009,Package_9
+"Package 10, Package 1 + Package 6",pkg_0010,Package_10
+"Package 11, Package 10 + LED Lighting",pkg_0011,Package_11
+"Package 12, Photovoltaics with 40pct Roof Coverage + Roof Insulation",pkg_0012,Package_12

@@ -14,6 +14,7 @@ from comstockpostproc.plotting_mixin import PlottingMixin
 from comstockpostproc.eia import EIA
 from comstockpostproc.comstock import ComStock
 from comstockpostproc.lazyframeplotter import LazyFramePlotter
+from comstockpostproc.output_folders import comparison_folder
 logger = logging.getLogger(__name__)
 
 class ComStockToEIAComparison(NamingMixin, UnitsMixin, PlottingMixin):
@@ -26,7 +27,8 @@ class ComStockToEIAComparison(NamingMixin, UnitsMixin, PlottingMixin):
             eia_list (List[EIA]): List of EIA dataset objects.
             upgrade_id (Union[str, int], optional): The upgrade ID to include in the chart, or 'All' to include all upgrades for the ComStock run(s).
             image_type (str, optional): Image file type to use. Defaults to 'jpg'.
-            name (str, optional): Name of output directory. If None, a name will be generated. Defaults to None.
+            name (str, optional): Folder under output/ for a comparison of several runs, which needs one. If None,
+                a comparison of one run writes into that run's folder, eia_comparison/. Defaults to None.
             make_comparison_plots (bool, optional): Flag to create comparison plots. Defaults to True.
         """
         # Initialize members
@@ -101,9 +103,9 @@ class ComStockToEIAComparison(NamingMixin, UnitsMixin, PlottingMixin):
                 monthly_dfs_to_concat.append(pl.from_pandas(dataset.monthly_data).lazy())
                 self.monthly_color_map[dataset.dataset_name] = dataset.color
         
-        # Name the comparison
-        if self.name is None:
-            self.name = ' vs '.join(sorted(dataset_names,key=len)[:2])
+        # Where it writes (output_folders.py): a comparison of one run goes in that run's folder, eia_comparison/; one
+        # of several runs needs the name its driver sets, output/<name>/
+        self.output_dir = comparison_folder(comstock_list, self.name, 'eia_comparison')
 
         # Combine into a single dataframe for convenience
         # self.monthly_data = pl.concat(monthly_dfs_to_concat, join='outer', ignore_index=True)
@@ -127,10 +129,7 @@ class ComStockToEIAComparison(NamingMixin, UnitsMixin, PlottingMixin):
         logger.info(f"annual_data shape: {self.data.shape}, column types are {self.data.dtypes}") #only 7 columns left.
         assert isinstance(self.data, pd.DataFrame)
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-
         # Make directories
-        self.output_dir = os.path.abspath(os.path.join(current_dir, '..', 'output', self.name))
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
         logger.info(f"output_dir: {self.output_dir}")

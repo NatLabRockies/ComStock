@@ -1219,23 +1219,35 @@ class ResultsDashboard:
             return None
         return path
 
-    # Subfolder created INSIDE the run's existing output folder. The assessment
-    # does not create a top-level folder of its own: a run already owns
-    # "ComStock <run>" and a comparison already owns
-    # "CBECS 2018 vs ComStock <run> - ...", and adding a third sibling made one
-    # run map to several unrelated-looking folders.
+    # Subfolder of an existing output folder; the assessment never creates a
+    # top-level folder of its own. Everything about one run is in that run's
+    # folder, "ComStock <run>" (output_folders.py), so its dashboard is always
+    # "ComStock <run>/results_dashboard", whichever driver made it. A named
+    # comparison of several runs has its own folder, and its dashboard goes there.
     OUTPUT_SUBDIR = "results_dashboard"
 
-    def _default_output_dir(self) -> Path:
-        """`<the folder this run's results already go to>/results_dashboard/`.
+    def _local_run_dir(self):
+        """The primary run's local folder, or None (an Athena reference, or a run whose output_dir is on S3)."""
+        out = getattr(self.comstock, "output_dir", None)
+        if isinstance(out, dict) and out.get("fs_path") and type(out.get("fs")).__name__ != "S3FileSystem":
+            return Path(out["fs_path"]).resolve()
+        return None
 
-        Preferred parent is the comparison's own output folder, when one was
-        passed -- the assessment then sits with the plots describing the same
-        runs. Falling back to the ComStock run's folder keeps it next to that
-        run's results when there is no comparison.
+    def _default_output_dir(self) -> Path:
+        """`<run folder>/results_dashboard/`, or `<comparison folder>/results_dashboard/`
+        for a named comparison of several runs.
+
+        A comparison of this run alone (measure_runs/, cbecs_comparison/,
+        ami_comparison/) sits inside the run's folder, so the dashboard goes to
+        the run folder itself rather than one level down. Without a comparison
+        it is the run's folder as well.
         """
         if self.comparison is not None:
-            return Path(self.comparison.output_dir) / self.OUTPUT_SUBDIR
+            comp_dir = Path(self.comparison.output_dir).resolve()
+            run_dir = self._local_run_dir()
+            if run_dir is not None and run_dir in comp_dir.parents:
+                return run_dir / self.OUTPUT_SUBDIR
+            return comp_dir / self.OUTPUT_SUBDIR
 
         # ComStock.output_dir is an fsspec mapping, not a path, and can point at
         # S3. The assessment writes with plain Path, so an S3 target has to be

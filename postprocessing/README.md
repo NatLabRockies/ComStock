@@ -211,9 +211,9 @@ EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Ta
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
 COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # multi-run drivers: the comparison folder under
-                                   # output/ (plots, CSVs, results_dashboard/). Name it yourself; the class's
-                                   # default is built for one run and its upgrades. Keep it short on Windows
-MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+                                   # output/ (plots, CSVs, results_dashboard/). Required when a comparison has
+                                   # several runs; keep it short on Windows
+MAKE_RESULTS_DASHBOARD = True      # write results_dashboard/dashboard.html (where: see below)
 MAKE_COMPARISON_PLOTS  = False     # True also writes the comparison figures (slow); False writes only the
                                    # CSVs and the dashboard
 INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
@@ -251,16 +251,22 @@ under `~/.cache/comstock_results_dashboard/` (`RESULTS_DASHBOARD_CACHE_DIR` to
 move it); a run's cached results are dropped whenever its tables are exported
 or crawled again, so a rebuild is never answered from the old tables.
 
-Open `dashboard.html` in the `results_dashboard/` subfolder of the comparison's
-own output folder: `output/CBECS 2018 vs ComStock <version> - Baseline/` for
-`compare_comstock_to_cbecs.py`, `output/<COMPARISON_NAME>/` for `compare_runs.py`
-and `compare_runs_different_samples.py` (the name set at the top of the driver;
-keep it short on Windows), `output/ComStock <version>/measure_runs/` for
-`compare_upgrades.py`, and `output/ComStock <version> vs AMI v01/` for
-`compare_comstock_to_ami.py`. The log line `results dashboard:
-...` states the exact path. Without a comparison object it is `output/ComStock
-<version>/results_dashboard/`; it never creates a top-level folder of its own.
-Metric CSVs, `findings.md` and the exact SQL are in that same subfolder.
+Where the outputs go. Everything about one run is in that run's folder,
+`output/ComStock <version>/`: its caches, stock allocation, bills and exports, the
+figures of every comparison of that run alone (`measure_runs/` from
+`compare_upgrades.py`, `cbecs_comparison/` from `compare_comstock_to_cbecs.py`,
+`ami_comparison/` from `compare_comstock_to_ami.py`) and its dashboard,
+`results_dashboard/dashboard.html`, whichever of those drivers made it. A comparison
+of several runs (`compare_runs.py`, `compare_runs_different_samples.py`,
+`compare_runs_mixed.py`) goes in `output/<COMPARISON_NAME>/`, the name set at the top
+of the driver (keep it short on Windows), with its dashboard in `results_dashboard/`
+there; a comparison of several runs without a name is refused rather than named
+after the runs. Shared by every run that uses them, and so in no run's folder:
+`output/Stock Estimation <version>/` (the estimate's apportionment; each run's stock
+allocation is drawn from it and names it), `output/CBECS 2018/` and
+`output/AMI v01/`. The downloaded results are in `comstock_data/<version>/`. The log
+line `results dashboard: ...` states the exact path; metric CSVs, `findings.md` and
+the exact SQL are in that `results_dashboard/` folder.
 
 Notes:
  - **Comparing your run to a published release** is what `COMPARE_TO_RELEASES`

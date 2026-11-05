@@ -16,7 +16,7 @@ ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into 
 EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
 REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
                                    # True:  export and crawl again (what is up there is stale)
-MAKE_RESULTS_DASHBOARD = True      # write <comparison folder>/results_dashboard/dashboard.html
+MAKE_RESULTS_DASHBOARD = True      # write output/ComStock <run>/results_dashboard/dashboard.html
 MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-AMI figures (slow); False leaves them to
                                    # the dashboard's AMI tab
 INCLUDE_AMI            = True      # metered load-shape tab. False only drops the tab: the county export
@@ -137,7 +137,7 @@ def main():
             cbecs=cbecs,
             ami=ami if INCLUDE_AMI else None,
             comparison_runs=[cspp.AthenaRunRef(**r) for r in COMPARE_TO_RELEASES],
-            comparison=comparison,       # -> <comparison folder>/results_dashboard/
+            comparison=comparison,       # -> output/ComStock <run>/results_dashboard/; figures in ami_comparison/
             database=ATHENA_DATABASE,
             )
         if dashboard.skipped_reason:

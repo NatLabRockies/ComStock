@@ -134,7 +134,8 @@ ejscreen,P_UNDR5PCT,in.ejscreen_census_tract_percentile_percent_people_under_5,T
 ejscreen,P_VULEOPCT,in.ejscreen_census_tract_percentile_for_demographic_index,TRUE,FALSE,float,,,Percentile for Demographic Index in building's census tract. See EPA EJSCREEN documentation for details.
 results.csv,apply_upgrade.applicable,applicability,TRUE,TRUE,boolean,,,Specifies if an upgrade measure was applicable to model if an upgrade was run
 results.csv,apply_upgrade.reference_scenario,,FALSE,FALSE,string,,,Name of reference scenario
-results.csv,apply_upgrade.upgrade_name,in.upgrade_name,TRUE,TRUE,string,,,Name of upgrade if an upgrade was run
+results.csv,apply_upgrade.upgrade_name,in.upgrade_name,TRUE,TRUE,string,,,"Name of upgrade if an upgrade was run. A heat pump RTU name states its lockout, the outdoor temperature below which the heat pump stops heating, only when it is not 0F; one without a lockout in its name locks out at 0F."
+calculated,in.upgrade_measure_id,in.upgrade_measure_id,TRUE,TRUE,string,,,"Measure or package identifier from measure_name_crosswalk.csv (for example hvac_0018 or pkg_0003; baseline for the baseline). It stays the same across releases, while upgrade numbers and names can change"
 results.csv,build_existing_model.add_blinds_to_selected_windows_add_blinds,,FALSE,FALSE,boolean,,,Specifies if window blinds were added to model
 results.csv,build_existing_model.add_blinds_to_selected_windows_applicable,,FALSE,FALSE,boolean,,,Applicabilty status window blinds for model
 results.csv,build_existing_model.add_hvac_nighttime_operation_variability_applicable,,FALSE,FALSE,boolean,,,Applicabilty status of hvac nighttime operation variability modifications to model
@@ -144,7 +145,7 @@ results.csv,build_existing_model.create_custom_building_from_spec_clg_delta_f,in
 results.csv,build_existing_model.create_custom_building_from_spec_clg_sp_f,in.tstat_clg_sp_f,TRUE,FALSE,string,f,f,Cooling thermostat occupied setpoint. A value of '999' indicates default values were used for model
 results.csv,build_existing_model.create_custom_building_from_spec_htg_delta_f,in.tstat_htg_delta_f,TRUE,FALSE,string,delta_f,delta_f,Heating thermostat unoccupied setpoint temperature delta from primary occupied heating setpoint. A value of '999' indicates default values were used for model
 results.csv,build_existing_model.create_custom_building_from_spec_htg_sp_f,in.tstat_htg_sp_f,TRUE,FALSE,string,f,f,Heating thermostat occupied setpoint. A value of '999' indicates default values were used for model
-results.csv,build_existing_model.refrigeration_technology_level,in.refrigeration_technology_level,TRUE,FALSE,string,,,"Refrigeration technology level assigned to baseline model (old, new, advanced)"
+results.csv,build_existing_model.refrigeration_technology_level,in.refrigeration_technology_level,TRUE,FALSE,string,,,"Refrigeration technology level assigned to the baseline model (old, new or advanced); NA for the building types it does not apply to (offices, outpatient, retail, small hotels, strip malls, warehouses)"
 results.csv,com_stock_sensitivity_reports.com_report_has_htg_setback_all_tstats,in.tstat_has_htg_setback_all,TRUE,FALSE,boolean,,,"Heating setbacks present in all thermostats, or not"
 results.csv,com_stock_sensitivity_reports.com_report_has_clg_setback_all_tstats,in.tstat_has_clg_setback_all,TRUE,FALSE,boolean,,,"Cooling setbacks present in all thermostats, or not"
 results.csv,com_stock_sensitivity_reports.com_report_has_at_least_one_htg_setback,in.tstat_at_least_one_htg_setback,TRUE,FALSE,boolean,,,"Heating setbacks present in at least one zone, or not"

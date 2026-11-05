@@ -10,6 +10,7 @@ import polars as pl
 from comstockpostproc.naming_mixin import NamingMixin
 from comstockpostproc.units_mixin import UnitsMixin
 from comstockpostproc.plotting_mixin import PlottingMixin
+from comstockpostproc.output_folders import run_folder
 
 
 logger = logging.getLogger(__name__)
@@ -37,10 +38,8 @@ class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
         upgrade_name_mapping = self.data.select(self.UPGRADE_ID, self.UPGRADE_NAME).unique().collect().sort(self.UPGRADE_ID).to_dict(as_series=False)
         self.dict_upid_to_upname = dict(zip(upgrade_name_mapping[self.UPGRADE_ID], upgrade_name_mapping[self.UPGRADE_NAME]))
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
         self.dataset_name = comstock_object.dataset_name
-        self.output_dir = os.path.join(
-            current_dir, '..', 'output', self.dataset_name, 'measure_runs')
+        self.output_dir = os.path.join(run_folder(comstock_object), 'measure_runs')  # the run's folder (output_folders.py)
         self.column_for_grouping = self.UPGRADE_NAME
         self.dict_measure_dir = {} # this can be called to determine output directory
         self.upgrade_ids_for_comparison = comstock_object.upgrade_ids_for_comparison

@@ -13,6 +13,7 @@ from comstockpostproc.units_mixin import UnitsMixin
 from comstockpostproc.plotting_mixin import PlottingMixin
 from comstockpostproc.cbecs import CBECS
 from comstockpostproc.comstock import ComStock
+from comstockpostproc.output_folders import comparison_folder
 
 from comstockpostproc.lazyframeplotter import LazyFramePlotter
 
@@ -28,7 +29,8 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
             cbecs_list (List[CBECS]): List of CBECS dataset objects.
             upgrade_id (Union(str, int), optional): The upgrade ID to include in the plots, or 'All' to include all upgrades for the ComStock run(s).
             image_type (str, optional): Image file type to use. Defaults to 'jpg'.
-            name (str, optional): Name of output directory. If None, a name will be generated. Defaults to None.
+            name (str, optional): Folder under output/ for a comparison of several runs, which needs one. If None,
+                a comparison of one run writes into that run's folder, cbecs_comparison/. Defaults to None.
             make_comparison_plots (bool, optional): Flag to create compairison plots. Defaults to True.
             building_type (str | None, optional): ComStock building type to filter plots to.
                 Valid values: 'FullServiceRestaurant', 'QuickServiceRestaurant', 'RetailStripmall',
@@ -106,12 +108,9 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
                 self.color_map[dataset.dataset_name] = dataset.color
                 dataset_names.append(dataset.dataset_name)
 
-        # Name the comparison
-        if self.name is None:
-            if len(dataset_names) > 2:
-                self.name = ' vs '.join(sorted(dataset_names, key=len)[:2]) + ' and Upgrades'
-            else:
-                self.name = ' vs '.join(sorted(dataset_names))
+        # Where it writes (output_folders.py): a comparison of one run goes in that run's folder, cbecs_comparison/;
+        # one of several runs needs the name its driver sets, output/<name>/. No name is made up from the datasets.
+        self.output_dir = comparison_folder(comstock_list, self.name, 'cbecs_comparison')
 
         # Combine into a single dataframe for convenience
         # self.data = pd.concat(dfs_to_concat, join='inner', ignore_index=True)
@@ -172,7 +171,6 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
         comstock_enduse_df: pl.LazyFrame = comstock_all_df.select(comstock_enduse_columns)
 
         # Make directories
-        self.output_dir = os.path.join(current_dir, '..', 'output', self.name)
         for p in [self.output_dir]:
             if not os.path.exists(p):
                 os.makedirs(p)

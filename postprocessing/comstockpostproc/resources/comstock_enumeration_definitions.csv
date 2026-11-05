@@ -31,6 +31,7 @@ _1pct,Less than one percent
 7B,ASHRAE climate zone 7 very cold
 A: Non Food-Service Buildings with Small Packaged Units,"Addressable Segment A. Buildings with small packaged units and non food-service tenants. Common Examples:  1-2 story strip malls, retail buildings, warehouses, offices."
 ACC,Air cooled chiller
+advanced,"Advanced, higher-efficiency technology level"
 AKGD,eGrid grid region for ASCC Alaska Grid. See https://www.epa.gov/egrid
 AKMS,eGrid grid region for ASCC Miscellaneous. See https://www.epa.gov/egrid
 ASHP,Air source heat pump
@@ -251,6 +252,7 @@ Multizone CAV/VAV,"HVAC system that serves multiple zones, either constant air v
 NA,Not applicable
 NaturalGas,"Fuel type of Natural Gas for either space heating, water heating, equipment, etc."
 NEISO,New England Independent System Operator
+new,Technology level of new equipment
 New England,"The census division covering CT, ME, MA, NH, RI, and VT"
 NEWEc,Cambium grid region NEWEc. See https://www.nrel.gov/analysis/cambium.html
 night_fancycle_novent,"When the HVAC system fan cycles on at night, no outdoor air is brought into the building"
@@ -266,6 +268,7 @@ NWPPc,Cambium grid region NWPPc. See https://www.nrel.gov/analysis/cambium.html
 NYISO,New York Independent System Operator
 NYSTc,Cambium grid region NYSTc. See https://www.nrel.gov/analysis/cambium.html
 Office,Building group for office building types
+old,"Technology level of older, existing equipment"
 other,Not covered by one of the distinct enumerations listed in this column
 Other Fuel,Propane and fuel oil
 Other HVAC,HVAC system category for systems that do not fit into another HVAC category

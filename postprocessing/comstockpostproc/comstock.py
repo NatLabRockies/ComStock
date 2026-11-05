@@ -48,6 +48,7 @@ logger.setLevel(logging.INFO)
 
 COLUMN_DEFINITION_FILE_NAME = 'comstock_column_definitions.csv'
 ENUM_DEFINITION_FILE_NAME = 'comstock_enumeration_definitions.csv'
+UPGRADE_DEFINITION_FILE_NAME = 'comstock_upgrade_definitions.csv'
 # Cap on joblib workers for file writes. Each worker receives a pickled copy of a
 # collected DataFrame, so the memory cost scales with worker count while the writes
 # themselves are IO bound.
@@ -73,7 +74,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def __init__(self, s3_base_dir, comstock_run_name, comstock_run_version, comstock_year, athena_table_name,
         truth_data_version, buildstock_csv_name = 'buildstock.csv', acceptable_failure_percentage=0.01, drop_failed_runs=True,
         color_hex=NamingMixin.COLOR_COMSTOCK_BEFORE, weighted_energy_units='tbtu', weighted_demand_units='gw', weighted_ghg_units='co2e_mmt', weighted_utility_units='billion_usd', skip_missing_columns=False,
-        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, output_dir=None, aws_profile_name=None):
+        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, upgrade_aliases=False, output_dir=None, aws_profile_name=None):
         """
         A class to load and transform ComStock data for export, analysis, and comparison.
         Args:
@@ -107,6 +108,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.hvac_metadata_file_name = 'hvac_metadata.csv'
         self.rename_upgrades = rename_upgrades
         self.rename_upgrades_file_name = 'rename_upgrades.json'
+        # True: figures use each upgrade's short plot_alias from resources/comstock_upgrade_definitions.csv instead of
+        # its publication name, in their labels and in the measure comparison's upNN_<name> folders. Only the plotting
+        # frame and the timeseries name map change; exported and cached files keep the publication name.
+        self.upgrade_aliases = upgrade_aliases
         self.athena_table_name = athena_table_name
         self.data = None
         self.fkt = None  # TODO verify that we should initialize this?
@@ -292,6 +297,11 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             # Create a single LazyFrame that includes all upgrades
             self.data = pl.scan_parquet(up_lazyframes, hive_partitioning=True, storage_options=self.output_dir['storage_options'])
             self._aggregate_failure_summaries()
+
+        # The measure id each upgrade keeps across releases, from its publication name
+        self.add_upgrade_measure_id_column()
+        if self.upgrade_aliases:
+            self.check_upgrade_aliases()
 
     def _aggregate_failure_summaries(self):
         # Aggregate and deduplicate lines from all failure_summary_*.csv files, then remove them
@@ -2171,6 +2181,80 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         ])
         self.data = self.data.with_columns(pl.col(self.DATASET))
 
+    def upgrade_definitions(self):
+        # One row per upgrade publication name: its measure_id from measure_name_crosswalk.csv, which an upgrade keeps
+        # across releases while its upgrade number (its position in the yml) and sometimes its name change, and a
+        # short plot_alias for figures. Read once per object; blank or repeated entries are reported.
+        defs = getattr(self, '_upgrade_definitions', None)
+        if defs is None:
+            defs = pl.read_csv(os.path.join(RESOURCE_DIR, UPGRADE_DEFINITION_FILE_NAME), infer_schema_length=0)
+            rows = defs.to_dicts()
+            for col in ('upgrade_name', 'measure_id', 'plot_alias'):
+                blank = [i + 2 for i, r in enumerate(rows) if not r[col]]
+                if blank:
+                    logger.warning(f'{UPGRADE_DEFINITION_FILE_NAME}: no {col} on line(s) {blank}')
+                values = [r[col] for r in rows if r[col]]
+                repeated = sorted({v for v in values if values.count(v) > 1})
+                if repeated:
+                    logger.warning(f'{UPGRADE_DEFINITION_FILE_NAME}: the same {col} on more than one line: {repeated}')
+            self._upgrade_definitions = defs
+        return defs
+
+    def upgrade_alias_map(self):
+        defs = self.upgrade_definitions()
+        return {name: alias for name, alias in zip(defs['upgrade_name'], defs['plot_alias']) if name and alias}
+
+    def run_upgrade_names(self):
+        # (upgrade id, publication name) of every upgrade this run loaded, by id
+        pairs = self.data.select(pl.col(self.UPGRADE_ID), pl.col(self.UPGRADE_NAME).cast(pl.Utf8)).unique().collect()
+        return sorted(pairs.iter_rows())
+
+    def add_upgrade_measure_id_column(self):
+        # Computed from the publication name on every load rather than cached, so simulation output caches written
+        # before this column existed still export it. An upgrade the definitions file does not list gets a null.
+        defs = self.upgrade_definitions()
+        name_to_id = {name: mid for name, mid in zip(defs['upgrade_name'], defs['measure_id']) if name and mid}
+        pairs = self.run_upgrade_names()
+        ids_by_name = {}
+        for up_id, name in pairs:
+            ids_by_name.setdefault(name, []).append(up_id)
+        shared = {name: ids for name, ids in ids_by_name.items() if len(ids) > 1}
+        if shared:
+            logger.warning(f'Upgrades with the same name share a measure id, and figures merge them: {shared}')
+        missing = [f'{up_id}: {name}' for up_id, name in pairs if name not in name_to_id]
+        if missing:
+            logger.warning(f'{UPGRADE_DEFINITION_FILE_NAME} has no measure_id for {len(missing)} upgrade(s), so '
+                           f'{self.UPGRADE_MEASURE_ID} is empty for them: {missing}. Add each publication name with '
+                           'its measure_id from measure_name_crosswalk.csv.')
+        self.data = self.data.with_columns(
+            pl.col(self.UPGRADE_NAME).cast(pl.Utf8)
+            .replace_strict(name_to_id, default=None, return_dtype=pl.Utf8)
+            .alias(self.UPGRADE_MEASURE_ID))
+
+    def check_upgrade_aliases(self):
+        # upgrade_aliases=True: report at load, rather than at the first figure, the upgrades whose figures and folders
+        # will keep the publication name, and any alias two upgrades would share (their figures would merge them).
+        aliases = self.upgrade_alias_map()
+        pairs = self.run_upgrade_names()
+        missing = [f'{up_id}: {name}' for up_id, name in pairs if name not in aliases]
+        if missing:
+            logger.warning(f'upgrade_aliases=True, but {UPGRADE_DEFINITION_FILE_NAME} has no plot_alias for '
+                           f'{len(missing)} upgrade(s); their figures and folders keep the publication name: '
+                           f'{missing}')
+        names_by_alias = {}
+        for up_id, name in pairs:
+            if name in aliases:
+                names_by_alias.setdefault(aliases[name], set()).add(name)
+        shared = {alias: sorted(names) for alias, names in names_by_alias.items() if len(names) > 1}
+        if shared:
+            logger.warning(f'upgrade_aliases=True, but these aliases stand for more than one upgrade, so figures '
+                           f'would merge them: {shared}')
+
+    def apply_upgrade_aliases(self, input_lf):
+        # Publication names -> plot aliases, for a frame used only in figures (upgrade_aliases=True, checked at load by
+        # check_upgrade_aliases). A name with no alias keeps its publication name.
+        return input_lf.with_columns(pl.col(self.UPGRADE_NAME).cast(pl.Utf8).replace(self.upgrade_alias_map()))
+
     def add_state_id_column(self):
         self.data = self.data.with_columns(
             pl.col(self.COUNTY_ID_AS_SIM).cast(str).str.slice(0, 4).alias(self.STATE_ID_AS_SIM)
@@ -2493,6 +2577,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         # Scan plotting_data to create one huge LazyFrame
         self.plotting_data = pl.scan_parquet(up_agg_paths, hive_partitioning=True)
+        if getattr(self, 'upgrade_aliases', False):
+            # Figures only: the cache files above keep the publication names
+            self.plotting_data = self.apply_upgrade_aliases(self.plotting_data)
 
         return self.plotting_data
 
@@ -5250,6 +5337,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Create upgrade ID to name mapping from existing data
         upgrade_name_mapping = self.data.select(self.UPGRADE_ID, self.UPGRADE_NAME).unique().collect().sort(self.UPGRADE_ID).to_dict(as_series=False)
         dict_upid_to_upname = dict(zip(upgrade_name_mapping[self.UPGRADE_ID], upgrade_name_mapping[self.UPGRADE_NAME]))
+        if getattr(self, 'upgrade_aliases', False):
+            aliases = self.upgrade_alias_map()
+            dict_upid_to_upname = {up_id: aliases.get(name, name) for up_id, name in dict_upid_to_upname.items()}
 
         # Determine geographic types for all locations
         state_locations = []

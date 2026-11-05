@@ -86,6 +86,11 @@ MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figu
                                    # (slow); False leaves them to the dashboard
 INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
                                    # (from buildstockbatch's crawl) plus the county export
+UPGRADE_ALIASES        = False     # True: figure labels of the measures=True run use each upgrade's short plot_alias
+                                   # from comstockpostproc/resources/comstock_upgrade_definitions.csv instead of its
+                                   # publication name (COMPARISON_NAME names the output folder); exported files
+                                   # keep the publication names. Upgrades without an alias are listed in a
+                                   # warning when the run loads
 MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
                                    # measure load-shape profiles, used only when the REVIEW_RUN entry has
                                    # measures=True: state codes, county gisjoins ('G2500250'), or a
@@ -204,6 +209,7 @@ def main():
             reload_from_cache=cached,
             # measure scenarios only for the run under review (check_declaration)
             include_upgrades=bool(r.get('measures')),
+            upgrade_aliases=UPGRADE_ALIASES and bool(r.get('measures')),
             upgrade_ids_to_skip=list(r.get('upgrade_ids_to_skip', [])),
             timeseries_locations_to_plot=MEASURE_TIMESERIES_LOCATIONS if r.get('measures') else {},
             )
