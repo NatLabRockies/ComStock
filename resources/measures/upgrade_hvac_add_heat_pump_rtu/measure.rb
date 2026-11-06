@@ -1297,7 +1297,12 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       runner.registerInfo("Backup heat will be electric resistance; using electric backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
     else
       hp_min_comp_lockout_temp_f = hp_min_comp_lockout_temp_gas_backup_f
-      runner.registerInfo("Backup heat will be a gas furnace (dual fuel); using gas backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
+      backup_fuel_desc = if backup_ht_fuel_scheme == 'dual_fuel_gas_furnace_backup'
+                           'a natural gas furnace (dual fuel)'
+                         else
+                           'a fuel-burning coil matching the original heating fuel (natural gas, propane, or fuel oil; reported per air loop)'
+                         end
+      runner.registerInfo("Backup heat will be #{backup_fuel_desc}; using fuel-burning backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
     end
 
     # ---------------------------------------------------------
