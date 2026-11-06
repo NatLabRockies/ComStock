@@ -1779,6 +1779,37 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
+  # when OA holds a lower stage above 450 cfm/ton, its capacity is raised; the allowance (65% of the way to the next stage) and
+  # the capacity needed for 450 cfm/ton must both be fractions of the same capacity, also when the rated stage's fraction isn't 1
+  # typical heating fractions (rated stage 2 at 0.901), so stage 1 may grow from 0.4838 to 0.4838 + 0.65 * (0.901 - 0.4838) = 0.755:
+  # needing 0.711 raises stage 1 to exactly 450 cfm/ton; needing 0.80 is past the allowance, so it is set to 0.755 and left above 450
+  def test_raised_stage_capacity_uses_one_capacity_basis
+    announce_test('test_raised_stage_capacity_uses_one_capacity_basis')
+    measure = AddHeatPumpRtu.new
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    design_airflow = 1.0
+    rated_heating_cap = design_airflow / measure.cfm_per_ton_to_m_3_per_sec_watts(400)
+    max_m_3_per_s_per_w = measure.cfm_per_ton_to_m_3_per_sec_watts(AddHeatPumpRtu::CFM_PER_TON_MAX_RATED)
+    allowance = 0.4838 + ((0.901 - 0.4838) * 0.65)
+
+    { 0.711 => [0.711, 450], 0.80 => [allowance, 0.80 / allowance * 450] }.each do |needed_fraction, (expected_fraction, expected_cfm_per_ton)|
+      stage_cap_fractions = { 1 => 0.4838, 2 => 0.901, 3 => 1.2179, 4 => 1.525 }
+      stage_flow_fractions = { 1 => 0.3, 2 => 1.0, 3 => 1.0, 4 => 1.0 }
+      # stage 1 is held at the OA flow, so its airflow can't be cut
+      oa_flow = needed_fraction * rated_heating_cap * max_m_3_per_s_per_w
+      stage_flows = stage_flow_fractions.transform_values { |ratio| [ratio * design_airflow, oa_flow].max }
+      _, stage_caps, _, new_cap_fractions, = measure.adjust_cfm_per_ton_per_limits(stage_cap_fractions, stage_flows, stage_flow_fractions,
+                                                                                   rated_heating_cap, 2, design_airflow, oa_flow / design_airflow,
+                                                                                   oa_flow, nil, 'heating', runner, false)
+      label = "needing #{needed_fraction} of the base capacity"
+      assert_in_delta(expected_fraction * rated_heating_cap, stage_caps[1], 1e-6 * rated_heating_cap, "#{label}: stage 1 capacity")
+      assert_in_delta(expected_fraction, new_cap_fractions[1], 1e-9, "#{label}: stored stage 1 capacity fraction")
+      cfm_per_ton = measure.m_3_per_sec_watts_to_cfm_per_ton(stage_flows[1] / stage_caps[1])
+      assert_in_delta(expected_cfm_per_ton, cfm_per_ton, 0.01, "#{label}: stage 1 cfm/ton")
+      [2, 3, 4].each { |stage| assert_in_delta(stage_cap_fractions[stage] * rated_heating_cap, stage_caps[stage], 1e-6, "#{label}: stage #{stage} capacity") }
+    end
+  end
+
   # with OA at 80% or 95% of the design airflow, the lower stages can't be cut to the maximum cfm/ton, so stages are removed;
   # at 95% the stage below the rated one also can't be raised enough, so it is held at the OA flow above the maximum cfm/ton
   # OA still wins (every airflow at least the OA flow), and the measure warns about and counts both kinds of air loop

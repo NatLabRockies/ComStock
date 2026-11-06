@@ -553,8 +553,9 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         end
 
         # capacity ratio allowance: up to 65% of the range to the next stage (variable name is historical)
+        # both ratios are fractions of dx_rated_cap_applied, like the stage_cap_fractions they are compared with and stored in
         ratio_allowance_50_pct = ratio + ((stage_cap_fractions[stage + 1] - ratio) * 0.65)
-        required_stage_cap_ratio = airflow / m_3_per_s_per_w_max / (stage_cap_fractions[rated_stage_num] * dx_rated_cap_applied)
+        required_stage_cap_ratio = airflow / m_3_per_s_per_w_max / dx_rated_cap_applied
         stage_airflow_limit_max = m_3_per_s_per_w_max * stage_capacity
         # min_airflow_ratio is relative to the heating design airflow, so for cooling it alone can allow a cut below the OA flow
         if ((stage_airflow_limit_max / old_terminal_sa_flow_m3_per_s) >= min_airflow_ratio) && (stage_airflow_limit_max >= min_oa_flow_m3_per_s)
@@ -568,14 +569,14 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         elsif required_stage_cap_ratio <= ratio_allowance_50_pct
           # increase the stage capacity to the required ratio, which is within the allowance
           stage_cap_fractions[stage] = required_stage_cap_ratio
-          stage_caps[stage] = required_stage_cap_ratio * (stage_cap_fractions[rated_stage_num] * dx_rated_cap_applied)
+          stage_caps[stage] = required_stage_cap_ratio * dx_rated_cap_applied
           if debug_verbose
             runner.registerInfo("stage summary: #{air_loop_hvac.name} | cfm/ton high limit violation (ratio_allowance_50_pct) | #{heating_or_cooling} | stage = #{stage} | cfm/ton after adjustment = #{m_3_per_sec_watts_to_cfm_per_ton(stage_flows[stage] / stage_caps[stage])}")
           end
         elsif stage == (rated_stage_num - 1)
           # at least 2 stages are needed; apply the allowance and accept being somewhat out of range
           stage_cap_fractions[stage] = ratio_allowance_50_pct
-          stage_caps[stage] = ratio_allowance_50_pct * (stage_cap_fractions[rated_stage_num] * dx_rated_cap_applied)
+          stage_caps[stage] = ratio_allowance_50_pct * dx_rated_cap_applied
           if debug_verbose
             runner.registerInfo("stage summary: #{air_loop_hvac.name} | cfm/ton high limit violation (rated_stage_num) | #{heating_or_cooling} | stage = #{stage} | cfm/ton after adjustment = #{m_3_per_sec_watts_to_cfm_per_ton(stage_flows[stage] / stage_caps[stage])}")
           end
