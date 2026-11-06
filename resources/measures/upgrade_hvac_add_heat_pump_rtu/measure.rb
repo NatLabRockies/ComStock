@@ -426,8 +426,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       stage_gross_rated_sensible_heat_ratio_cooling: eval(staging_data['stage_gross_rated_sensible_heat_ratio_cooling']),
       enable_cycling_losses_above_lowest_speed: staging_data['enable_cycling_losses_above_lowest_speed'],
       reference_cooling_cfm_per_ton: staging_data['reference_cooling_cfm_per_ton'],
-      # TODO: this reads the cooling key; confirm whether reference_heating_cfm_per_ton in the json was intended
-      reference_heating_cfm_per_ton: staging_data['reference_cooling_cfm_per_ton']
+      reference_heating_cfm_per_ton: staging_data['reference_heating_cfm_per_ton']
     }
   end
 
