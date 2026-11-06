@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
+  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/upgrade_hvac_doas_hp_minisplits/measure.rb'</error>
   <name>hvac_doas_hp_minisplits</name>
   <uid>6d59de63-d1c6-4237-9f94-f05f268e08dd</uid>
-  <version_id>a71ede60-cc47-4b77-bc82-037edbce332e</version_id>
-  <version_modified>2025-07-23T23:00:35Z</version_modified>
+  <version_id>1a66bdf9-df16-4f44-8609-5734f977c2c6</version_id>
+  <version_modified>2026-09-23T03:38:37Z</version_modified>
   <xml_checksum>CAA033D3</xml_checksum>
   <class_name>HvacDoasHpMinisplits</class_name>
   <display_name>hvac_doas_hp_minisplits</display_name>
@@ -112,7 +113,7 @@
       <filename>README.md</filename>
       <filetype>md</filetype>
       <usage_type>readme</usage_type>
-      <checksum>4EDA1CFB</checksum>
+      <checksum>01DF739F</checksum>
     </file>
     <file>
       <filename>README.md.erb</filename>
@@ -129,7 +130,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>D2FDDE69</checksum>
+      <checksum>9614EAE7</checksum>
     </file>
     <file>
       <filename>example_model.osm</filename>

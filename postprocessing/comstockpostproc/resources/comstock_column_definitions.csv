@@ -25,7 +25,6 @@ buildstock.csv,energy_code_compliance_roof,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_compliance_service_water_heating,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_compliance_walls,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_compliance_windows,,FALSE,FALSE,,,,
-buildstock.csv,energy_code_followed_during_last_exterior_lighting_replacement,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_followed_during_last_hvac_replacement,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_followed_during_last_interior_equipment_replacement,,FALSE,FALSE,,,,
 buildstock.csv,energy_code_followed_during_last_interior_lighting_replacement,,FALSE,FALSE,,,,
@@ -141,10 +140,10 @@ results.csv,build_existing_model.add_blinds_to_selected_windows_applicable,,FALS
 results.csv,build_existing_model.add_hvac_nighttime_operation_variability_applicable,,FALSE,FALSE,boolean,,,Applicabilty status of hvac nighttime operation variability modifications to model
 results.csv,build_existing_model.add_hvac_nighttime_operation_variability_rtu_night_mode,,FALSE,FALSE,string,,,Nighttime operation mode for AHUs which influences fan and ventilation operation during unnoccupied hours
 results.csv,build_existing_model.add_thermostat_setpoint_variability_applicable,,FALSE,FALSE,boolean,,,Applicability status of thermostat setpoint variability modifications to model
-results.csv,build_existing_model.add_thermostat_setpoint_variability_clg_delta_f,in.tstat_clg_delta_f,TRUE,FALSE,float,delta_f,delta_f,Cooling thermostat unnoccupied setpoint temperature delta from primary occupied cooling setpoint. A value of '999' indicates default values were used for model
-results.csv,build_existing_model.add_thermostat_setpoint_variability_clg_sp_f,in.tstat_clg_sp_f,TRUE,FALSE,float,f,f,Cooling thermostat occupied setpoint. A value of '999' indicates default values were used for model
-results.csv,build_existing_model.add_thermostat_setpoint_variability_htg_delta_f,in.tstat_htg_delta_f,TRUE,FALSE,float,delta_f,delta_f,Heating thermostat unnoccupied setpoint temperature delta from primary occupied heating setpoint. A value of '999' indicates default values were used for model
-results.csv,build_existing_model.add_thermostat_setpoint_variability_htg_sp_f,in.tstat_htg_sp_f,TRUE,FALSE,float,f,f,Heating thermostat occupied setpoint. A value of '999' indicates default values were used for model
+results.csv,build_existing_model.create_custom_building_from_spec_clg_delta_f,in.tstat_clg_delta_f,TRUE,FALSE,float,delta_f,delta_f,Cooling thermostat unnoccupied setpoint temperature delta from primary occupied cooling setpoint. A value of '999' indicates default values were used for model
+results.csv,build_existing_model.create_custom_building_from_spec_clg_sp_f,in.tstat_clg_sp_f,TRUE,FALSE,float,f,f,Cooling thermostat occupied setpoint. A value of '999' indicates default values were used for model
+results.csv,build_existing_model.create_custom_building_from_spec_htg_delta_f,in.tstat_htg_delta_f,TRUE,FALSE,float,delta_f,delta_f,Heating thermostat unnoccupied setpoint temperature delta from primary occupied heating setpoint. A value of '999' indicates default values were used for model
+results.csv,build_existing_model.create_custom_building_from_spec_htg_sp_f,in.tstat_htg_sp_f,TRUE,FALSE,float,f,f,Heating thermostat occupied setpoint. A value of '999' indicates default values were used for model
 results.csv,com_stock_sensitivity_reports.com_report_has_htg_setback_all_tstats,in.tstat_has_htg_setback_all,TRUE,FALSE,boolean,,,"Heating setbacks present in all thermostats, or not"
 results.csv,com_stock_sensitivity_reports.com_report_has_clg_setback_all_tstats,in.tstat_has_clg_setback_all,TRUE,FALSE,boolean,,,"Cooling setbacks present in all thermostats, or not"
 results.csv,com_stock_sensitivity_reports.com_report_has_at_least_one_htg_setback,in.tstat_at_least_one_htg_setback,TRUE,FALSE,boolean,,,"Heating setbacks present in at least one zone, or not"
@@ -185,7 +184,7 @@ results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_subty
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_subtype_b,,FALSE,FALSE,string,,,Building subtype of model
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_subtype_c,,FALSE,FALSE,string,,,Building subtype of model
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_subtype_d,,FALSE,FALSE,string,,,Building subtype of model
-results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_a,in.comstock_building_type,TRUE,TRUE,string,,,Primary building type of model
+results.csv,build_existing_model.create_custom_building_from_spec_bldg_type_a,in.comstock_building_type,TRUE,TRUE,string,,,Primary building type of model
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_a_num_units,,FALSE,FALSE,float,,,Number of units of specified building type
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_b,,FALSE,FALSE,string,,,Building type of model
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_b_fract_bldg_area,,FALSE,FALSE,float,,,Fraction of total building area for specified building type
@@ -198,7 +197,7 @@ results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bldg_type_d_num_units,,FALSE,FALSE,float,,,Number of units of specified building type
 results.csv,build_existing_model.create_bar_from_building_type_ratios_bottom_story_ground_exposed_floor,,FALSE,FALSE,boolean,,,Specifies if the ground floor of building model is exposed
 results.csv,build_existing_model.create_bar_from_building_type_ratios_building_height_relative_to_neighbors,,FALSE,FALSE,float,,,"Relative height of building to neiboring buildings, which affects shading"
-results.csv,build_existing_model.create_bar_from_building_type_ratios_building_rotation,in.rotation,TRUE,FALSE,float,degrees,degrees,Building Rotation off of North axis (positive value is clockwise)
+results.csv,build_existing_model.create_custom_building_from_spec_building_rotation,in.rotation,TRUE,FALSE,float,degrees,degrees,Building Rotation off of North axis (positive value is clockwise)
 results.csv,build_existing_model.create_bar_from_building_type_ratios_climate_zone,,FALSE,FALSE,string,,,ASHRAE 169-2006 climate zone of building model weather file
 results.csv,build_existing_model.create_bar_from_building_type_ratios_custom_height_bar,,FALSE,FALSE,boolean,,,Specifies if a custom height was used for building model
 results.csv,build_existing_model.create_bar_from_building_type_ratios_double_loaded_corridor,,FALSE,FALSE,string,,,Specifies a double loaded corridor for building types that have a defined circulation space type
@@ -214,7 +213,7 @@ results.csv,build_existing_model.create_bar_from_building_type_ratios_neighbor_o
 results.csv,build_existing_model.create_bar_from_building_type_ratios_neighbor_offset_south,,FALSE,FALSE,float,,,Specifies offest of neighbors to south of building model which impacts shading
 results.csv,build_existing_model.create_bar_from_building_type_ratios_neighbor_offset_west,,FALSE,FALSE,float,,,Specifies offest of neighbors to west of building model which impacts shading
 results.csv,build_existing_model.create_bar_from_building_type_ratios_ns_to_ew_ratio,,FALSE,FALSE,float,,,Specifies ratio of northwest to eastwest fa�ade
-results.csv,build_existing_model.create_bar_from_building_type_ratios_num_stories_above_grade,in.number_of_stories,TRUE,FALSE,float,,,Building number of stories above grade
+results.csv,build_existing_model.create_custom_building_from_spec_num_stories_above_grade,in.number_of_stories,TRUE,FALSE,float,,,Building number of stories above grade
 results.csv,build_existing_model.create_bar_from_building_type_ratios_num_stories_below_grade,,FALSE,FALSE,float,,,Specifies number of stories below grade
 results.csv,build_existing_model.create_bar_from_building_type_ratios_party_wall_fraction,,FALSE,FALSE,float,,,Specifies fraction of walls that are modeled with adiabatic boundry conditions
 results.csv,build_existing_model.create_bar_from_building_type_ratios_party_wall_stories_east,,FALSE,FALSE,float,,,Specifies how many above grade walls are modeled with adiabatic boundry conditions on east fa�ade
@@ -227,7 +226,7 @@ results.csv,build_existing_model.create_bar_from_building_type_ratios_space_type
 results.csv,build_existing_model.create_bar_from_building_type_ratios_story_multiplier,,FALSE,FALSE,string,,,Specifies calculation method for story mutliplier
 results.csv,build_existing_model.create_bar_from_building_type_ratios_template,,FALSE,FALSE,string,,,Specifies the target energy code standard
 results.csv,build_existing_model.create_bar_from_building_type_ratios_top_story_exterior_exposed_roof,,FALSE,FALSE,boolean,,,Specifies if the top story ceiling is exposed or adiabatic
-results.csv,build_existing_model.create_bar_from_building_type_ratios_total_bldg_floor_area,in.sqft,TRUE,TRUE,float,ft2,ft2,Building total floor area
+results.csv,build_existing_model.create_custom_building_from_spec_total_bldg_floor_area,in.sqft,TRUE,TRUE,float,ft2,ft2,Building total floor area
 results.csv,build_existing_model.create_bar_from_building_type_ratios_use_upstream_args,,FALSE,FALSE,boolean,,,"When true this will look for arguments or registerValues in upstream measures that match arguments from this measure, and will use the value from the upstream measure in place of what is entered for this measure"
 results.csv,build_existing_model.create_bar_from_building_type_ratios_wwr,,FALSE,FALSE,float,,,Specifies the fraction of total exterior window area to total verticle fa�ade area
 results.csv,build_existing_model.create_typical_building_from_model_add_constructions,,FALSE,FALSE,boolean,,,Specifies if constructions have been added to model
@@ -252,16 +251,15 @@ results.csv,build_existing_model.create_typical_building_from_model_modify_wknd_
 results.csv,build_existing_model.create_typical_building_from_model_onsite_parking_fraction,,FALSE,FALSE,float,,,"Specifies if onsight parking has been added to model, which impacts exterior lighting power"
 results.csv,build_existing_model.create_typical_building_from_model_remove_objects,,FALSE,FALSE,boolean,,,Specifies if model has been cleaned of non-geometry objects where new model objects are to be added
 results.csv,build_existing_model.create_typical_building_from_model_swh_src,,FALSE,FALSE,string,,,Specifies service water heating fuel source used in model
-results.csv,build_existing_model.create_typical_building_from_model_system_type,in.hvac_system_type,TRUE,TRUE,string,,,Building primary HVAC system type
+results.csv,build_existing_model.create_custom_building_from_spec_system_type,in.hvac_system_type,TRUE,TRUE,string,,,Building primary HVAC system type
 results.csv,build_existing_model.create_typical_building_from_model_template,,FALSE,FALSE,string,,,Specifies energy code standard template to use which drives model properties
 results.csv,build_existing_model.create_typical_building_from_model_unmet_hours_tolerance,,FALSE,FALSE,float,delta_f,delta_f,Specifies delta degree tolerance for which unmet hours are registered in model during simulation
 results.csv,build_existing_model.create_typical_building_from_model_use_upstream_args,,FALSE,FALSE,boolean,,,"When true this will look for arguments or registerValues in upstream measures that match arguments from this measure, and will use the value from the upstream measure in place of what is entered for this measure"
-results.csv,build_existing_model.create_typical_building_from_model_wall_construction_type,in.wall_construction_type,TRUE,FALSE,string,,,The type of construction used for exterior walls
-results.csv,build_existing_model.create_typical_building_from_model_wkdy_op_hrs_duration,in.weekday_operating_hours,TRUE,FALSE,float,hr,hr,Building duration of weekday hours of operation which influences duration of schedules
-results.csv,build_existing_model.create_typical_building_from_model_wkdy_op_hrs_start_time,in.weekday_opening_time,TRUE,FALSE,float,hr,hr,Building weekday start hour which impacts the start time of schedules
-results.csv,build_existing_model.create_typical_building_from_model_wknd_op_hrs_duration,in.weekend_operating_hours,TRUE,FALSE,float,hr,hr,Building duration of weekend hours of operation which influences duration of schedules
-results.csv,build_existing_model.create_typical_building_from_model_wknd_op_hrs_start_time,in.weekend_opening_time,TRUE,FALSE,float,hr,hr,Building weekend start hour which impacts the start time of schedules
-results.csv,build_existing_model.energy_code_followed_during_last_exterior_lighting_replacement,in.energy_code_followed_during_last_ext_lighting_replacement,TRUE,TRUE,string,,,Specifies the energy code used to determine exterior lighting power and controls
+results.csv,build_existing_model.create_custom_building_from_spec_wall_construction_type,in.wall_construction_type,TRUE,FALSE,string,,,The type of construction used for exterior walls
+results.csv,build_existing_model.create_custom_building_from_spec_wkdy_op_hrs_duration,in.weekday_operating_hours,TRUE,FALSE,float,hr,hr,Building duration of weekday hours of operation which influences duration of schedules
+results.csv,build_existing_model.create_custom_building_from_spec_wkdy_op_hrs_start_time,in.weekday_opening_time,TRUE,FALSE,float,hr,hr,Building weekday start hour which impacts the start time of schedules
+results.csv,build_existing_model.create_custom_building_from_spec_wknd_op_hrs_duration,in.weekend_operating_hours,TRUE,FALSE,float,hr,hr,Building duration of weekend hours of operation which influences duration of schedules
+results.csv,build_existing_model.create_custom_building_from_spec_wknd_op_hrs_start_time,in.weekend_opening_time,TRUE,FALSE,float,hr,hr,Building weekend start hour which impacts the start time of schedules
 results.csv,build_existing_model.energy_code_followed_during_last_hvac_replacement,in.energy_code_followed_during_last_hvac_replacement,TRUE,TRUE,string,,,"Specifies the energy code used to determine HVAC system types, efficiencies, and controls"
 results.csv,build_existing_model.energy_code_followed_during_last_interior_equipment_replacement,in.energy_code_followed_during_last_int_equipment_replacement,TRUE,TRUE,string,,,Specifies the energy code used to determine interior equipment loads
 results.csv,build_existing_model.energy_code_followed_during_last_roof_replacement,in.energy_code_followed_during_last_roof_replacement,TRUE,TRUE,string,,,Specifies the energy code used to determine roof insulation values
