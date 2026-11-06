@@ -55,6 +55,9 @@ setup(
         'plotly',
         'polars==1.32.2',
         'pyarrow',
+        # buildstock_query allows any pyathena>=3.19.0, but PyAthena 4.x needs SQLAlchemy 2.x
+        # (sqlalchemy.types.DOUBLE) and we pin SQLAlchemy 1.4.46 below. See issue #473.
+        'pyathena>=3.19.0,<4',
         'pyyaml',
         's3fs',
         'scipy',
