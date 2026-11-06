@@ -1,6 +1,6 @@
 # ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
-require 'openstudio-standards'
+require 'comstock-typical'
 
 # start the measure
 class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
@@ -90,6 +90,14 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
       end
     end
     return is_evap
+  end
+
+  # Determine if a packaged unit's supply fan was set to cycle during occupied hours by its HVAC
+  # template ('auto' thermostat fan). The template records the continuous
+  # schedule it replaced in this property; such a fan keeps cycling, so the night modes below
+  # change only its availability and outdoor air schedules.
+  def template_cycling_fan?(component)
+    component.additionalProperties.hasFeature('continuous_fan_operating_mode_schedule')
   end
 
   # define what happens when the measure is run
@@ -268,6 +276,8 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_fan_sch.setName("#{air_loop_hvac.name}_night_fancycle_schedule")
         # Schedule to control the airloop fan operation schedule
         air_loop_hvac.supplyComponents.each do |component|
+          next if template_cycling_fan?(component)
+
           obj_type = component.iddObjectType.valueName.to_s
           case obj_type
           when 'OS_AirLoopHVAC_UnitarySystem'
@@ -297,12 +307,21 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_avail_sch = OpenStudio::Model::ScheduleConstant.new(model)
         air_loop_avail_sch.setName("#{air_loop_hvac.name}_constant_night_fan_schedule")
         air_loop_avail_sch.setValue(1)
+        # State the type limits. The air loop availability and fan operating mode slots this
+        # schedule goes into do not stamp them the way the OA controller's minimum outdoor
+        # air slot stamps the vent schedule above, so without this EnergyPlus reports
+        # "Schedule Type Limits Name is empty ... Schedule will not be validated" for it.
+        air_loop_avail_sch.setScheduleTypeLimits(
+          OpenstudioStandards::Schedules.create_schedule_type_limits(model, standard_schedule_type_limit: 'Fractional')
+        )
         # set hvac avail schedule
         air_loop_hvac.setAvailabilitySchedule(air_loop_avail_sch)
         op_schd_1_count += 1
 
         # set unitary supply fan operation schedule - loop through air loop components to find unitary systems
         air_loop_hvac.supplyComponents.each do |component|
+          next if template_cycling_fan?(component)
+
           obj_type = component.iddObjectType.valueName.to_s
           case obj_type
           when 'OS_AirLoopHVAC_UnitarySystem'
@@ -368,6 +387,13 @@ class AddHvacNighttimeOperationVariability < OpenStudio::Measure::ModelMeasure
         air_loop_avail_sch = OpenStudio::Model::ScheduleConstant.new(model)
         air_loop_avail_sch.setName("#{air_loop_hvac.name}_constant_night_fan_schedule")
         air_loop_avail_sch.setValue(1)
+        # State the type limits. The air loop availability and fan operating mode slots this
+        # schedule goes into do not stamp them the way the OA controller's minimum outdoor
+        # air slot stamps the vent schedule above, so without this EnergyPlus reports
+        # "Schedule Type Limits Name is empty ... Schedule will not be validated" for it.
+        air_loop_avail_sch.setScheduleTypeLimits(
+          OpenstudioStandards::Schedules.create_schedule_type_limits(model, standard_schedule_type_limit: 'Fractional')
+        )
         # set hvac avail schedule
         air_loop_hvac.setAvailabilitySchedule(air_loop_avail_sch)
         op_schd_1_count += 1

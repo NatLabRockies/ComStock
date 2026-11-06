@@ -38,7 +38,7 @@
 
 require 'openstudio'
 require 'date'
-require 'openstudio-standards'
+require 'comstock-typical'
 
 def cambium_emissions_scenarios
   %w[

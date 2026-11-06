@@ -139,6 +139,17 @@ class HVACDCVTest < Minitest::Test
     # load the test model
     model = load_model(new_osm_path)
 
+    controllers_with_dcv_disabled = []
+    model.getAirLoopHVACs.each do |air_loop_hvac|
+      next unless air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
+
+      controller_mv = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir.controllerMechanicalVentilation
+      next if controller_mv.demandControlledVentilation
+
+      controller_mv.setAvailabilitySchedule(model.alwaysOffDiscreteSchedule)
+      controllers_with_dcv_disabled << controller_mv
+    end
+
     # set model weather file
     epw_file = OpenStudio::EpwFile.new(OpenStudio::Path.new(new_epw_path))
     OpenStudio::Model::WeatherFile.setWeatherFile(model, epw_file)
@@ -149,6 +160,12 @@ class HVACDCVTest < Minitest::Test
     measure.run(model, runner, argument_map)
     result = runner.result
     result_success = result.value.valueName == 'Success'
+
+    controllers_with_dcv_disabled.each do |controller_mv|
+      next unless controller_mv.demandControlledVentilation
+
+      assert_equal(model.alwaysOnDiscreteSchedule, controller_mv.availabilitySchedule)
+    end
 
     # show the output
     show_output(result)
