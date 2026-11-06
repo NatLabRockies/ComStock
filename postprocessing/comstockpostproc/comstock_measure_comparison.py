@@ -4,6 +4,7 @@ import os
 import logging
 
 from comstockpostproc.lazyframeplotter import LazyFramePlotter
+from comstockpostproc import measure_doc_assets
 import comstockpostproc.comstock as comstock
 import pandas as pd
 import polars as pl
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
-    def __init__(self, comstock_object: comstock.ComStock, timeseries_locations_to_plot, make_comparison_plots, make_timeseries_plots, image_type='jpg', name=None):
+    def __init__(self, comstock_object: comstock.ComStock, timeseries_locations_to_plot, make_comparison_plots, make_timeseries_plots, image_type='jpg', name=None, export_measure_doc_assets=False):
 
         # Initialize members
         assert isinstance(comstock_object.data, pl.LazyFrame)
@@ -90,6 +91,10 @@ class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
                 else:
                     logger.info("make_comparison_plots is set to false, so not plots were created. Set make_comparison_plots to True for plots.")
 
+                # tables, figures and manifest for the measure documentation, if requested
+                if export_measure_doc_assets:
+                    self.write_measure_doc_assets(df_upgrade, upgrade_id, up_base_id, upgrade_name, self.dict_measure_dir[upgrade])
+
         # make plots comparing multiple upgrades together
         for comp_name, comp_up_ids in self.upgrade_ids_for_comparison.items():
 
@@ -122,6 +127,21 @@ class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
                     logger.info("make_comparison_plots is set to false, so not plots were created. Set make_comparison_plots to True for plots.")
         end_time = pd.Timestamp.now()
         logger.info(f"Time taken to make all plots is {end_time - start_time}")
+
+    def write_measure_doc_assets(self, lazy_frame, upgrade_id, baseline_id, upgrade_name, measure_dir):
+        """Write measure_dir/doc_assets/: the tables, figures and manifest a measure document is
+        built from (see comstockpostproc.measure_doc_assets).
+
+        A failure is logged, not raised, so it cannot cost the rest of a postprocessing run.
+        """
+        run = measure_doc_assets.run_info_from_comstock(self.comstock_object)
+        inputs = measure_doc_assets.plotting_cache_files(run['run_dir'], [baseline_id, upgrade_id]) if run.get('run_dir') else []
+        try:
+            logger.info(f'Writing measure documentation assets for upgrade {upgrade_id}')
+            measure_doc_assets.export(lazy_frame, upgrade_id, baseline_id, upgrade_name, measure_dir,
+                                      plotter=self, run=run, inputs=inputs)
+        except Exception:
+            logger.exception(f'Measure documentation assets for upgrade {upgrade_id} were not written')
 
     def make_plots(self, lazy_frame: pl.LazyFrame, column_for_grouping, timeseries_locations_to_plot, make_timeseries_plots, color_map, output_dir, s3_base_dir, athena_table_name, comstock_run_name):
         time_start = pd.Timestamp.now()
