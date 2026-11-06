@@ -210,6 +210,30 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     ]
   end
 
+  # return why a URDB rate does not apply to a building, or nil if it does.
+  # URDB's demand window (peakkwcapacitymin/max) bounds the building's peak demand, and its
+  # energy window (peakkwhusagemin/max) bounds monthly energy, e.g. TVA's GSA Part 1 is for
+  # demand up to 50 kW and up to 15,000 kWh in any month
+  def rate_not_applicable_reason(rate, peak_kw, monthly_kwh)
+    if rate.key?('peakkwcapacitymin') && (peak_kw < rate['peakkwcapacitymin'])
+      return "the building peak demand of #{peak_kw} kW is below minimum threshold of #{rate['peakkwcapacitymin']} kW"
+    end
+
+    if rate.key?('peakkwcapacitymax') && (peak_kw > rate['peakkwcapacitymax'])
+      return "the building peak demand of #{peak_kw} kW is above maximum threshold of #{rate['peakkwcapacitymax']} kW"
+    end
+
+    if rate.key?('peakkwhusagemin') && (monthly_kwh < rate['peakkwhusagemin'])
+      return "the building average monthly energy of #{monthly_kwh} kWh is below minimum threshold of #{rate['peakkwhusagemin']} kWh"
+    end
+
+    if rate.key?('peakkwhusagemax') && (monthly_kwh > rate['peakkwhusagemax'])
+      return "the building average monthly energy of #{monthly_kwh} kWh is above maximum threshold of #{rate['peakkwhusagemax']} kWh"
+    end
+
+    return nil
+  end
+
   # define what happens when the measure is run
   def run(runner, user_arguments)
     super(runner, user_arguments)
@@ -336,10 +360,10 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
       OpenStudio.convert(val, 'J', 'kWh').get # hourly data
     end
 
-    # Get min and peak demand for rates with qualifiers
+    # Get peak demand and average monthly energy for rates with qualifiers
     tot_elec_kwh = hourly_electricity_kwh.sum.round
-    min_kw = hourly_electricity_kwh.min.round
     max_kw = hourly_electricity_kwh.max.round
+    monthly_elec_kwh = (tot_elec_kwh / 12.0).round
 
     # Write the hourly kWh to CSV
     elec_csv_path = File.expand_path("#{run_dir}/electricity_hourly.csv")
@@ -496,23 +520,9 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
           rate_name = rate['name']
           rate_id = rate['label']
 
-          if rate.key?('peakkwcapacitymin') && (min_kw < (rate['peakkwcapacitymin']))
-            runner.registerInfo("Rate #{rate_name} is not applicable because the building min demand of #{min_kw} kW is below minimum threshold of #{rate['peakkwcapacitymin']} kW.")
-            next
-          end
-
-          if rate.key?('peakkwcapacitymax') && (max_kw > (rate['peakkwcapacitymax']))
-            runner.registerInfo("Rate #{rate_name} is not applicable because the building max demand of #{max_kw} kW is above maximum threshold of #{rate['peakkwcapacitymax']} kW.")
-            next
-          end
-
-          if rate.key?('peakkwhusagemin') && (tot_elec_kwh < (rate['peakkwhusagemin']))
-            runner.registerInfo("Rate #{rate_name} is not applicable because the building annual energy #{tot_elec_kwh} kWh is below minimum threshold of #{rate['peakkwhusagemin']} kWh.")
-            next
-          end
-
-          if rate.key?('peakkwhusagemax') && (tot_elec_kwh > (rate['peakkwhusagemax']))
-            runner.registerInfo("Rate #{rate_name} is not applicable because the building annual energy #{tot_elec_kwh} kWh is above maximum threshold of #{rate['peakkwhusagemax']} kWh.")
+          not_applicable_reason = rate_not_applicable_reason(rate, max_kw, monthly_elec_kwh)
+          unless not_applicable_reason.nil?
+            runner.registerInfo("Rate #{rate_name} is not applicable because #{not_applicable_reason}.")
             next
           end
 
