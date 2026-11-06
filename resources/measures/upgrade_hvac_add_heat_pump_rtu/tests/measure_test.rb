@@ -1116,41 +1116,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
-  # apply one dual fuel options lookup row and check every RTU it creates: a natural gas backup coil, the row's gas backup
-  # compressor lockout, the expected heating coil type and stage count, and heating capacity curves from the row's scenario
-  # apply-only, so it runs in well under a minute
-  def verify_dual_fuel_options_lookup_row(test_name, option_name, expected_hprtu_scenario, expected_heating_stages, expected_heating_cap_curves)
-    announce_test(test_name)
-    lookup_args = options_lookup_args_for(option_name)
-    assert_equal('dual_fuel_gas_furnace_backup', lookup_args['backup_ht_fuel_scheme'])
-    assert_equal(expected_hprtu_scenario, lookup_args['hprtu_scenario'])
-
-    osm_path = model_input_path('380_small_office_psz_gas_coil_7A.osm')
-    epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
-    measure = AddHeatPumpRtu.new
-    model = load_model(osm_path)
-    argument_map = options_lookup_argument_map(measure, model, lookup_args)
-
-    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
-    applied = load_model(model_output_path(test_name))
-    unitary_systems = applied.getAirLoopHVACUnitarySystems
-    refute_empty(unitary_systems, "no unitary systems after applying #{option_name}")
-
-    expected_lockout_temp_c = OpenStudio.convert(lookup_args['hp_min_comp_lockout_temp_gas_backup_f'].to_f, 'F', 'C').get
-    unitary_systems.each do |system|
-      sup_htg_coil = system.supplementalHeatingCoil.get
-      assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "expected a gas backup coil for #{system.name}")
-      assert_equal('NaturalGas', sup_htg_coil.to_CoilHeatingGas.get.fuelType, "dual fuel backup coil for #{system.name} should burn natural gas")
-
-      htg_coil, curve_names = dx_heating_coil_and_capacity_curves(system, expected_heating_stages)
-      assert_in_delta(expected_lockout_temp_c, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
-                      "compressor lockout for #{system.name} should be the gas backup temperature in #{option_name}")
-      assert(curve_names.all? { |n| expected_heating_cap_curves.include?(n) },
-             "heating coil for #{system.name} uses #{curve_names}, expected #{expected_hprtu_scenario} curves #{expected_heating_cap_curves}")
-    end
-    assert_airflows_meet_min_oa(applied, option_name)
-  end
-
   # apply one original fuel options lookup row to a gas-heated model and to an all-electric one, and check every RTU it
   # creates: the gas model keeps natural gas backup at the row's gas backup lockout, the all-electric model keeps electric
   # resistance backup at the row's electric backup lockout, and both get the expected heating coil type, stage count and
@@ -1928,42 +1893,7 @@ class AddHeatPumpRtuTest < Minitest::Test
   end
 
   # ##########################################################################
-  # dual fuel options lookup rows
-  # ##########################################################################
-
-  # scenario 1 (dual fuel RTU, standard performance): 30F gas backup lockout and the single stage two_speed_standard_eff heating curve
-  def test_dual_fuel_std_perf_lockout_30F_option
-    verify_dual_fuel_options_lookup_row('test_dual_fuel_std_perf_lockout_30F_option', 'dual_fuel_std_perf_lockout_30F',
-                                        'two_speed_standard_eff', 1, ['h_cap_T'])
-  end
-
-  # scenario 2 (CCHPC challenge spec dual fuel RTU): -10F gas backup lockout and the four cchpc_2027_spec heating stages
-  def test_dual_fuel_cchpc_spec_lockout_neg10F_option
-    verify_dual_fuel_options_lookup_row('test_dual_fuel_cchpc_spec_lockout_neg10F_option', 'dual_fuel_cchpc_spec_lockout_neg10F',
-                                        'cchpc_2027_spec', 4, ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'])
-  end
-
-  # scenario 3 (CCHPC typical dual fuel RTU): -10F gas backup lockout and the four cchpc_2027_typical heating stages
-  def test_dual_fuel_cchpc_typical_lockout_neg10F_option
-    test_name = 'test_dual_fuel_cchpc_typical_lockout_neg10F_option'
-    verify_dual_fuel_options_lookup_row(test_name, 'dual_fuel_cchpc_typical_lockout_neg10F',
-                                        'cchpc_2027_typical', 4, ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'])
-
-    # the spec and typical jsons share curve names, so check that the boost stage's
-    # table holds the typical json's values, in the order the measure sorts them
-    rec = scenario_json('cchpc_2027_typical')['tables']['curves']['table'].find { |e| e['name'] == 'h_cap_boost' }
-    expected = rec.select { |k, _v| k.include?('data_point') }.values.map { |v| v.split(',').map(&:to_f) }.sort.map(&:last)
-    applied = load_model(model_output_path(test_name))
-    applied.getAirLoopHVACUnitarySystems.each do |system|
-      boost = system.heatingCoil.get.to_CoilHeatingDXMultiSpeed.get.stages.last
-      actual = boost.heatingCapacityFunctionofTemperatureCurve.to_TableLookup.get.outputValues
-      assert_equal(expected.size, actual.size, "boost heating table size for #{system.name}")
-      expected.zip(actual).each { |e, a| assert_in_delta(e, a, 1e-6, "boost heating table for #{system.name} is not the typical json's") }
-    end
-  end
-
-  # ##########################################################################
-  # original fuel options lookup rows
+  # original fuel options lookup rows (scenarios 1 to 3)
   # ##########################################################################
 
   # 2026 R1 standard performance RTU with original fuel backup: a fuel backup at a 30F lockout in a gas-heated building,
@@ -1983,7 +1913,22 @@ class AddHeatPumpRtuTest < Minitest::Test
   # 2026 R1 CCHPC typical RTU with original fuel backup: a -10F lockout with either backup and the four
   # cchpc_2027_typical heating stages
   def test_orig_fuel_backup_cchpc_typical_lockout_neg10F_option
-    verify_orig_fuel_options_lookup_row('test_orig_fuel_backup_cchpc_typical_lockout_neg10F_option', 'orig_fuel_backup_cchpc_typical_lockout_neg10F',
+    test_name = 'test_orig_fuel_backup_cchpc_typical_lockout_neg10F_option'
+    verify_orig_fuel_options_lookup_row(test_name, 'orig_fuel_backup_cchpc_typical_lockout_neg10F',
                                         'cchpc_2027_typical', 4, ['h_cap_low', 'h_cap_medium', 'h_cap_high', 'h_cap_boost'])
+
+    # the spec and typical jsons share curve names, so check that the boost stage's
+    # table holds the typical json's values, in the order the measure sorts them
+    rec = scenario_json('cchpc_2027_typical')['tables']['curves']['table'].find { |e| e['name'] == 'h_cap_boost' }
+    expected = rec.select { |k, _v| k.include?('data_point') }.values.map { |v| v.split(',').map(&:to_f) }.sort.map(&:last)
+    ['gas', 'elec'].each do |model_case|
+      applied = load_model(model_output_path("#{test_name}_#{model_case}"))
+      applied.getAirLoopHVACUnitarySystems.each do |system|
+        boost = system.heatingCoil.get.to_CoilHeatingDXMultiSpeed.get.stages.last
+        actual = boost.heatingCapacityFunctionofTemperatureCurve.to_TableLookup.get.outputValues
+        assert_equal(expected.size, actual.size, "boost heating table size for #{system.name}")
+        expected.zip(actual).each { |e, a| assert_in_delta(e, a, 1e-6, "boost heating table for #{system.name} is not the typical json's") }
+      end
+    end
   end
 end
