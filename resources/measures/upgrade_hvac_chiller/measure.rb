@@ -18,7 +18,7 @@ class UpgradeHvacChiller < OpenStudio::Measure::ModelMeasure
 
   # human readable description of modeling approach
   def modeler_description
-    'Chiller Upgrades: Replaces existing chillers with high-efficiency models. Supports both air-cooled and water-cooled chillers. Updates performance curves and adjusts reference COPs to reflect improved efficiency. Pump Upgrades: Updates pump motor efficiencies to meet ASHRAE 90.1-2019 standards. Optimizes part-load performance for variable-speed pumps. Control Strategy Enhancements: Adds outdoor air temperature reset for chilled water supply temperature. Implements condenser water temperature reset based on Appendix G of ASHRAE 90.1-2019. Detailed Reporting: Provides pre- and post-upgrade specifications for chillers, pumps, and control systems. Includes debugging options for detailed logs during measure execution.'
+    'Chiller Upgrades: Replaces existing chillers with high-efficiency models. Supports both air-cooled and water-cooled chillers. Updates performance curves and adjusts reference COPs to reflect improved efficiency. Pump Upgrades: Updates pump motor efficiencies to meet ASHRAE 90.1-2019 standards. Optimizes part-load performance for variable-speed pumps. Control Strategy Enhancements: Adds outdoor air temperature reset for chilled water supply temperature (design temperature at 80 F outdoor air, 10 F warmer at 60 F) on chilled water loops; a loop that serves a data center CRAH keeps its design temperature, and hot water and service water loops are not reset. Implements condenser water temperature reset based on Appendix G of ASHRAE 90.1-2019. Detailed Reporting: Provides pre- and post-upgrade specifications for chillers, pumps, and control systems. Includes debugging options for detailed logs during measure execution.'
   end
 
   # define the arguments that the user will input
@@ -233,6 +233,32 @@ class UpgradeHvacChiller < OpenStudio::Measure::ModelMeasure
     fraction_cw_oat_reset_enabled = total_count_spm_cw > 0.0 ? fraction_cw_oat_reset_enabled_sum / total_count_spm_cw : 0.0
 
     [fraction_chw_oat_reset_enabled, fraction_cw_oat_reset_enabled]
+  end
+
+  # Whether a chilled water loop serves a data center: a chilled water coil on a CRAC/CRAH air loop, or a coil serving a
+  # data center zone. comstock-typical serves data center zones with a 'Data Center CRAH' air loop on the building's
+  # chilled water plant. That load does not fall with the outdoor temperature, so with the outdoor air reset (design + 10 F
+  # at 60 F outdoors) the CRAH coil cannot hold its 55 F supply air.
+  #
+  # @param plant_loop [OpenStudio::Model::PlantLoop] chilled water loop
+  # @return [Boolean] true if any chilled water coil on the loop serves a data center
+  def self.plant_loop_serves_data_center?(plant_loop)
+    plant_loop.demandComponents.any? do |component|
+      next false unless component.to_CoilCoolingWater.is_initialized
+
+      coil = component.to_CoilCoolingWater.get
+      zones = []
+      if coil.airLoopHVAC.is_initialized
+        air_loop_hvac = coil.airLoopHVAC.get
+        next true if air_loop_hvac.name.to_s.match?(/\b(CRAC|CRAH)\b/i)
+
+        zones = air_loop_hvac.thermalZones
+      elsif coil.containingZoneHVACComponent.is_initialized && coil.containingZoneHVACComponent.get.thermalZone.is_initialized
+        zones = [coil.containingZoneHVACComponent.get.thermalZone.get]
+      end
+      OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) &&
+        zones.any? { |thermal_zone| OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone) }
+    end
   end
 
   # method to search through a hash for an object that meets the name criteria
@@ -895,7 +921,15 @@ class UpgradeHvacChiller < OpenStudio::Measure::ModelMeasure
     if chw_oat_reset || cw_oat_reset
       plant_loops = model.getPlantLoops
       plant_loops.each do |plant_loop|
-        std.plant_loop_enable_supply_water_temperature_reset(plant_loop) if chw_oat_reset
+        # the documented outdoor air reset, on chilled water loops only: hot water and service water loops keep their
+        # temperature, and a chilled water loop that serves a data center keeps its design temperature
+        if chw_oat_reset && plant_loop.sizingPlant.loopType == 'Cooling'
+          if UpgradeHvacChiller.plant_loop_serves_data_center?(plant_loop)
+            runner.registerInfo("#{plant_loop.name} serves a data center CRAH, whose load does not fall with the outdoor temperature; its chilled water supply temperature is not reset.")
+          else
+            std.plant_loop_enable_supply_water_temperature_reset(plant_loop)
+          end
+        end
         plant_loop_apply_prm_baseline_condenser_water_temperatures(runner, plant_loop) if cw_oat_reset
       end
     end

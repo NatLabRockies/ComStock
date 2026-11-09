@@ -132,7 +132,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>0EF29315</checksum>
+      <checksum>BA5373FF</checksum>
     </file>
     <file>
       <filename>occupancy_sensor_reduction_by_space_type.csv</filename>
@@ -141,10 +141,16 @@
       <checksum>3ECF4E78</checksum>
     </file>
     <file>
-      <filename>light_led_test.rb</filename>
+      <filename>occupancy_sensor_reduction_by_typical_space_type.csv</filename>
+      <filetype>csv</filetype>
+      <usage_type>resource</usage_type>
+      <checksum>B1D116F8</checksum>
+    </file>
+    <file>
+      <filename>lighting_controls_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>96DE7EDD</checksum>
+      <checksum>FFBCFAB3</checksum>
     </file>
   </files>
 </measure>

@@ -692,6 +692,11 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
     # finish the heat pump systems after sizing
     model.getAirLoopHVACUnitarySystems.each do |unitary_sys|
+      # applySizingValues writes EnergyPlus's "Design Size Maximum Supply Air Temperature" over the 40 C set above; that
+      # design size is the new loop's Sizing:System central heating supply air temperature (OpenStudio default 16.7 C),
+      # which capped the heat pumps' supply air at 16.7 C. Set it back, as the packaged GSHP measure does.
+      unitary_sys.setMaximumSupplyAirTemperature(40.0)
+
       # the catalog performance tables were assigned at coil creation, before the sizing run
       unless unitary_sys.heatingCoil.is_initialized && unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized &&
              unitary_sys.coolingCoil.is_initialized && unitary_sys.coolingCoil.get.to_CoilCoolingWaterToAirHeatPumpEquationFit.is_initialized

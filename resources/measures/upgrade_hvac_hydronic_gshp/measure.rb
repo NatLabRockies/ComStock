@@ -232,6 +232,41 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     is_unitary_system
   end
 
+  # Hard-size only what is still autosized. OpenStudio's Model#applySizingValues writes EnergyPlus's 'Design Size'
+  # value into every autosizable field that has one, also where the field already holds a hard-sized value and
+  # EnergyPlus reported both (VAV and PIU minimum flow fractions, DX coil capacities, unitary maximum supply air
+  # temperature, Sizing:System capacities). Keep every autosizable field that held a number before the call.
+  #
+  # @param model [OpenStudio::Model::Model] model with the sizing run SQL attached
+  # @return [Integer] number of hard-sized fields kept
+  def apply_sizing_values_to_autosized_fields(model)
+    field_cache = {}
+    kept = []
+    model.modelObjects.each do |obj|
+      fields = field_cache[obj.iddObjectType.valueName] ||= begin
+        idd = obj.iddObject
+        (0...idd.numFields).select do |i|
+          f = idd.getField(i)
+          f.is_initialized && (f.get.properties.autosizable || f.get.properties.autocalculatable)
+        end
+      end
+      fields.each do |i|
+        v = obj.getDouble(i)
+        kept << [obj, i, v.get] if v.is_initialized
+      end
+    end
+    model.applySizingValues
+    restored = 0
+    kept.each do |obj, i, v|
+      now = obj.getDouble(i)
+      next if now.is_initialized && (now.get - v).abs <= 1e-9 * [1.0, v.abs].max
+
+      obj.setDouble(i, v)
+      restored += 1
+    end
+    restored
+  end
+
   # define what happens when the measure is run
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
@@ -477,9 +512,11 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       return false
     end
 
-    # apply sizing values
-    # need this to hard-size chillers and boilers
-    model.applySizingValues
+    # apply sizing values to what is still autosized (chillers and boilers when they are not hard-sized). A plain
+    # model.applySizingValues also wrote EnergyPlus's design sizes over the baseline's hard-sized inputs: VAV minimum
+    # flow fractions came back as anything from 1% to 45% instead of 30%, mostly lower, and zones went cold; on other
+    # systems it cut DX coil capacities, CRAH fan flows and humidifier capacities.
+    apply_sizing_values_to_autosized_fields(model)
     # end
 
     # # Hard size the equipment based on the sizing run if not already hardsized
@@ -1276,6 +1313,20 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       end
       htg_loop.autosizeMaximumLoopFlowRate # #AA added 8/10
       htg_loop.autocalculatePlantLoopVolume # #AA added 8/10
+      # zone equipment and terminals keep their hot water flow hard-sized from the baseline (180 F); EnergyPlus sizes each
+      # re-rated coil to that flow and fails ('Autosizing of heating coil UA failed', fan coils with the envelope options)
+      # once the load has dropped, so autosize those flows too, as the heat pump boiler measure does
+      on_htg_loop = lambda do |coil|
+        hw_coil = coil.to_CoilHeatingWater
+        hw_coil.is_initialized && hw_coil.get.plantLoop.is_initialized && hw_coil.get.plantLoop.get.handle.to_s == htg_loop.handle.to_s
+      end
+      (model.getZoneHVACFourPipeFanCoils + model.getZoneHVACUnitHeaters + model.getAirTerminalSingleDuctConstantVolumeFourPipeInductions).each do |equip|
+        equip.autosizeMaximumHotWaterFlowRate if on_htg_loop.call(equip.heatingCoil)
+      end
+      (model.getAirTerminalSingleDuctConstantVolumeReheats + model.getAirTerminalSingleDuctParallelPIUReheats +
+       model.getAirTerminalSingleDuctSeriesPIUReheats + model.getAirTerminalSingleDuctVAVHeatAndCoolReheats).each do |term|
+        term.autosizeMaximumHotWaterorSteamFlowRate if on_htg_loop.call(term.reheatCoil)
+      end
       # end ##AA commented out, getting rid of this loop
       # end
       # resize flow rates in vav terminal and autosize airflow rates

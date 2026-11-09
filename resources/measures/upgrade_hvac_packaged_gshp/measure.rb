@@ -240,6 +240,106 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     served_by_district_energy
   end
 
+  # Availability managers of a multizone (PVAV) air loop, recorded as settings so they outlive the loop's removal and
+  # can be given to the single-zone loops that replace it. Night cycle zone lists are kept as zone names.
+  def pvav_availability_settings(air_loop_hvac, runner)
+    settings = []
+    air_loop_hvac.availabilityManagers.each do |avm|
+      if avm.to_AvailabilityManagerNightCycle.is_initialized
+        nc = avm.to_AvailabilityManagerNightCycle.get
+        settings << { 'type' => 'NightCycle', 'applicability_schedule' => nc.applicabilitySchedule,
+                      'control_type' => nc.controlType, 'thermostat_tolerance' => nc.thermostatTolerance,
+                      'cycling_run_time_control_type' => nc.cyclingRunTimeControlType, 'cycling_run_time' => nc.cyclingRunTime,
+                      'cooling_zones' => nc.coolingControlThermalZones.map { |z| z.name.get },
+                      'heating_zones' => nc.heatingControlThermalZones.map { |z| z.name.get },
+                      'heating_fans_only_zones' => nc.heatingZoneFansOnlyThermalZones.map { |z| z.name.get } }
+      elsif avm.to_AvailabilityManagerOptimumStart.is_initialized
+        os = avm.to_AvailabilityManagerOptimumStart.get
+        settings << { 'type' => 'OptimumStart', 'applicability_schedule' => os.applicabilitySchedule,
+                      'control_type' => os.controlType, 'maximum_start_time' => os.maximumValueforOptimumStartTime,
+                      'control_algorithm' => os.controlAlgorithm, 'constant_gradient_cooling' => os.constantTemperatureGradientduringCooling,
+                      'constant_gradient_heating' => os.constantTemperatureGradientduringHeating,
+                      'initial_gradient_cooling' => os.initialTemperatureGradientduringCooling,
+                      'initial_gradient_heating' => os.initialTemperatureGradientduringHeating,
+                      'constant_start_time' => os.constantStartTime, 'number_of_previous_days' => os.numberofPreviousDays }
+      else
+        runner.registerWarning("Availability manager #{avm.name} (#{avm.iddObjectType.valueName}) on #{air_loop_hvac.name} is not carried over to the packaged GSHP loops.")
+      end
+    end
+    settings
+  end
+
+  # Give a single-zone loop that replaces a PVAV the PVAV's availability managers. The night cycle keeps its control
+  # type, tolerance, cycling run time and applicability schedule, with the zone lists cut to this loop's zone; types that
+  # cycle only zone terminal fans (PFP box fans) cycle the heat pump unit instead, the zone's only fan and heat source.
+  def add_pvav_availability_managers(model, air_loop_hvac, thermal_zone, settings)
+    zone_name = thermal_zone.name.get
+    settings.each do |s|
+      case s['type']
+      when 'NightCycle'
+        control_type = { 'CycleOnAnyZoneFansOnly' => 'CycleOnAny', 'CycleOnAnyHeatingZoneFansOnly' => 'CycleOnAnyHeatingZone' }.fetch(s['control_type'], s['control_type'])
+        nc = OpenStudio::Model::AvailabilityManagerNightCycle.new(model)
+        nc.setApplicabilitySchedule(s['applicability_schedule'])
+        nc.setControlType(control_type)
+        nc.setThermostatTolerance(s['thermostat_tolerance'])
+        nc.setCyclingRunTimeControlType(s['cycling_run_time_control_type'])
+        nc.setCyclingRunTime(s['cycling_run_time'])
+        case control_type
+        when 'CycleOnControlZone'
+          nc.setControlThermalZones([thermal_zone])
+        when 'CycleOnAnyCoolingOrHeatingZone', 'CycleOnAnyCoolingZone', 'CycleOnAnyHeatingZone'
+          nc.setCoolingControlThermalZones([thermal_zone]) if s['cooling_zones'].include?(zone_name)
+          heating = s['heating_zones'].include?(zone_name) || s['heating_fans_only_zones'].include?(zone_name)
+          nc.setHeatingControlThermalZones([thermal_zone]) if heating
+        end
+        air_loop_hvac.addAvailabilityManager(nc)
+      when 'OptimumStart'
+        os = OpenStudio::Model::AvailabilityManagerOptimumStart.new(model)
+        os.setApplicabilitySchedule(s['applicability_schedule'])
+        os.setControlType(s['control_type'])
+        os.setControlZone(thermal_zone) if s['control_type'] == 'ControlZone'
+        os.setMaximumValueforOptimumStartTime(s['maximum_start_time'])
+        os.setControlAlgorithm(s['control_algorithm'])
+        os.setConstantTemperatureGradientduringCooling(s['constant_gradient_cooling'])
+        os.setConstantTemperatureGradientduringHeating(s['constant_gradient_heating'])
+        os.setInitialTemperatureGradientduringCooling(s['initial_gradient_cooling'])
+        os.setInitialTemperatureGradientduringHeating(s['initial_gradient_heating'])
+        os.setConstantStartTime(s['constant_start_time'])
+        os.setNumberofPreviousDays(s['number_of_previous_days'])
+        air_loop_hvac.addAvailabilityManager(os)
+      end
+    end
+  end
+
+  # Outdoor air and system sizing settings of a multizone (PVAV) air loop, for the single-zone loops that replace it:
+  # the minimum outdoor air schedule, minimum limit type and minimum flow (split across the zones below), the
+  # mechanical ventilation controller's availability, DCV and method, and the Sizing:System supply air temperatures
+  # and outdoor air flags (the outdoor air entries are left out when the loop has no outdoor air system).
+  def pvav_outdoor_air_settings(air_loop_hvac, runner)
+    settings = {}
+    sizing = air_loop_hvac.sizingSystem
+    settings['sizing'] = { 'heating_sat' => sizing.centralHeatingDesignSupplyAirTemperature,
+                           'cooling_sat' => sizing.centralCoolingDesignSupplyAirTemperature,
+                           'all_oa_cooling' => sizing.allOutdoorAirinCooling, 'all_oa_heating' => sizing.allOutdoorAirinHeating }
+    return settings unless air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
+
+    oa_controller = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+    min_oa_flow = if oa_controller.minimumOutdoorAirFlowRate.is_initialized
+                    oa_controller.minimumOutdoorAirFlowRate.get
+                  elsif oa_controller.autosizedMinimumOutdoorAirFlowRate.is_initialized
+                    oa_controller.autosizedMinimumOutdoorAirFlowRate.get
+                  end
+    runner.registerWarning("No minimum outdoor air flow found for #{oa_controller.name}; the replacing loops autosize theirs.") if min_oa_flow.nil?
+    controller_mv = oa_controller.controllerMechanicalVentilation
+    settings['min_oa_sched'] = oa_controller.minimumOutdoorAirSchedule.is_initialized ? oa_controller.minimumOutdoorAirSchedule.get : nil
+    settings['min_limit_type'] = oa_controller.getMinimumLimitType
+    settings['min_oa_flow'] = min_oa_flow
+    settings['mv_avail_sched'] = controller_mv.availabilitySchedule
+    settings['mv_dcv'] = controller_mv.demandControlledVentilation
+    settings['mv_method'] = controller_mv.systemOutdoorAirMethod
+    settings
+  end
+
   # Define the main method that will be called by the OpenStudio application
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
@@ -593,9 +693,23 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         end
       end
 
+      # the PVAV's operation outside its schedule (night cycling, optimum start), its outdoor air controls and its sizing
+      # temperatures, for the single-zone loops that replace it; read now because the PVAV loop is removed below.
+      # Its minimum outdoor air flow is split across its zones in proportion to their design outdoor air.
+      pvav_avail_settings = pvav_availability_settings(pvav_air_loop, runner)
+      pvav_oa_settings = pvav_outdoor_air_settings(pvav_air_loop, runner)
+      pvav_zone_oa_total = pvav_air_loop.thermalZones.sum { |zone| thermal_zone_outdoor_airflow_rate(zone) }
+
       pvav_air_loop.thermalZones.each do |thermal_zone|
         zone_data[thermal_zone.name.to_s] = {} # creating as a placeholder
         zone_data["#{thermal_zone.name} schedule"] = hvac_operation_sched # save operation schedule from main air loop for use later
+        zone_data["#{thermal_zone.name} pvav_avail_settings"] = pvav_avail_settings
+        zone_oa_settings = pvav_oa_settings.dup
+        unless pvav_oa_settings['min_oa_flow'].nil?
+          zone_share = pvav_zone_oa_total > 0.0 ? thermal_zone_outdoor_airflow_rate(thermal_zone) / pvav_zone_oa_total : 0.0
+          zone_oa_settings['min_oa_flow'] = pvav_oa_settings['min_oa_flow'] * zone_share
+        end
+        zone_data["#{thermal_zone.name} pvav_oa_settings"] = zone_oa_settings
         pfp_box = false
 
         zone_data[thermal_zone.name.to_s]['prev_pressure_rise'] = prev_pressure_rise if prev_pressure_rise > 0
@@ -909,9 +1023,24 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         # create new air loop for unitary system
         air_loop_hvac = OpenStudio::Model::AirLoopHVAC.new(model)
         air_loop_hvac.setName("#{thermal_zone.name} Air Loop")
-        air_loop_hvac.sizingSystem
+        sizing_system = air_loop_hvac.sizingSystem
+        # OpenStudio's Sizing:System defaults for a new loop are 100% outdoor air in cooling and heating and a 16.7 C
+        # central heating supply air temperature, which sized the heat pumps and preheat coil as if they supplied only
+        # outdoor air at design; take the PVAV loop's settings (mixed air, 12.8 C, the 55 F preheat target of the doc)
+        pvav_oa_settings = zone_data["#{thermal_zone.name} pvav_oa_settings"]
+        unless pvav_oa_settings.nil?
+          sizing_system.setAllOutdoorAirinCooling(pvav_oa_settings['sizing']['all_oa_cooling'])
+          sizing_system.setAllOutdoorAirinHeating(pvav_oa_settings['sizing']['all_oa_heating'])
+          sizing_system.setCentralCoolingDesignSupplyAirTemperature(pvav_oa_settings['sizing']['cooling_sat'])
+          sizing_system.setCentralHeatingDesignSupplyAirTemperature(pvav_oa_settings['sizing']['heating_sat'])
+        end
         # Set schedule based on that zone's previous schedule
         air_loop_hvac.setAvailabilitySchedule(zone_data["#{thermal_zone.name} schedule"])
+        # A loop that replaces a PVAV gets the PVAV's night cycle (and optimum start) managers. Without them OpenStudio
+        # translates the availability schedule into AvailabilityManager:Scheduled, which forces the unit off outside the
+        # schedule, so zones occupied outside it (evenings, weekends) could not be conditioned.
+        pvav_avail_settings = zone_data["#{thermal_zone.name} pvav_avail_settings"]
+        add_pvav_availability_managers(model, air_loop_hvac, thermal_zone, pvav_avail_settings) unless pvav_avail_settings.nil?
 
         # zone sizing
         # adjusted zone design temperatures for ptac
@@ -927,6 +1056,14 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         sizing_zone.setZoneHeatingDesignSupplyAirTemperature(dsgn_temps['zn_htg_dsgn_sup_air_temp_c'])
         sizing_zone.setZoneCoolingDesignSupplyAirHumidityRatio(0.008)
         sizing_zone.setZoneHeatingDesignSupplyAirHumidityRatio(0.008)
+        # Floor the zone's cooling design airflow at 1.2 L/s. A sliver zone on a PVAV (e.g. a 1.8 m2 data closet) gets its
+        # own loop here; sized on mixed air its design flow fell below EnergyPlus's 1 L/s branch minimum and the sizing
+        # run failed (NaN flows). Only the absolute minimum applies (no per-area or fractional minimum), so zones that
+        # size above 1.2 L/s are unchanged; the system and unit airflows follow the larger cooling design flow.
+        sizing_zone.setCoolingDesignAirFlowMethod('DesignDayWithLimit')
+        sizing_zone.setCoolingMinimumAirFlowperZoneFloorArea(0.0)
+        sizing_zone.setCoolingMinimumAirFlowFraction(0.0)
+        sizing_zone.setCoolingMinimumAirFlow(0.0012)
 
         # to account for turndown limitations and ventilation requirements
         min_fan_flow_ratio = if zone_data["#{thermal_zone.name} min_oa_flow_ratio"].nil?
@@ -942,18 +1079,27 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         diffuser.setName("#{air_loop_hvac.name} Diffuser")
         air_loop_hvac.multiAddBranchForZone(thermal_zone, diffuser.to_HVACComponent.get)
 
-        # make outdoor air fraction for constant 15%
-        pct_oa = OpenStudio::Model::ScheduleConstant.new(model)
-        pct_oa.setName('Outdoor Air Fraction 15%')
-        pct_oa.setValue(0.15)
-
-        # add the OA system
+        # add the OA system. A loop that replaces a PVAV keeps the PVAV's outdoor air: its minimum outdoor air schedule
+        # (occupancy, or constant 1 where the baseline ventilates during night cycling), minimum limit type, this zone's
+        # share of its minimum outdoor air flow and its mechanical ventilation controller (off for a fixed-damper
+        # baseline). OpenStudio writes the minimum outdoor air schedule into an always-on mechanical ventilation
+        # availability, and the economizer measure's EMS reads it. The dcv and econ options then change it on purpose.
         oa_controller = OpenStudio::Model::ControllerOutdoorAir.new(model)
         oa_controller.setName("#{air_loop_hvac.name} OA System Controller")
         oa_controller.setMinimumOutdoorAirSchedule(always_on)
         oa_controller.autosizeMinimumOutdoorAirFlowRate
+        unless pvav_oa_settings.nil? || pvav_oa_settings['min_limit_type'].nil?
+          oa_controller.setMinimumOutdoorAirSchedule(pvav_oa_settings['min_oa_sched']) unless pvav_oa_settings['min_oa_sched'].nil?
+          oa_controller.setMinimumLimitType(pvav_oa_settings['min_limit_type'])
+          oa_controller.setMinimumOutdoorAirFlowRate(pvav_oa_settings['min_oa_flow']) unless pvav_oa_settings['min_oa_flow'].nil?
+          controller_mv = oa_controller.controllerMechanicalVentilation
+          controller_mv.setAvailabilitySchedule(pvav_oa_settings['mv_avail_sched'])
+          controller_mv.setDemandControlledVentilation(pvav_oa_settings['mv_dcv'])
+          controller_mv.setSystemOutdoorAirMethod(pvav_oa_settings['mv_method'])
+          runner.registerInfo("#{air_loop_hvac.name}: minimum outdoor air #{pvav_oa_settings['min_oa_flow'].nil? ? 'autosized' : pvav_oa_settings['min_oa_flow'].round(5)} m3/s, " \
+                              "#{pvav_oa_settings['min_limit_type']}, schedule #{oa_controller.minimumOutdoorAirSchedule.get.name}, mechanical ventilation DCV #{pvav_oa_settings['mv_dcv']}, #{pvav_oa_settings['mv_method']}.")
+        end
         oa_controller.resetEconomizerMinimumLimitDryBulbTemperature
-        oa_controller.setMinimumFractionofOutdoorAirSchedule(pct_oa)
         oa_system = OpenStudio::Model::AirLoopHVACOutdoorAirSystem.new(model, oa_controller)
         oa_system.setName("#{air_loop_hvac.name} OA System")
         oa_system.addToNode(air_loop_hvac.supplyInletNode)
@@ -974,6 +1120,12 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       # add supply fan
       fan = OpenStudio::Model::FanVariableVolume.new(model)
       fan.setName("#{air_loop_hvac.name} Fan")
+      # The unit is available on the replaced loop's availability schedule, as the PVAV supply fan was: outside it the
+      # unit is off unless the loop's night cycle (or optimum start) manager turns it on to hold the setback setpoints.
+      # With the always-on default and the always-on fan operating mode below, every unit ran its fan all night. The
+      # baselines' night modes carry over: a fan-on baseline's availability is constant 1, a fan-cycling one's follows
+      # occupancy. (A PSZ's own cycling fan schedule is not used: with the VAV terminal the coils then run at very low flow.)
+      fan.setAvailabilitySchedule(zone_data["#{thermal_zone.name} schedule"])
       # set pressure rise based on previous fan, since assuming distribution system characteristics remain basically the same
       # check for a similar fan in the baseline to set these parameters based on--otherwise, will do so after sizing
       unless zone_data[thermal_zone.name.to_s]['pressure_rise'].nil?
@@ -1007,8 +1159,17 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       unitary_system.setSupplyFan(fan)
       unitary_system.setFanPlacement(fan_location)
       unitary_system.setSupplyAirFanOperatingModeSchedule(model.alwaysOnDiscreteSchedule) # #needs to be set this way for the water-to-air heat pump coils
-      unitary_system.setMaximumOutdoorDryBulbTemperatureforSupplementalHeaterOperation(OpenStudio.convert(40.0, 'F',
-                                                                                                          'C').get)
+      # Supplemental electric heating for heating loads above what the heat pump, sized to the cooling load, can meet
+      # (measure documentation sec. 3.2.1). It is autosized in the sizing run like the other coils; Load control runs it
+      # only after the heat pump, and its outlet is capped by the maximum supply air temperature, which is set back to
+      # 40 C after sizing below. A ground-source unit has no air-source low-temperature lockout, so the 4.4 C (40 F)
+      # limit is raised to 21 C, as in the console measure.
+      supplemental_coil = OpenStudio::Model::CoilHeatingElectric.new(model)
+      supplemental_coil.setName('Supplemental Heating Coil')
+      supplemental_coil.setEfficiency(1.0)
+      supplemental_coil.autosizeNominalCapacity
+      unitary_system.setSupplementalHeatingCoil(supplemental_coil)
+      unitary_system.setMaximumOutdoorDryBulbTemperatureforSupplementalHeaterOperation(21.0)
       unitary_system.setName("#{air_loop_hvac.name} Unitary HP")
       unitary_system.setMaximumSupplyAirTemperature(40.0)
       if model.version < OpenStudio::VersionString.new('3.7.0')

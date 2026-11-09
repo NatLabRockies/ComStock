@@ -247,6 +247,76 @@ def air_loop_doas?(air_loop_hvac)
     return is_doas
 end
 
+  # Equipment heat density at or above which a converted unit runs Load control rather than single-zone VAV. A zone whose
+  # cooling load is mostly process heat (commercial kitchens and delis; in the typical data also MRI, X-ray and lab
+  # equipment rooms) is near its design load whenever the equipment runs, so there is little airflow turndown to gain,
+  # and EnergyPlus's single-zone VAV routine then kept units well below design airflow and left the zone short of
+  # cooling (supermarket deli/bakery units: 80-91% of design airflow on average on July afternoons and 252-328 unmet
+  # hours per zone, against at most 16 at constant volume). Ordinary space types carry at most about 3.3 W/ft2.
+  PROCESS_LOAD_W_PER_FT2 = 10.0
+
+  # Design equipment heat that reaches a zone as sensible heat, per floor area: electric and gas equipment, design level
+  # x (1 - fraction latent - fraction lost). Elevator lift motors (fraction lost 1.0) count zero.
+  #
+  # @param thermal_zone [OpenStudio::Model::ThermalZone] thermal zone
+  # @return [Double] W/ft2, 0 when the zone has no floor area
+  def thermal_zone_equipment_sensible_heat_w_per_ft2(thermal_zone)
+    floor_area_m2 = thermal_zone.floorArea
+    return 0.0 unless floor_area_m2 > 0.0
+
+    heat_w = 0.0
+    thermal_zone.spaces.each do |space|
+      electric = space.electricEquipment.to_a
+      electric += space.spaceType.get.electricEquipment.to_a if space.spaceType.is_initialized
+      electric.each do |equip|
+        definition = equip.electricEquipmentDefinition
+        heat_w += equip.getDesignLevel(space.floorArea, space.numberOfPeople) * (1.0 - definition.fractionLatent - definition.fractionLost)
+      end
+      gas = space.gasEquipment.to_a
+      gas += space.spaceType.get.gasEquipment.to_a if space.spaceType.is_initialized
+      gas.each do |equip|
+        definition = equip.gasEquipmentDefinition
+        heat_w += equip.getDesignLevel(space.floorArea, space.numberOfPeople) * (1.0 - definition.fractionLatent - definition.fractionLost)
+      end
+    end
+    OpenStudio.convert(heat_w / floor_area_m2, 'W/m^2', 'W/ft^2').get
+  end
+
+  # Hard-size only what is still autosized. OpenStudio's Model#applySizingValues writes EnergyPlus's 'Design Size'
+  # value into every autosizable field that has one, also where the field already holds a hard-sized value and
+  # EnergyPlus reported both (VAV and PIU minimum flow fractions, DX coil capacities, unitary maximum supply air
+  # temperature, Sizing:System capacities). Keep every autosizable field that held a number before the call.
+  #
+  # @param model [OpenStudio::Model::Model] model with the sizing run SQL attached
+  # @return [Integer] number of hard-sized fields kept
+  def apply_sizing_values_to_autosized_fields(model)
+    field_cache = {}
+    kept = []
+    model.modelObjects.each do |obj|
+      fields = field_cache[obj.iddObjectType.valueName] ||= begin
+        idd = obj.iddObject
+        (0...idd.numFields).select do |i|
+          f = idd.getField(i)
+          f.is_initialized && (f.get.properties.autosizable || f.get.properties.autocalculatable)
+        end
+      end
+      fields.each do |i|
+        v = obj.getDouble(i)
+        kept << [obj, i, v.get] if v.is_initialized
+      end
+    end
+    model.applySizingValues
+    restored = 0
+    kept.each do |obj, i, v|
+      now = obj.getDouble(i)
+      next if now.is_initialized && (now.get - v).abs <= 1e-9 * [1.0, v.abs].max
+
+      obj.setDouble(i, v)
+      restored += 1
+    end
+    restored
+  end
+
   # define what happens when the measure is run
 def run(model, runner, user_arguments)
     super(model, runner, user_arguments)  # Do **NOT** remove this line
@@ -282,7 +352,8 @@ def run(model, runner, user_arguments)
 		  runner.registerError('Sizing run for Hardsize model failed, cannot hard-size model.')
 		  return false
      end
-	 model.applySizingValues
+	 # fill only what is still autosized; plain applySizingValues cut the baselines' hard-sized DX coil capacities
+	 apply_sizing_values_to_autosized_fields(model)
   end
 
 	if add_econo #if adding economizing, set high level params
@@ -319,7 +390,7 @@ def run(model, runner, user_arguments)
 	  #skip VAV systems
 	  next if ['VAV', 'PVAV'].any? { |word| (air_loop_hvac.name.get).include?(word) } || vav_terminals?(air_loop_hvac)
 	  # data center CRAC/CRAH units keep their controls (typical models give data centers their own unit)
-	  next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+	  next if air_loop_hvac.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
 	  next if !(air_loop_hvac_unitary_system?(air_loop_hvac)) #select unitary systems only
 	  overall_sel_air_loops << air_loop_hvac
 	end
@@ -331,24 +402,80 @@ def run(model, runner, user_arguments)
 
 
 	overall_sel_air_loops.sort.each do |air_loop_hvac| #iterating thru air loops in the model to identify ones suitable for VAV conversion
+	  # Lowest airflow of the converted unit, as in the heat pump RTU measure (min airflow ratio = max(minimum OA ratio, 40%)):
+	  # the higher of 40% of design and the airflow that still delivers the baseline outdoor air. That outdoor air is the
+	  # minimum outdoor air, or the zone exhaust the unit makes up where that is larger (restrooms; exhaust fans with a
+	  # balanced-exhaust schedule are made up by transfer air instead), divided by the controller's maximum outdoor air
+	  # fraction where the baseline has one (comstock-typical caps 90.1 PSZ units at 0.7 of supply). Outdoor air then only
+	  # falls below the baseline minimum where the minimum outdoor air schedule or DCV lowers it.
+	  loop_min_oa_flow = 0.0
+	  loop_max_oa_frac = 1.0
+	  loop_exhaust_flow = 0.0
+	  if air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
+	    loop_controller_oa = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+	    if loop_controller_oa.autosizedMinimumOutdoorAirFlowRate.is_initialized
+	      loop_min_oa_flow = loop_controller_oa.autosizedMinimumOutdoorAirFlowRate.get
+	    elsif loop_controller_oa.minimumOutdoorAirFlowRate.is_initialized
+	      loop_min_oa_flow = loop_controller_oa.minimumOutdoorAirFlowRate.get
+	    end
+	    # same fallback as the terminal minimum below: a zero controller minimum (e.g. a baseline that already has DCV)
+	    # means the zones' design outdoor air governs
+	    loop_min_oa_flow = air_loop_hvac.thermalZones.map { |thermal_zone| thermal_zone_outdoor_airflow_rate(thermal_zone) }.sum if loop_min_oa_flow == 0
+	    if loop_controller_oa.maximumFractionofOutdoorAirSchedule.is_initialized
+	      max_frac = OpenstudioStandards::Schedules.schedule_get_min_max(loop_controller_oa.maximumFractionofOutdoorAirSchedule.get)['max']
+	      loop_max_oa_frac = max_frac if max_frac && max_frac > 0.0 && max_frac < 1.0
+	    end
+	    air_loop_hvac.thermalZones.each do |thermal_zone|
+	      thermal_zone.equipment.each do |equip|
+	        next unless equip.to_FanZoneExhaust.is_initialized
+	        exhaust_fan = equip.to_FanZoneExhaust.get
+	        next if exhaust_fan.balancedExhaustFractionSchedule.is_initialized
+	        next unless exhaust_fan.maximumFlowRate.is_initialized
+	        loop_exhaust_flow += exhaust_fan.maximumFlowRate.get * thermal_zone.multiplier
+	      end
+	    end
+	  end
+	  loop_oa_floor = [loop_min_oa_flow, loop_exhaust_flow].max / loop_max_oa_frac
 	  #set control type
 	  air_loop_hvac.supplyComponents.sort.each do |component|#identifying unitary systems
 	    obj_type = component.iddObjectType.valueName.to_s
 	    case obj_type
         when 'OS_AirLoopHVAC_UnitarySystem'
 		  component = component.to_AirLoopHVACUnitarySystem.get
-		  component.setControlType('SingleZoneVAV')
 		  #Set overall flow rates for air loop
+		  des_supply_airflow = nil
 		  if air_loop_hvac.autosizedDesignSupplyAirFlowRate.is_initialized #change supply air flow design parameters to match VAV conversion
 		    des_supply_airflow = air_loop_hvac.autosizedDesignSupplyAirFlowRate.get #handle autosized
-			component.setSupplyAirFlowRateDuringCoolingOperation(des_supply_airflow) #Set the same as before
-			component.setSupplyAirFlowRateDuringHeatingOperation(des_supply_airflow) #Set same as before
-			component.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(min_flow*des_supply_airflow) #Set min based on limit after retrofit
 		  elsif air_loop_hvac.designSupplyAirFlowRate.is_initialized #handle hard-sized
 		    des_supply_airflow = air_loop_hvac.designSupplyAirFlowRate.get
-			component.setSupplyAirFlowRateDuringCoolingOperation(des_supply_airflow)
-			component.setSupplyAirFlowRateDuringHeatingOperation(des_supply_airflow)
-			component.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(min_flow*des_supply_airflow)
+		  end
+		  # Where the outdoor air needs more than the 40% minimum, run Load control instead of single-zone VAV: full airflow
+		  # while heating or cooling and the airflow floor otherwise (two-speed operation; the heat pump RTU measure also
+		  # uses Load control with every stage held at or above its minimum OA airflow), at constant volume where the floor
+		  # reaches design. EnergyPlus's single-zone VAV control sets the airflow from loads that assume the coil can cool the
+		  # unit's inlet (mixed) air to the minimum supply temperature (SZVAVModel.cc); with a large outdoor air share it kept
+		  # the airflow well below design while the coil could not meet the zone load, and it rejects a minimum equal to the
+		  # design airflow. Units whose zone load is mostly process heat (PROCESS_LOAD_W_PER_FT2) run Load control too, with
+		  # the same airflow floor.
+		  no_load_airflow = nil
+		  no_load_airflow = [[min_flow * des_supply_airflow, loop_oa_floor].max, des_supply_airflow].min if des_supply_airflow
+		  process_w_per_ft2 = air_loop_hvac.thermalZones.map { |thermal_zone| thermal_zone_equipment_sensible_heat_w_per_ft2(thermal_zone) }.max.to_f
+		  oa_needs_more = !no_load_airflow.nil? && no_load_airflow > (min_flow * des_supply_airflow) * 1.0001
+		  process_load = process_w_per_ft2 >= PROCESS_LOAD_W_PER_FT2
+		  if no_load_airflow.nil? || !(oa_needs_more || process_load)
+		    component.setControlType('SingleZoneVAV')
+		  else
+		    component.setControlType('Load')
+		    if oa_needs_more
+		      runner.registerInfo("#{air_loop_hvac.name}: outdoor air needs #{(100.0 * no_load_airflow / des_supply_airflow).round}% of the design airflow; the unit runs Load control with that minimum instead of single-zone VAV.")
+		    else
+		      runner.registerInfo("#{air_loop_hvac.name}: equipment heat of #{process_w_per_ft2.round(1)} W/ft2 keeps the zone near its design cooling load; the unit runs Load control with a #{(100.0 * no_load_airflow / des_supply_airflow).round}% minimum instead of single-zone VAV.")
+		    end
+		  end
+		  if des_supply_airflow
+			component.setSupplyAirFlowRateDuringCoolingOperation(des_supply_airflow) #Set the same as before
+			component.setSupplyAirFlowRateDuringHeatingOperation(des_supply_airflow) #Set same as before
+			component.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(no_load_airflow) #Set min based on limit after retrofit, at or above the baseline outdoor air
 		  end
 		  sup_fan = component.supplyFan
 		  if sup_fan.is_initialized #Replace constant speed with variable speed fan objects
@@ -424,13 +551,13 @@ def run(model, runner, user_arguments)
 			if term.autosizedMaximumAirFlowRate.is_initialized
 			  des_airflow_rate = term.autosizedMaximumAirFlowRate.get
 			  new_term.setMaximumAirFlowRate(des_airflow_rate) #same as before
-			  #set minimum based on max of 40% of max flow, or min ventilation level req'd
-			  new_term.setZoneMinimumAirFlowFraction([min_flow, min_oa_flow_rate/des_airflow_rate].max)
+			  #set minimum based on max of 40% of max flow, or min ventilation level req'd, and no lower than the unit's airflow floor
+			  new_term.setZoneMinimumAirFlowFraction([[min_flow, min_oa_flow_rate/des_airflow_rate, loop_oa_floor/des_airflow_rate].max, 1.0].min)
 			elsif term.maximumAirFlowRate.is_initialized
 			  des_airflow_rate = term.maximumAirFlowRate.get
 			  new_term.setMaximumAirFlowRate(des_airflow_rate) #same as before
-			  #set minimum based on max of 40% of max flow, or min ventilation level req'd
-			  new_term.setZoneMinimumAirFlowFraction([min_flow, min_oa_flow_rate/des_airflow_rate].max)
+			  #set minimum based on max of 40% of max flow, or min ventilation level req'd, and no lower than the unit's airflow floor
+			  new_term.setZoneMinimumAirFlowFraction([[min_flow, min_oa_flow_rate/des_airflow_rate, loop_oa_floor/des_airflow_rate].max, 1.0].min)
 		    end
 			air_loop_hvac.removeBranchForZone(thermal_zone)
 			air_loop_hvac.addBranchForZone(thermal_zone, new_term)
@@ -445,7 +572,10 @@ def run(model, runner, user_arguments)
 	    oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get
 		controller_oa = oa_system.getControllerOutdoorAir
 		controller_mv = controller_oa.controllerMechanicalVentilation
-		controller_mv.setDemandControlledVentilation(true)
+		# DCV is switched on by air_loop_hvac_enable_demand_control_ventilation below, which also sets the hard-sized
+		# minimum outdoor air flow to zero so the occupancy-based request governs. Setting the flag here first made that
+		# call return early ("DCV was already enabled"), which left the full design minimum in place and limited DCV to
+		# the economizer override hours.
 		air_loop_hvac.thermalZones.each do |thermal_zone|
 		#Set design OA object attributes
 		thermal_zone.spaces.each do |space|
@@ -694,6 +824,49 @@ def run(model, runner, user_arguments)
 	  sens_econ_status.setKeyName("#{air_loop_hvac.name.get}")
 	  li_ems_sens_econ_status << sens_econ_status
 
+	  # Outdoor air the override holds while the economizer is enabled and the coil is not cooling: what the unit
+	  # would take in without the economizer. DCV loops (DCV added above or already in the baseline) use the
+	  # ventilation controller's request, which follows occupancy. Every other loop keeps its baseline minimum: the
+	  # controller's minimum outdoor air flow times its minimum outdoor air schedule, or the ventilation request where
+	  # that is larger. The request alone is zero on those loops, because hardsize_model switches the ventilation
+	  # controller off on hard-sized fixed-minimum loops, so the override used to close the outdoor air damper. No loop
+	  # goes below the zone exhaust it has to make up (supply minus return flow); EnergyPlus enforces that floor
+	  # itself only while the actuator is released.
+	  min_oa_lines = ''
+	  unless oa_controller.controllerMechanicalVentilation.demandControlledVentilation
+	    min_oa_mass = OpenStudio::Model::EnergyManagementSystemInternalVariable.new(model, 'Outdoor Air Controller Minimum Mass Flow Rate')
+	    min_oa_mass.setName("min_oa_mass_#{OpenstudioStandards::HVAC.ems_friendly_name(oa_controller.name.get.to_s)}")
+	    min_oa_mass.setInternalDataIndexKeyName(oa_controller.name.get)
+	    min_oa_sch_value = '1.0'
+	    if oa_controller.minimumOutdoorAirSchedule.is_initialized
+	      sens_min_oa_sch = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'Schedule Value')
+	      sens_min_oa_sch.setName("sens_min_oa_sch_#{OpenstudioStandards::HVAC.ems_friendly_name(oa_controller.name.get.to_s)}")
+	      sens_min_oa_sch.setKeyName(oa_controller.minimumOutdoorAirSchedule.get.name.get)
+	      min_oa_sch_value = sens_min_oa_sch.name.to_s
+	    end
+	    min_oa_lines += "SET min_oa_base = #{min_oa_mass.name} * #{min_oa_sch_value},\n" \
+	                    "SET sens_min_oa_rate = @Max sens_min_oa_rate min_oa_base,\n"
+	  end
+	  sens_sup_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'System Node Mass Flow Rate')
+	  sens_sup_flow.setName("sens_sup_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+	  sens_sup_flow.setKeyName(air_loop_hvac.supplyOutletNode.name.get)
+	  sens_ret_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'System Node Mass Flow Rate')
+	  sens_ret_flow.setName("sens_ret_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+	  sens_ret_flow.setKeyName(air_loop_hvac.demandOutletNode.name.get)
+	  min_oa_lines += "SET exh_flow = #{sens_sup_flow.name} - #{sens_ret_flow.name},\n" \
+	                  "SET sens_min_oa_rate = @Max sens_min_oa_rate exh_flow,\n"
+	  # the baseline's maximum outdoor air fraction caps the minimum too (EnergyPlus applies it after the floors)
+	  if oa_controller.maximumFractionofOutdoorAirSchedule.is_initialized
+	    sens_max_oa_frac = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'Schedule Value')
+	    sens_max_oa_frac.setName("sens_max_oa_frac_#{OpenstudioStandards::HVAC.ems_friendly_name(oa_controller.name.get.to_s)}")
+	    sens_max_oa_frac.setKeyName(oa_controller.maximumFractionofOutdoorAirSchedule.get.name.get)
+	    sens_mix_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'Air System Mixed Air Mass Flow Rate')
+	    sens_mix_flow.setName("sens_mix_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+	    sens_mix_flow.setKeyName(air_loop_hvac.name.get)
+	    min_oa_lines += "SET max_oa_cap = #{sens_max_oa_frac.name} * #{sens_mix_flow.name},\n" \
+	                    "SET sens_min_oa_rate = @Min sens_min_oa_rate max_oa_cap,\n"
+	  end
+
 	  #### Actuators #####
 	  # set actuator - oa controller air mass flow rate
 	  act_oa_flow = OpenStudio::Model::EnergyManagementSystemActuator.new(oa_controller,'Outdoor Air Controller', 'Air Mass Flow Rate')
@@ -710,7 +883,7 @@ def run(model, runner, user_arguments)
 		SET #{act_oa_flow.name} = #{act_oa_flow.name},
 		SET sens_zn_clg_rate = #{sens_clg_coil_rate.name},
 		SET sens_min_oa_rate = #{sens_min_oa_rate.name},
-		SET sens_econ_status = #{sens_econ_status.name},
+		#{min_oa_lines}SET sens_econ_status = #{sens_econ_status.name},
 		IF ((sens_econ_status > 0) && (sens_zn_clg_rate <= 0)),
 		SET #{act_oa_flow.name} = sens_min_oa_rate,
 		ELSE,
