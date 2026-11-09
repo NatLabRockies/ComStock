@@ -105,6 +105,77 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     is_unitary_system
   end
 
+  # Availability managers of a baseline air loop, recorded as settings so they outlive the loop's removal and can be
+  # given to the console unit's loop that replaces it. Night cycle zone lists are kept as zone names.
+  def availability_manager_settings(air_loop_hvac, runner)
+    settings = []
+    air_loop_hvac.availabilityManagers.each do |avm|
+      if avm.to_AvailabilityManagerNightCycle.is_initialized
+        nc = avm.to_AvailabilityManagerNightCycle.get
+        settings << { 'type' => 'NightCycle', 'applicability_schedule' => nc.applicabilitySchedule,
+                      'control_type' => nc.controlType, 'thermostat_tolerance' => nc.thermostatTolerance,
+                      'cycling_run_time_control_type' => nc.cyclingRunTimeControlType, 'cycling_run_time' => nc.cyclingRunTime,
+                      'cooling_zones' => nc.coolingControlThermalZones.map { |z| z.name.get },
+                      'heating_zones' => nc.heatingControlThermalZones.map { |z| z.name.get },
+                      'heating_fans_only_zones' => nc.heatingZoneFansOnlyThermalZones.map { |z| z.name.get } }
+      elsif avm.to_AvailabilityManagerOptimumStart.is_initialized
+        os = avm.to_AvailabilityManagerOptimumStart.get
+        settings << { 'type' => 'OptimumStart', 'applicability_schedule' => os.applicabilitySchedule,
+                      'control_type' => os.controlType, 'maximum_start_time' => os.maximumValueforOptimumStartTime,
+                      'control_algorithm' => os.controlAlgorithm, 'constant_gradient_cooling' => os.constantTemperatureGradientduringCooling,
+                      'constant_gradient_heating' => os.constantTemperatureGradientduringHeating,
+                      'initial_gradient_cooling' => os.initialTemperatureGradientduringCooling,
+                      'initial_gradient_heating' => os.initialTemperatureGradientduringHeating,
+                      'constant_start_time' => os.constantStartTime, 'number_of_previous_days' => os.numberofPreviousDays }
+      else
+        runner.registerWarning("Availability manager #{avm.name} (#{avm.iddObjectType.valueName}) on #{air_loop_hvac.name} is not carried over to the console GSHP loop.")
+      end
+    end
+    settings
+  end
+
+  # Give a console unit's loop the availability managers of the loop it replaces. The night cycle keeps its control
+  # type, tolerance, cycling run time and applicability schedule, with zone lists cut to this loop's zone; types that
+  # cycle only zone terminal fans cycle the console unit instead, the zone's only fan and heat source.
+  def add_availability_managers(model, air_loop_hvac, thermal_zone, settings)
+    zone_name = thermal_zone.name.get
+    settings.each do |s|
+      case s['type']
+      when 'NightCycle'
+        control_type = { 'CycleOnAnyZoneFansOnly' => 'CycleOnAny', 'CycleOnAnyHeatingZoneFansOnly' => 'CycleOnAnyHeatingZone' }.fetch(s['control_type'], s['control_type'])
+        nc = OpenStudio::Model::AvailabilityManagerNightCycle.new(model)
+        nc.setApplicabilitySchedule(s['applicability_schedule'])
+        nc.setControlType(control_type)
+        nc.setThermostatTolerance(s['thermostat_tolerance'])
+        nc.setCyclingRunTimeControlType(s['cycling_run_time_control_type'])
+        nc.setCyclingRunTime(s['cycling_run_time'])
+        case control_type
+        when 'CycleOnControlZone'
+          nc.setControlThermalZones([thermal_zone])
+        when 'CycleOnAnyCoolingOrHeatingZone', 'CycleOnAnyCoolingZone', 'CycleOnAnyHeatingZone'
+          nc.setCoolingControlThermalZones([thermal_zone]) if s['cooling_zones'].include?(zone_name)
+          heating = s['heating_zones'].include?(zone_name) || s['heating_fans_only_zones'].include?(zone_name)
+          nc.setHeatingControlThermalZones([thermal_zone]) if heating
+        end
+        air_loop_hvac.addAvailabilityManager(nc)
+      when 'OptimumStart'
+        os = OpenStudio::Model::AvailabilityManagerOptimumStart.new(model)
+        os.setApplicabilitySchedule(s['applicability_schedule'])
+        os.setControlType(s['control_type'])
+        os.setControlZone(thermal_zone) if s['control_type'] == 'ControlZone'
+        os.setMaximumValueforOptimumStartTime(s['maximum_start_time'])
+        os.setControlAlgorithm(s['control_algorithm'])
+        os.setConstantTemperatureGradientduringCooling(s['constant_gradient_cooling'])
+        os.setConstantTemperatureGradientduringHeating(s['constant_gradient_heating'])
+        os.setInitialTemperatureGradientduringCooling(s['initial_gradient_cooling'])
+        os.setInitialTemperatureGradientduringHeating(s['initial_gradient_heating'])
+        os.setConstantStartTime(s['constant_start_time'])
+        os.setNumberofPreviousDays(s['number_of_previous_days'])
+        air_loop_hvac.addAvailabilityManager(os)
+      end
+    end
+  end
+
   # Define the arguments that the user will input
   def arguments(_model)
     args = OpenStudio::Measure::OSArgumentVector.new
@@ -283,6 +354,10 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
         selected_air_loops << air_loop_hvac
         thermal_zone = air_loop_hvac.thermalZones[0]
         thermal_zone.equipment.each do |equip|
+          # zone exhaust fans (kitchen hoods, restrooms) are not part of the replaced system; keep them and their
+          # schedules so exhaust and makeup air stay as in the baseline
+          next if equip.to_FanZoneExhaust.is_initialized
+
           equip_to_delete << equip
         end
         runner.registerInfo('Model has residential HVAC system, measure will be applied.')
@@ -445,10 +520,22 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 
-    # Create and add a pump to the loop
-    ground_pump = OpenStudio::Model::PumpConstantSpeed.new(model)
+    # Create and add a pump to the loop: variable speed, as the measure documentation specifies for the ground loop.
+    # It runs continuously at no less than 30% of design flow (set after sizing). EnergyPlus requests ground-side flow
+    # through the UncontrolledOn heat exchanger only while it sees condenser-side flow, and a minimum-temperature trip
+    # clears both; a ground pump that stops (the earlier constant speed pump, 'Intermittent' by default) then never
+    # restarts and the condenser loop runs away cold. The documented control to a 5-10 F differential across the heat
+    # exchanger has no EnergyPlus pump equivalent: flow is the heat exchanger's design flow while any heat pump runs,
+    # and the minimum otherwise.
+    ground_pump = OpenStudio::Model::PumpVariableSpeed.new(model)
     ground_pump.setName('Ground loop circulation pump')
+    ground_pump.setPumpControlType('Continuous')
     ground_pump.setRatedPumpHead(44_834.7) # 15 ft for primary pump for a primary-secondary system based on Appendix G; does this need to change?
+    # openstudio-standards 'VSD DP Reset' curve, as on the condenser pump
+    ground_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+    ground_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+    ground_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+    ground_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
     ground_pump.addToNode(ground_loop.supplyInletNode)
 
     # Create a scheduled setpoint manager
@@ -476,6 +563,18 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     # Add temp source to the supply side of the ground loop
     ground_loop.addSupplyBranchForComponent(ground_temp_source)
 
+    # Record each residential loop's operation before it is removed, for the console unit that replaces it: its
+    # availability schedule (the typical occupancy-based HVAC schedule) and its availability managers (night cycle)
+    zone_baseline_operation = {}
+    selected_air_loops.each do |air_loop_hvac|
+      air_loop_hvac.thermalZones.each do |thermal_zone|
+        zone_baseline_operation[thermal_zone.name.get] = {
+          'availability_schedule' => air_loop_hvac.availabilitySchedule,
+          'availability_managers' => availability_manager_settings(air_loop_hvac, runner)
+        }
+      end
+    end
+
     # Loop through air loops, plant loops, and thermal zones and remove old equipment
     selected_air_loops.each(&:remove)
 
@@ -491,7 +590,28 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       # create new air loop for unitary system
       air_loop_hvac = OpenStudio::Model::AirLoopHVAC.new(model)
       air_loop_hvac.setName("#{thermal_zone.name} Air Loop")
-      air_loop_hvac.sizingSystem
+      # size the unit on the zone's design outdoor air (measure documentation: capacities and flows from the zone loads
+      # including ventilation), not on OpenStudio's 100% outdoor air default for a new loop
+      sizing_system = air_loop_hvac.sizingSystem
+      sizing_system.setAllOutdoorAirinCooling(false)
+      sizing_system.setAllOutdoorAirinHeating(false)
+
+      # Operate as the baseline system did. A residential loop's availability schedule and night cycle manager carry
+      # over; zones on PTACs, PTHPs, baseboards or unit heaters were available at all hours and stay so. Occupied hours
+      # come from the residential loop's occupancy-based availability schedule, else from the zone's occupancy, as the
+      # typical models schedule zone equipment that ventilates.
+      baseline_operation = zone_baseline_operation[thermal_zone.name.get]
+      occupancy_schedule = nil
+      unless baseline_operation.nil?
+        air_loop_hvac.setAvailabilitySchedule(baseline_operation['availability_schedule'])
+        add_availability_managers(model, air_loop_hvac, thermal_zone, baseline_operation['availability_managers'])
+        occupancy_schedule = baseline_operation['availability_schedule'] if baseline_operation['availability_schedule'].to_ScheduleRuleset.is_initialized
+      end
+      if occupancy_schedule.nil?
+        occupancy_schedule = OpenstudioStandards::ThermalZone.thermal_zone_get_occupancy_schedule(thermal_zone,
+                                                                                                 sch_name: "#{thermal_zone.name} Occ Sch",
+                                                                                                 occupied_percentage_threshold: std.zone_hvac_unoccupied_threshold)
+      end
 
       # zone sizing
       # adjusted zone design temperatures for ptac
@@ -507,9 +627,6 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       sizing_zone.setZoneHeatingDesignSupplyAirTemperature(dsgn_temps['zn_htg_dsgn_sup_air_temp_c'])
       sizing_zone.setZoneCoolingDesignSupplyAirHumidityRatio(0.008)
       sizing_zone.setZoneHeatingDesignSupplyAirHumidityRatio(0.008)
-
-      # set always on schedule; this will be used in other object definitions
-      always_on = model.alwaysOnDiscreteSchedule
 
       # using 10 ton units for packaged unit performance data
       # using 1 ton units for console
@@ -555,14 +672,24 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
       # Create a new water-to-air ground source heat pump system
       unitary_system = OpenStudio::Model::AirLoopHVACUnitarySystem.new(model)
-      unitary_system.setControlType('Setpoint')
+      # load control, as the baseline residential units and the packaged GSHP units use: EnergyPlus allows a cycling
+      # fan (needed outside occupied hours) only with load control
+      unitary_system.setControlType('Load')
       unitary_system.setCoolingCoil(new_cooling_coil)
       unitary_system.setHeatingCoil(new_heating_coil)
+      # supplemental electric heat, as the measure documentation specifies where the heating load exceeds the cooling
+      # load the heat pump is sized to (heating-only storage zones, for example); load control runs it only when the
+      # heat pump alone cannot meet the zone load
+      supplemental_heating_coil = OpenStudio::Model::CoilHeatingElectric.new(model, model.alwaysOnDiscreteSchedule)
+      supplemental_heating_coil.setName("#{thermal_zone.name} Supplemental Heating Coil")
+      supplemental_heating_coil.setEfficiency(1.0)
+      unitary_system.setSupplementalHeatingCoil(supplemental_heating_coil)
       unitary_system.setControllingZoneorThermostatLocation(thermal_zone)
       # add supply fan
       # check for existing fan data
+      # Fan:OnOff, as the measure documentation specifies, so the unit can cycle its fan outside occupied hours
       if zone_fan_data.key?(thermal_zone.name.to_s) # [thermal_zone.name.to_s].exists?
-        fan = OpenStudio::Model::FanConstantVolume.new(model)
+        fan = OpenStudio::Model::FanOnOff.new(model)
         fan.setName("#{thermal_zone.name} Fan")
         fan.setMotorEfficiency(zone_fan_data[thermal_zone.name.to_s]['fan_motor_eff']) # Setting assuming similar size to previous fan, but new and subject to current standards
         fan_eff = 0.55 # since console unit fans would be considered small, set efficiency based on small fan
@@ -571,7 +698,7 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
         # Set pressure rise based on previous fan, assuming similar pressure drops to before
         fan.setPressureRise(zone_fan_data[thermal_zone.name.to_s]['pressure_rise'])
       else # case where there was not a fan present previously
-        fan = OpenStudio::Model::FanConstantVolume.new(model)
+        fan = OpenStudio::Model::FanOnOff.new(model)
         fan.setName("#{thermal_zone.name} Fan")
         # autosize other attributes for now, and then set fan and motor efficiencies based on sizing
 
@@ -587,9 +714,14 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
         unitary_system.autosizeSupplyAirFlowRateDuringHeatingOperation
         unitary_system.autosizeSupplyAirFlowRateWhenNoCoolingorHeatingisRequired
       end
-      unitary_system.setSupplyAirFanOperatingModeSchedule(model.alwaysOnDiscreteSchedule)
-      unitary_system.setMaximumOutdoorDryBulbTemperatureforSupplementalHeaterOperation(OpenStudio.convert(40.0, 'F',
-                                                                                                          'C').get)
+      # the fan runs continuously during occupied hours to ventilate (measure documentation) and cycles with the load
+      # otherwise, as the baseline units' fans did
+      unitary_system.setSupplyAirFanOperatingModeSchedule(occupancy_schedule)
+      # Supplemental heater available below 21 C outdoors (the EnergyPlus default) rather than an air-source style 40 F
+      # lockout: a ground-source unit's capacity does not fall with outdoor temperature, so a 40 F lockout would leave
+      # heating-dominated zones short in mild weather, and load control already keeps the heater off whenever the heat
+      # pump alone can meet the load (the ASHRAE 90.1 heat pump auxiliary heat control requirement)
+      unitary_system.setMaximumOutdoorDryBulbTemperatureforSupplementalHeaterOperation(21.0)
       unitary_system.setName("#{thermal_zone.name} Unitary HP")
       unitary_system.setMaximumSupplyAirTemperature(40.0)
       unitary_system.addToNode(air_loop_hvac.supplyOutletNode)
@@ -599,18 +731,14 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       diffuser.setName("#{air_loop_hvac.name} Diffuser")
       air_loop_hvac.multiAddBranchForZone(thermal_zone, diffuser.to_HVACComponent.get)
 
-      # make outdoor air fraction for constant 15%
-      pct_oa = OpenStudio::Model::ScheduleConstant.new(model)
-      pct_oa.setName('Outdoor Air Fraction 15%')
-      pct_oa.setValue(0.15)
-
-      # add the OA system
+      # add the OA system: the console unit supplies the zone's ventilation (measure documentation) at its design
+      # outdoor air rate during occupied hours, and none while it cycles outside them; no minimum outdoor air fraction
+      # is added on top of the design rate
       oa_controller = OpenStudio::Model::ControllerOutdoorAir.new(model)
       oa_controller.setName("#{air_loop_hvac.name} OA System Controller")
-      oa_controller.setMinimumOutdoorAirSchedule(always_on)
+      oa_controller.setMinimumOutdoorAirSchedule(occupancy_schedule)
       oa_controller.autosizeMinimumOutdoorAirFlowRate
       oa_controller.resetEconomizerMinimumLimitDryBulbTemperature
-      oa_controller.setMinimumFractionofOutdoorAirSchedule(pct_oa)
       oa_system = OpenStudio::Model::AirLoopHVACOutdoorAirSystem.new(model, oa_controller)
       oa_system.setName("#{air_loop_hvac.name} OA System")
       oa_system.addToNode(air_loop_hvac.supplyInletNode)
@@ -690,6 +818,14 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     # apply sizing values
     model.applySizingValues
 
+    # hold the ground pump at no less than 30% of its design flow, now hard-sized: OpenStudio cannot autosize a
+    # variable speed pump's minimum flow, and the zero it writes would let the ground flow stop
+    if ground_pump.ratedFlowRate.is_initialized
+      ground_pump.setMinimumFlowRate(0.3 * ground_pump.ratedFlowRate.get)
+    else
+      runner.registerWarning("#{ground_pump.name} design flow was not sized; its minimum flow stays at zero.")
+    end
+
     # finish the heat pump systems after sizing
     model.getAirLoopHVACUnitarySystems.each do |unitary_sys|
       # the catalog performance tables were assigned at coil creation, before the sizing run
@@ -701,8 +837,8 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
       # fan
       if unitary_sys.supplyFan.is_initialized
-        if unitary_sys.supplyFan.get.to_FanConstantVolume.is_initialized
-          fan = unitary_sys.supplyFan.get.to_FanConstantVolume.get
+        if unitary_sys.supplyFan.get.to_FanOnOff.is_initialized
+          fan = unitary_sys.supplyFan.get.to_FanOnOff.get
           # air flow
           if fan.maximumFlowRate.is_initialized
             fan.maximumFlowRate.get
@@ -723,7 +859,7 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
             return false
           end
         else
-          runner.registerError("Expecting fan of type FanConstantVolume for (#{unitary_sys.name})")
+          runner.registerError("Expecting fan of type FanOnOff for (#{unitary_sys.name})")
           return false
         end
       else

@@ -281,11 +281,23 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
 
     # make list of zone equipment to delete
     equip_to_delete = []
-    # Data center zones keep their CRAC/CRAH (the typical builders give them their own unit): their loop is left
-    # out of the inventory, their equipment is kept and they are skipped below. Loop name is the fallback test.
+    # Data center zones keep their own units (the typical builders give them their own unit): their loop is left out
+    # of the inventory, their equipment is kept and they are skipped below. High-ITE data centers have CRAC/CRAH loops;
+    # small 'datacenter/low ITE' IT closets (outpatients) fall below the gem's equipment density test, so a closet on
+    # its own single-zone unit (PSZ-AC) is matched by name and keeps it; a closet on a multizone PVAV is converted with
+    # the rest of that loop. Loop name is the fallback test.
     data_center_zone_names = model.getThermalZones.select do |thermal_zone|
-      named_crac = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.name.to_s.match?(/(CRAC|CRAH)/i)
-      named_crac || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
+      named_crac = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.name.to_s.match?(/\b(CRAC|CRAH)\b/i)
+      space_type_names = thermal_zone.spaces.map do |space|
+        next '' unless space.spaceType.is_initialized
+
+        space_type = space.spaceType.get
+        "#{space_type.name} #{space_type.standardsSpaceType.is_initialized ? space_type.standardsSpaceType.get : ''}"
+      end
+      single_zone_loop = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.thermalZones.size == 1
+      named_data_center = single_zone_loop && ([thermal_zone.name.get] + space_type_names).any? { |name| name.match?(/data ?center|computer room/i) }
+      named_crac || named_data_center ||
+        (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
     end.map { |thermal_zone| thermal_zone.name.get }
     runner.registerInfo("Data center zones kept on their CRAC/CRAH and not given a packaged GSHP: #{data_center_zone_names.join(', ')}") unless data_center_zone_names.empty?
     # if zone has baseboard electric (typically small, storage style space types), skip this zone and do not add GHP here
@@ -310,6 +322,9 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       thermal_zone.equipment.each do |equip|
         # dont delete diffusers from PSZs, these will be reused
         next if equip.to_AirTerminalSingleDuctConstantVolumeNoReheat.is_initialized
+        # zone exhaust fans (kitchen hoods, restrooms, labs) are not part of the replaced system; keep them and their
+        # schedules so exhaust and makeup air stay as in the baseline
+        next if equip.to_FanZoneExhaust.is_initialized
 
         if equip.to_ZoneHVACBaseboardConvectiveElectric.is_initialized
           zones_to_skip << thermal_zone.name.get
@@ -522,13 +537,22 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 
-    # Create and add a pump to the loop
-    ground_pump = OpenStudio::Model::PumpConstantSpeed.new(model)
+    # Create and add a pump to the loop: variable speed, as the measure documentation specifies for the ground loop.
+    # It runs continuously at no less than 30% of design flow (set after sizing). EnergyPlus requests ground-side flow
+    # through the UncontrolledOn heat exchanger only while it sees condenser-side flow, and a minimum-temperature trip
+    # clears both; a ground pump that stops (the earlier constant speed 'Intermittent' pump) then never restarts and
+    # the condenser loop runs away cold. The documented control to a 5-10 F differential across the heat exchanger has
+    # no EnergyPlus pump equivalent: flow is the heat exchanger's design flow while any heat pump runs, and the minimum
+    # otherwise.
+    ground_pump = OpenStudio::Model::PumpVariableSpeed.new(model)
     ground_pump.setName('Ground loop circulation pump')
-    # run only while the heat pumps draw water, as water-loop heat pump systems shut flow off with the compressors
-    # (as in the console measure); 'Continuous' ran this constant speed pump at full flow all year
-    ground_pump.setPumpControlType('Intermittent')
+    ground_pump.setPumpControlType('Continuous')
     ground_pump.setRatedPumpHead(44_834.7) # 15 ft for primary pump for a primary-secondary system based on Appendix G; does this need to change?
+    # openstudio-standards 'VSD DP Reset' curve, as on the condenser pump
+    ground_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+    ground_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+    ground_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+    ground_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
     ground_pump.addToNode(ground_loop.supplyInletNode)
 
     # Create a scheduled setpoint manager
@@ -1098,8 +1122,19 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     # apply sizing values
     model.applySizingValues
 
+    # hold the ground pump at no less than 30% of its design flow, now hard-sized: OpenStudio cannot autosize a
+    # variable speed pump's minimum flow, and the zero it writes would let the ground flow stop
+    if ground_pump.ratedFlowRate.is_initialized
+      ground_pump.setMinimumFlowRate(0.3 * ground_pump.ratedFlowRate.get)
+    else
+      runner.registerWarning("#{ground_pump.name} design flow was not sized; its minimum flow stays at zero.")
+    end
+
     # finish the heat pump systems after sizing
     model.getAirLoopHVACUnitarySystems.each do |unitary_sys|
+      # units kept on data center zones are not heat pumps
+      next if unitary_sys.airLoopHVAC.is_initialized && unitary_sys.airLoopHVAC.get.thermalZones.any? { |z| data_center_zone_names.include?(z.name.get) }
+
       # set maximum supply air temperature back to 40C because sizing may have changed it
       unitary_sys.setMaximumSupplyAirTemperature(40.0)
 

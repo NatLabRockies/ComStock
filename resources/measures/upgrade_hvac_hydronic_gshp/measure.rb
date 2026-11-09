@@ -507,14 +507,23 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ground_loop_sizing.setDesignLoopExitTemperature((ground_loop_sp_c + ground_loop_sp_h) / 2) # averaging the range
 
 
-    # Create and add a pump to the loop
-    ground_pump = OpenStudio::Model::PumpConstantSpeed.new(model)
+    # Create and add a pump to the loop: variable speed, as the measure documentation specifies for the ground loop.
+    # It runs continuously at no less than 30% of design flow (set with the heat exchanger flows below). EnergyPlus
+    # requests ground-side flow through the UncontrolledOn heat exchanger only while it sees condenser-side flow, and
+    # a minimum-temperature trip clears both; a ground pump that stops (the earlier constant speed 'Intermittent' pump)
+    # then never restarts and the condenser loop runs away cold. The documented control to a 5-10 F differential
+    # across the heat exchanger has no EnergyPlus pump equivalent: flow is the heat exchanger's design flow while any
+    # heat pump runs, and the minimum otherwise.
+    ground_pump = OpenStudio::Model::PumpVariableSpeed.new(model)
     ground_pump.setName('Ground loop circulation pump')
     ground_pump.setRatedPumpHead(66_955.1) # #Set this based on modified version of example in Table 6.15 in ASHRAE geothermal design guide (subtracted out heat pumps and headers to them)
+    ground_pump.setPumpControlType('Continuous')
+    # openstudio-standards 'VSD DP Reset' curve, as on the heat pump source pumps
+    ground_pump.setCoefficient1ofthePartLoadPerformanceCurve(0.0)
+    ground_pump.setCoefficient2ofthePartLoadPerformanceCurve(0.0205)
+    ground_pump.setCoefficient3ofthePartLoadPerformanceCurve(0.4101)
+    ground_pump.setCoefficient4ofthePartLoadPerformanceCurve(0.5753)
     ground_pump.addToNode(ground_loop.supplyInletNode)
-    # run only while the heat pumps draw water, as water-loop heat pump systems shut flow off with the compressors
-    # (as in the console measure); 'Continuous' ran this constant speed pump at full flow all year
-    ground_pump.setPumpControlType('Intermittent')
 
     # Create a scheduled setpoint manager
     # TODO determine if a schedule that follows the monthly ground temperature
@@ -741,7 +750,7 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         # data center CRAC/CRAH units stay as they are (same test as the other HVAC measures)
         if sys.airLoopHVAC.is_initialized
           crac_loop = sys.airLoopHVAC.get
-          next if crac_loop.name.to_s.match?(/(CRAC|CRAH)/i) || crac_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+          next if crac_loop.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || crac_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
         end
         # only single-speed DX units are converted; the typical models also carry other unitary types
         next unless sys.coolingCoil.is_initialized && sys.coolingCoil.get.to_CoilCoolingDXSingleSpeed.is_initialized
@@ -851,7 +860,7 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         next if coil.containingZoneHVACComponent.is_initialized || coil.containingHVACComponent.is_initialized
         next unless coil.airLoopHVAC.is_initialized
         coil_loop = coil.airLoopHVAC.get
-        next if coil_loop.name.to_s.match?(/(CRAC|CRAH)/i) || coil_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+        next if coil_loop.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || coil_loop.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
         next unless coil.airOutletModelObject.is_initialized && coil.airOutletModelObject.get.to_Node.is_initialized
         # autosize water and air flow rates
         coil.autosizeDesignWaterFlowRate
@@ -1318,6 +1327,9 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       cond_loop.setMaximumLoopFlowRate(total_src_flow)
       heat_exchanger.setLoopSupplySideDesignFlowRate(total_src_flow)
       heat_exchanger.setLoopDemandSideDesignFlowRate(total_src_flow)
+      # hold the ground pump at no less than 30% of the heat exchanger's ground-side design flow: OpenStudio cannot
+      # autosize a variable speed pump's minimum flow, and the zero it writes would let the ground flow stop
+      ground_pump.setMinimumFlowRate(0.3 * total_src_flow)
 
       # a source pump per heat pump, as documented; EnergyPlus floors an EIR heat pump's source flow only at a pump on its
       # own branch (without one it fell to ~1% and the loop ran away) and allows no pumps on both loop sides
