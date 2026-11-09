@@ -23,6 +23,7 @@ resources/measures/upgrade_hvac_packaged_gshp/tests/packaged_gthp_test.rb
 resources/measures/upgrade_hvac_replace_boiler_by_heatpump/tests/add_hpwh_test.rb
 resources/measures/upgrade_hvac_vrf_hr_doas/tests/measure_test.rb
 resources/measures/upgrade_light_led/tests/light_led_test.rb
+resources/measures/upgrade_light_lighting_controls/tests/lighting_controls_test.rb
 resources/measures/upgrade_ppl_electric_kitchen_equipment/tests/kitchen_equip_measure_test.rb
 resources/measures/upgrade_unoccupied_oa_controls/tests/unoccupied_oa_controls_measure_test.rb
 resources/measures/upgrade_hvac_rtu_adv/tests/measure_test.rb

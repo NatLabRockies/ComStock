@@ -43,6 +43,43 @@ Dir[File.dirname(__FILE__) + '/resources/*.rb'].each { |file| require file }
 
 # start the measure
 class LightingControls < OpenStudio::Measure::ModelMeasure
+  # The template skip lists in run name prototype space types. Typical models (create_custom_building_from_spec)
+  # name their space types with the comstock-typical vocabulary, so each skipped prototype space type is carried
+  # over to the typical space types that model the same function (prototype and typical names never coincide).
+  # OfficeSmall (the DEER enclosed private office) has no typical counterpart: the typical 'office' is open plan
+  # (comstock-typical office_lighting). Neither has Banquet: the typical large hotel folds banquet and cafe into
+  # 'dining', the name restaurant dining rooms also use.
+  TYPICAL_SPACE_TYPES_BY_PROTOTYPE_SPACE_TYPE = {
+    'Auditorium' => ['audience seating - secondary school'],
+    'Classroom' => ['classroom/lecture/training', 'classroom/lecture/training - primary school',
+                    'classroom/lecture/training - secondary school'],
+    'ComputerRoom' => ['computer room'],
+    'CompRoomClassRm' => ['computer room'],
+    'Meeting' => ['conference/meeting/multipurpose'],
+    'Conference' => ['conference/meeting/multipurpose'],
+    'StaffLounge' => ['lounge/breakroom'],
+    'GuestLounge' => ['lounge/breakroom'],
+    'Lounge' => ['lounge/breakroom'],
+    'Restroom' => ['restroom', 'restroom - primary school', 'restroom - secondary school'],
+    'PublicRestroom' => ['restroom', 'restroom - primary school', 'restroom - secondary school'],
+    'Storage' => ['storage'],
+    'Back_Space' => ['storage'],
+    'StockRoom' => ['storage'],
+    'Janitor' => ['storage'],
+    'LockerRoom' => ['locker room'],
+    'DressingRoom' => ['locker room']
+  }.freeze
+
+  # The retail daylighting exceptions in run (no sidelighting control) name prototype space types. Their typical
+  # counterparts depend on the building type: the strip mall store space types ('Strip mall - type 1/2/3') are the
+  # strip mall's 'retail', and the stand-alone retail 'Entry' is its 'lobby'. 'Point_of_Sale' has none: it is part of
+  # 'retail - mass merchandising', the main sales floor, which kept its daylighting in R3. 'Front_Retail' and
+  # 'Core_Retail' are DOE prototype geometry names ComStock models never used.
+  TYPICAL_SPACE_TYPES_WITHOUT_SIDELIGHTING_CONTROL = {
+    'RetailStripmall' => ['retail'],
+    'RetailStandalone' => ['lobby']
+  }.freeze
+
   # human readable name
   def name
     'lighting_controls'
@@ -222,6 +259,19 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
             req_pri_ctrl = false
             req_sec_ctrl = false
           end
+
+          # the same exception for the typical space types that replaced those names
+          exception_space_type = space.spaceType.get
+          exception_building_type = if exception_space_type.standardsBuildingType.is_initialized
+                                      exception_space_type.standardsBuildingType.get
+                                    else
+                                      model.getBuilding.standardsBuildingType.to_s
+                                    end
+          if TYPICAL_SPACE_TYPES_WITHOUT_SIDELIGHTING_CONTROL.fetch(exception_building_type, []).include?(exception_space_type.standardsSpaceType.to_s)
+            runner.registerInfo("For #{space.name}, no sidelighting control in #{exception_building_type} space type #{exception_space_type.standardsSpaceType} (retail exception, as for the prototype strip mall and entry space types).")
+            req_pri_ctrl = false
+            req_sec_ctrl = false
+          end
         end
 
         # Output the daylight control requirements
@@ -394,7 +444,10 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
             daylight_stpt_lux = data['target_illuminance_setpoint']
             if daylight_stpt_lux == 'na'
               runner.registerInfo("For #{space.name}: daylighting is not appropriate for #{template} #{standards_building_type} #{standards_space_type}.")
-              return true
+              # skip this space only (it was counted above but gets no sensors); returning here ended the
+              # whole measure before the occupancy sensors and the applicability check
+              num_spaces_to_get_daylighting_sensors -= 1
+              next
             end
             # If a setpoint is specified, use that.  Otherwise use a default.
             daylight_stpt_lux = daylight_stpt_lux.to_f
@@ -572,10 +625,21 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
         spaces_to_skip = %w[Classroom ComputerRoom Meeting CompRoomClassRm OfficeSmall Restroom GuestLounge
                             PublicRestroom StaffLounge Storage LockerRoom Lounge]
       end
+      # carry the lists over to the typical space type names
+      spaces_to_skip += spaces_to_skip.flat_map { |name| TYPICAL_SPACE_TYPES_BY_PROTOTYPE_SPACE_TYPE.fetch(name, []) }
 
       # set location for csv lookup file
       occupancy_sensor_reduction_by_space_type = File.join(File.dirname(__FILE__), 'resources',
                                                            'occupancy_sensor_reduction_by_space_type.csv')
+
+      # Typical models name space types with the comstock-typical vocabulary (all lower case), which the prototype
+      # csv above never matches. Their reductions are space by space: each typical space type takes the Table G3.7
+      # value the prototype csv gives the same space function (see the csv for the row and the prototype space types
+      # behind each value).
+      typical_lpd_reductions = {}
+      CSV.foreach(File.join(File.dirname(__FILE__), 'resources', 'occupancy_sensor_reduction_by_typical_space_type.csv'), headers: true) do |row|
+        typical_lpd_reductions[row['standards_space_type']] = row['lpd_reduction'].to_f
+      end
 
       model.getSpaceTypes.sort.each do |space_type|
         standard_space_type = space_type.standardsSpaceType.to_s
@@ -586,27 +650,34 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
         if spaces_to_skip.include?(standard_space_type)
           runner.registerInfo("Occupancy sensors already required by code in space type #{standard_space_type}. This space type will not be modidied.")
         else
-          # Do csv lookup using standard_space_type name
-          runner.registerInfo("stanard space type = #{standard_space_type}")
-          CSV.foreach(occupancy_sensor_reduction_by_space_type, headers: true) do |row|
-            if row['standard_space_type'] == standard_space_type
-              lpd_reduction = row['lpd_reduction'].to_f
-              runner.registerInfo("Interior lighting power reduction for space type #{space_type.name} = #{(lpd_reduction * 100).round(0)}%")
-              found_match = true
-              runner.registerInfo("found match = #{found_match}")
-              break
+          if typical_lpd_reductions.key?(standard_space_type)
+            lpd_reduction = typical_lpd_reductions[standard_space_type]
+            found_match = true
+            runner.registerInfo("Interior lighting power reduction for space type #{space_type.name} = #{(lpd_reduction * 100).round(0)}%")
+          else
+            # Do csv lookup using standard_space_type name
+            runner.registerInfo("stanard space type = #{standard_space_type}")
+            CSV.foreach(occupancy_sensor_reduction_by_space_type, headers: true) do |row|
+              if row['standard_space_type'] == standard_space_type
+                lpd_reduction = row['lpd_reduction'].to_f
+                runner.registerInfo("Interior lighting power reduction for space type #{space_type.name} = #{(lpd_reduction * 100).round(0)}%")
+                found_match = true
+                runner.registerInfo("found match = #{found_match}")
+                break
+              end
             end
           end
 
-          if lpd_reduction > 0
-            # if the space has a non-zero % reduction, add to list of spaces recieving occupancy controls
-            num_spaces_to_get_occupancy_sensors += 1
-          end
-
           unless found_match
-            runner.registerInfo("No LPD reduction specified for space type #{space_type.name}. Not adding occupancy sensors.")
+            if space_type.additionalProperties.hasFeature('lighting_space_type')
+              # a typical space type missing from the typical csv would otherwise drop out silently
+              runner.registerWarning("No LPD reduction specified for typical space type '#{standard_space_type}' (space type #{space_type.name}). Not adding occupancy sensors.")
+            else
+              runner.registerInfo("No LPD reduction specified for space type #{space_type.name}. Not adding occupancy sensors.")
+            end
           end
 
+          general_lighting_reduced = false
           space_type.lights.each do |light|
             next unless light.name.get.include?('General Lighting')
 
@@ -616,11 +687,18 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
               lpd_new = lpd_existing * (1 - lpd_reduction)
 
               lights_definition.setWattsperSpaceFloorArea(lpd_new)
+              general_lighting_reduced = true if lpd_reduction > 0 && lpd_existing > 0
 
-              runner.registerInfo("Interior lighting power density for space type #{space_type.name} was reduced by #{(lpd_reduction * 100).round(0)}% from #{lpd_existing.round(2)} W/ft2 to #{lpd_new.round(2)} W/ft2 due to the addition of occupancy sensors.")
+              runner.registerInfo("Interior lighting power density for space type #{space_type.name} was reduced by #{(lpd_reduction * 100).round(0)}% from #{OpenStudio.convert(lpd_existing, 'W/m^2', 'W/ft^2').get.round(2)} W/ft2 to #{OpenStudio.convert(lpd_new, 'W/m^2', 'W/ft^2').get.round(2)} W/ft2 due to the addition of occupancy sensors.")
             else
               runner.registerWarning("Lighting power is specified using Lighting Level (W) or Lighting Level per Person (W/person) for space type: #{space_type.name}. Measure will not modify lights in this space type.")
             end
+          end
+
+          # count the space type only when it has floor area and its general lighting was reduced (a typical guest
+          # room has a reduction but only task lighting, so nothing changes there)
+          if general_lighting_reduced && space_type.floorArea > 0
+            num_spaces_to_get_occupancy_sensors += 1
           end
         end
       end
@@ -633,7 +711,7 @@ class LightingControls < OpenStudio::Measure::ModelMeasure
       return true
     end
 
-    runner.registerFinalCondition("Daylighting sensors were applied to #{num_spaces_to_get_daylighting_sensors} spaces and occupancy sensors were applied to #{num_spaces_to_get_occupancy_sensors} spaces in the model.")
+    runner.registerFinalCondition("Daylighting sensors were applied to #{num_spaces_to_get_daylighting_sensors} spaces and occupancy sensors were applied to #{num_spaces_to_get_occupancy_sensors} space types in the model.")
 
     true
   end

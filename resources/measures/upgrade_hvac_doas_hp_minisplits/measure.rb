@@ -224,7 +224,7 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
       # skip data centers
       next if ['Data Center', 'DataCenter', 'data center', 'datacenter', 'DATACENTER', 'DATA CENTER'].any? { |word| (air_loop_hvac.name.get).include?(word) }
       # typical models put data centers on their own CRAC/CRAH; the fork helper also catches computer/server room names
-      next if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
+      next if air_loop_hvac.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
       # skip kitchens
       next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
@@ -492,7 +492,7 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
         mech_vent.setDemandControlledVentilation(false)
 
         # add new unitary system to thermal zone
-        # zone equipment set to sequence 2 as per EnergyPlus I/O:
+        # zone equipment sequence as per EnergyPlus I/O:
         # For example, with a dedicated outdoor air system (DOAS), the air terminal for the
         # DOAS should be assigned Heating Sequence = 1 and Cooling Sequence = 1. Any other equipment should be
         # assigned sequence 2 or higher so that it will see the net load after the DOAS air is added to the zone.
@@ -500,8 +500,17 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
         zone_unitary_hvac.setName("#{air_loop_hvac.name} Zone Mini Split Heat Pump")
         thermal_zones << thermal_zone
         zone_unitary_hvac.addToThermalZone(thermal_zone)
-        thermal_zone.setCoolingPriority(zone_unitary_hvac.to_ModelObject.get, 1)
-        thermal_zone.setHeatingPriority(zone_unitary_hvac.to_ModelObject.get, 1)
+        # the DOAS air terminal takes sequence 1; the minisplit and any other zone equipment follow in their order
+        doas_terminal = thermal_zone.airLoopHVACTerminals.find do |terminal|
+          terminal_loop = terminal.to_HVACComponent.get.airLoopHVAC
+          terminal_loop.is_initialized && terminal_loop.get.handle.to_s == air_loop_hvac.handle.to_s
+        end
+        if doas_terminal.nil?
+          runner.registerWarning("No DOAS air terminal found in #{thermal_zone.name}; zone equipment sequence not changed.")
+        else
+          thermal_zone.setCoolingPriority(doas_terminal, 1)
+          thermal_zone.setHeatingPriority(doas_terminal, 1)
+        end
 
         # add base unitary system properties
         zone_unitary_hvac.setControlType('Load')

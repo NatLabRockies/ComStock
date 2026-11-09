@@ -170,7 +170,7 @@ class HVACExhaustAirEnergyOrHeatRecovery < OpenStudio::Measure::ModelMeasure
       no_oa_air_loops += 1 unless oa_sys.is_initialized
       next unless oa_sys.is_initialized
       # skip data center CRAC/CRAH loops: recirculating units with little outdoor air, counted as inapplicable
-      if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+      if air_loop_hvac.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
         na_space_type_air_loops += 1
         next
       end

@@ -115,7 +115,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     backup_heat_options = ['match_original_primary_heating_fuel', 'electric_resistance_backup', 'dual_fuel_gas_furnace_backup']
     backup_ht_fuel_scheme = OpenStudio::Measure::OSArgument.makeChoiceArgument('backup_ht_fuel_scheme', backup_heat_options, true)
     backup_ht_fuel_scheme.setDisplayName('Backup Heat Type')
-    backup_ht_fuel_scheme.setDescription('Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.')
+    backup_ht_fuel_scheme.setDescription('Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, each AHU gets backup matching its own original heating: electric resistance where it heated electrically, and the same fuel (natural gas, propane, or fuel oil) where it burned fuel. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.')
     backup_ht_fuel_scheme.setDefaultValue('electric_resistance_backup')
     args << backup_ht_fuel_scheme
 
@@ -158,7 +158,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     hp_min_comp_lockout_temp_gas_backup_f = OpenStudio::Measure::OSArgument.makeDoubleArgument('hp_min_comp_lockout_temp_gas_backup_f', true)
     hp_min_comp_lockout_temp_gas_backup_f.setDisplayName('Minimum outdoor air temperature that locks out heat pump compressor with gas backup heat, F')
     hp_min_comp_lockout_temp_gas_backup_f.setDefaultValue(25.0)
-    hp_min_comp_lockout_temp_gas_backup_f.setDescription('Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and that fuel is gas or another combustion fuel; with electric resistance backup, the electric backup lockout temperature is used instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.')
+    hp_min_comp_lockout_temp_gas_backup_f.setDescription('Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and the original heating of the AHU burned gas or another fuel; AHUs given electric resistance backup use the electric backup lockout temperature instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.')
     args << hp_min_comp_lockout_temp_gas_backup_f
 
     # heat pump RTU performance scenario
@@ -1041,21 +1041,26 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     [orig_clg_coil_gross_cap, orig_htg_coil_gross_cap]
   end
 
-  # get the original heating fuel of a CoilHeatingGas in the air loop, directly or inside a unitary system
+  # get the original heating fuel of the air loop's heating coil, directly or inside a unitary system; a unitary
+  # system's supplemental coil is not read (typical PSZ-AC units carry a zero-capacity electric one)
   # fuel oil and propane heating coils are CoilHeatingGas objects that differ only in fuelType, so the object
   # class alone does not identify the fuel; the value is written back unchanged to the backup coil
-  # @return [String, nil] fuel type, or nil if no CoilHeatingGas is present
+  # @return [String, nil] fuel type of a CoilHeatingGas, which takes precedence; 'Electricity' for a
+  #   CoilHeatingElectric; nil if the air loop has neither
   def get_original_heating_coil_fuel_type(air_loop_hvac)
     orig_htg_coil_fuel_type = nil
     air_loop_hvac.supplyComponents.each do |component|
-      if component.to_CoilHeatingGas.is_initialized
-        orig_htg_coil_fuel_type = component.to_CoilHeatingGas.get.fuelType
-      elsif component.to_AirLoopHVACUnitarySystem.is_initialized
+      htg = component
+      if component.to_AirLoopHVACUnitarySystem.is_initialized
         unitary = component.to_AirLoopHVACUnitarySystem.get
         next unless unitary.heatingCoil.is_initialized
 
         htg = unitary.heatingCoil.get
-        orig_htg_coil_fuel_type = htg.to_CoilHeatingGas.get.fuelType if htg.to_CoilHeatingGas.is_initialized
+      end
+      if htg.to_CoilHeatingGas.is_initialized
+        orig_htg_coil_fuel_type = htg.to_CoilHeatingGas.get.fuelType
+      elsif htg.to_CoilHeatingElectric.is_initialized && orig_htg_coil_fuel_type.nil?
+        orig_htg_coil_fuel_type = 'Electricity'
       end
     end
     orig_htg_coil_fuel_type
@@ -1176,7 +1181,6 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     # ---------------------------------------------------------
     selected_air_loops = []
     applicable_area_m2 = 0
-    prim_ht_fuel_type = 'electric' # assume electric unless a gas coil is found in any air loop
     is_sizing_run_needed = true
     unitary_sys = nil
     orig_airloop_heating_coil_map = {}
@@ -1192,7 +1196,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         next
       end
 
-      # inspect supply components for heat pump, water coil, and gas heating
+      # inspect supply components for heat pump and water coils; the original heating fuel is read per air loop below
       is_hp = false
       is_water_coil = false
       has_heating_coil = true
@@ -1200,19 +1204,15 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         obj_type = component.iddObjectType.valueName.to_s
         # water coils make the air loop not applicable
         is_water_coil = true if ['Coil_Heating_Water', 'Coil_Cooling_Water'].any? { |word| obj_type.include?(word) }
-        # a gas coil in any air loop sets the primary heating fuel to gas
-        prim_ht_fuel_type = 'gas' if ['Gas', 'GAS', 'gas'].any? { |word| obj_type.include?(word) }
         if obj_type == 'OS_AirLoopHVAC_UnitarySystem'
           unitary_sys = component.to_AirLoopHVACUnitarySystem.get
-          # check the heating coil for DX, water, or gas
+          # check the heating coil for DX or water
           if unitary_sys.heatingCoil.is_initialized
             htg_coil = unitary_sys.heatingCoil.get.iddObjectType.valueName.to_s
             if htg_coil.include?('Heating_DX')
               is_hp = true
             elsif htg_coil.include?('Water')
               is_water_coil = true
-            elsif ['Gas', 'GAS', 'gas'].any? { |word| htg_coil.include?(word) }
-              prim_ht_fuel_type = 'gas'
             end
           else
             runner.registerWarning("No heating coil was found for air loop: #{air_loop_hvac.name} - this equipment will be skipped.")
@@ -1282,27 +1282,6 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     if selected_air_loops.empty?
       runner.registerAsNotApplicable('No applicable air loops in model. No changes will be made.')
       return true
-    end
-
-    # ---------------------------------------------------------
-    # determine which compressor lockout temperature applies
-    # ---------------------------------------------------------
-    # backup heat is electric when requested, or when matching an original primary heating fuel that is electric;
-    # dual fuel always gets gas backup regardless of the original fuel.
-    # this mirrors the backup heating coil selection made for each air loop below.
-    backup_ht_is_electric = (backup_ht_fuel_scheme == 'electric_resistance_backup') ||
-                            ((backup_ht_fuel_scheme == 'match_original_primary_heating_fuel') && (prim_ht_fuel_type == 'electric'))
-    if backup_ht_is_electric
-      hp_min_comp_lockout_temp_f = hp_min_comp_lockout_temp_elec_backup_f
-      runner.registerInfo("Backup heat will be electric resistance; using electric backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
-    else
-      hp_min_comp_lockout_temp_f = hp_min_comp_lockout_temp_gas_backup_f
-      backup_fuel_desc = if backup_ht_fuel_scheme == 'dual_fuel_gas_furnace_backup'
-                           'a natural gas furnace (dual fuel)'
-                         else
-                           'a fuel-burning coil matching the original heating fuel (natural gas, propane, or fuel oil; reported per air loop)'
-                         end
-      runner.registerInfo("Backup heat will be #{backup_fuel_desc}; using fuel-burning backup compressor lockout temperature of #{hp_min_comp_lockout_temp_f}F.")
     end
 
     # ---------------------------------------------------------
@@ -1483,8 +1462,21 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       hvac_operation_sched = air_loop_hvac.availabilitySchedule
       always_on = model.alwaysOnDiscreteSchedule
 
-      # capture the original combustion fuel before the existing equipment is removed, for a backup coil matching the original fuel
+      # capture the original heating fuel before the existing equipment is removed, for a backup coil matching the original fuel
       orig_htg_coil_fuel_type = get_original_heating_coil_fuel_type(air_loop_hvac)
+
+      # backup heat and compressor lockout are decided per air loop, because one building can mix fuel-burning and
+      # electric units (comstock-typical gives extreme-load zones an electric PSZ-AC): electric resistance when
+      # requested or when the loop's original heating is not fuel-burning; dual fuel always gets natural gas;
+      # otherwise the loop's own fuel
+      match_original_fuel = (backup_ht_fuel_scheme == 'match_original_primary_heating_fuel')
+      if match_original_fuel && orig_htg_coil_fuel_type.nil?
+        runner.registerWarning("Could not determine the original heating fuel for #{air_loop_hvac.name} " \
+                               '(no CoilHeatingGas or CoilHeatingElectric); backup heat will be electric resistance.')
+      end
+      backup_ht_is_electric = (backup_ht_fuel_scheme == 'electric_resistance_backup') ||
+                              (match_original_fuel && [nil, 'Electricity'].include?(orig_htg_coil_fuel_type))
+      hp_min_comp_lockout_temp_f = backup_ht_is_electric ? hp_min_comp_lockout_temp_elec_backup_f : hp_min_comp_lockout_temp_gas_backup_f
 
       # modify heating setbacks
       modify_heating_setbacks(model, runner, air_loop_hvac, setback_value) if modify_setbacks
@@ -1926,6 +1918,14 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
         new_backup_heating_coil = OpenStudio::Model::CoilHeatingElectric.new(model)
         new_backup_heating_coil.setEfficiency(1.0)
         new_backup_heating_coil.setName("#{air_loop_hvac.name} electric resistance backup coil")
+        backup_fuel_label = 'electric resistance'
+        backup_fuel_note = if match_original_fuel && orig_htg_coil_fuel_type.nil?
+                             'because the original heating fuel was not determined'
+                           elsif match_original_fuel
+                             'matching the original electric heating'
+                           else
+                             'as requested'
+                           end
       else
         new_backup_heating_coil = OpenStudio::Model::CoilHeatingGas.new(model)
         new_backup_heating_coil.setGasBurnerEfficiency(0.80)
@@ -1934,18 +1934,15 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
           new_backup_heating_coil.setFuelType('NaturalGas')
           backup_fuel_note = 'for dual fuel RTU'
         else
-          # match the original combustion fuel so a fuel oil or propane building keeps its own fuel as backup
-          if orig_htg_coil_fuel_type.nil? || orig_htg_coil_fuel_type.to_s.empty?
-            runner.registerWarning("Could not determine the original combustion fuel for #{air_loop_hvac.name}; backup coil defaults to #{new_backup_heating_coil.fuelType}.")
-          else
-            new_backup_heating_coil.setFuelType(orig_htg_coil_fuel_type)
-          end
+          # the air loop's own fuel, so a fuel oil or propane unit keeps its fuel as backup
+          new_backup_heating_coil.setFuelType(orig_htg_coil_fuel_type)
           backup_fuel_note = 'matching the original heating fuel'
         end
         backup_fuel_label = new_backup_heating_coil.fuelType.to_s
         new_backup_heating_coil.setName("#{air_loop_hvac.name} #{backup_fuel_label} backup coil")
-        runner.registerInfo("Backup heat for #{air_loop_hvac.name} set to #{backup_fuel_label}, #{backup_fuel_note}.")
       end
+      runner.registerInfo("Backup heat for #{air_loop_hvac.name} set to #{backup_fuel_label}, #{backup_fuel_note}; " \
+                          "compressor lockout #{hp_min_comp_lockout_temp_f}F.")
       new_backup_heating_coil.setAvailabilitySchedule(always_on)
       new_backup_heating_coil.setNominalCapacity(orig_htg_coil_gross_cap_old)
 

@@ -165,10 +165,29 @@ class UpgradeHvacChillerTest < Minitest::Test
 
     # get control specs before measure
     fraction_chw_oat_reset_enabled_b, fraction_cw_oat_reset_enabled_b = UpgradeHvacChiller.control_specifications(model)
+    # hot water and service water loop supply temperature managers before the measure (the measure must not change them)
+    non_chw_spms = lambda do |m|
+      m.getPlantLoops.reject { |l| l.sizingPlant.loopType == 'Cooling' }.to_h do |l|
+        [l.name.to_s, l.supplyOutletNode.setpointManagers.map { |s| s.iddObjectType.valueDescription }.sort]
+      end
+    end
+    non_chw_spms_b = non_chw_spms.call(model)
 
     # run the measure
     measure.run(model, runner, argument_map)
     result = runner.result
+
+    # hot water and service water loops keep their temperature control; chilled water loops get the outdoor air reset
+    # unless they serve a data center
+    assert_equal(non_chw_spms_b, non_chw_spms.call(model))
+    model.getPlantLoops.select { |l| l.sizingPlant.loopType == 'Cooling' }.each do |l|
+      oat_reset = l.supplyOutletNode.setpointManagers.any? { |s| s.to_SetpointManagerOutdoorAirReset.is_initialized }
+      if UpgradeHvacChiller.plant_loop_serves_data_center?(l)
+        refute(oat_reset, "#{l.name} serves a data center and should keep its design chilled water temperature")
+      else
+        assert(oat_reset, "#{l.name} should carry the outdoor air chilled water reset")
+      end
+    end
 
     # get chiller specs after measure
     chillers = model.getChillerElectricEIRs
@@ -259,7 +278,10 @@ class UpgradeHvacChillerTest < Minitest::Test
     # check control specs
     puts("### DEBUGGING: fraction_chw_oat_reset_enabled_b = #{fraction_chw_oat_reset_enabled_b} | fraction_chw_oat_reset_enabled_a = #{fraction_chw_oat_reset_enabled_a}")
     puts("### DEBUGGING: fraction_cw_oat_reset_enabled_b = #{fraction_cw_oat_reset_enabled_b} | fraction_cw_oat_reset_enabled_a = #{fraction_cw_oat_reset_enabled_a}")
-    refute_equal(fraction_chw_oat_reset_enabled_b, fraction_chw_oat_reset_enabled_a)
+    # the reset fraction changes unless every chilled water loop serves a data center (those keep their temperature)
+    if model.getPlantLoops.any? { |l| l.sizingPlant.loopType == 'Cooling' && !UpgradeHvacChiller.plant_loop_serves_data_center?(l) }
+      refute_equal(fraction_chw_oat_reset_enabled_b, fraction_chw_oat_reset_enabled_a)
+    end
     if counts_chillers_wcc_b == 0
       assert_equal(fraction_cw_oat_reset_enabled_a, 0.0)
     else
@@ -602,7 +624,10 @@ class UpgradeHvacChillerTest < Minitest::Test
     # check control specs
     puts("### DEBUGGING: fraction_chw_oat_reset_enabled_b = #{fraction_chw_oat_reset_enabled_b} | fraction_chw_oat_reset_enabled_a = #{fraction_chw_oat_reset_enabled_a}")
     puts("### DEBUGGING: fraction_cw_oat_reset_enabled_b = #{fraction_cw_oat_reset_enabled_b} | fraction_cw_oat_reset_enabled_a = #{fraction_cw_oat_reset_enabled_a}")
-    refute_equal(fraction_chw_oat_reset_enabled_b, fraction_chw_oat_reset_enabled_a)
+    # the reset fraction changes unless every chilled water loop serves a data center (those keep their temperature)
+    if model.getPlantLoops.any? { |l| l.sizingPlant.loopType == 'Cooling' && !UpgradeHvacChiller.plant_loop_serves_data_center?(l) }
+      refute_equal(fraction_chw_oat_reset_enabled_b, fraction_chw_oat_reset_enabled_a)
+    end
     if counts_chillers_wcc_b == 0
       assert_equal(fraction_cw_oat_reset_enabled_a, 0.0)
     else

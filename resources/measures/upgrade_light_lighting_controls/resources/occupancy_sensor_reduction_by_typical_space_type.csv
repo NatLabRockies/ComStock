@@ -1,0 +1,58 @@
+standards_space_type,lpd_reduction,table_g3_7_space_type,prototype_space_types,notes
+audience seating - gymnasium - secondary school,0.1,audience seating area - gymnasium,Gym,gym bleachers; the prototype Gym (0.35) covered the whole gym; space by space the seating takes the audience seating value and the playing area keeps 0.35
+audience seating - secondary school,0.1,audience seating area - auditorium,Auditorium,
+classroom/lecture/training,0,classroom/lecture/training - all other,none,office training rooms; Table G3.7 gives 0 because 90.1-2004 already required occupancy sensors there (as for conference rooms); the 0.3 classroom value is for K-12 classrooms
+classroom/lecture/training - primary school,0.3,classroom/lecture/training - preschool through 12th grade,Classroom,
+classroom/lecture/training - secondary school,0.3,classroom/lecture/training - preschool through 12th grade,Classroom,
+computer room,0.25,computer room,ComputerRoom; CompRoomClassRm,prototype value kept (Table G3.7 2019: 0.35)
+conference/meeting/multipurpose,0,conference/meeting/multipurpose,Meeting; Conference,
+corridor,0.25,corridor - all other,Corridor; Hall; GuestRmCorrid,
+corridor - hospital,0.25,corridor - hospital,Corridor; PatCorridor,
+corridor - primary school,0.25,corridor - all other,Corridor; CorridorStairway,
+corridor - secondary school,0.25,corridor - all other,Corridor; CorridorStairway,
+datacenter/high ite,0,computer room,OfficeLarge Data Center; OfficeLarge Main Data Center,continuously operated; prototype value kept
+datacenter/low ite,0,computer room,OfficeLarge Data Center; IT_Room,continuously operated; the outpatient IT_Room had 0.25
+dining,0.35,dining area - all other,Dining; Cafe; Banquet,
+dining - cafeteria/fast food,0.35,dining area - cafeteria or fast food,Dining,
+dining - primary school,0.35,dining area - cafeteria or fast food,Cafeteria; Dining,
+dining - secondary school,0.35,dining area - cafeteria or fast food,Cafeteria; Dining,
+electrical/mechanical,0.3,electrical/mechanical,Mechanical; Elec/MechRoom; MechElecRoom,the hospital and large hotel prototype Basement (0) is now electrical/mechanical
+emergency room,0.1,healthcare facility - emergency room,ER_Exam; ER_NurseStn; ER_Trauma; ER_Triage,
+exam/treatment,0.1,healthcare facility - exam/treatment room,Exam; ER_Exam,
+exercise area,0.35,gymnasium/fitness center - exercise area,Exercise,
+food preparation,0.3,food preparation area,Kitchen,
+food preparation - deli/bakery,0.3,food preparation area,Kitchen,
+food preparation - primary school,0.3,food preparation area,Kitchen,
+food preparation - secondary school,0.3,food preparation area,Kitchen,
+guest room,0.45,guest room,GuestRoom; GuestRoom123Occ; GuestRoom123Vac; GuestRmOcc; GuestRmUnOcc,Table G3.7 value as in R3 (GuestRoom and vacant guest rooms 0.45; occupied ones 0); typical guest rooms are task lit (comstock-typical guest_room_lighting has no General Lighting) and task lighting is never reduced so they are unchanged
+imaging,0.1,healthcare facility - imaging room,Radiology; MRI; MRI_Control; Xray,
+laboratory,0.1,laboratory - all other,Lab,
+laundry/washing,0.1,laundry/washing,Laundry,
+laundry/washing - coin-operated laundries,0.1,laundry/washing,Laundry,
+library - primary school,0.15,library - reading area,Library,
+library - secondary school,0.15,library - reading area,Library,
+lobby,0.25,lobby - all other,Lobby; Reception; LobbyWaiting; HotelLobby; Entry,the stand-alone retail lobby is R3's Entry (0 in R3; 0.5% of the building) and keeps Entry's retail daylighting exception
+lobby - primary school,0.25,lobby - all other,Lobby,
+lobby - secondary school,0.25,lobby - all other,Lobby,
+locker room,0.25,locker room,LockerRoom; DressingRoom,
+lounge/breakroom,0,lounge/breakroom - all other,StaffLounge; GuestLounge; Lounge,
+multifamily - dwelling unit,0,dwelling unit,none,
+nurses station,0.1,healthcare facility - nurse's station,NurseStn; NurseStation; ICU_NurseStn; ER_NurseStn,
+office,0.15,office - open plan,Office; OfficeOpen; OfficeGeneral; WholeBuilding - Sm Office; WholeBuilding - Md Office; WholeBuilding - Lg Office,comstock-typical office_lighting is open plan lighting
+operating room,0.1,healthcare facility - operating room,OR,
+patient room,0.1,healthcare facility - patient room,PatRoom; ICU_PatRm; PatientRoom,
+physical therapy,0.1,healthcare facility - physical therapy room,PhysTherapy; PhysicalTherapy,
+playing area - primary school,0.35,gymnasium/fitness center - playing area,Gym; Gymnasium,
+playing area - secondary school,0.35,gymnasium/fitness center - playing area,Gym; Gymnasium,
+recovery,0.1,healthcare facility - recovery room,PACU; PreOp,
+restroom,0.45,restroom - all other,Restroom; PublicRestroom; Toilet,
+restroom - primary school,0.45,restroom - all other,Restroom,
+restroom - secondary school,0.45,restroom - all other,Restroom,
+retail,0.1,sales area,Retail; Strip mall - type 1; Strip mall - type 2; Strip mall - type 3,prototype value kept (Table G3.7 2019: 0.15); in a strip mall it keeps the strip mall types' retail daylighting exception (no sidelighting control)
+retail - mass merchandising,0.1,sales area,Retail; Point_of_Sale,prototype Retail value kept (Table G3.7 2019: 0.15); Point_of_Sale (0 in R3) is now part of this space type; daylit like R3's Retail
+retail - supermarket,0.1,sales area,Retail,no prototype grocery; same value as the other retail sales space types
+shaft,0,elevator core,ElevatorCore,no lighting in typical models (none_lighting)
+stairwell,0.75,stairwell,Stair,
+storage,0.45,storage room - 50 to 1000 ft2,Storage; Janitor; StockRoom; Back_Space,the stand-alone retail Back_Space (0.1) is now storage
+storage - warehouse - medium to bulky palletized items,0.45,warehouse storage area - medium to bulky palletized items,Bulk; WarehouseCond; WarehouseUnCond,
+storage - warehouse - smaller hand-carried items,0.45,warehouse storage area - smaller hand-carried items,Fine,

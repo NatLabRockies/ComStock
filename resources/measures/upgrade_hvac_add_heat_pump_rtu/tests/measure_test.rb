@@ -1923,6 +1923,81 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
+  # give one unit of the model an electric resistance heating coil of the same capacity in place of its fuel-burning
+  # one, as comstock-typical does for an extreme-load zone in a fuel-heated building
+  # @return [String] name of the air loop whose heating is now electric
+  def make_one_air_loop_electric(model)
+    unitary = model.getAirLoopHVACUnitarySystems.min_by { |u| u.name.to_s }
+    fuel_coil = unitary.heatingCoil.get.to_CoilHeatingGas.get
+    elec_coil = OpenStudio::Model::CoilHeatingElectric.new(model)
+    elec_coil.setName("#{unitary.name} Electric Htg Coil")
+    elec_coil.setNominalCapacity(fuel_coil.nominalCapacity.get)
+    unitary.setHeatingCoil(elec_coil)
+    fuel_coil.remove
+    unitary.airLoopHVAC.get.name.to_s
+  end
+
+  # apply original fuel backup to the gas small office relabelled to burn the given fuel, with one unit switched to
+  # electric heat, and check every new RTU against its own original heating: the electric unit gets electric resistance
+  # backup at the electric backup lockout, every other unit a backup burning the original fuel at the fuel backup lockout
+  def verify_orig_fuel_backup_per_air_loop(test_name, fuel)
+    announce_test(test_name)
+    osm_path = model_input_path('380_small_office_psz_gas_coil_7A.osm')
+    epw_path = epw_input_path('NE_Kearney_Muni_725526_16.epw')
+    model = load_model(osm_path)
+    model.getCoilHeatingGass.each { |coil| coil.setFuelType(fuel) }
+    electric_loop_name = make_one_air_loop_electric(model)
+
+    # different lockouts, so a unit given the wrong one fails
+    elec_backup_lockout_temp_f = 0.0
+    fuel_backup_lockout_temp_f = 30.0
+    measure = AddHeatPumpRtu.new
+    argument_map = build_argument_map(measure.arguments(model),
+                                      'hprtu_scenario' => 'two_speed_standard_eff',
+                                      'backup_ht_fuel_scheme' => 'match_original_primary_heating_fuel',
+                                      'hp_min_comp_lockout_temp_elec_backup_f' => elec_backup_lockout_temp_f,
+                                      'hp_min_comp_lockout_temp_gas_backup_f' => fuel_backup_lockout_temp_f)
+    result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false, apply: true, model: model)
+    refute(result.warnings.any? { |w| w.logMessage.include?('Could not determine the original') },
+           "#{test_name}: a unit fell back to a default backup instead of matching its own original heating")
+
+    applied = load_model(model_output_path(test_name))
+    unitary_systems = applied.getAirLoopHVACUnitarySystems
+    assert_equal(18, unitary_systems.size, "#{test_name}: every unit of the small office should be replaced")
+    unitary_systems.each do |system|
+      loop_name = system.airLoopHVAC.get.name.to_s
+      sup_htg_coil = system.supplementalHeatingCoil.get
+      if loop_name == electric_loop_name
+        expected_lockout_temp_f = elec_backup_lockout_temp_f
+        assert(sup_htg_coil.to_CoilHeatingElectric.is_initialized, "the electric unit #{loop_name} should get electric resistance backup")
+      else
+        expected_lockout_temp_f = fuel_backup_lockout_temp_f
+        assert(sup_htg_coil.to_CoilHeatingGas.is_initialized, "the fuel-burning unit #{loop_name} should get a fuel backup coil")
+        assert_equal(fuel, sup_htg_coil.to_CoilHeatingGas.get.fuelType, "backup coil for #{loop_name} should burn #{fuel}")
+      end
+      htg_coil = system.heatingCoil.get
+      htg_coil = htg_coil.to_CoilHeatingDXMultiSpeed.is_initialized ? htg_coil.to_CoilHeatingDXMultiSpeed.get : htg_coil.to_CoilHeatingDXSingleSpeed.get
+      assert_in_delta(OpenStudio.convert(expected_lockout_temp_f, 'F', 'C').get, htg_coil.minimumOutdoorDryBulbTemperatureforCompressorOperation, 0.01,
+                      "compressor lockout for #{loop_name} should be #{expected_lockout_temp_f}F")
+    end
+
+    # one electric backup, and no fuel other than the original one; a propane building gets no natural gas
+    assert_equal(1, unitary_systems.count { |s| s.supplementalHeatingCoil.get.to_CoilHeatingElectric.is_initialized })
+    assert_equal([fuel], applied.getCoilHeatingGass.map(&:fuelType).uniq, "#{test_name}: backup coils should burn only #{fuel}")
+  end
+
+  # a gas-heated building with one electric unit: the electric unit gets electric resistance backup at the electric
+  # backup lockout and the gas units keep natural gas at the fuel backup lockout
+  def test_orig_fuel_backup_per_air_loop_gas_and_electric
+    verify_orig_fuel_backup_per_air_loop('test_orig_fuel_backup_per_air_loop_gas_and_electric', 'NaturalGas')
+  end
+
+  # a propane building with one electric unit: no unit is given natural gas, and the electric unit gets electric
+  # resistance
+  def test_orig_fuel_backup_per_air_loop_propane_and_electric
+    verify_orig_fuel_backup_per_air_loop('test_orig_fuel_backup_per_air_loop_propane_and_electric', 'Propane')
+  end
+
   # ##########################################################################
   # original fuel options lookup rows (scenarios 1 to 3)
   # ##########################################################################

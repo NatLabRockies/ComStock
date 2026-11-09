@@ -115,7 +115,7 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
         next
       end
       # skip data center CRAC/CRAH loops: the typical builders already decide their economizer by climate zone
-      if air_loop_hvac.name.to_s.match?(/(CRAC|CRAH)/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
+      if air_loop_hvac.name.to_s.match?(/\b(CRAC|CRAH)\b/i) || air_loop_hvac.thermalZones.any? { |z| OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(z) }
         runner.registerInfo("Air loop #{air_loop_hvac.name} is a data center CRAC/CRAH; its economizer was decided by the baseline and is left alone.")
         next
       end
@@ -226,6 +226,18 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
         oa_control.setEconomizerMaximumLimitDewpointTemperature(dewpoint_limit_c)
         # puts("--- economizer limit (max db T) for #{economizer_type} new: #{oa_control.getEconomizerMaximumLimitDryBulbTemperature.get}")
         # puts("--- economizer limit (max dp T) for #{economizer_type} new: #{oa_control.getEconomizerMaximumLimitDewpointTemperature.get}")
+      when 'DifferentialEnthalpy', 'DifferentialDryBulb'
+        # The standard gives no fixed limits for these types, so without this the controller kept whatever limits the
+        # baseline left on it: the OpenStudio default of 28C, or on older hydronic VAV systems the 12.8C (55F) supply
+        # air temperature that models a non-integrated economizer, which shut the new economizer off above 55F.
+        # 90.1-2019 Table 6.5.1.1.3: differential enthalpy pairs with a 75F fixed dry-bulb limit; differential dry
+        # bulb uses the return air temperature alone.
+        oa_control.resetEconomizerMaximumLimitDryBulbTemperature
+        oa_control.resetEconomizerMaximumLimitEnthalpy
+        oa_control.resetEconomizerMaximumLimitDewpointTemperature
+        if economizer_type == 'DifferentialEnthalpy'
+          oa_control.setEconomizerMaximumLimitDryBulbTemperature(OpenStudio.convert(75.0, 'F', 'C').get)
+        end
       end
 
       # change/check settings: lockout type
@@ -262,19 +274,6 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
       # oa_controller.setName(oa_controller.name.to_s.gsub("-", ""))
       economizer_type = oa_controller.getEconomizerControlType
       next unless economizer_type != 'NoEconomizer'
-
-      # check zone exhaust fan availability
-      zone_fan_exhaust_available = false
-      zone_fan_exhaust_names = []
-      air_loop_hvac.thermalZones.each do |tz|
-        tz.equipment.each do |zone_equipment|
-          if zone_equipment.to_FanZoneExhaust.is_initialized
-            fanzoneexhaust = zone_equipment.to_FanZoneExhaust.get
-            zone_fan_exhaust_available = true
-            zone_fan_exhaust_names << fanzoneexhaust.name.to_s
-          end
-        end
-      end
 
       # get main cooling coil from air loop
       # this is used to determine if there is a cooling load on the air loop
@@ -365,13 +364,38 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
       sens_nighttimevar.setKeyName(min_oa_flow_sch_nighttime_variability_name)
       li_ems_ref << sens_nighttimevar
 
-      # set sensor for zone exhaust fan
-      if zone_fan_exhaust_available
-        zone_fan_exhaust_names.each_with_index do |zone_fan_exhaust_name, i|
-          sens_zn_ex_fan = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'Fan Electricity Rate')
-          sens_zn_ex_fan.setName("sens_zn_ex_fan_#{OpenstudioStandards::HVAC.ems_friendly_name(zone_fan_exhaust_name)}")
-          sens_zn_ex_fan.setKeyName(zone_fan_exhaust_name)
-        end
+      # set sensors for the zone exhaust the outdoor air has to make up: supply minus return flow, the same quantity
+      # EnergyPlus uses as its own outdoor air floor (Controller:OutdoorAir exhaust flow), which an EMS override bypasses
+      sens_sup_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'System Node Mass Flow Rate')
+      sens_sup_flow.setName("sens_sup_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+      sens_sup_flow.setKeyName(air_loop_hvac.supplyOutletNode.name.get)
+      sens_ret_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'System Node Mass Flow Rate')
+      sens_ret_flow.setName("sens_ret_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+      sens_ret_flow.setKeyName(air_loop_hvac.demandOutletNode.name.get)
+
+      # controller minimum outdoor air as EnergyPlus converts it (volume x standard density at the site elevation)
+      min_oa_mass = OpenStudio::Model::EnergyManagementSystemInternalVariable.new(model, 'Outdoor Air Controller Minimum Mass Flow Rate')
+      min_oa_mass.setName("min_oa_mass_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+      min_oa_mass.setInternalDataIndexKeyName(oa_controller.name.get)
+
+      # fixed-damper (ProportionalMinimum) loops take in the baseline damper's share of the current airflow, so at part
+      # flow the minimum the override holds is that share of the mixed air flow, as EnergyPlus computes it for the
+      # baseline; holding the full design minimum instead raised outdoor air at part flow, mostly in heating hours
+      des_sup_flow_m_3_per_sec = 0.0
+      if air_loop_hvac.designSupplyAirFlowRate.is_initialized
+        des_sup_flow_m_3_per_sec = air_loop_hvac.designSupplyAirFlowRate.get
+      elsif air_loop_hvac.autosizedDesignSupplyAirFlowRate.is_initialized
+        des_sup_flow_m_3_per_sec = air_loop_hvac.autosizedDesignSupplyAirFlowRate.get
+      end
+      prop_min = (oa_controller.getMinimumLimitType == 'ProportionalMinimum') && (des_sup_flow_m_3_per_sec > 0)
+      if prop_min
+        prop_min_frac = min_oa_flow_m_3_per_sec / des_sup_flow_m_3_per_sec
+        sens_mix_flow = OpenStudio::Model::EnergyManagementSystemSensor.new(model, 'Air System Mixed Air Mass Flow Rate')
+        sens_mix_flow.setName("sens_mix_flow_#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}")
+        sens_mix_flow.setKeyName(air_loop_hvac.name.get)
+        base_min_expr = "#{format('%.6f', prop_min_frac)} * #{sens_mix_flow.name}"
+      else
+        base_min_expr = min_oa_mass.name.to_s
       end
 
       # set global variable for debugging
@@ -392,7 +416,12 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
       # economizer only when (1) economizing is favorable and (2) cooling load is present
       # when not economizing, if controlleroutdoorair min OA is higher than requested OA, then use controlleroutdoorair min OA
       # when not economizing, actuate to min OA only when nighttime var sch is non-zero
-      # if there is any zone level exhaust fan, change "cooling load" variable to exhaust fan power
+      # the cooling coil is the cooling-load reference on every loop. Loops with zone exhaust fans used to test
+      # "fan_0 || fan_1 || ...", but Erl's || is true only for operands equal to exactly 1, so with two or more
+      # exhaust fans the reference was always 0 and the override held the minimum even while the coil was cooling.
+      # the held minimum never drops below the zone exhaust flow, which keeps the air loop in mass balance.
+      # the held minimum is the baseline's: the controller minimum (fixed) or its share of the mixed air flow
+      # (proportional), or the ventilation request where that is larger, times the minimum outdoor air schedule.
       # dummy_debugging parameter: 0 = ems not actuated | 1 = ems actuated (i.e., forced to minimum)
       prgrm_econ_override = model.getEnergyManagementSystemTrendVariableByName('econ_override')
 
@@ -400,30 +429,19 @@ class HVACEconomizer < OpenStudio::Measure::ModelMeasure
         prgrm_econ_override = OpenStudio::Model::EnergyManagementSystemProgram.new(model)
         prgrm_econ_override.setName("#{OpenstudioStandards::HVAC.ems_friendly_name(air_loop_hvac.name.get.to_s)}_program")
         prgrm_econ_override.addLine("SET #{act_oa_flow.name} = #{act_oa_flow.name}")
-        if zone_fan_exhaust_available
-          cmd_ex_fan = ''
-          zone_fan_exhaust_names.each_with_index do |zone_fan_exhaust_name, i|
-            prgrm_econ_override.addLine("SET sens_zn_ex_fan_#{i.to_i} = sens_zn_ex_fan_#{OpenstudioStandards::HVAC.ems_friendly_name(zone_fan_exhaust_name)}")
-            if i == 0
-              cmd_ex_fan = "SET sens_load_ref = sens_zn_ex_fan_#{i.to_i}"
-            else
-              cmd_ex_fan += "|| sens_zn_ex_fan_#{i.to_i}"
-            end
-          end
-          prgrm_econ_override.addLine(cmd_ex_fan)
-        else
-          prgrm_econ_override.addLine("SET sens_load_ref = #{sens_clg_coil_rate.name}")
-        end
+        prgrm_econ_override.addLine("SET sens_load_ref = #{sens_clg_coil_rate.name}")
         prgrm_econ_override.addLine("SET sens_min_oa_rate = #{sens_min_oa_rate.name}")
         prgrm_econ_override.addLine("SET sens_econ_status = #{sens_econ_status.name}")
         prgrm_econ_override.addLine("SET sens_nighttimevar = #{sens_nighttimevar.name}")
+        prgrm_econ_override.addLine("SET exh_flow = #{sens_sup_flow.name} - #{sens_ret_flow.name}")
         prgrm_econ_override.addLine("SET #{dummy_debugging.name} = #{dummy_debugging.name}")
         prgrm_econ_override.addLine('IF ((sens_econ_status > 0) && (sens_load_ref <= 0))')
-        prgrm_econ_override.addLine("IF sens_min_oa_rate > #{min_oa_flow_kg_per_sec}")
-        prgrm_econ_override.addLine("SET #{act_oa_flow.name} = sens_min_oa_rate * sens_nighttimevar")
-        prgrm_econ_override.addLine('ELSE')
-        prgrm_econ_override.addLine("SET #{act_oa_flow.name} = #{min_oa_flow_kg_per_sec} * sens_nighttimevar")
+        prgrm_econ_override.addLine("SET oa_min = #{base_min_expr}")
+        prgrm_econ_override.addLine('IF sens_min_oa_rate > oa_min')
+        prgrm_econ_override.addLine('SET oa_min = sens_min_oa_rate')
         prgrm_econ_override.addLine('ENDIF')
+        prgrm_econ_override.addLine('SET oa_min = oa_min * sens_nighttimevar')
+        prgrm_econ_override.addLine("SET #{act_oa_flow.name} = @Max oa_min exh_flow")
         prgrm_econ_override.addLine("SET #{dummy_debugging.name} = sens_nighttimevar")
         prgrm_econ_override.addLine('ELSE')
         prgrm_econ_override.addLine("SET #{act_oa_flow.name} = Null")
