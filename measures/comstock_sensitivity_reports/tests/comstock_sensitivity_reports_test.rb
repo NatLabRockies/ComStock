@@ -281,6 +281,54 @@ class ComStockSensitivityReportsTest < Minitest::Test
     end
   end
 
+  # output names checked for a fuel-burning backup (supplemental) coil, per system type
+  BACKUP_FUEL_OUTPUTS = {
+    dx: { heat: 'dx_heating_total_supplemental_load_gas_j', fuel: 'dx_heating_total_supplemental_gas_j',
+          total_cop: 'dx_heating_average_total_cop', heat_pump_cop: 'dx_heating_average_cop' },
+    vrf: { heat: 'vrf_total_heating_supplemental_load_gas_j', fuel: 'vrf_total_heating_supplemental_gas_j',
+           total_cop: 'vrf_heating_average_total_cop', heat_pump_cop: 'vrf_heating_average_cop' }
+  }.freeze
+
+  # the fuel a backup coil burns (natural gas, propane, or fuel oil) must be counted in the total heating COP:
+  # fuel > 0, fuel ~ heat / burner efficiency, and total COP below the heat pump's own COP
+  def assert_backup_fuel_counted(result, system, burner_efficiencies)
+    refute_empty(burner_efficiencies, 'test model has no backup coils to change')
+    assert_equal(1, burner_efficiencies.uniq.size, 'test assumes all backup coils share one burner efficiency')
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_f] }
+    value = ->(key) { values["com_report_hvac_#{BACKUP_FUEL_OUTPUTS[system][key]}"] }
+    assert_operator(value[:heat], :>, 0.0, 'the backup coils should run in a Duluth winter')
+    assert_operator(value[:fuel], :>, 0.0, 'fuel burned by the backup coils is not counted')
+    assert_in_delta(value[:heat] / burner_efficiencies.first, value[:fuel], 0.05 * value[:fuel])
+    assert_operator(value[:total_cop], :<, value[:heat_pump_cop])
+  end
+
+  # hp_rtu_gas_backup.osm in Duluth with every CoilHeatingGas backup switched to fuel_type
+  def run_hp_rtu_fuel_backup_test(test_name, fuel_type)
+    puts "
+######
+TEST:#{test_name}
+######
+"
+    burner_efficiencies = []
+    set_fuel = lambda do |model|
+      model.getCoilHeatingGass.each do |coil|
+        assert(coil.setFuelType(fuel_type), "could not set fuel type of '#{coil.name}' to #{fuel_type}")
+        burner_efficiencies << coil.gasBurnerEfficiency
+      end
+    end
+    result = run_test(test_name, "#{__dir__}/hp_rtu_gas_backup.osm", "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw",
+                      setup_model: set_fuel)
+    assert_backup_fuel_counted(result, :dx, burner_efficiencies)
+  end
+
+  def test_hp_rtu_propane_backup
+    run_hp_rtu_fuel_backup_test(__method__, 'Propane')
+  end
+
+  def test_hp_rtu_fuel_oil_backup
+    run_hp_rtu_fuel_backup_test(__method__, 'FuelOilNo2')
+  end
+
   # the air loop counts upgrade_hvac_add_heat_pump_rtu stores on the building are reported as they are
   HPRTU_COUNTS = { 'hprtu_air_loops_replaced' => 5, 'hprtu_air_loops_outside_cfm_per_ton' => 4,
                    'hprtu_air_loops_outside_cfm_per_ton_min_oa' => 3, 'hprtu_air_loops_with_removed_stages' => 2,
@@ -307,6 +355,30 @@ class ComStockSensitivityReportsTest < Minitest::Test
     osm_path = "#{__dir__}/vrf_cold_climate.osm"
     epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
     assert(run_test(__method__, osm_path, epw_path))
+  end
+
+  # vrf_cold_climate.osm with each VRF terminal's backup coil replaced by an 80% efficient propane coil
+  def test_vrf_propane_backup
+    puts "
+######
+TEST:#{__method__}
+######
+"
+    burner_efficiencies = []
+    use_propane = lambda do |model|
+      model.getZoneHVACTerminalUnitVariableRefrigerantFlows.each do |terminal|
+        next unless terminal.supplementalHeatingCoil.is_initialized
+
+        backup_coil = OpenStudio::Model::CoilHeatingGas.new(model)
+        assert(backup_coil.setFuelType('Propane'), "could not set fuel type of '#{backup_coil.name}' to Propane")
+        backup_coil.setGasBurnerEfficiency(0.8)
+        terminal.setSupplementalHeatingCoil(backup_coil)
+        burner_efficiencies << backup_coil.gasBurnerEfficiency
+      end
+    end
+    result = run_test(__method__, "#{__dir__}/vrf_cold_climate.osm", "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw",
+                      setup_model: use_propane)
+    assert_backup_fuel_counted(result, :vrf, burner_efficiencies)
   end
 
   def test_8172d17_0000008

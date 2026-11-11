@@ -157,6 +157,8 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     result << OpenStudio::IdfObject.load("Output:Variable,*,Cooling Coil #{elec} Energy,RunPeriod;").get # J
     result << OpenStudio::IdfObject.load("Output:Variable,*,Heating Coil #{elec} Energy,RunPeriod;").get # J
     result << OpenStudio::IdfObject.load("Output:Variable,*,Heating Coil #{gas} Energy,RunPeriod;").get # J
+    result << OpenStudio::IdfObject.load("Output:Variable,*,Heating Coil #{fuel_oil} Energy,RunPeriod;").get # J
+    result << OpenStudio::IdfObject.load('Output:Variable,*,Heating Coil Propane Energy,RunPeriod;').get # J
     result << OpenStudio::IdfObject.load("Output:Variable,*,Heating Coil Defrost #{elec} Energy,RunPeriod;").get # J
     result << OpenStudio::IdfObject.load("Output:Variable,*,Heating Coil Crankcase Heater #{elec} Energy,RunPeriod;").get # J
     result << OpenStudio::IdfObject.load('Output:Variable,*,Heating Coil Heating Energy,RunPeriod;').get # J
@@ -1865,7 +1867,8 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
             vrf_total_heating_supplemental_load_gas_j += supplemental_coil_heating_energy_j
 
             supplemental_coil = supplemental_coil.to_CoilHeatingGas.get
-            supplemental_gas_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{gas} Energy")
+            # read the fuel the coil burns (natural gas, propane, or fuel oil); all count as supplemental gas
+            supplemental_gas_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{supplemental_coil.fuelType} Energy")
           else
             runner.registerWarning("Unrecognized coil type for vrf indoor unit supplemntal heating coil #{supplemental_coil.name}.")
           end
@@ -2705,11 +2708,11 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
         supplemental_coil_heating_energy_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, 'Heating Coil Heating Energy')
 
         # supplemental heating coil electric or gas energy
-        fuel = supplemental_coil_type == 'gas' ? gas : elec
+        # a 'gas' coil is any CoilHeatingGas; read the fuel it burns (natural gas, propane, or fuel oil)
         if supplemental_coil_type == 'electric'
-          supplemental_electric_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{fuel} Energy")
+          supplemental_electric_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{elec} Energy")
         elsif supplemental_coil_type == 'gas'
-          supplemental_gas_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{fuel} Energy")
+          supplemental_gas_j = sql_get_report_variable_data_double(runner, sql, supplemental_coil, "Heating Coil #{gas_coil.fuelType} Energy")
         end
       end
       dx_heating_total_supplemental_load_j += supplemental_coil_heating_energy_j
