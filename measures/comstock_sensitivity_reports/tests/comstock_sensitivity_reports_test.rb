@@ -281,6 +281,35 @@ class ComStockSensitivityReportsTest < Minitest::Test
     end
   end
 
+  # a propane backup coil is a CoilHeatingGas with fuel type Propane; its fuel must be counted in the total heating COP
+  def test_hp_rtu_propane_backup
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    osm_path = "#{__dir__}/hp_rtu_gas_backup.osm"
+    epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
+    burner_efficiencies = []
+    use_propane = lambda do |model|
+      model.getCoilHeatingGass.each do |coil|
+        assert(coil.setFuelType('Propane'), "could not set fuel type of '#{coil.name}' to Propane")
+        burner_efficiencies << coil.gasBurnerEfficiency
+      end
+    end
+    result = run_test(__method__, osm_path, epw_path, setup_model: use_propane)
+    assert(result)
+    refute_empty(burner_efficiencies, 'test model has no CoilHeatingGas to switch to propane')
+    assert_equal(1, burner_efficiencies.uniq.size, 'test assumes all backup coils share one burner efficiency')
+
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_f] }
+    backup_heat_j = values['com_report_hvac_dx_heating_total_supplemental_load_gas_j']
+    backup_fuel_j = values['com_report_hvac_dx_heating_total_supplemental_gas_j']
+    assert_operator(backup_heat_j, :>, 0.0, 'the propane backup should run in a Duluth winter')
+    assert_operator(backup_fuel_j, :>, 0.0, 'propane burned by the backup coils is not counted')
+    # fuel burned is about the heat delivered divided by the burner efficiency
+    assert_in_delta(backup_heat_j / burner_efficiencies.first, backup_fuel_j, 0.05 * backup_fuel_j)
+    # with the backup's fuel counted, the total COP must sit below the heat pump's own COP
+    assert_operator(values['com_report_hvac_dx_heating_average_total_cop'], :<,
+                    values['com_report_hvac_dx_heating_average_cop'])
+  end
+
   # the air loop counts upgrade_hvac_add_heat_pump_rtu stores on the building are reported as they are
   HPRTU_COUNTS = { 'hprtu_air_loops_replaced' => 5, 'hprtu_air_loops_outside_cfm_per_ton' => 4,
                    'hprtu_air_loops_outside_cfm_per_ton_min_oa' => 3, 'hprtu_air_loops_with_removed_stages' => 2,
