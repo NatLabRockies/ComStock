@@ -367,6 +367,43 @@ class ComStockSensitivityReportsTest < Minitest::Test
     assert(run_test(__method__, osm_path, epw_path))
   end
 
+  def test_vrf_propane_backup
+    puts "\n######\nTEST:#{__method__}\n######\n"
+    osm_path = "#{__dir__}/vrf_cold_climate.osm"
+    epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
+    burner_efficiencies = []
+    use_propane_vrf_backups = lambda do |model|
+      model.getThermalZones.each do |zone|
+        zone.equipment.each do |equipment|
+          next unless equipment.to_ZoneHVACTerminalUnitVariableRefrigerantFlow.is_initialized
+
+          terminal = equipment.to_ZoneHVACTerminalUnitVariableRefrigerantFlow.get
+          next unless terminal.supplementalHeatingCoil.is_initialized
+
+          backup_coil = OpenStudio::Model::CoilHeatingGas.new(model)
+          assert(backup_coil.setFuelType('Propane'), "could not set fuel type of '#{backup_coil.name}' to Propane")
+          backup_coil.setGasBurnerEfficiency(0.8)
+          backup_coil.autosizeNominalCapacity
+          terminal.setSupplementalHeatingCoil(backup_coil)
+          burner_efficiencies << backup_coil.gasBurnerEfficiency
+        end
+      end
+    end
+    result = run_test(__method__, osm_path, epw_path, setup_model: use_propane_vrf_backups)
+    assert(result)
+    refute_empty(burner_efficiencies, 'test model has no VRF supplemental coils to switch to propane')
+    assert_equal(1, burner_efficiencies.uniq.size, 'test assumes all VRF backup coils share one burner efficiency')
+
+    values = result.stepValues.to_h { |v| [v.name, v.valueAsVariant.to_s.to_f] }
+    backup_heat_j = values['com_report_hvac_vrf_total_heating_supplemental_load_gas_j']
+    backup_fuel_j = values['com_report_hvac_vrf_total_heating_supplemental_gas_j']
+    assert_operator(backup_heat_j, :>, 0.0, 'the propane VRF backup should run in a Duluth winter')
+    assert_operator(backup_fuel_j, :>, 0.0, 'propane burned by the VRF backup coils is not counted')
+    assert_in_delta(backup_heat_j / burner_efficiencies.first, backup_fuel_j, 0.05 * backup_fuel_j)
+    assert_operator(values['com_report_hvac_vrf_heating_average_total_cop'], :<,
+                    values['com_report_hvac_vrf_heating_average_cop'])
+  end
+
   def test_8172d17_0000008
     # 8172d17_0000008
     puts "\n######\nTEST:#{__method__}\n######\n"
