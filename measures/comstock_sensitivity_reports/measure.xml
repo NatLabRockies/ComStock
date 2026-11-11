@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>com_stock_sensitivity_reports</name>
   <uid>aeb81242-de7e-4613-af47-c1faf19d286a</uid>
-  <version_id>f008acdf-5625-4d2c-b393-58134a7fe8ea</version_id>
-  <version_modified>2026-11-11T15:54:14Z</version_modified>
+  <version_id>366b9407-6868-46b3-ae42-ca4d2f29345a</version_id>
+  <version_modified>2026-11-11T16:30:35Z</version_modified>
   <xml_checksum>A0069B90</xml_checksum>
   <class_name>ComStockSensitivityReports</class_name>
   <display_name>ComStock_Sensitivity_Reports</display_name>
@@ -238,7 +238,7 @@
       <filename>comstock_sensitivity_reports_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>472A8D2F</checksum>
+      <checksum>AB984B9D</checksum>
     </file>
     <file>
       <filename>grocery.osm</filename>
