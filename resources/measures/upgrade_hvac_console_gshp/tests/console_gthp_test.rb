@@ -327,4 +327,32 @@ class ConsoleGTHPTest < Minitest::Test
     # Apply the measure and check if before/after results are identical
     apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: true)
   end
+
+  # A zone exhaust fan stays, marked fully balanced, so the console unit's outdoor air system does not make up the
+  # exhaust: the PTHP baseline has no outdoor air system, so EnergyPlus never makes it up there either. Apply only.
+  def test_pthp_exhaust_fan_balanced
+    osm_path = model_input_path('PTHP_3B.osm')
+    epw_path = epw_input_path('CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw')
+    model = load_model(osm_path)
+    zone = model.getThermalZones.find { |z| z.equipment.any? { |e| e.to_ZoneHVACPackagedTerminalHeatPump.is_initialized } }
+    refute_nil(zone, 'the test model has no PTHP zone')
+    fan = OpenStudio::Model::FanZoneExhaust.new(model)
+    fan.setName('Test Restroom Exhaust Fan')
+    fan.setMaximumFlowRate(0.02)
+    fan.addToThermalZone(zone)
+    measure = AddConsoleGSHP.new
+    argument_map = populate_argument_map(measure, osm_path, {})
+    result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false, model: model)
+    assert_equal('Success', result.value.valueName)
+
+    applied = load_model(model_output_path(__method__))
+    exhaust = applied.getFanZoneExhaustByName('Test Restroom Exhaust Fan')
+    assert(exhaust.is_initialized, 'the measure removed the zone exhaust fan')
+    schedule = exhaust.get.balancedExhaustFractionSchedule
+    assert(schedule.is_initialized, 'the exhaust fan has no balanced exhaust fraction schedule')
+    assert_equal(applied.alwaysOnDiscreteSchedule.name.get, schedule.get.name.get)
+    thermal_zone = exhaust.get.thermalZone.get
+    assert(thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.airLoopHVACOutdoorAirSystem.is_initialized,
+           'the exhaust zone has no console unit air loop with an outdoor air system')
+  end
 end

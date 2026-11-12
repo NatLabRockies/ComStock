@@ -2037,4 +2037,22 @@ class AddHeatPumpRtuTest < Minitest::Test
       end
     end
   end
+
+  # 2026 R1 standard performance RTU with roof insulation or new windows: the rows keep the baseline's hard-sized
+  # equipment, as the measure documentation describes (sizing constant from baseline to measure case). With a sizing
+  # run, the hard-sized capacities stayed while the heating airflow came from the upgraded building's sizing run.
+  # The rows differ from the earlier sizing-run rows only in sizing_run. Lookup only, no simulation.
+  def test_envelope_rows_keep_baseline_sizing
+    announce_test('test_envelope_rows_keep_baseline_sizing')
+    measure = AddHeatPumpRtu.new
+    model = OpenStudio::Model::Model.new
+    { 'standard_performance_w_roof_baseline_sizing' => 'standard_performance_w_roof',
+      'standard_performance_w_window_baseline_sizing' => 'standard_performance_w_window' }.each do |new_name, old_name|
+      new_args = options_lookup_args_for(new_name)
+      old_args = options_lookup_args_for(old_name)
+      assert_equal('false', new_args['sizing_run'], "#{new_name} must not request a sizing run")
+      assert_equal(old_args.merge('sizing_run' => 'false'), new_args, "#{new_name} differs from #{old_name} beyond sizing_run")
+      options_lookup_argument_map(measure, model, new_args)
+    end
+  end
 end

@@ -1809,18 +1809,11 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
           vrf_terminal.setSupplementalHeatingCoil(htg_coil)
           htg_coil.setEfficiency(1)
           htg_coil.autosizeNominalCapacity
-        end
-        # EnergyPlus I/O: with a DOAS, the DOAS air terminal takes heating and cooling sequence 1 so other zone
-        # equipment (the VRF terminal) sees the net load after the DOAS air is added to the zone
-        doas_terminal = thermal_zone.airLoopHVACTerminals.find do |terminal|
-          terminal_loop = terminal.to_HVACComponent.get.airLoopHVAC
-          terminal_loop.is_initialized && terminal_loop.get.handle.to_s == air_loop_hvac.handle.to_s
-        end
-        if doas_terminal.nil?
-          runner.registerWarning("No DOAS air terminal found in #{thermal_zone.name}; zone equipment sequence not changed.")
-        else
-          thermal_zone.setCoolingPriority(doas_terminal, 1)
-          thermal_zone.setHeatingPriority(doas_terminal, 1)
+          # the VRF terminal keeps cooling and heating sequence 1, ahead of the DOAS terminal. Putting the DOAS terminal
+          # first (EnergyPlus I/O guidance) cut unmet heating in the 2026 R1 10k_4 test but raised unmet cooling by
+          # about 230 h in most VRF buildings, so the original order stays
+          thermal_zone.setCoolingPriority(vrf_terminal.to_ModelObject.get, 1)
+          thermal_zone.setHeatingPriority(vrf_terminal.to_ModelObject.get, 1)
         end
       end
 
