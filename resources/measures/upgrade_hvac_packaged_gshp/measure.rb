@@ -178,6 +178,22 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     tot_oa_flow_rate
   end
 
+  # Zone exhaust that the zone's air system has to make up with outdoor air: the maximum flows of the zone's
+  # Fan:ZoneExhaust objects. Like the loop's flows, these cover every copy of a multiplied zone (openstudio-standards
+  # sizes them from the floor area times the zone multiplier). Exhaust with a balanced exhaust fraction schedule (the
+  # baseline's kitchen transfer air) is made up elsewhere and is skipped, as in the Advanced RTU Controls measure.
+  def thermal_zone_exhaust_makeup_flow(thermal_zone)
+    thermal_zone.equipment.to_a.sum do |equip|
+      exhaust_fan = equip.to_FanZoneExhaust
+      next 0.0 unless exhaust_fan.is_initialized
+
+      exhaust_fan = exhaust_fan.get
+      next 0.0 if exhaust_fan.balancedExhaustFractionSchedule.is_initialized || !exhaust_fan.maximumFlowRate.is_initialized
+
+      exhaust_fan.maximumFlowRate.get
+    end
+  end
+
   # determine if the air loop is residential (checks to see if there is outdoor air system object)
   def air_loop_res?(air_loop_hvac)
     is_res_system = true
@@ -340,6 +356,34 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     settings
   end
 
+  # True when the zone is heated or cooled through a plant loop this measure removes (every plant loop except service
+  # water heating): a water coil on its air loop (supply side, outdoor air system, unitary system children, its
+  # terminal) or in its zone equipment. Such a unit cannot be kept as it is.
+  def zone_uses_removed_plant_loop?(thermal_zone)
+    parts = thermal_zone.equipment.to_a
+    if thermal_zone.airLoopHVAC.is_initialized
+      air_loop = thermal_zone.airLoopHVAC.get
+      parts += air_loop.supplyComponents.to_a + air_loop.demandComponents.to_a
+      parts += air_loop.airLoopHVACOutdoorAirSystem.get.oaComponents.to_a if air_loop.airLoopHVACOutdoorAirSystem.is_initialized
+    end
+    seen = {}
+    until parts.empty?
+      part = parts.shift
+      next if seen[part.handle.to_s]
+
+      seen[part.handle.to_s] = true
+      parts += part.to_ParentObject.get.children.to_a if part.to_ParentObject.is_initialized
+      water_coil = part.to_WaterToAirComponent
+      plant_loop = if water_coil.is_initialized
+                     water_coil.get.plantLoop
+                   elsif part.to_CoilHeatingWaterBaseboard.is_initialized
+                     part.to_CoilHeatingWaterBaseboard.get.plantLoop
+                   end
+      return true if !plant_loop.nil? && plant_loop.is_initialized && !plant_loop.get.name.get.include?('Service')
+    end
+    false
+  end
+
   # Define the main method that will be called by the OpenStudio application
   def run(model, runner, user_arguments)
     super(model, runner, user_arguments)
@@ -385,7 +429,10 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     # of the inventory, their equipment is kept and they are skipped below. High-ITE data centers have CRAC/CRAH loops;
     # small 'datacenter/low ITE' IT closets (outpatients) fall below the gem's equipment density test, so a closet on
     # its own single-zone unit (PSZ-AC) is matched by name and keeps it; a closet on a multizone PVAV is converted with
-    # the rest of that loop. Loop name is the fallback test.
+    # the rest of that loop. Loop name is the fallback test. A data center unit heated or cooled through a plant loop
+    # (a PSZ-AC with a boiler's hot water coil) is converted with the rest of the building instead: the plant loops are
+    # removed below, which would leave its water coils unconnected and stop EnergyPlus.
+    data_centers_on_plant = []
     data_center_zone_names = model.getThermalZones.select do |thermal_zone|
       named_crac = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.name.to_s.match?(/\b(CRAC|CRAH)\b/i)
       space_type_names = thermal_zone.spaces.map do |space|
@@ -396,10 +443,16 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       end
       single_zone_loop = thermal_zone.airLoopHVAC.is_initialized && thermal_zone.airLoopHVAC.get.thermalZones.size == 1
       named_data_center = single_zone_loop && ([thermal_zone.name.get] + space_type_names).any? { |name| name.match?(/data ?center|computer room/i) }
-      named_crac || named_data_center ||
-        (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
+      data_center = named_crac || named_data_center ||
+                    (OpenstudioStandards::HVAC.respond_to?(:thermal_zone_data_center?) && OpenstudioStandards::HVAC.thermal_zone_data_center?(thermal_zone))
+      if data_center && zone_uses_removed_plant_loop?(thermal_zone)
+        data_centers_on_plant << thermal_zone.name.get
+        next false
+      end
+      data_center
     end.map { |thermal_zone| thermal_zone.name.get }
     runner.registerInfo("Data center zones kept on their CRAC/CRAH and not given a packaged GSHP: #{data_center_zone_names.join(', ')}") unless data_center_zone_names.empty?
+    runner.registerInfo("Data center zones converted with the building because their units use a plant loop this measure removes: #{data_centers_on_plant.join(', ')}") unless data_centers_on_plant.empty?
     # if zone has baseboard electric (typically small, storage style space types), skip this zone and do not add GHP here
     zones_to_skip = []
     unconditioned_zones = []
@@ -719,20 +772,23 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
 
       # the PVAV's operation outside its schedule (night cycling, optimum start), its outdoor air controls and its sizing
       # temperatures, for the single-zone loops that replace it; read now because the PVAV loop is removed below.
-      # Its minimum outdoor air flow is split across its zones in proportion to their design outdoor air.
       pvav_avail_settings = pvav_availability_settings(pvav_air_loop, runner)
       pvav_oa_settings = pvav_outdoor_air_settings(pvav_air_loop, runner)
-      pvav_zone_oa_total = pvav_air_loop.thermalZones.sum { |zone| thermal_zone_outdoor_airflow_rate(zone) }
 
       pvav_air_loop.thermalZones.each do |thermal_zone|
         zone_data[thermal_zone.name.to_s] = {} # creating as a placeholder
         zone_data["#{thermal_zone.name} schedule"] = hvac_operation_sched # save operation schedule from main air loop for use later
         zone_data["#{thermal_zone.name} pvav_avail_settings"] = pvav_avail_settings
+        # Each replacing unit is a single-zone system, so its minimum outdoor air is autosized to its own zone's design
+        # outdoor air, as for a new PSZ unit (and the baseline's PSZ systems). The PVAV's minimum is not split across
+        # the zones: for multizone VAV the typical workflow raises it for system ventilation efficiency (up to 1/0.6 of
+        # the zone sum in newer vintages), which a single-zone unit does not need; a split share could also exceed a
+        # unit's own airflow, which stopped EnergyPlus ('maximum outdoor air flow rate < minimum'). The PVAV's minimum
+        # outdoor air schedule, limit type and ventilation controller settings still carry over. A PVAV with DCV keeps
+        # its zero minimum (as openstudio-standards sets it when enabling DCV), so the ventilation controller sets each
+        # unit's outdoor air from its zone's occupancy, as before.
         zone_oa_settings = pvav_oa_settings.dup
-        unless pvav_oa_settings['min_oa_flow'].nil?
-          zone_share = pvav_zone_oa_total > 0.0 ? thermal_zone_outdoor_airflow_rate(thermal_zone) / pvav_zone_oa_total : 0.0
-          zone_oa_settings['min_oa_flow'] = pvav_oa_settings['min_oa_flow'] * zone_share
-        end
+        zone_oa_settings['min_oa_flow'] = pvav_oa_settings['mv_dcv'] == true ? pvav_oa_settings['min_oa_flow'] : nil
         zone_data["#{thermal_zone.name} pvav_oa_settings"] = zone_oa_settings
         pfp_box = false
 
@@ -741,6 +797,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         zone_oa_flow = thermal_zone_outdoor_airflow_rate(thermal_zone)
         zone_data["#{thermal_zone.name} zone_oa_flow"] = zone_oa_flow
         runner.registerInfo("zone oa flow for #{thermal_zone.name} zone #{zone_oa_flow}")
+        # the PVAV's outdoor air made up this zone's exhaust; its replacing unit has to (see the zone sizing below)
+        zone_data["#{thermal_zone.name} exhaust_flow"] = thermal_zone_exhaust_makeup_flow(thermal_zone)
         if thermal_zone.airLoopHVACTerminal.get.to_AirTerminalSingleDuctConstantVolumeReheat.is_initialized
           old_terminal = thermal_zone.airLoopHVACTerminal.get.to_AirTerminalSingleDuctConstantVolumeReheat.get
         elsif thermal_zone.airLoopHVACTerminal.get.to_AirTerminalSingleDuctConstantVolumeNoReheat.is_initialized
@@ -912,6 +970,11 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
           zone_data[thermal_zone.name.to_s]['fan_motor_eff'] = fan_motor_eff
           fan_eff = std.fan_baseline_impeller_efficiency(supply_fan)
           zone_data[thermal_zone.name.to_s]['fan_eff'] = fan_eff
+          # the replacing unit keeps this unit's operation: its fan availability and fan operating mode schedules
+          # (continuous while the loop's schedule is on and cycling on load otherwise for the sampled night fan-cycling
+          # modes, constant for the fan-on mode)
+          zone_data[thermal_zone.name.to_s]['baseline_fan_op_sched'] = supply_fan_op_sched
+          zone_data[thermal_zone.name.to_s]['baseline_fan_avail_sched'] = supply_fan.availabilitySchedule
 
           # get the availability schedule
           supply_fan_avail_sched = supply_fan.availabilitySchedule
@@ -1088,6 +1151,20 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         sizing_zone.setCoolingMinimumAirFlowperZoneFloorArea(0.0)
         sizing_zone.setCoolingMinimumAirFlowFraction(0.0)
         sizing_zone.setCoolingMinimumAirFlow(0.0012)
+        # A zone whose exhaust the PVAV's outdoor air made up (restrooms) now gets that make-up air from its own unit:
+        # EnergyPlus holds a loop's outdoor air at no less than its zones' exhaust. Size the unit for it, as the baseline
+        # PVAV conditioned it: the zone's cooling design airflow is at least the exhaust and the loop's design outdoor
+        # air is the exhaust, so the coils are sized for that outdoor air. The minimum outdoor air stays the zone's own
+        # (OA controller below), and the airflows after sizing stay at or above the exhaust. The exhaust flow covers all
+        # copies of a multiplied zone, as the loop's flows do; Sizing:Zone's absolute minimum is for one copy (EnergyPlus
+        # multiplies it by the zone multiplier), as are the 1.2 L/s floor and the zone's design outdoor air.
+        exhaust_flow = zone_data["#{thermal_zone.name} exhaust_flow"].to_f
+        exhaust_sized = exhaust_flow > [0.0012, zone_data["#{thermal_zone.name} zone_oa_flow"].to_f].max * thermal_zone.multiplier
+        if exhaust_sized
+          sizing_zone.setCoolingMinimumAirFlow(exhaust_flow / thermal_zone.multiplier)
+          sizing_system.setDesignOutdoorAirFlowRate(exhaust_flow)
+          runner.registerInfo("#{thermal_zone.name}: unit sized to make up #{exhaust_flow.round(4)} m3/s of zone exhaust.")
+        end
 
         # to account for turndown limitations and ventilation requirements
         min_fan_flow_ratio = if zone_data["#{thermal_zone.name} min_oa_flow_ratio"].nil?
@@ -1103,11 +1180,12 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         diffuser.setName("#{air_loop_hvac.name} Diffuser")
         air_loop_hvac.multiAddBranchForZone(thermal_zone, diffuser.to_HVACComponent.get)
 
-        # add the OA system. A loop that replaces a PVAV keeps the PVAV's outdoor air: its minimum outdoor air schedule
-        # (occupancy, or constant 1 where the baseline ventilates during night cycling), minimum limit type, this zone's
-        # share of its minimum outdoor air flow and its mechanical ventilation controller (off for a fixed-damper
-        # baseline). OpenStudio writes the minimum outdoor air schedule into an always-on mechanical ventilation
-        # availability, and the economizer measure's EMS reads it. The dcv and econ options then change it on purpose.
+        # add the OA system. A loop that replaces a PVAV keeps the PVAV's outdoor air controls: its minimum outdoor air
+        # schedule (occupancy, or constant 1 where the baseline ventilates during night cycling), minimum limit type and
+        # its mechanical ventilation controller (off for a fixed-damper baseline); its minimum outdoor air flow is
+        # autosized to the zone's own design outdoor air (see above). OpenStudio writes the minimum outdoor air schedule
+        # into an always-on mechanical ventilation availability, and the economizer measure's EMS reads it. The dcv and
+        # econ options then change it on purpose.
         oa_controller = OpenStudio::Model::ControllerOutdoorAir.new(model)
         oa_controller.setName("#{air_loop_hvac.name} OA System Controller")
         oa_controller.setMinimumOutdoorAirSchedule(always_on)
@@ -1122,6 +1200,12 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
           controller_mv.setSystemOutdoorAirMethod(pvav_oa_settings['mv_method'])
           runner.registerInfo("#{air_loop_hvac.name}: minimum outdoor air #{pvav_oa_settings['min_oa_flow'].nil? ? 'autosized' : pvav_oa_settings['min_oa_flow'].round(5)} m3/s, " \
                               "#{pvav_oa_settings['min_limit_type']}, schedule #{oa_controller.minimumOutdoorAirSchedule.get.name}, mechanical ventilation DCV #{pvav_oa_settings['mv_dcv']}, #{pvav_oa_settings['mv_method']}.")
+        end
+        # an exhaust-sized unit's design outdoor air is the exhaust, which an autosized minimum would follow; keep its
+        # minimum at the zone's own design outdoor air, as for the other units (EnergyPlus raises the outdoor air to the
+        # exhaust while the exhaust fan runs)
+        if exhaust_sized && oa_controller.isMinimumOutdoorAirFlowRateAutosized
+          oa_controller.setMinimumOutdoorAirFlowRate(zone_data["#{thermal_zone.name} zone_oa_flow"].to_f * thermal_zone.multiplier)
         end
         oa_controller.resetEconomizerMinimumLimitDryBulbTemperature
         oa_system = OpenStudio::Model::AirLoopHVACOutdoorAirSystem.new(model, oa_controller)
@@ -1144,12 +1228,20 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       # add supply fan
       fan = OpenStudio::Model::FanVariableVolume.new(model)
       fan.setName("#{air_loop_hvac.name} Fan")
-      # The unit is available on the replaced loop's availability schedule, as the PVAV supply fan was: outside it the
-      # unit is off unless the loop's night cycle (or optimum start) manager turns it on to hold the setback setpoints.
-      # With the always-on default and the always-on fan operating mode below, every unit ran its fan all night. The
-      # baselines' night modes carry over: a fan-on baseline's availability is constant 1, a fan-cycling one's follows
-      # occupancy. (A PSZ's own cycling fan schedule is not used: with the VAV terminal the coils then run at very low flow.)
-      fan.setAvailabilitySchedule(zone_data["#{thermal_zone.name} schedule"])
+      # A unit that replaces a PSZ unitary system runs as that unit did: its fan availability (always on in the
+      # baselines) and, below, its fan operating mode schedule, so in the sampled night fan-cycling modes it runs its
+      # fan continuously while the loop's schedule is on and cycles on load otherwise, holding the setback setpoints
+      # as the baseline unit does; fan-on baselines stay continuous. With the fan available only on the occupancy
+      # schedule and an always-on operating mode, the night cycle manager held zones about 1 C below their setpoints
+      # and zones with no occupancy (storage, restrooms) never got occupied operation.
+      # A unit that replaces a PVAV is available on the PVAV's availability schedule, as the PVAV supply fan was, and
+      # runs continuously while available; outside it the PVAV's night cycle (or optimum start) manager turns it on.
+      baseline_fan_op_sched = zone_data[thermal_zone.name.to_s]['baseline_fan_op_sched']
+      if baseline_fan_op_sched.nil?
+        fan.setAvailabilitySchedule(zone_data["#{thermal_zone.name} schedule"])
+      else
+        fan.setAvailabilitySchedule(zone_data[thermal_zone.name.to_s]['baseline_fan_avail_sched'])
+      end
       # set pressure rise based on previous fan, since assuming distribution system characteristics remain basically the same
       # check for a similar fan in the baseline to set these parameters based on--otherwise, will do so after sizing
       unless zone_data[thermal_zone.name.to_s]['pressure_rise'].nil?
@@ -1182,7 +1274,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       unitary_system.setControllingZoneorThermostatLocation(thermal_zone)
       unitary_system.setSupplyFan(fan)
       unitary_system.setFanPlacement(fan_location)
-      unitary_system.setSupplyAirFanOperatingModeSchedule(model.alwaysOnDiscreteSchedule) # #needs to be set this way for the water-to-air heat pump coils
+      # the replaced PSZ unit's fan operating mode schedule (see the fan above); continuous for PVAV replacements
+      unitary_system.setSupplyAirFanOperatingModeSchedule(baseline_fan_op_sched.nil? ? model.alwaysOnDiscreteSchedule : baseline_fan_op_sched)
       # Supplemental electric heating for heating loads above what the heat pump, sized to the cooling load, can meet
       # (measure documentation sec. 3.2.1). It is autosized in the sizing run like the other coils; Load control runs it
       # only after the heat pump, and its outlet is capped by the maximum supply air temperature, which is set back to
@@ -1371,6 +1464,29 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         else
           unitary_sys.autosizeSupplyAirFlowRateWhenNoCoolingorHeatingisRequired
           runner.registerInfo("zone #{thermal_zone.name} autosizing airflow for vent only")
+        end
+      end
+      # A unit that makes up its zone's exhaust (PVAV replacements, see the zone sizing) keeps its no-load and heating
+      # supply flows and its zone terminal's minimum at or above that exhaust, so its outdoor air can match the exhaust
+      # at part load too. The exhaust flow, like the unit's and the terminal's flows, covers all copies of a multiplied
+      # zone.
+      exhaust_flow = zone_data["#{thermal_zone.name} exhaust_flow"].to_f
+      if exhaust_flow > 0.0
+        no_load_flow = unitary_sys.supplyAirFlowRateWhenNoCoolingorHeatingisRequired
+        if no_load_flow.is_initialized && no_load_flow.get < exhaust_flow
+          unitary_sys.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(exhaust_flow)
+        end
+        heating_flow = unitary_sys.supplyAirFlowRateDuringHeatingOperation
+        if heating_flow.is_initialized && heating_flow.get < exhaust_flow
+          unitary_sys.setSupplyAirFlowRateDuringHeatingOperation(exhaust_flow)
+        end
+        terminal = thermal_zone.airLoopHVACTerminal
+        if terminal.is_initialized && terminal.get.to_AirTerminalSingleDuctVAVHeatAndCoolNoReheat.is_initialized
+          terminal = terminal.get.to_AirTerminalSingleDuctVAVHeatAndCoolNoReheat.get
+          terminal_max = terminal.maximumAirFlowRate
+          if terminal_max.is_initialized && terminal_max.get > 0.0 && terminal.zoneMinimumAirFlowFraction < exhaust_flow / terminal_max.get
+            terminal.setZoneMinimumAirFlowFraction([exhaust_flow / terminal_max.get, 1.0].min)
+          end
         end
       end
     end
