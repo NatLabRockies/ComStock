@@ -587,6 +587,18 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       OpenStudio.logFree(OpenStudio::Info, 'openstudio.Model.Model',
                          "Adding water-to-air heat pump for #{thermal_zone.name}.")
 
+      # The zone's exhaust fans (restrooms, kitchen hoods) stay, with their make-up air treated as balanced, i.e. supplied
+      # outside the HVAC system, as in the baseline: PTAC, PTHP and residential units have no outdoor air system, so
+      # EnergyPlus never makes up the exhaust there. On the console unit's air loop EnergyPlus would otherwise hold
+      # outdoor air at no less than the zone exhaust (Controller:OutdoorAir), a load the baseline does not carry and the
+      # unit is not sized for: restrooms have no design outdoor air, and a 95 cfm restroom exhaust left a 780 W unit
+      # running flat out while the zone stayed warm (10k_4). The unit then brings in only the zone's design ventilation.
+      thermal_zone.equipment.each do |equip|
+        next unless equip.to_FanZoneExhaust.is_initialized
+
+        equip.to_FanZoneExhaust.get.setBalancedExhaustFractionSchedule(model.alwaysOnDiscreteSchedule)
+      end
+
       # create new air loop for unitary system
       air_loop_hvac = OpenStudio::Model::AirLoopHVAC.new(model)
       air_loop_hvac.setName("#{thermal_zone.name} Air Loop")
