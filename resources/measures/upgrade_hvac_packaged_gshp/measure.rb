@@ -194,6 +194,30 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     end
   end
 
+  # Raise a unitary system's supplemental electric coil to its zone's heating design load from the last sizing run when
+  # that load is larger than the coil's sized capacity. The load is the Zone Sensible Heating 'User Design Load', which
+  # includes the zone heating sizing factor and, like the unit capacities, the zone multiplier. Returns the new capacity
+  # in W, or nil when the coil is left as sized.
+  def raise_supplemental_coil_to_zone_heating_load(model, unitary_sys, runner)
+    supp = unitary_sys.supplementalHeatingCoil
+    zone = unitary_sys.controllingZoneorThermostatLocation
+    return nil unless supp.is_initialized && supp.get.to_CoilHeatingElectric.is_initialized && zone.is_initialized && model.sqlFile.is_initialized
+
+    coil = supp.get.to_CoilHeatingElectric.get
+    return nil unless coil.nominalCapacity.is_initialized
+
+    zone_name = zone.get.name.get.upcase.gsub("'", "''")
+    query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName='HVACSizingSummary' AND " \
+            "ReportForString='Entire Facility' AND TableName='Zone Sensible Heating' AND " \
+            "ColumnName='User Design Load' AND Units='W' AND RowName='#{zone_name}'"
+    design_load = model.sqlFile.get.execAndReturnFirstDouble(query)
+    return nil unless design_load.is_initialized && design_load.get > coil.nominalCapacity.get
+
+    runner.registerInfo("#{coil.name} raised from #{coil.nominalCapacity.get.round} W to the heating design load of #{zone.get.name}, #{design_load.get.round} W.")
+    coil.setNominalCapacity(design_load.get)
+    design_load.get
+  end
+
   # determine if the air loop is residential (checks to see if there is outdoor air system object)
   def air_loop_res?(air_loop_hvac)
     is_res_system = true
@@ -1277,10 +1301,12 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       # the replaced PSZ unit's fan operating mode schedule (see the fan above); continuous for PVAV replacements
       unitary_system.setSupplyAirFanOperatingModeSchedule(baseline_fan_op_sched.nil? ? model.alwaysOnDiscreteSchedule : baseline_fan_op_sched)
       # Supplemental electric heating for heating loads above what the heat pump, sized to the cooling load, can meet
-      # (measure documentation sec. 3.2.1). It is autosized in the sizing run like the other coils; Load control runs it
-      # only after the heat pump, and its outlet is capped by the maximum supply air temperature, which is set back to
-      # 40 C after sizing below. A ground-source unit has no air-source low-temperature lockout, so the 4.4 C (40 F)
-      # limit is raised to 21 C, as in the console measure.
+      # (measure documentation sec. 3.2.1). It is autosized in the sizing run and raised to the zone's heating design
+      # load after sizing below; Load control runs it only after the heat pump. Its outlet is capped by the maximum
+      # supply air temperature, 50 C: the zone heating design supply air temperature the sizing uses (122 F below) and
+      # the HP setpoint manager's maximum, so the units can deliver the heating airflow they are sized for. A
+      # ground-source unit has no air-source low-temperature lockout, so the 4.4 C (40 F) limit is raised to 21 C, as in
+      # the console measure.
       supplemental_coil = OpenStudio::Model::CoilHeatingElectric.new(model)
       supplemental_coil.setName('Supplemental Heating Coil')
       supplemental_coil.setEfficiency(1.0)
@@ -1288,7 +1314,7 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       unitary_system.setSupplementalHeatingCoil(supplemental_coil)
       unitary_system.setMaximumOutdoorDryBulbTemperatureforSupplementalHeaterOperation(21.0)
       unitary_system.setName("#{air_loop_hvac.name} Unitary HP")
-      unitary_system.setMaximumSupplyAirTemperature(40.0)
+      unitary_system.setMaximumSupplyAirTemperature(50.0)
       if model.version < OpenStudio::VersionString.new('3.7.0')
         unitary_system.setSupplyAirFlowRateMethodDuringCoolingOperation('SupplyAirFlowRate')
         unitary_system.setSupplyAirFlowRateMethodDuringHeatingOperation('SupplyAirFlowRate')
@@ -1389,8 +1415,16 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       # units kept on data center zones are not heat pumps
       next if unitary_sys.airLoopHVAC.is_initialized && unitary_sys.airLoopHVAC.get.thermalZones.any? { |z| data_center_zone_names.include?(z.name.get) }
 
-      # set maximum supply air temperature back to 40C because sizing may have changed it
-      unitary_sys.setMaximumSupplyAirTemperature(40.0)
+      # set the maximum supply air temperature back to 50 C, because applying the sizing values may have changed it.
+      # EnergyPlus caps both the heat pump and the supplemental coil outlets at this value (UnitarySystem.cc); at its
+      # cooling-sized airflow the heat pump alone warms the air only about 15 C, so supply air above about 40 C comes
+      # from the supplemental coil.
+      unitary_sys.setMaximumSupplyAirTemperature(50.0)
+
+      # EnergyPlus sizes an air loop unitary system's supplemental coil to the heat pump's heating capacity, not the
+      # zone's heating load (UnitarySystem.cc, SuppHeatCap = m_DesignHeatingCapacity outside zone equipment). Raise it
+      # to the zone heating design load where that is larger, so it covers what the cooling-sized heat pump cannot.
+      raise_supplemental_coil_to_zone_heating_load(model, unitary_sys, runner)
 
       # the catalog performance tables were assigned at coil creation, before the sizing run
       unless unitary_sys.heatingCoil.is_initialized && unitary_sys.heatingCoil.get.to_CoilHeatingWaterToAirHeatPumpEquationFit.is_initialized &&
