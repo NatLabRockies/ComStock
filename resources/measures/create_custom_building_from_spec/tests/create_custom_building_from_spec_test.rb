@@ -253,6 +253,83 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
     refute(office['thermostat'].key?('cooling_setpoint_c'))
   end
 
+  # --- warehouse storage setpoint -----------------------------------------------------
+
+  WAREHOUSE_STORAGE = ['storage - warehouse - medium to bulky palletized items',
+                       'storage - warehouse - smaller hand-carried items'].freeze
+
+  # The thermostat overrides run() hands the spec: the building types' entries, with the sampled
+  # variability merged over them field by field. Mirrors the merge in run().
+  def assembled_thermostat_overrides(args, typed)
+    ratios = @measure.space_type_ratios(@runner, args)
+    overrides = @measure.merged_overrides(@runner, 'thermostat_overrides')
+    @measure.thermostat_variability_overrides(@runner, typed, ratios.map { |r| r['space_type'] }).each do |entry|
+      existing = overrides.find { |o| o['space_type'] == entry['space_type'] }
+      if existing.nil?
+        overrides << entry
+      else
+        existing['thermostat'] = existing['thermostat'].merge(entry['thermostat'])
+      end
+    end
+    overrides
+  end
+
+  # the setpoints the typical path builds a space type's thermostat from
+  def resolved_setpoints(space_type_name, overrides)
+    space_type = OpenStudio::Model::SpaceType.new(OpenStudio::Model::Model.new)
+    space_type.setName(space_type_name)
+    OpenstudioStandards::ThermalZone.space_type_thermostat_setpoints_with_overrides(space_type, space_type_name, overrides)
+  end
+
+  # Warehouse storage heats to 61 F through the Warehouse thermostat_overrides. The sampled
+  # warehouse heating setpoint is 999 (no change), so the office keeps the office setpoints and
+  # takes only the sampled setbacks.
+  def test_warehouse_storage_heats_to_61f_and_the_office_keeps_its_setpoints
+    typed = { 'clg_sp_f' => 999.0, 'clg_delta_f' => 6.0, 'htg_sp_f' => 999.0, 'htg_delta_f' => 8.0 }
+    overrides = assembled_thermostat_overrides(base_args('Warehouse'), typed)
+
+    WAREHOUSE_STORAGE.each do |name|
+      setpoints = resolved_setpoints(name, overrides)
+      stock = OpenstudioStandards::ThermalZone.space_type_thermostat_setpoints(name)
+      assert_in_delta(OpenStudio.convert(61.0, 'F', 'C').get, setpoints[:heating_setpoint_c], 1.0e-3, "#{name} heating")
+      assert_in_delta(0.0, setpoints[:heating_setback_delta_c], 1.0e-9, "#{name} holds 61 F around the clock")
+      assert_in_delta(stock[:cooling_setpoint_c], setpoints[:cooling_setpoint_c], 1.0e-9, "#{name} keeps its stock cooling")
+    end
+
+    office = resolved_setpoints('office', overrides)
+    stock = OpenstudioStandards::ThermalZone.space_type_thermostat_setpoints('office')
+    assert_in_delta(stock[:heating_setpoint_c], office[:heating_setpoint_c], 1.0e-9, 'the office keeps the office heating setpoint')
+    assert_in_delta(stock[:cooling_setpoint_c], office[:cooling_setpoint_c], 1.0e-9)
+    assert_in_delta(OpenStudio.convert(8.0, 'R', 'K').get, office[:heating_setback_delta_c], 1.0e-9, 'the sampled setback applies')
+    assert_in_delta(OpenStudio.convert(6.0, 'R', 'K').get, office[:cooling_setback_delta_c], 1.0e-9)
+  end
+
+  # Every storage space type in every Warehouse subtype carries the override, so a new subtype
+  # cannot fall back to the stock 45 F bulk or 60 F fine storage setpoint unnoticed.
+  def test_every_warehouse_storage_space_type_has_the_61f_override
+    entry = @measure.building_type_data['building_types']['Warehouse']
+    thermostat_overrides = Array(entry['thermostat_overrides'])
+    storage = entry['space_type_ratios'].flat_map { |row| row['space_types'].keys }.uniq.select { |name| name.start_with?('storage') }
+    assert_equal(WAREHOUSE_STORAGE.sort, storage.sort)
+    storage.each do |name|
+      override = thermostat_overrides.find { |o| o['space_type'] == name }
+      refute_nil(override, "#{name} has no thermostat override")
+      assert_equal(['heating_setpoint_c'], override['thermostat'].keys, 'only the heating setpoint is overridden')
+      assert_in_delta(OpenStudio.convert(61.0, 'F', 'C').get, override['thermostat']['heating_setpoint_c'], 1.0e-3)
+    end
+    refute(thermostat_overrides.any? { |o| ['office', '*'].include?(o['space_type']) }, 'nothing overrides the office')
+  end
+
+  # A sampled heating setpoint wins over the building type's override and reaches every heated
+  # space type, the office included. That is why the warehouse row of hvac_tst_htg_sp_f is 999.
+  def test_a_sampled_heating_setpoint_wins_over_the_storage_override
+    typed = { 'clg_sp_f' => 999.0, 'clg_delta_f' => 999.0, 'htg_sp_f' => 65.0, 'htg_delta_f' => 999.0 }
+    overrides = assembled_thermostat_overrides(base_args('Warehouse'), typed)
+    (WAREHOUSE_STORAGE + ['office']).each do |name|
+      assert_in_delta(OpenStudio.convert(65.0, 'F', 'C').get, resolved_setpoints(name, overrides)[:heating_setpoint_c], 1.0e-6, name)
+    end
+  end
+
   # --- sampled base-to-peak ratios ----------------------------------------------------
 
   def test_base_peak_ratios_ride_on_one_wildcard_entry

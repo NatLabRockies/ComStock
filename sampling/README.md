@@ -83,7 +83,7 @@ Bucket definition files come in pairs: a test file with one building energy mode
 
 | Test file | Production file | Stock estimate | Notes |
 |---|---|---|---|
-| `sample_input_20260919-1409_8634.csv` | `sample_input_20260919-1409_103608.csv` | `2026R1` | Current. Hospitals from the corrected AHA 2022 survey; sample with the v34 TSVs |
+| `sample_input_20260919-1409_8634.csv` | `sample_input_20260919-1409_103608.csv` | `2026R1` | Current. Hospitals from the corrected AHA 2022 survey; sample with the v34 TSVs. The warehouse heating setpoint in v34 and in the 2026 R1 samples was corrected in place (see [Editing a drawn sample](#editing-a-drawn-sample)) |
 | `sample_input_20250916-1309_8602.csv` | `sample_input_20250916-1309_103224.csv` | `2025R3` | Previous pair; kept so the 2025 R3 samples can be reproduced |
 
 To start the TSV generation process do the following:
@@ -116,6 +116,17 @@ After generating the `buildstock.csv` file, you will need to join geospatial col
 - Where `name_of_buildstock.csv` is the file generated in the first step. Be sure to include the ".csv" file extension in the command.
 - The script will read the file from the `output-buildstocks\intermediate` directory.
 - This script will save a file to `output-buildstocks\final` with the same name as the original `buildstock.csv`.
+
+### Editing a drawn sample
+When a TSV change leaves a building type's row deterministic both before and after (one option at probability 1), and no other TSV depends on that characteristic, the change can be made in an existing `buildstock.csv` instead of drawing a new sample. Every other value, and every building, stays as drawn, so runs on the edited file compare building for building with runs on the original. `replace_buildstock_value.py` does this with the standard library only, so it also runs with the system `python3` on Kestrel. It changes the raw bytes of one column on one building type's rows and leaves every other field, the quoting and the line endings exactly as they were; a pandas round trip would rewrite values such as `9` as `9.0`. It then re-reads both files with the csv module and compares them field by field. It never modifies its input and never overwrites an existing file.
+
+```
+$ python3 replace_buildstock_value.py --building-type warehouse --column hvac_tst_htg_sp_f --old 61 --new 999 in.csv out.csv
+```
+
+To replace a sample file in place, write to a new name and move it over the original once the script reports success. The edit can be undone exactly by swapping `--old` and `--new`.
+
+The warehouse row of `hvac_tst_htg_sp_f` in v34 was corrected in place on 2026-11-13 from `61` back to `999` (no change), and the 2026 R1 samples, which keep their names, were corrected the same way with this script. Warehouse storage holds 61 F through the Warehouse `thermostat_overrides` in `resources/create_custom/comstock_building_types.json`; a sampled setpoint reaches every heated space type, which had lowered warehouse offices to 61 F.
 
 ## Adding a new TSV file
 To add a new TSV file follow these steps:

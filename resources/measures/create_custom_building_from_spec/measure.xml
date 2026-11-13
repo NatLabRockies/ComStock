@@ -1,17 +1,3301 @@
 <?xml version="1.0"?>
 <measure>
   <schema_version>3.1</schema_version>
-  <error>Failed to infer measure name from 'C:/Repos/NREL/ComStock/resources/measures/create_custom_building_from_spec/measure.rb'</error>
   <name>create_custom_building_from_spec</name>
   <uid>7f3c1a92-4d6b-4a0e-9c21-8b5f2d0e4c77</uid>
-  <version_id>15a08a18-455c-4e94-becc-f3f08ce939ed</version_id>
-  <version_modified>2026-09-21T19:38:36Z</version_modified>
+  <version_id>a3987756-641a-4e08-a07d-104816d937b0</version_id>
+  <version_modified>2026-11-13T14:04:20Z</version_modified>
   <xml_checksum>2C38F48B</xml_checksum>
   <class_name>CreateCustomBuildingFromSpec</class_name>
   <display_name>Create Custom Building From Spec</display_name>
   <description>Builds the baseline model through OpenstudioStandards::CreateTypical.create_custom_building_from_spec, replacing create_bar_from_building_type_ratios and create_typical_building_from_model.</description>
-  <modeler_description>Assembles a custom building specification from the same buildstock-driven arguments the replaced measures received, expanding building type ratios into space type ratios, then calls create_custom_building_from_spec. Arguments are inherited at runtime from the two measures it replaces.</modeler_description>
-  <arguments />
+  <modeler_description>Assembles a custom building specification from the same buildstock-driven arguments the replaced measures received, expanding building type ratios into space type ratios, then calls create_custom_building_from_spec.</modeler_description>
+  <arguments>
+    <argument>
+      <name>lighting_generation</name>
+      <display_name>Lighting Generation</display_name>
+      <description>Lighting technology generation used to compute typical interior lighting power, e.g. gen4_led.</description>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+    <argument>
+      <name>enforce_space_area_constraints</name>
+      <display_name>Enforce Space Area Constraints</display_name>
+      <description>Drop space types whose share of the building falls below a realistic minimum floor area and give their area to the rest.</description>
+      <type>Boolean</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>ltg_wkdy_bpr</name>
+      <display_name>Weekday lighting base-to-peak ratio</display_name>
+      <description>Schedule fraction outside operating hours as a fraction of the peak. Enter 999 for no change.</description>
+      <type>Double</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>ltg_wknd_bpr</name>
+      <display_name>Weekend lighting base-to-peak ratio</display_name>
+      <description>Schedule fraction outside operating hours as a fraction of the peak. Enter 999 for no change.</description>
+      <type>Double</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>plugload_wkdy_bpr</name>
+      <display_name>Weekday electric equipment base-to-peak ratio</display_name>
+      <description>Schedule fraction outside operating hours as a fraction of the peak. Enter 999 for no change.</description>
+      <type>Double</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>plugload_wknd_bpr</name>
+      <display_name>Weekend electric equipment base-to-peak ratio</display_name>
+      <description>Schedule fraction outside operating hours as a fraction of the peak. Enter 999 for no change.</description>
+      <type>Double</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>bldg_type_a</name>
+      <display_name>Primary Building Type</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>SmallOffice</default_value>
+      <choices>
+        <choice>
+          <value>SecondarySchool</value>
+          <display_name>SecondarySchool</display_name>
+        </choice>
+        <choice>
+          <value>PrimarySchool</value>
+          <display_name>PrimarySchool</display_name>
+        </choice>
+        <choice>
+          <value>SmallOffice</value>
+          <display_name>SmallOffice</display_name>
+        </choice>
+        <choice>
+          <value>MediumOffice</value>
+          <display_name>MediumOffice</display_name>
+        </choice>
+        <choice>
+          <value>LargeOffice</value>
+          <display_name>LargeOffice</display_name>
+        </choice>
+        <choice>
+          <value>SmallHotel</value>
+          <display_name>SmallHotel</display_name>
+        </choice>
+        <choice>
+          <value>LargeHotel</value>
+          <display_name>LargeHotel</display_name>
+        </choice>
+        <choice>
+          <value>Warehouse</value>
+          <display_name>Warehouse</display_name>
+        </choice>
+        <choice>
+          <value>RetailStandalone</value>
+          <display_name>RetailStandalone</display_name>
+        </choice>
+        <choice>
+          <value>RetailStripmall</value>
+          <display_name>RetailStripmall</display_name>
+        </choice>
+        <choice>
+          <value>QuickServiceRestaurant</value>
+          <display_name>QuickServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>FullServiceRestaurant</value>
+          <display_name>FullServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>MidriseApartment</value>
+          <display_name>MidriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>HighriseApartment</value>
+          <display_name>HighriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>Hospital</value>
+          <display_name>Hospital</display_name>
+        </choice>
+        <choice>
+          <value>Outpatient</value>
+          <display_name>Outpatient</display_name>
+        </choice>
+        <choice>
+          <value>SuperMarket</value>
+          <display_name>SuperMarket</display_name>
+        </choice>
+        <choice>
+          <value>Laboratory</value>
+          <display_name>Laboratory</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterLowITE</value>
+          <display_name>LargeDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterHighITE</value>
+          <display_name>LargeDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterLowITE</value>
+          <display_name>SmallDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterHighITE</value>
+          <display_name>SmallDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>Courthouse</value>
+          <display_name>Courthouse</display_name>
+        </choice>
+        <choice>
+          <value>College</value>
+          <display_name>College</display_name>
+        </choice>
+        <choice>
+          <value>Asm</value>
+          <display_name>Asm</display_name>
+        </choice>
+        <choice>
+          <value>DMo</value>
+          <display_name>DMo</display_name>
+        </choice>
+        <choice>
+          <value>ECC</value>
+          <display_name>ECC</display_name>
+        </choice>
+        <choice>
+          <value>EPr</value>
+          <display_name>EPr</display_name>
+        </choice>
+        <choice>
+          <value>ERC</value>
+          <display_name>ERC</display_name>
+        </choice>
+        <choice>
+          <value>ESe</value>
+          <display_name>ESe</display_name>
+        </choice>
+        <choice>
+          <value>EUn</value>
+          <display_name>EUn</display_name>
+        </choice>
+        <choice>
+          <value>GHs</value>
+          <display_name>GHs</display_name>
+        </choice>
+        <choice>
+          <value>Gro</value>
+          <display_name>Gro</display_name>
+        </choice>
+        <choice>
+          <value>Hsp</value>
+          <display_name>Hsp</display_name>
+        </choice>
+        <choice>
+          <value>Htl</value>
+          <display_name>Htl</display_name>
+        </choice>
+        <choice>
+          <value>MBT</value>
+          <display_name>MBT</display_name>
+        </choice>
+        <choice>
+          <value>MFm</value>
+          <display_name>MFm</display_name>
+        </choice>
+        <choice>
+          <value>MLI</value>
+          <display_name>MLI</display_name>
+        </choice>
+        <choice>
+          <value>Mtl</value>
+          <display_name>Mtl</display_name>
+        </choice>
+        <choice>
+          <value>Nrs</value>
+          <display_name>Nrs</display_name>
+        </choice>
+        <choice>
+          <value>OfL</value>
+          <display_name>OfL</display_name>
+        </choice>
+        <choice>
+          <value>OfS</value>
+          <display_name>OfS</display_name>
+        </choice>
+        <choice>
+          <value>RFF</value>
+          <display_name>RFF</display_name>
+        </choice>
+        <choice>
+          <value>RSD</value>
+          <display_name>RSD</display_name>
+        </choice>
+        <choice>
+          <value>Rt3</value>
+          <display_name>Rt3</display_name>
+        </choice>
+        <choice>
+          <value>RtL</value>
+          <display_name>RtL</display_name>
+        </choice>
+        <choice>
+          <value>RtS</value>
+          <display_name>RtS</display_name>
+        </choice>
+        <choice>
+          <value>SCn</value>
+          <display_name>SCn</display_name>
+        </choice>
+        <choice>
+          <value>SFm</value>
+          <display_name>SFm</display_name>
+        </choice>
+        <choice>
+          <value>SUn</value>
+          <display_name>SUn</display_name>
+        </choice>
+        <choice>
+          <value>WRf</value>
+          <display_name>WRf</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_subtype_a</name>
+      <display_name>Primary Building Subtype</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>NA</default_value>
+      <choices>
+        <choice>
+          <value></value>
+          <display_name></display_name>
+        </choice>
+        <choice>
+          <value>NA</value>
+          <display_name>NA</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_default</value>
+          <display_name>largeoffice_default</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_nodatacenter</value>
+          <display_name>largeoffice_nodatacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenter</value>
+          <display_name>largeoffice_datacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenteronly</value>
+          <display_name>largeoffice_datacenteronly</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_default</value>
+          <display_name>warehouse_default</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk100</value>
+          <display_name>warehouse_bulk100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_fine100</value>
+          <display_name>warehouse_fine100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk80</value>
+          <display_name>warehouse_bulk80</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk40</value>
+          <display_name>warehouse_bulk40</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk20</value>
+          <display_name>warehouse_bulk20</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_type_a_num_units</name>
+      <display_name>Primary Building Type Number of Units</display_name>
+      <description>Number of units argument not currently used by this measure</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>bldg_type_b</name>
+      <display_name>Building Type B</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>SmallOffice</default_value>
+      <choices>
+        <choice>
+          <value>SecondarySchool</value>
+          <display_name>SecondarySchool</display_name>
+        </choice>
+        <choice>
+          <value>PrimarySchool</value>
+          <display_name>PrimarySchool</display_name>
+        </choice>
+        <choice>
+          <value>SmallOffice</value>
+          <display_name>SmallOffice</display_name>
+        </choice>
+        <choice>
+          <value>MediumOffice</value>
+          <display_name>MediumOffice</display_name>
+        </choice>
+        <choice>
+          <value>LargeOffice</value>
+          <display_name>LargeOffice</display_name>
+        </choice>
+        <choice>
+          <value>SmallHotel</value>
+          <display_name>SmallHotel</display_name>
+        </choice>
+        <choice>
+          <value>LargeHotel</value>
+          <display_name>LargeHotel</display_name>
+        </choice>
+        <choice>
+          <value>Warehouse</value>
+          <display_name>Warehouse</display_name>
+        </choice>
+        <choice>
+          <value>RetailStandalone</value>
+          <display_name>RetailStandalone</display_name>
+        </choice>
+        <choice>
+          <value>RetailStripmall</value>
+          <display_name>RetailStripmall</display_name>
+        </choice>
+        <choice>
+          <value>QuickServiceRestaurant</value>
+          <display_name>QuickServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>FullServiceRestaurant</value>
+          <display_name>FullServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>MidriseApartment</value>
+          <display_name>MidriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>HighriseApartment</value>
+          <display_name>HighriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>Hospital</value>
+          <display_name>Hospital</display_name>
+        </choice>
+        <choice>
+          <value>Outpatient</value>
+          <display_name>Outpatient</display_name>
+        </choice>
+        <choice>
+          <value>SuperMarket</value>
+          <display_name>SuperMarket</display_name>
+        </choice>
+        <choice>
+          <value>Laboratory</value>
+          <display_name>Laboratory</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterLowITE</value>
+          <display_name>LargeDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterHighITE</value>
+          <display_name>LargeDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterLowITE</value>
+          <display_name>SmallDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterHighITE</value>
+          <display_name>SmallDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>Courthouse</value>
+          <display_name>Courthouse</display_name>
+        </choice>
+        <choice>
+          <value>College</value>
+          <display_name>College</display_name>
+        </choice>
+        <choice>
+          <value>Asm</value>
+          <display_name>Asm</display_name>
+        </choice>
+        <choice>
+          <value>DMo</value>
+          <display_name>DMo</display_name>
+        </choice>
+        <choice>
+          <value>ECC</value>
+          <display_name>ECC</display_name>
+        </choice>
+        <choice>
+          <value>EPr</value>
+          <display_name>EPr</display_name>
+        </choice>
+        <choice>
+          <value>ERC</value>
+          <display_name>ERC</display_name>
+        </choice>
+        <choice>
+          <value>ESe</value>
+          <display_name>ESe</display_name>
+        </choice>
+        <choice>
+          <value>EUn</value>
+          <display_name>EUn</display_name>
+        </choice>
+        <choice>
+          <value>GHs</value>
+          <display_name>GHs</display_name>
+        </choice>
+        <choice>
+          <value>Gro</value>
+          <display_name>Gro</display_name>
+        </choice>
+        <choice>
+          <value>Hsp</value>
+          <display_name>Hsp</display_name>
+        </choice>
+        <choice>
+          <value>Htl</value>
+          <display_name>Htl</display_name>
+        </choice>
+        <choice>
+          <value>MBT</value>
+          <display_name>MBT</display_name>
+        </choice>
+        <choice>
+          <value>MFm</value>
+          <display_name>MFm</display_name>
+        </choice>
+        <choice>
+          <value>MLI</value>
+          <display_name>MLI</display_name>
+        </choice>
+        <choice>
+          <value>Mtl</value>
+          <display_name>Mtl</display_name>
+        </choice>
+        <choice>
+          <value>Nrs</value>
+          <display_name>Nrs</display_name>
+        </choice>
+        <choice>
+          <value>OfL</value>
+          <display_name>OfL</display_name>
+        </choice>
+        <choice>
+          <value>OfS</value>
+          <display_name>OfS</display_name>
+        </choice>
+        <choice>
+          <value>RFF</value>
+          <display_name>RFF</display_name>
+        </choice>
+        <choice>
+          <value>RSD</value>
+          <display_name>RSD</display_name>
+        </choice>
+        <choice>
+          <value>Rt3</value>
+          <display_name>Rt3</display_name>
+        </choice>
+        <choice>
+          <value>RtL</value>
+          <display_name>RtL</display_name>
+        </choice>
+        <choice>
+          <value>RtS</value>
+          <display_name>RtS</display_name>
+        </choice>
+        <choice>
+          <value>SCn</value>
+          <display_name>SCn</display_name>
+        </choice>
+        <choice>
+          <value>SFm</value>
+          <display_name>SFm</display_name>
+        </choice>
+        <choice>
+          <value>SUn</value>
+          <display_name>SUn</display_name>
+        </choice>
+        <choice>
+          <value>WRf</value>
+          <display_name>WRf</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_subtype_b</name>
+      <display_name>Building Subtype B</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>NA</default_value>
+      <choices>
+        <choice>
+          <value></value>
+          <display_name></display_name>
+        </choice>
+        <choice>
+          <value>NA</value>
+          <display_name>NA</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_default</value>
+          <display_name>largeoffice_default</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_nodatacenter</value>
+          <display_name>largeoffice_nodatacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenter</value>
+          <display_name>largeoffice_datacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenteronly</value>
+          <display_name>largeoffice_datacenteronly</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_default</value>
+          <display_name>warehouse_default</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk100</value>
+          <display_name>warehouse_bulk100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_fine100</value>
+          <display_name>warehouse_fine100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk80</value>
+          <display_name>warehouse_bulk80</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk40</value>
+          <display_name>warehouse_bulk40</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk20</value>
+          <display_name>warehouse_bulk20</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_type_b_fract_bldg_area</name>
+      <display_name>Building Type B Fraction of Building Floor Area</display_name>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+      <max_value>1.000000</max_value>
+    </argument>
+    <argument>
+      <name>bldg_type_b_num_units</name>
+      <display_name>Building Type B Number of Units</display_name>
+      <description>Number of units argument not currently used by this measure</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>bldg_type_c</name>
+      <display_name>Building Type C</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>SmallOffice</default_value>
+      <choices>
+        <choice>
+          <value>SecondarySchool</value>
+          <display_name>SecondarySchool</display_name>
+        </choice>
+        <choice>
+          <value>PrimarySchool</value>
+          <display_name>PrimarySchool</display_name>
+        </choice>
+        <choice>
+          <value>SmallOffice</value>
+          <display_name>SmallOffice</display_name>
+        </choice>
+        <choice>
+          <value>MediumOffice</value>
+          <display_name>MediumOffice</display_name>
+        </choice>
+        <choice>
+          <value>LargeOffice</value>
+          <display_name>LargeOffice</display_name>
+        </choice>
+        <choice>
+          <value>SmallHotel</value>
+          <display_name>SmallHotel</display_name>
+        </choice>
+        <choice>
+          <value>LargeHotel</value>
+          <display_name>LargeHotel</display_name>
+        </choice>
+        <choice>
+          <value>Warehouse</value>
+          <display_name>Warehouse</display_name>
+        </choice>
+        <choice>
+          <value>RetailStandalone</value>
+          <display_name>RetailStandalone</display_name>
+        </choice>
+        <choice>
+          <value>RetailStripmall</value>
+          <display_name>RetailStripmall</display_name>
+        </choice>
+        <choice>
+          <value>QuickServiceRestaurant</value>
+          <display_name>QuickServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>FullServiceRestaurant</value>
+          <display_name>FullServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>MidriseApartment</value>
+          <display_name>MidriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>HighriseApartment</value>
+          <display_name>HighriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>Hospital</value>
+          <display_name>Hospital</display_name>
+        </choice>
+        <choice>
+          <value>Outpatient</value>
+          <display_name>Outpatient</display_name>
+        </choice>
+        <choice>
+          <value>SuperMarket</value>
+          <display_name>SuperMarket</display_name>
+        </choice>
+        <choice>
+          <value>Laboratory</value>
+          <display_name>Laboratory</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterLowITE</value>
+          <display_name>LargeDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterHighITE</value>
+          <display_name>LargeDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterLowITE</value>
+          <display_name>SmallDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterHighITE</value>
+          <display_name>SmallDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>Courthouse</value>
+          <display_name>Courthouse</display_name>
+        </choice>
+        <choice>
+          <value>College</value>
+          <display_name>College</display_name>
+        </choice>
+        <choice>
+          <value>Asm</value>
+          <display_name>Asm</display_name>
+        </choice>
+        <choice>
+          <value>DMo</value>
+          <display_name>DMo</display_name>
+        </choice>
+        <choice>
+          <value>ECC</value>
+          <display_name>ECC</display_name>
+        </choice>
+        <choice>
+          <value>EPr</value>
+          <display_name>EPr</display_name>
+        </choice>
+        <choice>
+          <value>ERC</value>
+          <display_name>ERC</display_name>
+        </choice>
+        <choice>
+          <value>ESe</value>
+          <display_name>ESe</display_name>
+        </choice>
+        <choice>
+          <value>EUn</value>
+          <display_name>EUn</display_name>
+        </choice>
+        <choice>
+          <value>GHs</value>
+          <display_name>GHs</display_name>
+        </choice>
+        <choice>
+          <value>Gro</value>
+          <display_name>Gro</display_name>
+        </choice>
+        <choice>
+          <value>Hsp</value>
+          <display_name>Hsp</display_name>
+        </choice>
+        <choice>
+          <value>Htl</value>
+          <display_name>Htl</display_name>
+        </choice>
+        <choice>
+          <value>MBT</value>
+          <display_name>MBT</display_name>
+        </choice>
+        <choice>
+          <value>MFm</value>
+          <display_name>MFm</display_name>
+        </choice>
+        <choice>
+          <value>MLI</value>
+          <display_name>MLI</display_name>
+        </choice>
+        <choice>
+          <value>Mtl</value>
+          <display_name>Mtl</display_name>
+        </choice>
+        <choice>
+          <value>Nrs</value>
+          <display_name>Nrs</display_name>
+        </choice>
+        <choice>
+          <value>OfL</value>
+          <display_name>OfL</display_name>
+        </choice>
+        <choice>
+          <value>OfS</value>
+          <display_name>OfS</display_name>
+        </choice>
+        <choice>
+          <value>RFF</value>
+          <display_name>RFF</display_name>
+        </choice>
+        <choice>
+          <value>RSD</value>
+          <display_name>RSD</display_name>
+        </choice>
+        <choice>
+          <value>Rt3</value>
+          <display_name>Rt3</display_name>
+        </choice>
+        <choice>
+          <value>RtL</value>
+          <display_name>RtL</display_name>
+        </choice>
+        <choice>
+          <value>RtS</value>
+          <display_name>RtS</display_name>
+        </choice>
+        <choice>
+          <value>SCn</value>
+          <display_name>SCn</display_name>
+        </choice>
+        <choice>
+          <value>SFm</value>
+          <display_name>SFm</display_name>
+        </choice>
+        <choice>
+          <value>SUn</value>
+          <display_name>SUn</display_name>
+        </choice>
+        <choice>
+          <value>WRf</value>
+          <display_name>WRf</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_subtype_c</name>
+      <display_name>Building Subtype C</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>NA</default_value>
+      <choices>
+        <choice>
+          <value></value>
+          <display_name></display_name>
+        </choice>
+        <choice>
+          <value>NA</value>
+          <display_name>NA</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_default</value>
+          <display_name>largeoffice_default</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_nodatacenter</value>
+          <display_name>largeoffice_nodatacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenter</value>
+          <display_name>largeoffice_datacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenteronly</value>
+          <display_name>largeoffice_datacenteronly</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_default</value>
+          <display_name>warehouse_default</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk100</value>
+          <display_name>warehouse_bulk100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_fine100</value>
+          <display_name>warehouse_fine100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk80</value>
+          <display_name>warehouse_bulk80</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk40</value>
+          <display_name>warehouse_bulk40</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk20</value>
+          <display_name>warehouse_bulk20</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_type_c_fract_bldg_area</name>
+      <display_name>Building Type C Fraction of Building Floor Area</display_name>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+      <max_value>1.000000</max_value>
+    </argument>
+    <argument>
+      <name>bldg_type_c_num_units</name>
+      <display_name>Building Type C Number of Units</display_name>
+      <description>Number of units argument not currently used by this measure</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>bldg_type_d</name>
+      <display_name>Building Type D</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>SmallOffice</default_value>
+      <choices>
+        <choice>
+          <value>SecondarySchool</value>
+          <display_name>SecondarySchool</display_name>
+        </choice>
+        <choice>
+          <value>PrimarySchool</value>
+          <display_name>PrimarySchool</display_name>
+        </choice>
+        <choice>
+          <value>SmallOffice</value>
+          <display_name>SmallOffice</display_name>
+        </choice>
+        <choice>
+          <value>MediumOffice</value>
+          <display_name>MediumOffice</display_name>
+        </choice>
+        <choice>
+          <value>LargeOffice</value>
+          <display_name>LargeOffice</display_name>
+        </choice>
+        <choice>
+          <value>SmallHotel</value>
+          <display_name>SmallHotel</display_name>
+        </choice>
+        <choice>
+          <value>LargeHotel</value>
+          <display_name>LargeHotel</display_name>
+        </choice>
+        <choice>
+          <value>Warehouse</value>
+          <display_name>Warehouse</display_name>
+        </choice>
+        <choice>
+          <value>RetailStandalone</value>
+          <display_name>RetailStandalone</display_name>
+        </choice>
+        <choice>
+          <value>RetailStripmall</value>
+          <display_name>RetailStripmall</display_name>
+        </choice>
+        <choice>
+          <value>QuickServiceRestaurant</value>
+          <display_name>QuickServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>FullServiceRestaurant</value>
+          <display_name>FullServiceRestaurant</display_name>
+        </choice>
+        <choice>
+          <value>MidriseApartment</value>
+          <display_name>MidriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>HighriseApartment</value>
+          <display_name>HighriseApartment</display_name>
+        </choice>
+        <choice>
+          <value>Hospital</value>
+          <display_name>Hospital</display_name>
+        </choice>
+        <choice>
+          <value>Outpatient</value>
+          <display_name>Outpatient</display_name>
+        </choice>
+        <choice>
+          <value>SuperMarket</value>
+          <display_name>SuperMarket</display_name>
+        </choice>
+        <choice>
+          <value>Laboratory</value>
+          <display_name>Laboratory</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterLowITE</value>
+          <display_name>LargeDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>LargeDataCenterHighITE</value>
+          <display_name>LargeDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterLowITE</value>
+          <display_name>SmallDataCenterLowITE</display_name>
+        </choice>
+        <choice>
+          <value>SmallDataCenterHighITE</value>
+          <display_name>SmallDataCenterHighITE</display_name>
+        </choice>
+        <choice>
+          <value>Courthouse</value>
+          <display_name>Courthouse</display_name>
+        </choice>
+        <choice>
+          <value>College</value>
+          <display_name>College</display_name>
+        </choice>
+        <choice>
+          <value>Asm</value>
+          <display_name>Asm</display_name>
+        </choice>
+        <choice>
+          <value>DMo</value>
+          <display_name>DMo</display_name>
+        </choice>
+        <choice>
+          <value>ECC</value>
+          <display_name>ECC</display_name>
+        </choice>
+        <choice>
+          <value>EPr</value>
+          <display_name>EPr</display_name>
+        </choice>
+        <choice>
+          <value>ERC</value>
+          <display_name>ERC</display_name>
+        </choice>
+        <choice>
+          <value>ESe</value>
+          <display_name>ESe</display_name>
+        </choice>
+        <choice>
+          <value>EUn</value>
+          <display_name>EUn</display_name>
+        </choice>
+        <choice>
+          <value>GHs</value>
+          <display_name>GHs</display_name>
+        </choice>
+        <choice>
+          <value>Gro</value>
+          <display_name>Gro</display_name>
+        </choice>
+        <choice>
+          <value>Hsp</value>
+          <display_name>Hsp</display_name>
+        </choice>
+        <choice>
+          <value>Htl</value>
+          <display_name>Htl</display_name>
+        </choice>
+        <choice>
+          <value>MBT</value>
+          <display_name>MBT</display_name>
+        </choice>
+        <choice>
+          <value>MFm</value>
+          <display_name>MFm</display_name>
+        </choice>
+        <choice>
+          <value>MLI</value>
+          <display_name>MLI</display_name>
+        </choice>
+        <choice>
+          <value>Mtl</value>
+          <display_name>Mtl</display_name>
+        </choice>
+        <choice>
+          <value>Nrs</value>
+          <display_name>Nrs</display_name>
+        </choice>
+        <choice>
+          <value>OfL</value>
+          <display_name>OfL</display_name>
+        </choice>
+        <choice>
+          <value>OfS</value>
+          <display_name>OfS</display_name>
+        </choice>
+        <choice>
+          <value>RFF</value>
+          <display_name>RFF</display_name>
+        </choice>
+        <choice>
+          <value>RSD</value>
+          <display_name>RSD</display_name>
+        </choice>
+        <choice>
+          <value>Rt3</value>
+          <display_name>Rt3</display_name>
+        </choice>
+        <choice>
+          <value>RtL</value>
+          <display_name>RtL</display_name>
+        </choice>
+        <choice>
+          <value>RtS</value>
+          <display_name>RtS</display_name>
+        </choice>
+        <choice>
+          <value>SCn</value>
+          <display_name>SCn</display_name>
+        </choice>
+        <choice>
+          <value>SFm</value>
+          <display_name>SFm</display_name>
+        </choice>
+        <choice>
+          <value>SUn</value>
+          <display_name>SUn</display_name>
+        </choice>
+        <choice>
+          <value>WRf</value>
+          <display_name>WRf</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_subtype_d</name>
+      <display_name>Building Subtype D</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>NA</default_value>
+      <choices>
+        <choice>
+          <value></value>
+          <display_name></display_name>
+        </choice>
+        <choice>
+          <value>NA</value>
+          <display_name>NA</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_default</value>
+          <display_name>largeoffice_default</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_nodatacenter</value>
+          <display_name>largeoffice_nodatacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenter</value>
+          <display_name>largeoffice_datacenter</display_name>
+        </choice>
+        <choice>
+          <value>largeoffice_datacenteronly</value>
+          <display_name>largeoffice_datacenteronly</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_default</value>
+          <display_name>warehouse_default</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk100</value>
+          <display_name>warehouse_bulk100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_fine100</value>
+          <display_name>warehouse_fine100</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk80</value>
+          <display_name>warehouse_bulk80</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk40</value>
+          <display_name>warehouse_bulk40</display_name>
+        </choice>
+        <choice>
+          <value>warehouse_bulk20</value>
+          <display_name>warehouse_bulk20</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bldg_type_d_fract_bldg_area</name>
+      <display_name>Building Type D Fraction of Building Floor Area</display_name>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+      <max_value>1.000000</max_value>
+    </argument>
+    <argument>
+      <name>bldg_type_d_num_units</name>
+      <display_name>Building Type D Number of Units</display_name>
+      <description>Number of units argument not currently used by this measure</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>single_floor_area</name>
+      <display_name>Single Floor Area</display_name>
+      <description>Non-zero value will fix the single floor area, overriding a user entry for Total Building Floor Area</description>
+      <type>Double</type>
+      <units>ft^2</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>total_bldg_floor_area</name>
+      <display_name>Total Building Floor Area</display_name>
+      <type>Double</type>
+      <units>ft^2</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>10000</default_value>
+    </argument>
+    <argument>
+      <name>floor_height</name>
+      <display_name>Typical Floor to Floor Height</display_name>
+      <description>Selecting a typical floor height of 0 will trigger a smart building type default.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>custom_height_bar</name>
+      <display_name>Enable Custom Height Bar Application</display_name>
+      <description>This is argument value is only relevant when smart default floor to floor height is used for a building type that has spaces with custom heights.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>num_stories_above_grade</name>
+      <display_name>Number of Stories Above Grade</display_name>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+      <min_value>1.000000</min_value>
+    </argument>
+    <argument>
+      <name>num_stories_below_grade</name>
+      <display_name>Number of Stories Below Grade</display_name>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>building_rotation</name>
+      <display_name>Building Rotation</display_name>
+      <description>Set Building Rotation off of North (positive value is clockwise). Rotation applied after geometry generation. Values greater than +/- 45 will result in aspect ratio and party wall orientations that do not match cardinal directions of the inputs.</description>
+      <type>Double</type>
+      <units>Degrees</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+    </argument>
+    <argument>
+      <name>template</name>
+      <display_name>Target Standard</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>90.1-2004</default_value>
+      <choices>
+        <choice>
+          <value>DOE Ref Pre-1980</value>
+          <display_name>DOE Ref Pre-1980</display_name>
+        </choice>
+        <choice>
+          <value>DOE Ref 1980-2004</value>
+          <display_name>DOE Ref 1980-2004</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2004</value>
+          <display_name>90.1-2004</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2007</value>
+          <display_name>90.1-2007</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2010</value>
+          <display_name>90.1-2010</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2013</value>
+          <display_name>90.1-2013</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2016</value>
+          <display_name>90.1-2016</display_name>
+        </choice>
+        <choice>
+          <value>90.1-2019</value>
+          <display_name>90.1-2019</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DOE Ref Pre-1980</value>
+          <display_name>ComStock DOE Ref Pre-1980</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DOE Ref 1980-2004</value>
+          <display_name>ComStock DOE Ref 1980-2004</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2004</value>
+          <display_name>ComStock 90.1-2004</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2007</value>
+          <display_name>ComStock 90.1-2007</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2010</value>
+          <display_name>ComStock 90.1-2010</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2013</value>
+          <display_name>ComStock 90.1-2013</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2016</value>
+          <display_name>ComStock 90.1-2016</display_name>
+        </choice>
+        <choice>
+          <value>ComStock 90.1-2019</value>
+          <display_name>ComStock 90.1-2019</display_name>
+        </choice>
+        <choice>
+          <value>NREL ZNE Ready 2017</value>
+          <display_name>NREL ZNE Ready 2017</display_name>
+        </choice>
+        <choice>
+          <value>DEER Pre-1975</value>
+          <display_name>DEER Pre-1975</display_name>
+        </choice>
+        <choice>
+          <value>DEER 1985</value>
+          <display_name>DEER 1985</display_name>
+        </choice>
+        <choice>
+          <value>DEER 1996</value>
+          <display_name>DEER 1996</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2003</value>
+          <display_name>DEER 2003</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2007</value>
+          <display_name>DEER 2007</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2011</value>
+          <display_name>DEER 2011</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2014</value>
+          <display_name>DEER 2014</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2015</value>
+          <display_name>DEER 2015</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2017</value>
+          <display_name>DEER 2017</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2020</value>
+          <display_name>DEER 2020</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2025</value>
+          <display_name>DEER 2025</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2030</value>
+          <display_name>DEER 2030</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2035</value>
+          <display_name>DEER 2035</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2040</value>
+          <display_name>DEER 2040</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2045</value>
+          <display_name>DEER 2045</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2050</value>
+          <display_name>DEER 2050</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2055</value>
+          <display_name>DEER 2055</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2060</value>
+          <display_name>DEER 2060</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2065</value>
+          <display_name>DEER 2065</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2070</value>
+          <display_name>DEER 2070</display_name>
+        </choice>
+        <choice>
+          <value>DEER 2075</value>
+          <display_name>DEER 2075</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER Pre-1975</value>
+          <display_name>ComStock DEER Pre-1975</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 1985</value>
+          <display_name>ComStock DEER 1985</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 1996</value>
+          <display_name>ComStock DEER 1996</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2003</value>
+          <display_name>ComStock DEER 2003</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2007</value>
+          <display_name>ComStock DEER 2007</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2011</value>
+          <display_name>ComStock DEER 2011</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2014</value>
+          <display_name>ComStock DEER 2014</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2015</value>
+          <display_name>ComStock DEER 2015</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2017</value>
+          <display_name>ComStock DEER 2017</display_name>
+        </choice>
+        <choice>
+          <value>ComStock DEER 2020</value>
+          <display_name>ComStock DEER 2020</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>ns_to_ew_ratio</name>
+      <display_name>Ratio of North/South Facade Length Relative to East/West Facade Length</display_name>
+      <description>Selecting an aspect ratio of 0 will trigger a smart building type default. Aspect ratios less than one are not recommended for sliced bar geometry, instead rotate building and use a greater than 1 aspect ratio.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>perim_mult</name>
+      <display_name>Perimeter Multiplier</display_name>
+      <description>Selecting a value of 0 will trigger a smart building type default. This represents a multiplier for the building perimeter relative to the perimeter of a rectangular building that meets the area and aspect ratio inputs. Other than the smart default of 0.0 this argument should have a value of 1.0 or higher and is only applicable Multiple Space Types - Individual Stories Sliced division method.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>bar_width</name>
+      <display_name>Bar Width</display_name>
+      <description>Non-zero value will fix the building width, overriding user entry for Perimeter Multiplier. NS/EW Aspect Ratio may be limited based on target width.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>bar_sep_dist_mult</name>
+      <display_name>Bar Separation Distance Multiplier</display_name>
+      <description>Multiplier of separation between bar elements relative to building height.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>10</default_value>
+    </argument>
+    <argument>
+      <name>wwr</name>
+      <display_name>Window to Wall Ratio</display_name>
+      <description>Selecting a window to wall ratio of 0 will trigger a smart building type default.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+      <max_value>1.000000</max_value>
+    </argument>
+    <argument>
+      <name>party_wall_fraction</name>
+      <display_name>Fraction of Exterior Wall Area with Adjacent Structure</display_name>
+      <description>This will impact how many above grade exterior walls are modeled with adiabatic boundary condition.</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+      <max_value>1.000000</max_value>
+    </argument>
+    <argument>
+      <name>party_wall_stories_north</name>
+      <display_name>Number of North facing stories with party wall</display_name>
+      <description>This will impact how many above grade exterior north walls are modeled with adiabatic boundary condition. If this is less than the number of above grade stoes, upper flor will reamin exterior</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>party_wall_stories_south</name>
+      <display_name>Number of South facing stories with party wall</display_name>
+      <description>This will impact how many above grade exterior south walls are modeled with adiabatic boundary condition. If this is less than the number of above grade stoes, upper flor will reamin exterior</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>party_wall_stories_east</name>
+      <display_name>Number of East facing stories with party wall</display_name>
+      <description>This will impact how many above grade exterior east walls are modeled with adiabatic boundary condition. If this is less than the number of above grade stoes, upper flor will reamin exterior</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>party_wall_stories_west</name>
+      <display_name>Number of West facing stories with party wall</display_name>
+      <description>This will impact how many above grade exterior west walls are modeled with adiabatic boundary condition. If this is less than the number of above grade stoes, upper flor will reamin exterior</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_height_method</name>
+      <display_name>Neighbor height specification method</display_name>
+      <description>Absolute will use heights specified by cardinal direction. Relative will use height offset.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Absolute</default_value>
+      <choices>
+        <choice>
+          <value>Absolute</value>
+          <display_name>Absolute</display_name>
+        </choice>
+        <choice>
+          <value>Relative</value>
+          <display_name>Relative</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>building_height_relative_to_neighbors</name>
+      <display_name>Height of this building relative to neighboring buildings relative</display_name>
+      <description>Negative number means neighbors are taller than this building, Positive number means neighbors are shorter than this building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+    </argument>
+    <argument>
+      <name>neighbor_height_north</name>
+      <display_name>Height of neighboring building to the north</display_name>
+      <description>If greater than zero, adds a shade the width of the building with the specified height to the north of the building. Only used if Neighbor height specification method is individual. Use party walls for attached buildings. Neighbors rotate with building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_height_south</name>
+      <display_name>Height of neighboring building to the south</display_name>
+      <description>If greater than zero, adds a shade the width of the building with the specified height to the south of the building. Only used if Neighbor height specification method is individual. Use party walls for attached buildings. Neighbors rotate with building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_height_east</name>
+      <display_name>Height of neighboring building to the east</display_name>
+      <description>If greater than zero, adds a shade the width of the building with the specified height to the east of the building. Only used if Neighbor height specification method is individual. Use party walls for attached buildings. Neighbors rotate with building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_height_west</name>
+      <display_name>Height of neighboring building to the west</display_name>
+      <description>If greater than zero, adds a shade the width of the building with the specified height to the west of the building. Only used if Neighbor height specification method is individual. Use party walls for attached buildings. Neighbors rotate with building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_offset_north</name>
+      <display_name>Distance of neighboring building to the north</display_name>
+      <description>If greater than zero, puts the shade at a specified distance to the north of the building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_offset_south</name>
+      <display_name>Distance of neighboring building to the south</display_name>
+      <description>If greater than zero, puts the shade at a specified distance to the south of the building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_offset_east</name>
+      <display_name>Distance of neighboring building to the east</display_name>
+      <description>If greater than zero, puts the shade at a specified distance to the east of the building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>neighbor_offset_west</name>
+      <display_name>Distance of neighboring building to the west</display_name>
+      <description>If greater than zero, puts the shade at a specified distance to the west of the building.</description>
+      <type>Double</type>
+      <units>ft</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>0</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>bottom_story_ground_exposed_floor</name>
+      <display_name>Is the Bottom Story Exposed to Ground</display_name>
+      <description>This should be true unless you are modeling a partial building which doesn't include the lowest story. The bottom story floor will have an adiabatic boundary condition when false.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>top_story_exterior_exposed_roof</name>
+      <display_name>Is the Top Story an Exterior Roof</display_name>
+      <description>This should be true unless you are modeling a partial building which doesn't include the highest story. The top story ceiling will have an adiabatic boundary condition when false.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>story_multiplier</name>
+      <display_name>Calculation Method for Story Multiplier</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Basements Ground Mid Top</default_value>
+      <choices>
+        <choice>
+          <value>None</value>
+          <display_name>None</display_name>
+        </choice>
+        <choice>
+          <value>Basements Ground Mid Top</value>
+          <display_name>Basements Ground Mid Top</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>make_mid_story_surfaces_adiabatic</name>
+      <display_name>Make Mid Story Floor Surfaces Adibatic</display_name>
+      <description>If set to true, this will skip surface intersection and make mid story floors and celings adiabiatc, not just at multiplied gaps.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>false</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>bar_division_method</name>
+      <display_name>Division Method for Bar Space Types</display_name>
+      <description>To use perimeter multiplier greater than 1 selected Multiple Space Types - Individual Stories Sliced.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Multiple Space Types - Individual Stories Sliced</default_value>
+      <choices>
+        <choice>
+          <value>Multiple Space Types - Simple Sliced</value>
+          <display_name>Multiple Space Types - Simple Sliced</display_name>
+        </choice>
+        <choice>
+          <value>Multiple Space Types - Individual Stories Sliced</value>
+          <display_name>Multiple Space Types - Individual Stories Sliced</display_name>
+        </choice>
+        <choice>
+          <value>Single Space Type - Core and Perimeter</value>
+          <display_name>Single Space Type - Core and Perimeter</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>double_loaded_corridor</name>
+      <display_name>Double Loaded Corridor</display_name>
+      <description>Add double loaded corridor for building types that have a defined circulation space type, to the selected space types.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Primary Space Type</default_value>
+      <choices>
+        <choice>
+          <value>None</value>
+          <display_name>None</display_name>
+        </choice>
+        <choice>
+          <value>Primary Space Type</value>
+          <display_name>Primary Space Type</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>space_type_sort_logic</name>
+      <display_name>Choose Space Type Sorting Method</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Building Type &gt; Size</default_value>
+      <choices>
+        <choice>
+          <value>Size</value>
+          <display_name>Size</display_name>
+        </choice>
+        <choice>
+          <value>Building Type &gt; Size</value>
+          <display_name>Building Type &gt; Size</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>use_upstream_args</name>
+      <display_name>Use Upstream Argument Values</display_name>
+      <description>When true this will look for arguments or registerValues in upstream measures that match arguments from this measure, and will use the value from the upstream measure in place of what is entered for this measure.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>climate_zone</name>
+      <display_name>Climate Zone.</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>CEC T24-CEC1</default_value>
+      <choices>
+        <choice>
+          <value>Lookup From Stat File</value>
+          <display_name>Lookup From Stat File</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-1A</value>
+          <display_name>ASHRAE 169-2013-1A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-1B</value>
+          <display_name>ASHRAE 169-2013-1B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-2A</value>
+          <display_name>ASHRAE 169-2013-2A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-2B</value>
+          <display_name>ASHRAE 169-2013-2B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-3A</value>
+          <display_name>ASHRAE 169-2013-3A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-3B</value>
+          <display_name>ASHRAE 169-2013-3B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-3C</value>
+          <display_name>ASHRAE 169-2013-3C</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-4A</value>
+          <display_name>ASHRAE 169-2013-4A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-4B</value>
+          <display_name>ASHRAE 169-2013-4B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-4C</value>
+          <display_name>ASHRAE 169-2013-4C</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-5A</value>
+          <display_name>ASHRAE 169-2013-5A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-5B</value>
+          <display_name>ASHRAE 169-2013-5B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-5C</value>
+          <display_name>ASHRAE 169-2013-5C</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-6A</value>
+          <display_name>ASHRAE 169-2013-6A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-6B</value>
+          <display_name>ASHRAE 169-2013-6B</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-7A</value>
+          <display_name>ASHRAE 169-2013-7A</display_name>
+        </choice>
+        <choice>
+          <value>ASHRAE 169-2013-8A</value>
+          <display_name>ASHRAE 169-2013-8A</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC1</value>
+          <display_name>CEC T24-CEC1</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC2</value>
+          <display_name>CEC T24-CEC2</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC3</value>
+          <display_name>CEC T24-CEC3</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC4</value>
+          <display_name>CEC T24-CEC4</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC5</value>
+          <display_name>CEC T24-CEC5</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC6</value>
+          <display_name>CEC T24-CEC6</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC7</value>
+          <display_name>CEC T24-CEC7</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC8</value>
+          <display_name>CEC T24-CEC8</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC9</value>
+          <display_name>CEC T24-CEC9</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC10</value>
+          <display_name>CEC T24-CEC10</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC11</value>
+          <display_name>CEC T24-CEC11</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC12</value>
+          <display_name>CEC T24-CEC12</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC13</value>
+          <display_name>CEC T24-CEC13</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC14</value>
+          <display_name>CEC T24-CEC14</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC15</value>
+          <display_name>CEC T24-CEC15</display_name>
+        </choice>
+        <choice>
+          <value>CEC T24-CEC16</value>
+          <display_name>CEC T24-CEC16</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>weather_file_name</name>
+      <display_name>Weather File Name</display_name>
+      <description>Name of the weather file to change to. This is the filename with the extension (e.g. NewWeather.epw). Optionally this can include the full file path, but for most use cases should just be file name.</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+    <argument>
+      <name>year</name>
+      <display_name>Weather File Year</display_name>
+      <description>Year of the weather file to use.</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+    <argument>
+      <name>grid_region</name>
+      <display_name>Grid Region</display_name>
+      <description>Cambium electric grid region, or eGrid region for Alaska and Hawaii</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>RMPAc</default_value>
+      <choices>
+        <choice>
+          <value>AZNMc</value>
+          <display_name>AZNMc</display_name>
+        </choice>
+        <choice>
+          <value>AKGD</value>
+          <display_name>AKGD</display_name>
+        </choice>
+        <choice>
+          <value>AKMS</value>
+          <display_name>AKMS</display_name>
+        </choice>
+        <choice>
+          <value>CAMXc</value>
+          <display_name>CAMXc</display_name>
+        </choice>
+        <choice>
+          <value>ERCTc</value>
+          <display_name>ERCTc</display_name>
+        </choice>
+        <choice>
+          <value>FRCCc</value>
+          <display_name>FRCCc</display_name>
+        </choice>
+        <choice>
+          <value>HIMS</value>
+          <display_name>HIMS</display_name>
+        </choice>
+        <choice>
+          <value>HIOA</value>
+          <display_name>HIOA</display_name>
+        </choice>
+        <choice>
+          <value>MROEc</value>
+          <display_name>MROEc</display_name>
+        </choice>
+        <choice>
+          <value>MROWc</value>
+          <display_name>MROWc</display_name>
+        </choice>
+        <choice>
+          <value>NEWEc</value>
+          <display_name>NEWEc</display_name>
+        </choice>
+        <choice>
+          <value>NWPPc</value>
+          <display_name>NWPPc</display_name>
+        </choice>
+        <choice>
+          <value>NYSTc</value>
+          <display_name>NYSTc</display_name>
+        </choice>
+        <choice>
+          <value>RFCEc</value>
+          <display_name>RFCEc</display_name>
+        </choice>
+        <choice>
+          <value>RFCMc</value>
+          <display_name>RFCMc</display_name>
+        </choice>
+        <choice>
+          <value>RFCWc</value>
+          <display_name>RFCWc</display_name>
+        </choice>
+        <choice>
+          <value>RMPAc</value>
+          <display_name>RMPAc</display_name>
+        </choice>
+        <choice>
+          <value>SPNOc</value>
+          <display_name>SPNOc</display_name>
+        </choice>
+        <choice>
+          <value>SPSOc</value>
+          <display_name>SPSOc</display_name>
+        </choice>
+        <choice>
+          <value>SRMVc</value>
+          <display_name>SRMVc</display_name>
+        </choice>
+        <choice>
+          <value>SRMWc</value>
+          <display_name>SRMWc</display_name>
+        </choice>
+        <choice>
+          <value>SRSOc</value>
+          <display_name>SRSOc</display_name>
+        </choice>
+        <choice>
+          <value>SRTVc</value>
+          <display_name>SRTVc</display_name>
+        </choice>
+        <choice>
+          <value>SRVCc</value>
+          <display_name>SRVCc</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>soil_conductivity</name>
+      <display_name>Soil Conductivity</display_name>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1.5</default_value>
+    </argument>
+    <argument>
+      <name>system_type</name>
+      <display_name>HVAC System Type</display_name>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Inferred</default_value>
+      <choices>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+        <choice>
+          <value>Ideal Air Loads</value>
+          <display_name>Ideal Air Loads</display_name>
+        </choice>
+        <choice>
+          <value>Baseboard electric</value>
+          <display_name>Baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Baseboard gas boiler</value>
+          <display_name>Baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>Baseboard central air source heat pump</value>
+          <display_name>Baseboard central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Baseboard district hot water</value>
+          <display_name>Baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with baseboard electric</value>
+          <display_name>Direct evap coolers with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with baseboard gas boiler</value>
+          <display_name>Direct evap coolers with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with baseboard central air source heat pump</value>
+          <display_name>Direct evap coolers with baseboard central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with baseboard district hot water</value>
+          <display_name>Direct evap coolers with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with forced air furnace</value>
+          <display_name>Direct evap coolers with forced air furnace</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with gas unit heaters</value>
+          <display_name>Direct evap coolers with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>Direct evap coolers with no heat</value>
+          <display_name>Direct evap coolers with no heat</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with boiler</value>
+          <display_name>DOAS with fan coil chiller with boiler</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with central air source heat pump</value>
+          <display_name>DOAS with fan coil chiller with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with district hot water</value>
+          <display_name>DOAS with fan coil chiller with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with baseboard electric</value>
+          <display_name>DOAS with fan coil chiller with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with gas unit heaters</value>
+          <display_name>DOAS with fan coil chiller with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil chiller with no heat</value>
+          <display_name>DOAS with fan coil chiller with no heat</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with boiler</value>
+          <display_name>DOAS with fan coil air-cooled chiller with boiler</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with central air source heat pump</value>
+          <display_name>DOAS with fan coil air-cooled chiller with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with district hot water</value>
+          <display_name>DOAS with fan coil air-cooled chiller with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with baseboard electric</value>
+          <display_name>DOAS with fan coil air-cooled chiller with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with gas unit heaters</value>
+          <display_name>DOAS with fan coil air-cooled chiller with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil air-cooled chiller with no heat</value>
+          <display_name>DOAS with fan coil air-cooled chiller with no heat</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with boiler</value>
+          <display_name>DOAS with fan coil district chilled water with boiler</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with central air source heat pump</value>
+          <display_name>DOAS with fan coil district chilled water with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with district hot water</value>
+          <display_name>DOAS with fan coil district chilled water with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with baseboard electric</value>
+          <display_name>DOAS with fan coil district chilled water with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with gas unit heaters</value>
+          <display_name>DOAS with fan coil district chilled water with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with fan coil district chilled water with no heat</value>
+          <display_name>DOAS with fan coil district chilled water with no heat</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with VRF</value>
+          <display_name>DOAS with VRF</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with water source heat pumps fluid cooler with boiler</value>
+          <display_name>DOAS with water source heat pumps fluid cooler with boiler</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with water source heat pumps cooling tower with boiler</value>
+          <display_name>DOAS with water source heat pumps cooling tower with boiler</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with water source heat pumps with ground source heat pump</value>
+          <display_name>DOAS with water source heat pumps with ground source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>DOAS with water source heat pumps district chilled water with district hot water</value>
+          <display_name>DOAS with water source heat pumps district chilled water with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with boiler</value>
+          <display_name>Fan coil chiller with boiler</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with central air source heat pump</value>
+          <display_name>Fan coil chiller with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with district hot water</value>
+          <display_name>Fan coil chiller with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with baseboard electric</value>
+          <display_name>Fan coil chiller with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with gas unit heaters</value>
+          <display_name>Fan coil chiller with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil chiller with no heat</value>
+          <display_name>Fan coil chiller with no heat</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with boiler</value>
+          <display_name>Fan coil air-cooled chiller with boiler</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with central air source heat pump</value>
+          <display_name>Fan coil air-cooled chiller with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with district hot water</value>
+          <display_name>Fan coil air-cooled chiller with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with baseboard electric</value>
+          <display_name>Fan coil air-cooled chiller with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with gas unit heaters</value>
+          <display_name>Fan coil air-cooled chiller with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil air-cooled chiller with no heat</value>
+          <display_name>Fan coil air-cooled chiller with no heat</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with boiler</value>
+          <display_name>Fan coil district chilled water with boiler</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with central air source heat pump</value>
+          <display_name>Fan coil district chilled water with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with district hot water</value>
+          <display_name>Fan coil district chilled water with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with baseboard electric</value>
+          <display_name>Fan coil district chilled water with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with gas unit heaters</value>
+          <display_name>Fan coil district chilled water with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>Fan coil district chilled water with no heat</value>
+          <display_name>Fan coil district chilled water with no heat</display_name>
+        </choice>
+        <choice>
+          <value>Forced air furnace</value>
+          <display_name>Forced air furnace</display_name>
+        </choice>
+        <choice>
+          <value>Gas unit heaters</value>
+          <display_name>Gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with baseboard electric</value>
+          <display_name>PTAC with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with baseboard gas boiler</value>
+          <display_name>PTAC with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with baseboard district hot water</value>
+          <display_name>PTAC with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with gas unit heaters</value>
+          <display_name>PTAC with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with electric coil</value>
+          <display_name>PTAC with electric coil</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with gas coil</value>
+          <display_name>PTAC with gas coil</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with gas boiler</value>
+          <display_name>PTAC with gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with central air source heat pump</value>
+          <display_name>PTAC with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with district hot water</value>
+          <display_name>PTAC with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PTAC with no heat</value>
+          <display_name>PTAC with no heat</display_name>
+        </choice>
+        <choice>
+          <value>PTHP</value>
+          <display_name>PTHP</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with baseboard electric</value>
+          <display_name>PSZ-AC with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with baseboard gas boiler</value>
+          <display_name>PSZ-AC with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with baseboard district hot water</value>
+          <display_name>PSZ-AC with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with gas unit heaters</value>
+          <display_name>PSZ-AC with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with electric coil</value>
+          <display_name>PSZ-AC with electric coil</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with gas coil</value>
+          <display_name>PSZ-AC with gas coil</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with gas boiler</value>
+          <display_name>PSZ-AC with gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with central air source heat pump</value>
+          <display_name>PSZ-AC with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with district hot water</value>
+          <display_name>PSZ-AC with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC with no heat</value>
+          <display_name>PSZ-AC with no heat</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with baseboard electric</value>
+          <display_name>PSZ-AC district chilled water with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with baseboard gas boiler</value>
+          <display_name>PSZ-AC district chilled water with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with baseboard district hot water</value>
+          <display_name>PSZ-AC district chilled water with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with gas unit heaters</value>
+          <display_name>PSZ-AC district chilled water with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with electric coil</value>
+          <display_name>PSZ-AC district chilled water with electric coil</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with gas coil</value>
+          <display_name>PSZ-AC district chilled water with gas coil</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with gas boiler</value>
+          <display_name>PSZ-AC district chilled water with gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with central air source heat pump</value>
+          <display_name>PSZ-AC district chilled water with central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with district hot water</value>
+          <display_name>PSZ-AC district chilled water with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-AC district chilled water with no heat</value>
+          <display_name>PSZ-AC district chilled water with no heat</display_name>
+        </choice>
+        <choice>
+          <value>PSZ-HP</value>
+          <display_name>PSZ-HP</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with gas boiler reheat</value>
+          <display_name>PVAV with gas boiler reheat</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with central air source heat pump reheat</value>
+          <display_name>PVAV with central air source heat pump reheat</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with district hot water reheat</value>
+          <display_name>PVAV with district hot water reheat</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with PFP boxes</value>
+          <display_name>PVAV with PFP boxes</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with gas heat with electric reheat</value>
+          <display_name>PVAV with gas heat with electric reheat</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with gas coil heat with electric reheat</value>
+          <display_name>PVAV with gas coil heat with electric reheat</display_name>
+        </choice>
+        <choice>
+          <value>PVAV with gas boiler heat with electric reheat</value>
+          <display_name>PVAV with gas boiler heat with electric reheat</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with baseboard electric</value>
+          <display_name>Residential AC with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with baseboard gas boiler</value>
+          <display_name>Residential AC with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with baseboard central air source heat pump</value>
+          <display_name>Residential AC with baseboard central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with baseboard district hot water</value>
+          <display_name>Residential AC with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with residential forced air furnace</value>
+          <display_name>Residential AC with residential forced air furnace</display_name>
+        </choice>
+        <choice>
+          <value>Residential AC with no heat</value>
+          <display_name>Residential AC with no heat</display_name>
+        </choice>
+        <choice>
+          <value>Residential heat pump</value>
+          <display_name>Residential heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Residential heat pump with no cooling</value>
+          <display_name>Residential heat pump with no cooling</display_name>
+        </choice>
+        <choice>
+          <value>Residential forced air furnace</value>
+          <display_name>Residential forced air furnace</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with gas boiler reheat</value>
+          <display_name>VAV chiller with gas boiler reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with central air source heat pump reheat</value>
+          <display_name>VAV chiller with central air source heat pump reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with district hot water reheat</value>
+          <display_name>VAV chiller with district hot water reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with PFP boxes</value>
+          <display_name>VAV chiller with PFP boxes</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with gas coil reheat</value>
+          <display_name>VAV chiller with gas coil reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with no reheat with baseboard electric</value>
+          <display_name>VAV chiller with no reheat with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with no reheat with gas unit heaters</value>
+          <display_name>VAV chiller with no reheat with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>VAV chiller with no reheat with zone heat pump</value>
+          <display_name>VAV chiller with no reheat with zone heat pump</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with gas boiler reheat</value>
+          <display_name>VAV air-cooled chiller with gas boiler reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with central air source heat pump reheat</value>
+          <display_name>VAV air-cooled chiller with central air source heat pump reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with district hot water reheat</value>
+          <display_name>VAV air-cooled chiller with district hot water reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with PFP boxes</value>
+          <display_name>VAV air-cooled chiller with PFP boxes</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with gas coil reheat</value>
+          <display_name>VAV air-cooled chiller with gas coil reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with no reheat with baseboard electric</value>
+          <display_name>VAV air-cooled chiller with no reheat with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with no reheat with gas unit heaters</value>
+          <display_name>VAV air-cooled chiller with no reheat with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>VAV air-cooled chiller with no reheat with zone heat pump</value>
+          <display_name>VAV air-cooled chiller with no reheat with zone heat pump</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with gas boiler reheat</value>
+          <display_name>VAV district chilled water with gas boiler reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with central air source heat pump reheat</value>
+          <display_name>VAV district chilled water with central air source heat pump reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with district hot water reheat</value>
+          <display_name>VAV district chilled water with district hot water reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with PFP boxes</value>
+          <display_name>VAV district chilled water with PFP boxes</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with gas coil reheat</value>
+          <display_name>VAV district chilled water with gas coil reheat</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with no reheat with baseboard electric</value>
+          <display_name>VAV district chilled water with no reheat with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with no reheat with gas unit heaters</value>
+          <display_name>VAV district chilled water with no reheat with gas unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>VAV district chilled water with no reheat with zone heat pump</value>
+          <display_name>VAV district chilled water with no reheat with zone heat pump</display_name>
+        </choice>
+        <choice>
+          <value>VRF</value>
+          <display_name>VRF</display_name>
+        </choice>
+        <choice>
+          <value>Water source heat pumps fluid cooler with boiler</value>
+          <display_name>Water source heat pumps fluid cooler with boiler</display_name>
+        </choice>
+        <choice>
+          <value>Water source heat pumps cooling tower with boiler</value>
+          <display_name>Water source heat pumps cooling tower with boiler</display_name>
+        </choice>
+        <choice>
+          <value>Water source heat pumps with ground source heat pump</value>
+          <display_name>Water source heat pumps with ground source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Water source heat pumps district chilled water with district hot water</value>
+          <display_name>Water source heat pumps district chilled water with district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with baseboard electric</value>
+          <display_name>Window AC with baseboard electric</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with baseboard gas boiler</value>
+          <display_name>Window AC with baseboard gas boiler</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with baseboard central air source heat pump</value>
+          <display_name>Window AC with baseboard central air source heat pump</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with baseboard district hot water</value>
+          <display_name>Window AC with baseboard district hot water</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with forced air furnace</value>
+          <display_name>Window AC with forced air furnace</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with unit heaters</value>
+          <display_name>Window AC with unit heaters</display_name>
+        </choice>
+        <choice>
+          <value>Window AC with no heat</value>
+          <display_name>Window AC with no heat</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>hvac_delivery_type</name>
+      <display_name>HVAC System Delivery Type</display_name>
+      <description>How the HVAC system delivers heating or cooling to the zone.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Forced Air</default_value>
+      <choices>
+        <choice>
+          <value>Forced Air</value>
+          <display_name>Forced Air</display_name>
+        </choice>
+        <choice>
+          <value>Hydronic</value>
+          <display_name>Hydronic</display_name>
+        </choice>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>htg_src</name>
+      <display_name>HVAC Heating Source</display_name>
+      <description>The primary source of heating used by HVAC systems in the model.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>NaturalGas</default_value>
+      <choices>
+        <choice>
+          <value>Electricity</value>
+          <display_name>Electricity</display_name>
+        </choice>
+        <choice>
+          <value>NaturalGas</value>
+          <display_name>NaturalGas</display_name>
+        </choice>
+        <choice>
+          <value>DistrictHeating</value>
+          <display_name>DistrictHeating</display_name>
+        </choice>
+        <choice>
+          <value>DistrictAmbient</value>
+          <display_name>DistrictAmbient</display_name>
+        </choice>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>clg_src</name>
+      <display_name>HVAC Cooling Source</display_name>
+      <description>The primary source of cooling used by HVAC systems in the model.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Electricity</default_value>
+      <choices>
+        <choice>
+          <value>Electricity</value>
+          <display_name>Electricity</display_name>
+        </choice>
+        <choice>
+          <value>DistrictCooling</value>
+          <display_name>DistrictCooling</display_name>
+        </choice>
+        <choice>
+          <value>DistrictAmbient</value>
+          <display_name>DistrictAmbient</display_name>
+        </choice>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>swh_src</name>
+      <display_name>Service Water Heating Source</display_name>
+      <description>The primary source of heating used by SWH systems in the model.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Inferred</default_value>
+      <choices>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+        <choice>
+          <value>NaturalGas</value>
+          <display_name>NaturalGas</display_name>
+        </choice>
+        <choice>
+          <value>Electricity</value>
+          <display_name>Electricity</display_name>
+        </choice>
+        <choice>
+          <value>HeatPump</value>
+          <display_name>HeatPump</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>kitchen_makeup</name>
+      <display_name>Kitchen Exhaust MakeUp Air Calculation Method</display_name>
+      <description>Determine logic to identify dining or cafe zones to provide makeup air to kitchen exhaust.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Adjacent</default_value>
+      <choices>
+        <choice>
+          <value>None</value>
+          <display_name>None</display_name>
+        </choice>
+        <choice>
+          <value>Largest Zone</value>
+          <display_name>Largest Zone</display_name>
+        </choice>
+        <choice>
+          <value>Adjacent</value>
+          <display_name>Adjacent</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>exterior_lighting_zone</name>
+      <display_name>Exterior Lighting Zone</display_name>
+      <description>Identify the Exterior Lighting Zone for the Building Site.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>3 - All Other Areas</default_value>
+      <choices>
+        <choice>
+          <value>0 - Undeveloped Areas Parks</value>
+          <display_name>0 - Undeveloped Areas Parks</display_name>
+        </choice>
+        <choice>
+          <value>1 - Developed Areas Parks</value>
+          <display_name>1 - Developed Areas Parks</display_name>
+        </choice>
+        <choice>
+          <value>2 - Neighborhood</value>
+          <display_name>2 - Neighborhood</display_name>
+        </choice>
+        <choice>
+          <value>3 - All Other Areas</value>
+          <display_name>3 - All Other Areas</display_name>
+        </choice>
+        <choice>
+          <value>4 - High Activity</value>
+          <display_name>4 - High Activity</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_constructions</name>
+      <display_name>Add Constructions to Model</display_name>
+      <description>Construction Set will be applied to entire building</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>wall_construction_type</name>
+      <display_name>Wall Construction Type</display_name>
+      <description>Identify Exterior Wall Construction Type to be applied to entire building</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Inferred</default_value>
+      <choices>
+        <choice>
+          <value>Mass</value>
+          <display_name>Mass</display_name>
+        </choice>
+        <choice>
+          <value>Metal Building</value>
+          <display_name>Metal Building</display_name>
+        </choice>
+        <choice>
+          <value>SteelFramed</value>
+          <display_name>SteelFramed</display_name>
+        </choice>
+        <choice>
+          <value>WoodFramed</value>
+          <display_name>WoodFramed</display_name>
+        </choice>
+        <choice>
+          <value>Inferred</value>
+          <display_name>Inferred</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_space_type_loads</name>
+      <display_name>Add Space Type Loads to Model</display_name>
+      <description>Populate existing space types in model with internal loads.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_elevators</name>
+      <display_name>Add Elevators to Model</display_name>
+      <description>Elevators will be add directly to space in model vs. being applied to a space type.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_internal_mass</name>
+      <display_name>Add Internal Mass to Model</display_name>
+      <description>Adds internal mass to each space.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_exterior_lights</name>
+      <display_name>Add Exterior Lights to Model</display_name>
+      <description>Multiple exterior lights objects will be added for different classes of lighting such as parking and facade.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>onsite_parking_fraction</name>
+      <display_name>Onsite Parking Fraction</display_name>
+      <description>If set to 0 no exterior lighting for parking will be added</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>add_exhaust</name>
+      <display_name>Add Exhaust Fans to Model</display_name>
+      <description>Depending upon building type exhaust fans can be in kitchens, restrooms or other space types</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_swh</name>
+      <display_name>Add Service Water Heating to Model</display_name>
+      <description>This will add both the supply and demand side of service water heating.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_thermostat</name>
+      <display_name>Add Thermostats</display_name>
+      <description>Add Thermostat to model based on Space Type Standards information of spaces assigned to thermal zones.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_hvac</name>
+      <display_name>Add HVAC System to Model</display_name>
+      <description>Add HVAC System to the model</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>add_refrigeration</name>
+      <display_name>Add Refrigeration to Model</display_name>
+      <description>Add refrigeration cases and walkins model</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>refrigeration_template</name>
+      <display_name>Refrigeration Technology Level</display_name>
+      <description>The refrigeration technology level used for refrigerated cases, walkins, compressors, and systems.</description>
+      <type>Choice</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>new</default_value>
+      <choices>
+        <choice>
+          <value>old</value>
+          <display_name>old</display_name>
+        </choice>
+        <choice>
+          <value>new</value>
+          <display_name>new</display_name>
+        </choice>
+        <choice>
+          <value>advanced</value>
+          <display_name>advanced</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>modify_wkdy_op_hrs</name>
+      <display_name>Modify weekday hours of operation</display_name>
+      <description>Modify the weekday hours of operation in the model.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>false</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>wkdy_op_hrs_start_time</name>
+      <display_name>Weekday Operating Hours Start Time</display_name>
+      <description>Enter 24 hour values with fractional values converted to minutes. e.g. 17.25 = 5:15pm. Only used if Modify weekday hours of operation is true.</description>
+      <type>Double</type>
+      <units>Hours</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>8</default_value>
+    </argument>
+    <argument>
+      <name>wkdy_op_hrs_duration</name>
+      <display_name>Weekday Operating Hours Duration</display_name>
+      <description>Length of weekday operating hours. Enter 24 hour values with fractional values converted to minutes. e.g. 17.25 = 5:15pm. Only used if Modify weekday hours of operation is true.</description>
+      <type>Double</type>
+      <units>Hours</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>8</default_value>
+    </argument>
+    <argument>
+      <name>modify_wknd_op_hrs</name>
+      <display_name>Modify weekend hours of operation</display_name>
+      <description>Modify the weekend hours of operation in the model.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>false</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>wknd_op_hrs_start_time</name>
+      <display_name>Weekend Operating Hours Start Time</display_name>
+      <description>Enter 24 hour values with fractional values converted to minutes. e.g. 17.25 = 5:15pm.  Only used if Modify weekend hours of operation is true.</description>
+      <type>Double</type>
+      <units>Hours</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>8</default_value>
+    </argument>
+    <argument>
+      <name>wknd_op_hrs_duration</name>
+      <display_name>Weekend Operating Hours Duration</display_name>
+      <description>Length of weekend operating hours. Enter 24 hour values with fractional values converted to minutes. e.g. 17.25 = 5:15pm.  Only used if Modify weekend hours of operation is true.</description>
+      <type>Double</type>
+      <units>Hours</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>8</default_value>
+    </argument>
+    <argument>
+      <name>unmet_hours_tolerance</name>
+      <display_name>Unmet Hours Tolerance</display_name>
+      <description>Set the thermostat setpoint tolerance for unmet hours in degrees Rankine</description>
+      <type>Double</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>remove_objects</name>
+      <display_name>Clean Model of non-geometry objects</display_name>
+      <description>Only removes objects of type that are selected to be added.</description>
+      <type>Boolean</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>true</default_value>
+      <choices>
+        <choice>
+          <value>true</value>
+          <display_name>true</display_name>
+        </choice>
+        <choice>
+          <value>false</value>
+          <display_name>false</display_name>
+        </choice>
+      </choices>
+    </argument>
+    <argument>
+      <name>clg_sp_f</name>
+      <display_name>Cooling Thermostat Occupied Setpoint</display_name>
+      <description>Enter 999 for no change to setpoint.</description>
+      <type>Double</type>
+      <units>F</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>clg_delta_f</name>
+      <display_name>Cooling Thermostat Delta Setback</display_name>
+      <description>Enter 999 for no change to setback.</description>
+      <type>Double</type>
+      <units>F</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+    <argument>
+      <name>htg_sp_f</name>
+      <display_name>Heating Thermostat Occupied Setpoint</display_name>
+      <description>Enter 999 for no change to setpoint.</description>
+      <type>Double</type>
+      <units>F</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+    </argument>
+    <argument>
+      <name>htg_delta_f</name>
+      <display_name>Heating Thermostat Delta Setback</display_name>
+      <description>Enter 999 for no change to setback.</description>
+      <type>Double</type>
+      <units>F</units>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>999</default_value>
+      <min_value>0.000000</min_value>
+    </argument>
+  </arguments>
   <outputs />
   <provenances />
   <tags>
@@ -34,13 +3318,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>EC506301</checksum>
+      <checksum>BC055E82</checksum>
     </file>
     <file>
       <filename>create_custom_building_from_spec_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
-      <checksum>7ACB8E4A</checksum>
+      <checksum>058695D1</checksum>
     </file>
   </files>
 </measure>
