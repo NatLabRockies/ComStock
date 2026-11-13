@@ -8,7 +8,8 @@
       "applicable_templates lists every template the entry covers, ASHRAE and DEER together.",
       "DEER templates reuse the ASHRAE ratios for their era: vintages before 2004 join the DOE Ref entry, 2004 and later join the 90.1 entry.",
       "construction_defaults carries the envelope every building type shares under a template; a building type entry carries only what differs from it. Merge the two, default first, one level into slots.",
-      "A merged construction spec names every surface, so it does not need a row in the standards construction_sets table. That table is keyed on the building types of the template family and holds no ASHRAE name under a DEER template."
+      "A merged construction spec names every surface, so it does not need a row in the standards construction_sets table. That table is keyed on the building types of the template family and holds no ASHRAE name under a DEER template.",
+      "Warehouse thermostat_overrides heat both storage space types to 61 F (16.1111 C), the warehouse heating setpoint since tsvs-v31. The sampled warehouse heating setpoint is 999 (no change; tsvs-v34 corrected 2026-11-13), because a sampled setpoint reaches every heated space type and had lowered warehouse offices to 61 F."
     ]
   },
   "building_types": {
@@ -3541,6 +3542,20 @@
               "space_type_gen": true,
               "default": true
             }
+          }
+        }
+      ],
+      "thermostat_overrides": [
+        {
+          "space_type": "storage - warehouse - medium to bulky palletized items",
+          "thermostat": {
+            "heating_setpoint_c": 16.1111
+          }
+        },
+        {
+          "space_type": "storage - warehouse - smaller hand-carried items",
+          "thermostat": {
+            "heating_setpoint_c": 16.1111
           }
         }
       ],
