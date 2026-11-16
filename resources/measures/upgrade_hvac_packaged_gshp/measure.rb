@@ -709,8 +709,10 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
     fluid_fluid_heat_exchanger.setHeatExchangeModelType('Ideal')
     fluid_fluid_heat_exchanger.setControlType('UncontrolledOn')
     fluid_fluid_heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
-    # OpenStudio's 0 C default is the water freeze limit; it switches the HX off and the condenser loop runs away
-    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-6.0) # C, above 20% propylene glycol's -7 C freeze point
+    # An inlet below the operation minimum temperature limit switches the ideal HX off and the condenser loop runs away
+    # cold. OpenStudio's 0 C default tripped it, and so did -6 C (above 20% propylene glycol's -7 C freeze point) on a
+    # momentary inlet dip during a sizing run. -40 C keeps the HX on; it does not model freeze protection.
+    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-40.0) # C
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 
@@ -1130,6 +1132,19 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
         air_loop_hvac = thermal_zone.airLoopHVAC.get
         air_loop_hvac.setAvailabilitySchedule(zone_data["#{thermal_zone.name} schedule"])
         runner.registerInfo('setting schedule')
+        # A data closet converted with the building (data_centers_on_plant above) keeps its own single-zone loop. With no
+        # design load its loop sized below EnergyPlus's 1 L/s minimum, the heat pump capacities failed to size and the
+        # condenser loop overheated. Give it the 1.2 L/s cooling design airflow floor of the zones on new loops below,
+        # and autosize the loop's design flow, which the hard-sized baseline holds at the old sub-1 L/s value.
+        if data_centers_on_plant.include?(thermal_zone.name.get)
+          sizing_zone = thermal_zone.sizingZone
+          sizing_zone.setCoolingDesignAirFlowMethod('DesignDayWithLimit')
+          sizing_zone.setCoolingMinimumAirFlowperZoneFloorArea(0.0)
+          sizing_zone.setCoolingMinimumAirFlowFraction(0.0)
+          sizing_zone.setCoolingMinimumAirFlow(0.0012)
+          air_loop_hvac.autosizeDesignSupplyAirFlowRate
+          runner.registerInfo("#{thermal_zone.name}: data closet unit's cooling design airflow floored at 1.2 L/s.")
+        end
       else
         # create new air loop for unitary system
         air_loop_hvac = OpenStudio::Model::AirLoopHVAC.new(model)
