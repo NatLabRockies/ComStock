@@ -222,6 +222,53 @@ class HvacVrfHrDoasTest < Minitest::Test
     end
   end
 
+  # The 25 % upsizing allowance must raise outdoor unit capacity in a heating-dominant climate. From 2025-04 it had no
+  # effect: the capacity curves became TableLookup objects, and Curve#evaluate returns -9999 for those, which inverted
+  # the heating-dominant check.
+  def test_upsizing_raises_capacity_in_heating_dominant_climate
+    test_name = 'test_upsizing_heating_dominant'
+    puts "\n######\nTEST:#{test_name}\n######\n"
+
+    base_osm_path = models_for_tests.find { |x| File.basename(x, '.osm') == 'Small_Office_2A' }
+    epw_path = epws_for_tests.find { |x| File.basename(x, '.epw') == 'USA_AK_Fairbanks.Intl.AP.702610_TMY3' }
+    refute_nil(base_osm_path)
+    refute_nil(epw_path)
+
+    # the sizing run uses the model's design days, not the weather file, so give the model Fairbanks design days
+    model = load_model(base_osm_path)
+    assert(OpenstudioStandards::Weather.model_set_design_days(model, ddy_file_path: epw_path.sub('.epw', '.ddy')))
+    FileUtils.mkdir_p(run_dir("#{test_name}_input"))
+    osm_path = "#{run_dir("#{test_name}_input")}/Small_Office_2A_Fairbanks_design_days.osm"
+    model.save(osm_path, true)
+
+    measure = HvacVrfHrDoas.new
+    arguments = measure.arguments(model)
+    values = { 'vrf_defrost_strategy' => 'reverse-cycle', 'disable_defrost' => false,
+               'upsizing_allowance_pct' => 25.0, 'apply_measure' => true }
+    argument_map = OpenStudio::Measure::OSArgumentMap.new
+    arguments.each do |arg|
+      next unless values.key?(arg.name)
+
+      new_arg = arg.clone
+      assert(new_arg.setValue(values[arg.name]))
+      argument_map[arg.name] = new_arg
+    end
+
+    result = apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false)
+    assert_equal('Success', result.value.valueName)
+
+    # the measure logs each outdoor unit's heating capacity before (autosized) and after upsizing
+    infos = result.info.map(&:logMessage)
+    before = infos.filter_map { |m| m[/outdoor unit heating capacity before = ([\d.eE+-]+) W/, 1]&.to_f }
+    after = infos.filter_map { |m| m[/outdoor unit heating capacity after = ([\d.eE+-]+) W/, 1]&.to_f }
+    refute_empty(before)
+    assert_equal(before.size, after.size)
+    ratios = before.zip(after).map { |b, a| a / b }
+    puts "outdoor unit heating capacity after / before: #{ratios.map { |r| r.round(3) }}"
+    assert(ratios.any? { |r| r > 1.01 }, 'No outdoor unit was upsized in a heating-dominant climate')
+    assert(ratios.all? { |r| r <= 1.26 }, 'An outdoor unit was upsized beyond the 25 % allowance')
+  end
+
   # create an array of hashes with model name, weather, and expected result
   def models_to_test
     test_sets = []

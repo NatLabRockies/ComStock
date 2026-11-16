@@ -425,6 +425,28 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
 
   # --------------------------------------- #
   # supporting method
+  # --------------------------------------- #
+  # return a capacity modifier from a two-variable VRF performance curve
+  # TableLookup curves (what model_add_curve builds on OpenStudio 3.7 and later) are interpolated with
+  # get_dep_var_from_lookup_table_with_two_ind_var: Curve#evaluate is not implemented for TableLookup and returns -9999
+  # @param runner [OpenStudio::Measure::OSRunner] runner
+  # @param curve [OpenStudio::Model::Curve] capacity modifier curve
+  # @param input1 [Double] indoor temperature in C (wet bulb for cooling, dry bulb for heating)
+  # @param input2 [Double] outdoor dry bulb temperature in C
+  # @return [Double, nil] the modifier, or nil if the curve cannot give a positive value
+  def self.capacity_modifier_from_curve(runner, curve, input1, input2)
+    value = if curve.to_TableLookup.is_initialized
+              get_dep_var_from_lookup_table_with_two_ind_var(runner, curve.to_TableLookup.get, input1, input2)
+            else
+              curve.evaluate(input1, input2)
+            end
+    return nil unless value.is_a?(Numeric) && value.positive?
+
+    value
+  end
+
+  # --------------------------------------- #
+  # supporting method
   # extracting VRF object specifications from existing (fully populated) object
   # this is used to copy specs from (manufacturer provided) osc files
   # --------------------------------------- #
@@ -2143,27 +2165,22 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
           # puts("--- #{coil_cooling.name} | capacity_modifier_curve_cooling = #{capacity_modifier_curve_cooling.name}")
           # puts("--- #{coil_cooling.name} | capacity_modifier_curve_heating = #{capacity_modifier_curve_heating.name}")
 
-          # get capacity modifier for cooling
-          if capacity_modifier_curve_cooling.to_TableMultiVariableLookup.is_initialized
-            capacity_modifier_curve_cooling = capacity_modifier_curve_cooling.to_TableMultiVariableLookup.get
-            capacity_modifier_cooling = HvacVrfHrDoas.get_dep_var_from_lookup_table_with_two_ind_var(runner,
-                                                                                                     capacity_modifier_curve_cooling, OpenStudio.convert(67.0, 'F', 'C').get, design_cooling_temp)
-          else
-            capacity_modifier_cooling = capacity_modifier_curve_cooling.evaluate(OpenStudio.convert(67.0, 'F', 'C').get,
-                                                                                 design_cooling_temp)
-          end
+          # get capacity modifiers at the design outdoor temperatures (67 F indoor wet bulb for cooling, 70 F indoor
+          # dry bulb for heating); the curves are TableLookup objects, which Curve#evaluate cannot read (-9999)
+          capacity_modifier_cooling = HvacVrfHrDoas.capacity_modifier_from_curve(
+            runner, capacity_modifier_curve_cooling, OpenStudio.convert(67.0, 'F', 'C').get, design_cooling_temp
+          )
+          capacity_modifier_heating = HvacVrfHrDoas.capacity_modifier_from_curve(
+            runner, capacity_modifier_curve_heating, OpenStudio.convert(70.0, 'F', 'C').get, design_heating_temp
+          )
           # puts("--- #{coil_cooling.name} | capacity_modifier_cooling = #{capacity_modifier_cooling}")
-
-          # get capacity modifier for heating
-          if capacity_modifier_curve_cooling.to_TableMultiVariableLookup.is_initialized
-            capacity_modifier_curve_heating = capacity_modifier_curve_heating.to_TableMultiVariableLookup.get
-            capacity_modifier_heating = HvacVrfHrDoas.get_dep_var_from_lookup_table_with_two_ind_var(runner,
-                                                                                                     capacity_modifier_curve_heating, OpenStudio.convert(70.0, 'F', 'C').get, design_heating_temp)
-          else
-            capacity_modifier_heating = capacity_modifier_curve_heating.evaluate(OpenStudio.convert(70.0, 'F', 'C').get,
-                                                                                 design_heating_temp)
-          end
           # puts("--- #{coil_cooling.name} | capacity_modifier_heating = #{capacity_modifier_heating}")
+          if capacity_modifier_cooling.nil? || capacity_modifier_heating.nil?
+            runner.registerWarning("Cannot evaluate the capacity modifier curves of #{ou.name}, " \
+                                   "so #{coil_cooling.name} is not upsized.")
+            capacity_outdoor_unit_new += capacity_original_rated
+            next
+          end
 
           # get rated capacities based on design loads
           rated_cooling_capacity_based_on_design_load = design_cooling_load / capacity_modifier_cooling
@@ -2195,6 +2212,12 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
           rated_capacity_modifier = get_tabular_data(model, sql, 'CoilSizingDetails', 'Entire Facility', 'Coils',
                                                      row_name_cooling, column_name).to_f
           # puts("--- #{coil_cooling.name} | rated_capacity_modifier = #{rated_capacity_modifier}")
+          unless rated_capacity_modifier.positive? && capacity_original_rated.positive?
+            runner.registerWarning("Sizing run has no rated capacity or off-rating modifier for #{coil_cooling.name}, " \
+                                   'so it is not upsized.')
+            capacity_outdoor_unit_new += capacity_original_rated
+            next
+          end
 
           # get capacity_upsized_rated
           capacity_upsized_rated = capacity_original_rated * (1 + (upsizing_allowance_pct / 100.0))
