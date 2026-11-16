@@ -774,6 +774,46 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     new_dx_heating_coil
   end
 
+  # Give a unitary system with a multispeed DX coil its own UnitarySystemPerformance:Multispeed so its continuous-fan
+  # no-load airflow is no_load_flow_m3_per_s. EnergyPlus ignores the unitary system's no-load supply air flow rate when
+  # a multispeed object is present: it resets the no-load flow to the cooling supply air flow (capped at the heating
+  # supply air flow with a multispeed heating coil) times the object's No Load Supply Air Flow Rate Ratio. OpenStudio
+  # generates that object at translation when none is assigned, with the ratio blank (EnergyPlus default 1), so the
+  # units ran at full design airflow whenever the fan ran with no load. The stage ratios here are the ones the OpenStudio
+  # translator generates: each stage's rated airflow over the unit's cooling or heating supply air flow, and 1.0 where a
+  # coil has fewer stages. A unit with only single-speed coils gets no object (EnergyPlus then uses its no-load flow).
+  # @return [OpenStudio::Model::UnitarySystemPerformanceMultispeed, nil] the object assigned, or nil if none
+  def assign_multispeed_performance(model, runner, unitary, cooling_coil, heating_coil, no_load_flow_m3_per_s)
+    clg_stages = cooling_coil.to_CoilCoolingDXMultiSpeed.is_initialized ? cooling_coil.to_CoilCoolingDXMultiSpeed.get.stages : []
+    htg_stages = heating_coil.to_CoilHeatingDXMultiSpeed.is_initialized ? heating_coil.to_CoilHeatingDXMultiSpeed.get.stages : []
+    return nil if clg_stages.empty? && htg_stages.empty?
+
+    clg_flow = unitary.supplyAirFlowRateDuringCoolingOperation
+    htg_flow = unitary.supplyAirFlowRateDuringHeatingOperation
+    if clg_flow.empty? || htg_flow.empty? || (clg_stages + htg_stages).any? { |stage| stage.ratedAirFlowRate.empty? }
+      runner.registerWarning("#{unitary.name}: supply or stage airflows are not hard-sized, so the multispeed no-load airflow ratio was not set and the unit runs at full airflow with no load.")
+      return nil
+    end
+    clg_flow = clg_flow.get
+    htg_flow = htg_flow.get
+
+    ratio_fields = (0...[clg_stages.size, htg_stages.size].max).map do |i|
+      htg_ratio = i < htg_stages.size ? htg_stages[i].ratedAirFlowRate.get / htg_flow : 1.0
+      clg_ratio = i < clg_stages.size ? clg_stages[i].ratedAirFlowRate.get / clg_flow : 1.0
+      OpenStudio::Model::SupplyAirflowRatioField.new(htg_ratio, clg_ratio)
+    end
+    base_flow = htg_stages.empty? ? clg_flow : [clg_flow, htg_flow].min
+    no_load_ratio = (no_load_flow_m3_per_s / base_flow).clamp(0.0, 1.0)
+
+    performance = OpenStudio::Model::UnitarySystemPerformanceMultispeed.new(model)
+    performance.setName("#{unitary.name} Unitary System Performance")
+    performance.setSingleModeOperation(false)
+    performance.setNoLoadSupplyAirflowRateRatio(no_load_ratio)
+    performance.setSupplyAirflowRatioFields(ratio_fields)
+    unitary.setDesignSpecificationMultispeedObject(performance)
+    performance
+  end
+
   # get a value from the tabular data in the sql file
   def get_tabular_data(runner, sql, report_name, report_for_string, table_name, row_name, column_name)
     result = OpenStudio::OptionalDouble.new
@@ -1776,6 +1816,10 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # increase design airflow to accommodate upsizing
       air_loop_hvac.setDesignSupplyAirFlowRate(design_airflow_for_sizing_m_3_per_s)
       controller_oa.setMaximumOutdoorAirFlowRate(design_airflow_for_sizing_m_3_per_s)
+      # the new terminal's maximum flow is the loop design flow. Left to autosize, EnergyPlus sizes it from the zone design
+      # loads, which an envelope upgrade lowers (this measure's roof and window options, or envelope measures run before
+      # it), so the terminal throttled the unit below its design airflow and the zone under-heated.
+      new_terminal.setMaximumAirFlowRate(design_airflow_for_sizing_m_3_per_s)
 
       if debug_verbose
         runner.registerInfo("sizing summary: design_airflow_for_sizing_m_3_per_s = #{design_airflow_for_sizing_m_3_per_s}")
@@ -2049,6 +2093,8 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_air_to_air_heatpump.setSupplyAirFlowRateDuringCoolingOperation(stage_flows_cooling[num_cooling_stages])
       new_air_to_air_heatpump.setSupplyAirFlowRateDuringHeatingOperation(stage_flows_heating[num_heating_stages])
       new_air_to_air_heatpump.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(min_airflow_m3_per_s)
+      # a multispeed unit's no-load airflow is set through its UnitarySystemPerformance:Multispeed object (see the method)
+      assign_multispeed_performance(model, runner, new_air_to_air_heatpump, new_dx_cooling_coil, new_dx_heating_coil, min_airflow_m3_per_s)
 
       # ---------------------------------------------------------
       # outdoor air controls

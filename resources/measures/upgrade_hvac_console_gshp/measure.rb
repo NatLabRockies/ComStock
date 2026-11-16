@@ -515,8 +515,10 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
     fluid_fluid_heat_exchanger.setHeatExchangeModelType('Ideal')
     fluid_fluid_heat_exchanger.setControlType('UncontrolledOn')
     fluid_fluid_heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
-    # OpenStudio's 0 C default is the water freeze limit; it switches the HX off and the condenser loop runs away
-    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-6.0) # C, above 20% propylene glycol's -7 C freeze point
+    # An inlet below the operation minimum temperature limit switches the ideal HX off and the condenser loop runs away
+    # cold. OpenStudio's 0 C default tripped it, and so did -6 C (above 20% propylene glycol's -7 C freeze point) on a
+    # momentary inlet dip during a sizing run. -40 C keeps the HX on; it does not model freeze protection.
+    fluid_fluid_heat_exchanger.setOperationMinimumTemperatureLimit(-40.0) # C
     ground_loop.addDemandBranchForComponent(fluid_fluid_heat_exchanger)
     condenser_loop.addSupplyBranchForComponent(fluid_fluid_heat_exchanger)
 

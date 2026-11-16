@@ -374,12 +374,14 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
     # store index to first hour of day with max on hours
     ihr_max = ihr_start
   end
-  # Create the schedules for the design days
+  # Create the schedules for the design days. The last hour is always written: skipping it when the next day starts
+  # with the same value left the end of the day (all of a constant day, such as a 24-hour zone's) at the ScheduleDay
+  # default of 0, so setpoint schedules built here had design days ending at 0 C.
   day_sch = OpenStudio::Model::ScheduleDay.new(model)
   day_sch.setName("#{sch_name} Winter Design Day")
   24.times do |ihr|
     hr_of_yr = ihr_max + ihr
-    next if values[hr_of_yr] == values[hr_of_yr + 1]
+    next if ihr < 23 && values[hr_of_yr] == values[hr_of_yr + 1]
 
     day_sch.addValue(OpenStudio::Time.new(0, ihr + 1, 0, 0), values[hr_of_yr])
   end
@@ -389,11 +391,18 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   day_sch.setName("#{sch_name} Summer Design Day")
   24.times do |ihr|
     hr_of_yr = ihr_max + ihr
-    next if values[hr_of_yr] == values[hr_of_yr + 1]
+    next if ihr < 23 && values[hr_of_yr] == values[hr_of_yr + 1]
 
     day_sch.addValue(OpenStudio::Time.new(0, ihr + 1, 0, 0), values[hr_of_yr])
   end
   sch_ruleset.setSummerDesignDaySchedule(day_sch)
+
+  # The rules above cover every day of a 365-day year, so the run period never uses the default day, but schedule
+  # min/max reporting reads it (the reported thermostat setpoints). Give it the design day profile instead of the
+  # ScheduleDay default of 0.
+  default_day_sch = sch_ruleset.defaultDaySchedule
+  default_day_sch.clearValues
+  day_sch.times.each_with_index { |time, i| default_day_sch.addValue(time, day_sch.values[i]) }
 
   sch_ruleset
 end
