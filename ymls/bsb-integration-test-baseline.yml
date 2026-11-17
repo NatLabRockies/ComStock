@@ -13,8 +13,8 @@ baseline:
   n_buildings_represented: 10
   custom_gems: True
 
-os_version: 3.10.0
-os_sha: 86d7e215a1
+os_version: 3.11.0
+os_sha: 241b8abb4d
 workflow_generator:
   type: commercial_default
   args:

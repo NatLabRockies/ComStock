@@ -10,7 +10,7 @@ gem 'rubocop-rake'
 gem 'rubocop-rspec'
 
 gem 'bcl', '= 0.9.1'
-gem 'openstudio-extension', '= 0.9.1'
+gem 'openstudio-extension', '= 0.9.7'
 gem 'openstudio-workflow', '= 2.5.0'
 # comstock-typical replaces openstudio-standards. It is a fork of the openstudio-standards str2
 # branch that keeps the typical-building modules, the ASHRAE 90.1 and DEER template families and

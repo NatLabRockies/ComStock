@@ -19,7 +19,7 @@
     and upload the most recently built sif in build/ without rebuilding.
 
 .PARAMETER Tag
-    SIF version name, e.g. os_310_typ_010.
+    SIF version name, e.g. os_311_typ_010.
 
 .PARAMETER Force
     Overwrite an existing local sif with the same final name. Never overwrites the image on Kestrel.
@@ -37,7 +37,7 @@
     Destination directory on Kestrel.
 
 .EXAMPLE
-    .\build\build_apptainer_image.ps1 -Tag os_310_typ_010
+    .\build\build_apptainer_image.ps1 -Tag os_311_typ_010
 
 .EXAMPLE
     .\build\build_apptainer_image.ps1 -UploadLatest
