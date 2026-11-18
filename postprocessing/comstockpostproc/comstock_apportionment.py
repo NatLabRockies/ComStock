@@ -1,18 +1,39 @@
 # ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
+"""The apportionment truth data: every building in the stock estimate, bootstrapped, with
+a heating fuel and an HVAC system type drawn for it.
+
+The file reads top to bottom in four parts:
+
+  1. BUSINESS RULES   every modelling decision, as named data: the lookups, the seeds, what
+                      to do with a faulty probability table, which buckets are sampled.
+                      Changing what the truth data IS means changing something here.
+  2. MECHANICS        rule-free building blocks: repeat rows, draw an option from a
+                      probability table.
+  3. STEPS            one pure function per step, frame in -> frame out, each applying
+                      rules from part 1 with mechanics from part 2.
+  4. Apportion        files, S3 and the cache; runs the steps in order. Holds no rules.
+
+Output (Apportion.data, a polars DataFrame, cached as cached_ComStock_apportionment.parquet):
+the estimate's columns, then cen_div, county_id, heating_fuel, census_region, system_type,
+hvac_and_fueltype -- bootstrap_coefficient rows per building, copies adjacent.
+
+RANDOMNESS. The draws use numpy's GLOBAL generator, seeded here (see the seeds below). That
+is kept on purpose: it makes the truth data reproducible, and ComStock.create_allocated_weights
+draws its models with np.random.choice from the same stream when both happen in one process.
+"""
+
+import datetime
+import json
+import logging
+import os
+from dataclasses import dataclass
 
 import boto3
 import botocore
-from datetime import datetime
-from glob import glob
-import json
-import logging
 import numpy as np
-import os
-import pandas as pd
+import polars as pl
 import s3fs
-from fsspec import register_implementation
-from fsspec.core import url_to_fs
 
 from comstockpostproc.naming_mixin import NamingMixin
 from comstockpostproc.units_mixin import UnitsMixin
@@ -20,8 +41,513 @@ from comstockpostproc.s3_utilities_mixin import S3UtilitiesMixin
 
 logger = logging.getLogger(__name__)
 
+
+# =====================================================================================
+# 1. BUSINESS RULES
+# =====================================================================================
+
+BUILDING_TYPE_NAME_MAPPER = {
+    'full_service_restaurant': 'FullServiceRestaurant',
+    'small_office': 'SmallOffice',
+    'warehouse': 'Warehouse',
+    'strip_mall': 'RetailStripmall',
+    'small_hotel': 'SmallHotel',
+    'retail': 'RetailStandalone',
+    'quick_service_restaurant': 'QuickServiceRestaurant',
+    'outpatient': 'Outpatient',
+    'medium_office': 'MediumOffice',
+    'large_office': 'LargeOffice',
+    'large_hotel': 'LargeHotel',
+    'hospital': 'Hospital',
+    'primary_school': 'PrimarySchool',
+    'secondary_school': 'SecondarySchool',
+    'grocery': 'Grocery'
+}
+"""snake_case building types (stock estimate, probability tables, sampling input) to the
+UpperCamelCase ones the simulation results use. A type missing from here is an error."""
+
+CEN_DIV_LKUP = {
+    'G090': 'New England', 'G230': 'New England', 'G250': 'New England', 'G330': 'New England',
+    'G440': 'New England', 'G500': 'New England', 'G340': 'Middle Atlantic', 'G360': 'Middle Atlantic',
+    'G420': 'Middle Atlantic', 'G180': 'East North Central', 'G170': 'East North Central',
+    'G260': 'East North Central', 'G390': 'East North Central', 'G550': 'East North Central',
+    'G190': 'West North Central', 'G200': 'West North Central', 'G270': 'West North Central',
+    'G290': 'West North Central', 'G310': 'West North Central', 'G380': 'West North Central',
+    'G460': 'West North Central', 'G100': 'South Atlantic', 'G110': 'South Atlantic', 'G120': 'South Atlantic',
+    'G130': 'South Atlantic', 'G240': 'South Atlantic', 'G370': 'South Atlantic', 'G450': 'South Atlantic',
+    'G510': 'South Atlantic', 'G540': 'South Atlantic', 'G010': 'East South Central', 'G210': 'East South Central',
+    'G280': 'East South Central', 'G470': 'East South Central', 'G050': 'West South Central',
+    'G220': 'West South Central', 'G400': 'West South Central', 'G480': 'West South Central', 'G040': 'Mountain',
+    'G080': 'Mountain', 'G160': 'Mountain', 'G350': 'Mountain', 'G300': 'Mountain', 'G490': 'Mountain',
+    'G320': 'Mountain', 'G560': 'Mountain', 'G020': 'Pacific', 'G060': 'Pacific', 'G150': 'Pacific',
+    'G410': 'Pacific', 'G530': 'Pacific'
+}
+"""State gisjoin code to census division. (Called 'region' elsewhere in ComStock, a mixup
+from EULP days.) A state missing from here gets no division, so no HVAC system."""
+
+CENSUS_DIVISION_ALIASES = {'Mid-Atlantic': 'Middle Atlantic'}
+"""Spellings in the HVAC system type table that differ from CEN_DIV_LKUP."""
+
+# ---- sampling regions (only for an estimate that arrives without them) ----------------
+CALIFORNIA = 'G060'
+CEC_CZ_TO_SAMPLING_REGION = {
+    'CEC1': 100, 'CEC2': 100, 'CEC3': 101, 'CEC4': 102, 'CEC5': 102, 'CEC6': 103, 'CEC7': 103, 'CEC8': 104,
+    'CEC9': 105, 'CEC10': 106, 'CEC11': 107, 'CEC12': 107, 'CEC13': 108, 'CEC14': 109, 'CEC15': 109, 'CEC16': 110
+}
+"""Outside California a county's sampling region comes from sampling_regions_v1.json. In
+California it comes from the tract's CEC climate zone -- looked up in the 2010 tract table,
+then the 2020 one -- which also replaces the building's climate zone."""
+
+# ---- tracts (only for an estimate with buildings that have none) ----------------------
+MISSING_TRACT_SUFFIX = '999999'
+"""A tract that is null, or ends with this placeholder, is missing and gets inferred."""
+TRACT_FROM_COUNTY_AND_BUILDING_TYPE = 'county and building type'
+TRACT_WEIGHTED_WITHIN_COUNTY = 'weighted within county'
+TRACT_RANDOM_WITHIN_COUNTY = 'random within county'
+"""tract_assignment_type of an inferred tract, in the order the three sources are tried:
+where located buildings of the same type are in the county, else where any located
+buildings are, else any tract the census lists for the county. (The vocabulary is the one
+the stock estimate itself uses; a building that came with its tract keeps what it had.)"""
+TRACT_DRAW_SEED = 12345
+
+# ---- heating fuel and HVAC system type ------------------------------------------------
+FUEL_AND_HVAC_DRAW_SEED = 54321
+"""Seeds the fuel draw; the HVAC draw continues the same stream."""
+
+HEATING_FUEL_TABLE_KEYS = {'building_type': 'building_type', 'county': 'county_id'}
+HVAC_SYSTEM_TABLE_KEYS = {'building_type': 'building_type', 'size_bin': 'size_bin',
+                          'heating_fuel': 'heating_fuel', 'cen_div': 'census_region'}
+"""truth-data column -> the probability table's Dependency= column it is matched on. Fuel is
+drawn first, by building type and county; the system is drawn second and depends on it."""
+
+DUPLICATE_TABLE_KEYS = 'duplicate'
+"""What to do when a probability table lists a key (one combination of its Dependency=
+columns) on more than one row. hvac_system_type_v4.tsv does: 52 propane keys, 43 of them
+with two different sets of probabilities.
+
+  'duplicate'   every building on such a key enters the truth data once PER TABLE ROW, each
+                copy with its own system draw, so its floor area is counted more than once.
+                This is what the pandas implementation did and what every cache built before
+                2026-11 contains; it is the default only so that a rebuilt cache does not
+                change. For 2026R1: 174,795 extra rows, +5.7% full service restaurant floor
+                area, +4.2% small hotel, +1.6% standalone retail, +1.5% quick service
+                restaurant, +1.2% grocery.
+  'keep_first'  use the first row of each duplicated key.
+  'keep_last'   use the last row (in v4 the second copies are a block appended to the file).
+  'error'       refuse the table.
+"""
+
+UNMATCHED_BUILDINGS = 'drop'
+"""What to do with a building whose key has no row in a probability table. For 2026R1, 35
+(building type, size bin, fuel) combinations the fuel table can draw are absent from
+hvac_system_type_v4.tsv -- most of them DistrictHeating in the smallest size bin.
+
+  'drop'   the building leaves the truth data, and its floor area with it. This is what the
+           pandas implementation did, silently; it is now logged. For 2026R1: 124,160 rows,
+           1.35% of the stock's floor area -- 10.4% of hospital, 10.1% of grocery, 4.8% of
+           large hotel, 3.3% of secondary school.
+  'error'  refuse to build the truth data until the tables agree.
+"""
+
+PROBABILITY_SUM_TOLERANCE = 1e-6
+"""A probability table row must sum to 1 within this, with no negative entry."""
+
+# ---- sampling input --------------------------------------------------------------------
+SAMPLING_COMBINATION = ['sampling_region', 'building_type', 'size_bin', 'heating_fuel']
+SAMPLING_BUCKET = SAMPLING_COMBINATION + ['system_type']
+SAMPLING_BUCKET_COVERAGE = 0.99
+"""A bucket is a combination plus an HVAC system type. Sampled are: the most populous
+buckets, taken in order while they cover less than this share of the truth data; and, for
+every combination that leaves out entirely, its single most common system type."""
+SAMPLING_BUCKETS_NOT_SAMPLED = [
+    # (sampling_region, building_type, size_bin): California combinations that fail to simulate
+    (103, 'hospital', 0),
+    (109, 'hospital', 0),
+    (110, 'large_hotel', 1),
+]
+
+
+# =====================================================================================
+# 2. MECHANICS
+# =====================================================================================
+
+_TABLE_ROW, _SOURCE_ROW, _UNIFORM, _LOWER, _ORDER, _CUM = (
+    '__table_row', '__source_row', '__uniform', '__lower', '__order', '__cumulative_share')
+
+
+def seeded_global_uniforms(seed):
+    """A function n -> n uniform numbers in [0, 1) from numpy's GLOBAL generator, which is
+    seeded with `seed` the first time it is called and read on from there afterwards."""
+    seeded = []
+
+    def draw(n):
+        if not seeded:
+            np.random.seed(seed)
+            seeded.append(True)
+        return np.random.rand(n)
+    return draw
+
+
+def repeat_rows(df: pl.DataFrame, n: int) -> pl.DataFrame:
+    """Every row n times, copies adjacent: row 0 n times, then row 1 n times, ..."""
+    return df.select(pl.all().gather(pl.int_range(pl.len(), dtype=pl.UInt32).repeat_by(n).explode()))
+
+
+@dataclass
+class ProbabilityTable:
+    """A ResStock-style TSV in memory: one row per key, one probability per option.
+
+    frame holds the key columns (the file's Dependency= columns) and the option columns (its
+    Option= columns, in file order), with the prefixes removed."""
+    name: str
+    keys: list
+    options: list
+    frame: pl.DataFrame
+
+    @classmethod
+    def from_tsv_frame(cls, name, raw: pl.DataFrame, recode=None):
+        """From the frame as read from the file. recode: {key column: expression that rewrites it}."""
+        keys = [c.replace('Dependency=', '') for c in raw.columns if 'Dependency=' in c]
+        options = [c.replace('Option=', '') for c in raw.columns if 'Option=' in c]
+        frame = raw.rename({c: c.replace('Dependency=', '').replace('Option=', '') for c in raw.columns})
+        frame = frame.with_columns(pl.col(options).cast(pl.Float64))
+        if recode:
+            frame = frame.with_columns([expr.alias(col) for col, expr in recode.items()])
+        return cls(name=name, keys=keys, options=options, frame=frame)
+
+    def check_probabilities(self):
+        """Raise unless every row is a probability distribution."""
+        p = self.frame.select(self.options)
+        if p.select(pl.sum_horizontal(pl.all().null_count())).item() or p.select(pl.min_horizontal(pl.all().min())).item() < 0:
+            raise ValueError(f'{self.name} table has missing or negative probabilities.')
+        off = self.frame.filter((pl.sum_horizontal(self.options) - 1).abs() > PROBABILITY_SUM_TOLERANCE)
+        if off.height:
+            raise ValueError(f'{self.name} table: {off.height} rows do not sum to 1, the first is '
+                             f'{off.select(self.keys).row(0, named=True)}.')
+
+    def option_intervals(self, rows: pl.DataFrame, into: str) -> pl.DataFrame:
+        """The inverse CDF as a table: one row per (table row, option with probability > 0),
+        with the lower edge of the option's slice of [0, 1) -- the sum of the probabilities
+        of the options before it, in file order. A uniform number u belongs to the last
+        option whose lower edge is <= u."""
+        p = rows.select(self.options).to_numpy()
+        lower = np.hstack([np.zeros((p.shape[0], 1)), np.cumsum(p, axis=1)[:, :-1]])
+        row, option = np.nonzero(p > 0)
+        return pl.DataFrame({
+            _TABLE_ROW: rows.get_column(_TABLE_ROW).to_numpy()[row],
+            _LOWER: lower[row, option],
+            into: np.array(self.options, dtype=object)[option],
+        }, schema={_TABLE_ROW: pl.UInt32, _LOWER: pl.Float64, into: pl.String})
+
+
+def _describe(frame: pl.DataFrame, limit=10) -> str:
+    """Rows of a small frame as 'a=1, b=x; a=2, b=y; ...' for a log line."""
+    rows = ['(' + ', '.join(f'{k}={v}' for k, v in r.items()) + ')' for r in frame.head(limit).iter_rows(named=True)]
+    return '; '.join(rows) + (f'; ... {frame.height - limit} more' if frame.height > limit else '')
+
+
+def assign_from_probability_table(df: pl.DataFrame, table: ProbabilityTable, on: dict, uniforms, into: str,
+                                  duplicate_keys='duplicate', unmatched='drop', weight=None):
+    """Draw one option of `table` for every row of df.
+
+    df         the rows to draw for, order kept
+    on         {df column: table key column} to match a row to its probabilities
+    uniforms   function n -> n uniform numbers in [0, 1); called once, with the number of
+               rows drawn for, and used in row order
+    into       name of the new column holding the drawn option
+    duplicate_keys, unmatched
+               see DUPLICATE_TABLE_KEYS and UNMATCHED_BUILDINGS
+    weight     a df column (floor area) to total in the log and the report
+
+    Returns (df with the new column, report). The report counts what the table's faults did:
+    duplicate_keys, conflicting_duplicate_keys, repeated_rows, unmatched_rows and, with a
+    weight, repeated_<weight> and unmatched_<weight>.
+    """
+    table.check_probabilities()
+    report = {'rows_in': df.height, 'duplicate_keys': 0, 'conflicting_duplicate_keys': 0,
+              'repeated_rows': 0, 'unmatched_rows': 0}
+    if weight:
+        report.update({f'repeated_{weight}': 0.0, f'unmatched_{weight}': 0.0})
+        total_weight = max(float(df.get_column(weight).sum()), 1e-300)
+    rows = table.frame.with_row_index(_TABLE_ROW)
+
+    # ---- the table's own faults: a key on more than one row
+    is_dup = pl.struct(table.keys).is_duplicated()
+    dup = rows.filter(is_dup)
+    if dup.height:
+        report['duplicate_keys'] = dup.select(table.keys).unique().height
+        report['conflicting_duplicate_keys'] = (
+            dup.unique(subset=table.keys + table.options).group_by(table.keys).len().filter(pl.col('len') > 1).height)
+        what = (f'{table.name} table: {report["duplicate_keys"]} keys are on more than one row (duplicate keys), '
+                f'{report["conflicting_duplicate_keys"]} of them with different probabilities, e.g. '
+                f'{_describe(dup.select(table.keys).unique(maintain_order=True), 3)}')
+        if duplicate_keys == 'error':
+            raise ValueError(what + '.')
+        if duplicate_keys in ('keep_first', 'keep_last'):
+            rows = rows.unique(subset=table.keys, keep=duplicate_keys[5:], maintain_order=True)
+            logger.warning(f'{what}. Using the {duplicate_keys[5:]} row of each [duplicate_table_keys={duplicate_keys!r}].')
+
+    # ---- match every row of df to its table row(s)
+    left, right = list(on), [f'__key_{i}' for i in range(len(on))]
+    lookup = rows.select([pl.col(t).cast(df.schema[d]).alias(r) for (d, t), r in zip(on.items(), right)]
+                         + [pl.col(_TABLE_ROW)])
+    matched = df.with_row_index(_SOURCE_ROW).join(lookup, left_on=left, right_on=right, how='left',
+                                                  maintain_order='left')
+    if dup.height and duplicate_keys == 'duplicate':
+        matched = matched.sort(_SOURCE_ROW, _TABLE_ROW)  # a row's copies adjacent, in table order
+        again = matched.filter(pl.col(_SOURCE_ROW).is_first_distinct().not_())
+        report['repeated_rows'] = again.height
+        cost = ''
+        if weight:
+            report[f'repeated_{weight}'] = float(again.get_column(weight).sum())
+            cost = f' ({report[f"repeated_{weight}"] / total_weight:.2%} of {weight})'
+        logger.warning(f'{what}. Every building on such a key is in the truth data once per table row, so '
+                       f'{again.height:,} rows{cost} are counted more than once '
+                       f"[duplicate_table_keys='duplicate'; see DUPLICATE_TABLE_KEYS].")
+
+    # ---- rows the table has no probabilities for
+    lost = matched.filter(pl.col(_TABLE_ROW).is_null())
+    if lost.height:
+        report['unmatched_rows'] = lost.height
+        share = f'pct_of_{weight}' if weight else 'rows'
+        by_key = lost.group_by(left).agg(
+            [pl.len().alias('rows')] + ([(pl.col(weight).sum() / total_weight * 100).round(3).alias(share)] if weight else []))
+        by_key = by_key.sort([share] + left, descending=[True] + [False] * len(left))
+        cost = ''
+        if weight:
+            report[f'unmatched_{weight}'] = float(lost.get_column(weight).sum())
+            cost = f' ({report[f"unmatched_{weight}"] / total_weight:.2%} of {weight})'
+        what = (f'{table.name} table has no row for {lost.height:,} of {df.height:,} rows{cost}, in '
+                f'{by_key.height} key combinations, largest first: {_describe(by_key)}')
+        if unmatched == 'error':
+            raise ValueError(what + '.')
+        logger.warning(f"{what}. They are DROPPED from the truth data [unmatched_buildings='drop'; "
+                       'see UNMATCHED_BUILDINGS].')
+        matched = matched.filter(pl.col(_TABLE_ROW).is_not_null())
+
+    # ---- the draw: one uniform number per row, placed on its table row's inverse CDF
+    intervals = table.option_intervals(rows, into).sort(_LOWER)
+    drawn = (
+        matched.select(_TABLE_ROW)
+        .with_columns(pl.Series(_UNIFORM, uniforms(matched.height), dtype=pl.Float64))
+        .with_row_index(_ORDER)
+        .sort(_UNIFORM)
+        .join_asof(intervals, left_on=_UNIFORM, right_on=_LOWER, by=_TABLE_ROW, strategy='backward',
+                   check_sortedness=False)
+        .sort(_ORDER)
+    )
+    if drawn.get_column(into).null_count():
+        raise RuntimeError(f'{table.name} table: no option could be drawn for some rows.')
+    report['rows_out'] = matched.height
+    return matched.with_columns(drawn.get_column(into)).drop(_SOURCE_ROW, _TABLE_ROW), report
+
+
+# =====================================================================================
+# 3. STEPS
+# =====================================================================================
+
+def _tract_shares(buildings: pl.DataFrame, by: list) -> pl.DataFrame:
+    """Within each `by` group, the cumulative share of rows in each tract (tracts in order)."""
+    return (
+        buildings.group_by(by + ['tract']).len().sort(by + ['tract'])
+        .with_columns((pl.col('len').cum_sum().over(by) / pl.col('len').sum().over(by)).alias(_CUM))
+        .select(by + ['tract', _CUM])
+    )
+
+
+def infer_missing_tracts(df: pl.DataFrame, tract_list: pl.DataFrame, uniforms=None) -> pl.DataFrame:
+    """Give every building without a tract one in its own county; see the TRACT_ rules.
+
+    tract_list: every census tract, columns county and tract. Buildings that have a tract and
+    the row order are left as they are; an inferred tract is recorded in tract_assignment_type.
+    """
+    missing = pl.col('tract').is_null() | pl.col('tract').str.ends_with(MISSING_TRACT_SUFFIX)
+    n_missing = df.select(missing.sum()).item()
+    if n_missing == 0:
+        return df
+    logger.warning(f'{n_missing:,} of {df.height:,} buildings in the stock estimate have no tract; inferring one.')
+    if 'tract_assignment_type' not in df.columns:
+        df = df.with_columns(pl.lit(None, dtype=pl.String).alias('tract_assignment_type'))
+    columns = df.columns
+    df = df.with_row_index(_ORDER)
+    located = df.filter(~missing)
+    uniforms = uniforms or seeded_global_uniforms(TRACT_DRAW_SEED)
+    lost = df.filter(missing).with_columns(pl.Series(_UNIFORM, uniforms(n_missing), dtype=pl.Float64)).sort(_UNIFORM)
+
+    sources = [
+        (TRACT_FROM_COUNTY_AND_BUILDING_TYPE, ['building_type', 'county'], located),
+        (TRACT_WEIGHTED_WITHIN_COUNTY, ['county'], located),
+        (TRACT_RANDOM_WITHIN_COUNTY, ['county'], tract_list.select('county', 'tract').unique()),
+    ]
+    candidates = []
+    for i, (label, by, source) in enumerate(sources):
+        shares = _tract_shares(source, by).rename({'tract': f'__tract_{i}'}).sort(_CUM)
+        # the first tract whose cumulative share reaches the building's uniform number
+        lost = lost.join_asof(shares, left_on=_UNIFORM, right_on=_CUM, by=by, strategy='forward',
+                              check_sortedness=False).drop(_CUM)
+        candidates.append((label, f'__tract_{i}'))
+    label_of = pl.when(False).then(None)
+    for label, col in candidates:
+        label_of = label_of.when(pl.col(col).is_not_null()).then(pl.lit(label))
+    lost = lost.with_columns(
+        pl.coalesce([col for _, col in candidates]).alias('tract'),
+        label_of.alias('tract_assignment_type'),
+    )
+    stuck = lost.filter(pl.col('tract').is_null())
+    if stuck.height:
+        raise RuntimeError(f'{stuck.height:,} buildings have no tract and none could be inferred: their counties '
+                           f'are not in the tract list: {sorted(stuck.get_column("county").unique().to_list())}')
+    for label, _ in candidates:
+        n = lost.filter(pl.col('tract_assignment_type') == label).height
+        logger.info(f'  {n:,} tracts inferred as: {label}')
+    return pl.concat([located, lost.select(located.columns)]).sort(_ORDER).select(columns)
+
+
+def assign_sampling_regions(df: pl.DataFrame, county_regions: dict, cec_cz_2010: dict, cec_cz_2020: dict):
+    """Add sampling_region to an estimate that lacks it; see CEC_CZ_TO_SAMPLING_REGION."""
+    if 'sampling_region' in df.columns:
+        return df
+    logger.info('Assigning sampling region ids to truth data')
+    in_ca = pl.col('state') == CALIFORNIA
+    if 'cz' not in df.columns:
+        df = df.with_columns(pl.lit(None, dtype=pl.String).alias('cz'))
+    cec_cz = {**cec_cz_2020, **cec_cz_2010}  # the 2010 tract table wins where both know the tract
+    df = df.with_columns(
+        pl.when(in_ca).then(pl.col('tract').replace_strict(cec_cz, default=None, return_dtype=pl.String))
+        .otherwise(pl.col('cz')).alias('cz'))
+    unmapped = df.filter(in_ca & pl.col('cz').is_null()).get_column('tract').unique().sort().to_list()
+    if unmapped:
+        raise RuntimeError('Unable to determine all CEC Climate Zones for California tracts. '
+                           f'Not in the 2010 or 2020 lookup: {unmapped}')
+    df = df.with_columns(
+        pl.when(in_ca).then(pl.col('cz').replace_strict(CEC_CZ_TO_SAMPLING_REGION, default=None, return_dtype=pl.Int64))
+        .otherwise(pl.col('county').replace_strict(county_regions, default=None, return_dtype=pl.Int64))
+        .alias('sampling_region'))
+    unmapped = df.filter(pl.col('sampling_region').is_null()).get_column('county').unique().sort().to_list()
+    if unmapped:
+        raise RuntimeError(f'Sampling region calculation resulted in counties with missing regions: {unmapped}')
+    return df
+
+
+def normalize_building_types(df: pl.DataFrame) -> pl.DataFrame:
+    """building_type from snake_case to UpperCamelCase; an unknown type is an error."""
+    out = df.with_columns(
+        pl.col('building_type').replace_strict(BUILDING_TYPE_NAME_MAPPER, default=None, return_dtype=pl.String))
+    unknown = df.filter(out.get_column('building_type').is_null()).get_column('building_type').unique().to_list()
+    if unknown:
+        logger.error(f'Building type values from the building estimate not expected by the building type mapper: {unknown}')
+        raise RuntimeError(f'Unable to process the specified building type enumerations: {unknown}')
+    return out
+
+
+def _recode_building_type():
+    return pl.col('building_type').replace_strict(BUILDING_TYPE_NAME_MAPPER, default=None, return_dtype=pl.String)
+
+
+def heating_fuel_table(raw: pl.DataFrame) -> ProbabilityTable:
+    """heating_fuel_v*.tsv: fuel by building type and county."""
+    return ProbabilityTable.from_tsv_frame('heating_fuel', raw, recode={'building_type': _recode_building_type()})
+
+
+def hvac_system_table(raw: pl.DataFrame) -> ProbabilityTable:
+    """hvac_system_type_v*.tsv: system by building type, size bin, heating fuel and census division."""
+    return ProbabilityTable.from_tsv_frame('hvac_system_type', raw, recode={
+        'building_type': _recode_building_type(),
+        'census_region': pl.col('census_region').replace(CENSUS_DIVISION_ALIASES),
+    })
+
+
+def bootstrap_with_fuel_and_hvac(df: pl.DataFrame, fuel: ProbabilityTable, hvac: ProbabilityTable,
+                                 bootstrap_coefficient: int, duplicate_table_keys=DUPLICATE_TABLE_KEYS,
+                                 unmatched_buildings=UNMATCHED_BUILDINGS, uniforms=None):
+    """Repeat every building bootstrap_coefficient times and draw a heating fuel, then an HVAC
+    system type, for each copy. Returns (frame, {table name: report})."""
+    uniforms = uniforms or seeded_global_uniforms(FUEL_AND_HVAC_DRAW_SEED)
+    settings = dict(duplicate_keys=duplicate_table_keys, unmatched=unmatched_buildings, weight='sqft')
+    reports = {}
+
+    df = repeat_rows(df, bootstrap_coefficient)
+    df = df.with_columns(pl.col('state').replace_strict(CEN_DIV_LKUP, default=None, return_dtype=pl.String).alias('cen_div'))
+
+    # county_id and census_region repeat county and cen_div under the tables' names. Nothing
+    # reads them; they are in the cache because the pandas merge left them there.
+    logger.info('Sampling fuel type onto truth data')
+    df = df.with_columns(pl.col('county').alias('county_id'))
+    df, reports[fuel.name] = assign_from_probability_table(
+        df, fuel, on=HEATING_FUEL_TABLE_KEYS, uniforms=uniforms, into='heating_fuel', **settings)
+
+    logger.info('Sampling HVAC system type onto truth data')
+    df = df.with_columns(pl.col('cen_div').alias('census_region'))
+    df, reports[hvac.name] = assign_from_probability_table(
+        df, hvac, on=HVAC_SYSTEM_TABLE_KEYS, uniforms=uniforms, into='system_type', **settings)
+
+    df = df.with_columns(pl.concat_str(['system_type', 'heating_fuel'], separator='_').alias('hvac_and_fueltype'))
+
+    # Nothing but tract_assignment_type may be empty
+    nulls = df.drop('tract_assignment_type', strict=False).null_count().row(0, named=True)
+    nulls = {c: n for c, n in nulls.items() if n}
+    if nulls:
+        raise RuntimeError(f'Unexpected missing values in the truth data, rows per column: {nulls}')
+    return df, reports
+
+
+def apportionment_groups(data: pl.DataFrame, id_col: str) -> pl.DataFrame:
+    """Number the groups a ComStock model must share with a truth-data building to stand for
+    it: (sampling region, building type, size bin, HVAC system and fuel), ids in sorted order."""
+    attrs = ['sampling_region', 'building_type', 'size_bin', 'hvac_and_fueltype']
+    return data.select(attrs).unique().sort(attrs).with_row_index(id_col).with_columns(pl.col(id_col).cast(pl.Int64))
+
+
+def select_sampling_buckets(data: pl.DataFrame) -> pl.DataFrame:
+    """The buckets to draw the ComStock sample from; see the SAMPLING_ rules. One row per
+    bucket, building types in snake_case. Of two buckets the same size, the one that appears
+    first in the truth data comes first (as pandas value_counts orders them), so the same
+    truth data always gives the same buckets in the same order."""
+    counts = (
+        data.select(SAMPLING_BUCKET).with_row_index(_ORDER)
+        .group_by(SAMPLING_BUCKET).agg(pl.len(), pl.col(_ORDER).min())
+        .sort(['len', _ORDER], descending=[True, False])
+    )
+    covered = counts.filter(pl.col('len').cum_sum() < data.height * SAMPLING_BUCKET_COVERAGE)
+    left_out = counts.join(covered.select(SAMPLING_COMBINATION).unique(), on=SAMPLING_COMBINATION, how='anti')
+    most_common = left_out.group_by(SAMPLING_COMBINATION, maintain_order=True).first().sort(SAMPLING_COMBINATION)
+    logger.info(f'Sampling {covered.height} buckets covering {SAMPLING_BUCKET_COVERAGE:.0%} of the truth data, '
+                f'plus {most_common.height} for combinations they leave out')
+    buckets = pl.concat([covered.select(SAMPLING_BUCKET), most_common.select(SAMPLING_BUCKET)])
+
+    to_snake_case = {v: k for k, v in BUILDING_TYPE_NAME_MAPPER.items()}
+    buckets = buckets.with_columns(pl.col('building_type').replace_strict(to_snake_case, return_dtype=pl.String))
+    if buckets.is_duplicated().any():
+        raise RuntimeError('Duplicates in bucket specification. Please debug.')
+    not_sampled = pl.DataFrame(SAMPLING_BUCKETS_NOT_SAMPLED, orient='row',
+                               schema={'sampling_region': buckets.schema['sampling_region'],
+                                       'building_type': pl.String, 'size_bin': buckets.schema['size_bin']})
+    return buckets.join(not_sampled, on=not_sampled.columns, how='anti', maintain_order='left')
+
+
+def sampling_input_file_name(now: datetime.datetime, rows: int) -> str:
+    return f'sample_input_{now.strftime("%Y%m%d-%H%M")}_{rows}.csv'
+
+
+# =====================================================================================
+# 4. Apportion: files, S3, cache
+# =====================================================================================
+
+def _one_of(setting, value, allowed):
+    if value not in allowed:
+        raise ValueError(f'{setting} must be one of {allowed}, not {value!r}')
+    return value
+
+
 class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
-    def __init__(self, stock_estimation_version, truth_data_version, bootstrap_coefficient=3, reload_from_cache=False, output_dir=None, aws_profile_name=None):
+
+    BUILDING_TYPE_NAME_MAPPER = BUILDING_TYPE_NAME_MAPPER
+    CEN_DIV_LKUP = CEN_DIV_LKUP
+    duplicate_table_keys = DUPLICATE_TABLE_KEYS
+    unmatched_buildings = UNMATCHED_BUILDINGS
+
+    def __init__(self, stock_estimation_version, truth_data_version, bootstrap_coefficient=3, reload_from_cache=False,
+                 output_dir=None, aws_profile_name=None, duplicate_table_keys=None, unmatched_buildings=None):
         """
         A class to apportion the sampled data to the known set of buildings in the U.S.
         Args:
@@ -31,7 +557,12 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             truth_data_version (str): The version/location to retrieve truth/starting data. Truth data
             may change for certain data sources over time, although unlikely for CBECS.
             bootstrap_coefficient (int): The number of samples to bootstrap for each building in the stock truth dataset estimate. This should never be less than three, however the virtues of larger numbers is not yet well understood and may never be unless we have reason to spend a fair bit of effort on this.
+            reload_from_cache (bool): Read cached_ComStock_apportionment.parquet instead of building it. The
+            cache is whatever the settings in force when it was written made it.
+            duplicate_table_keys, unmatched_buildings (str): What to do about a faulty probability table;
+            see DUPLICATE_TABLE_KEYS and UNMATCHED_BUILDINGS in this module. Default: those values.
 
+        self.data is a polars DataFrame.
         """
 
         # Initialize members
@@ -39,6 +570,11 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
         self.stock_estimation_version = stock_estimation_version
         self.truth_data_version = truth_data_version
         self.bootstrap_coefficient = bootstrap_coefficient
+        if duplicate_table_keys is not None:
+            self.duplicate_table_keys = duplicate_table_keys
+        if unmatched_buildings is not None:
+            self.unmatched_buildings = unmatched_buildings
+        self._check_settings()
         current_dir = os.path.dirname(os.path.abspath(__file__))
         self.dataset_name = f'Stock Estimation {self.stock_estimation_version}'
         self.truth_data_dir = os.path.join(current_dir, '..', 'truth_data', self.truth_data_version)
@@ -54,11 +590,6 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
         self.space_heating_fuel_type_name = 'heating_fuel_v2.tsv'
         self.s3_client = boto3.client('s3', config=botocore.client.Config(max_pool_connections=50))
         logger.info(f'Creating {self.dataset_name}')
-
-        # Algorithmic specific parameters
-        self.samples_per_model = 3
-        self.sampling_breaks = ['sampling_region', 'prototype', 'floor_area_category']
-
 
         # Make directories
         for p in [self.truth_data_dir]:
@@ -78,7 +609,8 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
                 raise FileNotFoundError(
                 f'Cannot find wide .csv or .parquet in {file_path} to reload data, set reload_from_cache=False.')
             logger.info(f'Reloading apportionment data from: {file_path}')
-            self.data = pd.read_parquet(file_path)
+            with self.output_dir['fs'].open(file_path, 'rb') as f:
+                self.data = pl.read_parquet(f)
         else:
             self.download_data()
             self.load_data()
@@ -89,620 +621,132 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
             self.upsample_hvac_system_fuel_types()
             logger.info(f'Caching apportionment data to: {file_path}')
             with self.output_dir['fs'].open(file_path, "wb") as f:
-                self.data.to_parquet(f)
+                self.data.write_parquet(f)
 
         logger.info('Finished processing Apportion class truth data')
         logger.debug('\nDesired Truth Data columns after adding all data')
         for c in self.data.columns:
             logger.debug(c)
 
-    BUILDING_TYPE_NAME_MAPPER={
-        'full_service_restaurant': 'FullServiceRestaurant',
-        'small_office': 'SmallOffice',
-        'warehouse': 'Warehouse',
-        'strip_mall': 'RetailStripmall',
-        'small_hotel': 'SmallHotel',
-        'retail': 'RetailStandalone',
-        'quick_service_restaurant': 'QuickServiceRestaurant',
-        'outpatient': 'Outpatient',
-        'medium_office': 'MediumOffice',
-        'large_office': 'LargeOffice',
-        'large_hotel': 'LargeHotel',
-        'hospital': 'Hospital',
-        'primary_school': 'PrimarySchool',
-        'secondary_school': 'SecondarySchool',
-        'grocery': 'Grocery'
-    }
-    """Mapping between snake_case and UpperCamelCase building type enumerations. """
+    def _check_settings(self):
+        _one_of('duplicate_table_keys', self.duplicate_table_keys, ('duplicate', 'keep_first', 'keep_last', 'error'))
+        _one_of('unmatched_buildings', self.unmatched_buildings, ('drop', 'error'))
 
-    CEN_DIV_LKUP={
-        'G090': 'New England', 'G230': 'New England', 'G250': 'New England', 'G330': 'New England',
-        'G440': 'New England', 'G500': 'New England', 'G340': 'Middle Atlantic', 'G360': 'Middle Atlantic',
-        'G420': 'Middle Atlantic', 'G180': 'East North Central', 'G170': 'East North Central',
-        'G260': 'East North Central', 'G390': 'East North Central', 'G550': 'East North Central',
-        'G190': 'West North Central', 'G200': 'West North Central', 'G270': 'West North Central',
-        'G290': 'West North Central', 'G310': 'West North Central', 'G380': 'West North Central',
-        'G460': 'West North Central', 'G100': 'South Atlantic', 'G110': 'South Atlantic', 'G120': 'South Atlantic',
-        'G130': 'South Atlantic', 'G240': 'South Atlantic', 'G370': 'South Atlantic', 'G450': 'South Atlantic',
-        'G510': 'South Atlantic', 'G540': 'South Atlantic', 'G010': 'East South Central', 'G210': 'East South Central',
-        'G280': 'East South Central', 'G470': 'East South Central', 'G050': 'West South Central',
-        'G220': 'West South Central', 'G400': 'West South Central', 'G480': 'West South Central', 'G040': 'Mountain',
-        'G080': 'Mountain', 'G160': 'Mountain', 'G350': 'Mountain', 'G300': 'Mountain', 'G490': 'Mountain',
-        'G320': 'Mountain', 'G560': 'Mountain', 'G020': 'Pacific', 'G060': 'Pacific', 'G150': 'Pacific',
-        'G410': 'Pacific', 'G530': 'Pacific'
-    }
-    """
-    Mapping between state gisjoin codes and census division specifications. Note these are called regions elsewhere in ComStock due to a historic mixup from EULP days.
-    """
+    # ---- files -------------------------------------------------------------------------
 
     def download_data(self):
         """Download all data files associated with and needed for segment apportionment."""
 
         logger.info('Downloading data required for Apportionment class')
+        for file_name in [
+            self.data_file_name,                # Expected buildings estimate from the StockE analysis
+            self.hvac_size_bins_name,           # HVAC system size cutoff bins that define the estimate's size bins
+            self.tract_list_name,               # All allowable tracts within a given county, many tracts per county
+            self.sampling_regions_name,         # All non-CA counties to sampling regions
+            self.ca_cz_tract_2010_name,         # All 2010 CA census tracts to CEC climate zones
+            self.ca_cz_tract_2020_name,         # All 2020 CA census tracts to CEC climate zones
+            self.hvac_system_type_name,         # P(hvac system type | heating fuel, census division, building type, size bin)
+            self.space_heating_fuel_type_name,  # P(heating fuel | county, building type)
+        ]:
+            if not os.path.exists(os.path.join(self.truth_data_dir, file_name)):
+                self.download_truth_data_file(f'truth_data/{self.truth_data_version}/StockE/{file_name}')
 
-        # Expected buildings estimate from StockE V3 analysis
-        file_path = os.path.join(self.truth_data_dir, self.data_file_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.data_file_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
+    def _truth_path(self, file_name):
+        return os.path.join(self.truth_data_dir, file_name)
 
-        # HVAC system size cuttof bins associated with the TSV files to define size bin levels in the building estimate
-        file_path = os.path.join(self.truth_data_dir, self.hvac_size_bins_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.hvac_size_bins_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, '\t')
-
-        # Mapping of all allowable trackts within a given county, many tracts per county
-        file_path = os.path.join(self.truth_data_dir, self.tract_list_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.tract_list_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
-
-        # Mapping of all non-CA counties to sampling regions
-        file_path = os.path.join(self.truth_data_dir, self.sampling_regions_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.sampling_regions_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
-
-        # Mapping of all 2010 CA census tracts to CEC climate zones
-        file_path = os.path.join(self.truth_data_dir, self.ca_cz_tract_2010_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.ca_cz_tract_2010_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
-
-        # Mapping of all 2020 CA census tracts to CEC climate zones
-        file_path = os.path.join(self.truth_data_dir, self.ca_cz_tract_2020_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.ca_cz_tract_2020_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, ',')
-
-        # Probabilities of hvac system type as a function of heating fuel type, census division and building type
-        file_path = os.path.join(self.truth_data_dir, self.hvac_system_type_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.hvac_system_type_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, '\t')
-
-        # Probabilities of heating fuel type as a function of county and building type
-        file_path = os.path.join(self.truth_data_dir, self.space_heating_fuel_type_name)
-        if not os.path.exists(file_path):
-            s3_file_path = f'truth_data/{self.truth_data_version}/StockE/{self.space_heating_fuel_type_name}'
-            self.read_delimited_truth_data_file_from_S3(s3_file_path, '\t')
+    def _read_json(self, file_name):
+        with open(self._truth_path(file_name), 'r') as rfobj:
+            return json.load(rfobj)
 
     def load_data(self):
         """Load all downloaded and / or cached data into memory for use by the segment apportionment methods."""
 
-        # Load raw microdata and codebook and decode numeric keys to strings using codebook
         logger.info('Loading data required for Apportionment class')
 
-        # Load building stock estimate from StockE V3
-        file_path = os.path.join(self.truth_data_dir, self.data_file_name)
-        self.data = pd.read_parquet(file_path)
+        # Building stock estimate from StockE: one row per building
+        self.data = pl.read_parquet(self._truth_path(self.data_file_name))
 
-        # Load size bin mapping using the hvac_system_size_bin TSV file
-        file_path = os.path.join(self.truth_data_dir, self.hvac_size_bins_name)
-        self.hvac_size_bin_df = pd.read_csv(file_path, low_memory=False, sep='\t')
+        # Size bin cutoffs (not used yet, see add_sqft_bins)
+        self.hvac_size_bin_df = pl.read_csv(self._truth_path(self.hvac_size_bins_name), separator='\t',
+                                            infer_schema_length=None)
 
-        # Load tract list for tract infrence
-        file_path = os.path.join(self.truth_data_dir, self.tract_list_name)
-        self.tract_list = pd.read_csv(file_path, low_memory=False)
+        # Tract list for tract inference
+        self.tract_list = pl.read_csv(self._truth_path(self.tract_list_name), infer_schema_length=None)
 
-        # Load non-CA sampling region lookup
-        file_path = os.path.join(self.truth_data_dir, self.sampling_regions_name)
-        with open(file_path, 'r') as rfobj:
-            self.sampling_region_lkup = json.load(rfobj)
+        # Non-CA county to sampling region, and CA tract to CEC climate zone (2010 and 2020 tracts)
+        self.sampling_region_lkup = self._read_json(self.sampling_regions_name)
+        self.ca_cz_2010_lkup = self._read_json(self.ca_cz_tract_2010_name)
+        self.ca_cz_2020_lkup = self._read_json(self.ca_cz_tract_2020_name)
 
-        # Load CA 2010 tract to CEC climate zone lookup
-        file_path = os.path.join(self.truth_data_dir, self.ca_cz_tract_2010_name)
-        with open(file_path, 'r') as rfobj:
-            self.ca_cz_2010_lkup = json.load(rfobj)
+        # Probabilities of hvac system type and of space heating fuel type, as in the files
+        self.hvac_system_type_prob = pl.read_csv(self._truth_path(self.hvac_system_type_name), separator='\t',
+                                                 infer_schema_length=None)
+        self.heating_fuel_type_prob = pl.read_csv(self._truth_path(self.space_heating_fuel_type_name), separator='\t',
+                                                  infer_schema_length=None)
 
-        # Load CA 2020 tract to CEC climate zone lookup
-        file_path = os.path.join(self.truth_data_dir, self.ca_cz_tract_2020_name)
-        with open(file_path, 'r') as rfobj:
-            self.ca_cz_2020_lkup = json.load(rfobj)
-
-        # Load probabilities of hvac system type
-        file_path = os.path.join(self.truth_data_dir, self.hvac_system_type_name)
-        self.hvac_system_type_prob = pd.read_csv(file_path, low_memory=False, sep='\t')
-
-        # Load probabilities of space heating fuel type
-        file_path = os.path.join(self.truth_data_dir, self.space_heating_fuel_type_name)
-        self.heating_fuel_type_prob = pd.read_csv(file_path, low_memory=False, sep='\t')
-
-    @staticmethod
-    def _generate_level1_distributions(full_tracts):
-        """This method attempts to create (building type, county) tract distributions for later inference.
-        """
-
-        # To be used for assignment level 1.
-
-        # Create distribution of buildings by building_type, county, and tract.
-        building_tract_distributions = full_tracts[['building_type', 'county', 'last6']]\
-            .groupby(['building_type', 'county', 'last6'])\
-            .value_counts()\
-            .to_frame()\
-            .rename(columns={'count':'building_tract_count'})\
-            .reset_index()
-
-        # Create distribution of buildings by prototype and county.
-        # This dataframe is used to normalize the building_tract_distributions dataframe.
-        building_county_distributions = full_tracts[['building_type', 'county']]\
-            .groupby(['building_type', 'county'])\
-            .value_counts()\
-            .to_frame()\
-            .rename(columns={'count':'building_county_count'})\
-            .reset_index()
-
-        # Normalize the building_tract_distributions. Calculate a cumulative sum of the probabilities
-        # for each prototype-county combination.
-        building_tract_distributions = building_tract_distributions.merge(
-            building_county_distributions, on=['building_type', 'county']
-        )
-        building_tract_distributions['fraction'] = \
-            building_tract_distributions['building_tract_count'] / building_tract_distributions['building_county_count']
-        building_tract_distributions['cumsum_fraction'] = building_tract_distributions.groupby(
-            ['building_type', 'county']
-        )['fraction'].cumsum()
-        building_tract_distributions = building_tract_distributions.sort_values(['cumsum_fraction'])
-        building_tract_distributions = building_tract_distributions[
-            ['building_type', 'county', 'last6', 'cumsum_fraction']
-        ]
-
-        return building_tract_distributions
-
-    @staticmethod
-    def _generate_level2_distributions(full_tracts):
-        """This method attempts to create county tract distributions for later inference.
-        """
-
-        # To be used for assignment level 2.
-
-        # Create distribution  of buildings by county, and tract.
-        tract_distributions = full_tracts[['county', 'last6']]\
-            .groupby(['county', 'last6'])\
-            .value_counts()\
-            .to_frame()\
-            .rename(columns={'count':'tract_count'})\
-            .reset_index()
-
-        # Create distribution of buildings by county.
-        # This dataframe is used to normalize the tract_distributions dataframe.
-        county_distributions = full_tracts[['county']]\
-            .groupby(['county'])\
-            .value_counts()\
-            .to_frame()\
-            .rename(columns={'count':'county_count'})\
-            .reset_index()
-
-        # Normalize the tract_distributions. Calculate a cumulative sum of the probabilities
-        # for each county.
-        tract_distributions = tract_distributions.merge(county_distributions, on=['county'])
-        tract_distributions['fraction'] = tract_distributions['tract_count']/tract_distributions['county_count']
-        tract_distributions['cumsum_fraction'] = tract_distributions.groupby(['county'])['fraction'].cumsum()
-        tract_distributions = tract_distributions.sort_values(['cumsum_fraction'])
-        tract_distributions = tract_distributions[['county', 'last6', 'cumsum_fraction']]
-
-        return tract_distributions
-
-    @staticmethod
-    def _generate_level3_distributions(folder_path, use_raw_data=False):
-        """This method is the fallback for tract assignment as a last ditch effort.
-        """
-
-        # To be used for assignment level 3.
-
-        # Generate a list of tracts in each county.
-        # This is to be used as a last fallback case for assigning tracts.
-        # For example, if an unassigned building belongs in a county that has only that one building
-        # then we cannot calculate distributions to assign a tract to it. Therefore we use this data to
-        # assign it at random to any available tract within the county.
-
-        # This data was directly downloaded from https://www2.census.gov/geo/maps/dc10map/tract/
-        if use_raw_data:
-            file_list = glob(folder_path + "*/*/*.txt")
-            tract_list = pd.DataFrame(pd.read_csv(file_list[0], delimiter=';', dtype={'CODE':str}))
-            for i in range(1,len(file_list)):
-                if 'SP_' in file_list[i]:
-                    continue
-                data = pd.read_csv(file_list[i], delimiter=';', dtype={'CODE':str})
-                df = pd.DataFrame(data)
-                tract_list = pd.concat([tract_list,df])
-
-            tract_list['county'] = 'G' + tract_list['CODE'].str[0:2] + '0' + tract_list['CODE'].str[2:5] + '0'
-            tract_list['tract'] = tract_list['county'] + tract_list['CODE'].str[5:]
-
-            tract_list[['county', 'tract']].to_csv('tract_list.csv', index=False)
-        else:
-            tract_list = pd.read_csv(folder_path+"tract_list.csv") # This is a preprocessed file.
-
-        tract_list['last6'] = tract_list.tract.str[-6:]
-        tract_list = tract_list[['county', 'tract', 'last6']]
-        tract_list['dummy'] = 1
-
-        tract_list['counter'] = tract_list.groupby('county')['dummy'].cumsum()
-        tract_list['number_of_tracts'] = tract_list['county'] \
-                                        .map(tract_list.groupby('county')['counter'].agg('max'))
-        tract_list['cumsum_fraction'] = tract_list['counter']/tract_list['number_of_tracts']
-        tract_list = tract_list.sort_values('cumsum_fraction')
-        tract_list = tract_list.drop(columns=['dummy', 'tract', 'counter', 'number_of_tracts'])
-
-        return tract_list
-
-    @staticmethod
-    def _assign_tracts(null_tracts, building_tract_distributions, tract_distributions, tract_list):
-        """This method assigns tracts to missing / invalid tracts in the input truth dataset.
-
-        :param null_tracts: input pandas dataframe where each row is missing a tract specification
-        :type null_tracts: pandas.DataFrame
-        :param building_tract_distributions: input pandas dataframe which serves as a tract inference engine for (building_type, county) tuples where they exist
-        :type building_tract_distributions: pandas.DataFrame
-        :param tract_distributions: input pandas dataframe which serves as a tract inference engine for county tuples where they exist
-        :type tract_distributions: pandas.DataFrame
-        :param tract_list: ordered tract list to be used as a last resort
-        :type tract_list: pandas.DataFrame
-        :return: an updated dataframe with a valid entry for the 'tract' column
-        :rtype: pandas.DataFrame
-
-        """
-
-        # The idea here is that the random number assinged to each row in null_tracts will be matched
-        # to the closest forward value in the cumulative distribution (e.g, building_tract_distributions)
-        # calculated above. The other keys (building_type, county) are matched exactly. Same idea for
-        # level 2 and 3.
-
-        #Create a column with an indicator with the type of assignment,
-        # 0 - Assignment level 0: Original assignment from raw data. No re-assignemnt.
-        # 1 - Assignment level 1: through building type and county distributions.
-        # 2 - Assignment level 2: through county-only distributions.
-        # 3 - Assignment level 3: through tract list (tract list from US Census).
-        # 4 - Assignment level 4: Unassigned (likely bad data).
-
-        # Join the fallback level 1 option
-        null_tracts = pd.merge_asof(
-            null_tracts,
-            building_tract_distributions.rename(
-                columns={'last6': 'last6_l1', 'cumsum_fraction': 'cumsum_fraction_l1'}
-            ),
-            by=['building_type', 'county'],
-            direction="forward",
-            left_on="random_values",
-            right_on="cumsum_fraction_l1"
-        )
-
-        # Join for level 2 option
-        null_tracts = pd.merge_asof(
-            null_tracts,
-            tract_distributions.rename(columns={'last6': 'last6_l2', 'cumsum_fraction': 'cumsum_fraction_l2'}),
-            by=['county'],
-            direction="forward",
-            left_on="random_values",
-            right_on="cumsum_fraction_l2"
-        )
-
-        # Join for level 3 option
-        null_tracts = pd.merge_asof(
-            null_tracts,
-            tract_list.rename(columns={'last6': 'last6_l3', 'cumsum_fraction': 'cumsum_fraction_l3'}),
-            by=['county'],
-            direction="forward",
-            left_on="random_values",
-            right_on="cumsum_fraction_l3"
-        )
-
-        conditions = [
-            null_tracts['last6_l1'].notnull(), null_tracts['last6_l2'].notnull(), null_tracts['last6_l3'].notnull()
-        ]
-        choices = [
-            null_tracts['county'] + null_tracts['last6_l1'], null_tracts['county'] + null_tracts['last6_l2'],
-            null_tracts['county'] + null_tracts['last6_l3']
-        ]
-        level = [1, 2, 3]
-
-        null_tracts['tract'] = np.select(conditions, choices, default=np.nan)
-
-        null_tracts['tract_assignment_type'] = np.select(conditions, level, default=4)
-
-        null_tracts = null_tracts.drop([
-            'random_values', 'last6_l1', 'cumsum_fraction_l1', 'last6_l2', 'cumsum_fraction_l2', 'last6_l3', 'cumsum_fraction_l3'
-        ], axis=1)
-
-        return null_tracts
+    # ---- steps, in the order __init__ runs them -----------------------------------------
 
     def infer_tracts(self):
-        """Generate and apply tract inference lookups for all self.data rows missing a tract.
+        """Give every building in self.data that has no tract one in its own county.
 
-        This method wraps the logic for several methods used to infer tracts in the case of a self.data input missing one or more tracts. At the current moment this is very much not expected, as noted by the breakpoint and associated instructions. However, particularly when we finally upgrade to 2020 census tract definitions it will be nessecary to use this code again, possibly extensivly.
-
-        :return: an updated dataframe with a 'tract' defined for every row as well as enteries for the 'tract_assignment_type' indicating the tract asignment logic used - see _assign_tracts for the decoder
-        :rtype: pandas.DataFrame or maybe None - regardless self.data is updated
-
-        """
-        # This wraps all other functions to run the tract-level resampling
-        if not any([na_tract in self.data['tract'].unique() for na_tract in [None, np.nan, '999999']]):
-            return
-
-        # Impose manual checking of a failing expression as that's very much not expected at present...
-        logger.info('Apportioning any missing tracts in truth data')
-        print('Please confirm that there are unset tracts in the self.data building estimation:')
-        breakpoint()
-
-        # Create a dataframe containing only rows with tract!=null.
-        # This is to calculate the distributions of buildings in counties by building_type.
-        df = self.data.copy(deep=True)
-        df['tract'] = np.where(df.tract.str[-6:] == '999999', None, df['tract'])
-        full_tracts = df.loc[df['tract'].notnull()]
-        full_tracts['last6'] = full_tracts.tract.str[-6:]
-
-        #Distribution for level 1 assignments
-        building_tract_distributions = self._generate_level1_distributions(full_tracts)
-
-        #Distribution for level 2 assignments
-        tract_distributions = self._generate_level2_distributions(full_tracts)
-
-        # Distribution for level 3 assignments
-        # This method is preserved here as it will be used to rebuild the tract_list csv for 2020 census tracts when we upgrade
-        # tract_list = self._generate_level3_distributions(folder_path, use_raw_data = False)
-
-        # Create the complement of full_tracts, i.e., a datafram with only null tracts.
-        # Assign random values from 0 to 1 to each row. This will be used for assignment to actual tracts.
-        # The random values are then sorted because the join will be an "as_of" join that requires left
-        # and right dataframes to be sorted by the join keys.
-        # Set the numpy random seed to make the results more predictable - note this is bad for Ry and Hernan's work
-        np.random.seed(12345)
-        null_tracts = df.loc[df['tract'].isnull()]
-        null_tracts['random_values'] = np.random.rand(len(null_tracts))
-        null_tracts = null_tracts.sort_values(['random_values'])
-
-        null_tracts = self._assign_tracts(null_tracts, building_tract_distributions, tract_distributions, self.tract_list)
-
-        full_tracts = full_tracts.drop(['last6'], axis=1)
-        full_tracts['tract_assignment_type'] = 0
-        df = pd.concat([null_tracts, full_tracts])
-
-        self.data = df.copy(deep=True)
+        Stock estimates since 2024R2 arrive with every tract set, so this normally does nothing.
+        See infer_missing_tracts and the TRACT_ rules."""
+        self.data = infer_missing_tracts(self.data, self.tract_list)
 
     def add_sampling_regions(self):
-        """Apply sampling regions on a county basis for calculation of distributions.
-
-        :param df: input pandas dataframe where each row is a single building
-        :type df: pandas.DataFrame
-        :return: an updated dataframe with a 'sampling_region' column that is defined by sampling_region_lkup.json
-        :rtype: pandas.DataFrame
-
-        """
-
-        # Check to see if this is needed:
-        if 'sampling_region' in list(self.data):
-            return
-
-        # Make sure we don't do anything unintended with pointers...
-        logger.info('Assigning sampling region ids to truth data')
-        df = self.data.copy(deep=True)
-
-        # Calculate the new column on a county basis
-        df.loc[:, 'sampling_region'] = df.county.map(self.sampling_region_lkup)
-
-        # Calculate CEC Climate Zones for California using first the 2010 then 2020 census tract lookups
-        df.loc[df.state == 'G060', 'cz'] = df.loc[df.state == 'G060', 'tract'].apply(
-            lambda x: self.ca_cz_2010_lkup.get(x, self.ca_cz_2020_lkup.get(x, np.nan))
-        )
-
-        # Check to see if any of the CA rows don't have a CZ - if so report and error.
-        if any(df.loc[df.state == 'G060', 'cz'].isna()):
-            print('\nCalifornia CEC Climate Zone mapping failed for the following tracts:')
-            print(f'{list(df.loc[df.state == "G060", "tract"][df.loc[df.state == "G060", "cz"].isna()].unique())}')
-            raise RuntimeError('Unable to determine all CEC Climate Zones for California tracts.')
-
-        # Finish calculating sampling regions with CA regions
-        ca_regions_lkup = {
-            'CEC1': 100,
-            'CEC2': 100,
-            'CEC3': 101,
-            'CEC4': 102,
-            'CEC5': 102,
-            'CEC6': 103,
-            'CEC7': 103,
-            'CEC8': 104,
-            'CEC9': 105,
-            'CEC10': 106,
-            'CEC11': 107,
-            'CEC12': 107,
-            'CEC13': 108,
-            'CEC14': 109,
-            'CEC15': 109,
-            'CEC16': 110
-        }
-        df.loc[df.state == 'G060', 'sampling_region'] = df.loc[df.state == 'G060', 'cz'].map(ca_regions_lkup)
-
-        # Check for nans and if not return
-        if any(df.sampling_region.isna()):
-            print('\nSampling region calculation resulted in counties with missing regions:')
-            print(f'{df.loc[df.sampling_region.isna(), "county"].unique()}')
-
-        df['sampling_region'] = df['sampling_region'].astype(int)
-        self.data = df.copy(deep=True)
+        """Add the sampling_region column if the estimate does not have it. See assign_sampling_regions."""
+        self.data = assign_sampling_regions(self.data, self.sampling_region_lkup, self.ca_cz_2010_lkup,
+                                            self.ca_cz_2020_lkup)
 
     def add_sqft_bins(self):
         """Check if size bins have been added to the file - if not error."""
         # TODO implement this using the self.hvac_size_bins_name
-        if 'size_bin' in list(self.data):
+        if 'size_bin' in self.data.columns:
             return
 
         raise NotImplementedError('This does not yet exist - if it is needed someone needs to write this...')
 
     def normalize_building_type_values(self):
-        """Change the building type names from nice snake_case to nasty UpperCamelCase eww"""
-
-        # Apply mapping
-        df = self.data.copy(deep=True)
-        df.loc[:, 'building_type'] = df.loc[:, 'building_type'].map(self.BUILDING_TYPE_NAME_MAPPER)
-
-        # If there are any non-mapped values left in building_type alert and throw and error
-        leftovers = set(df.building_type.unique()) - set(self.BUILDING_TYPE_NAME_MAPPER.values())
-        if len(leftovers) > 0:
-            logger.error('Building type values from the building estimate not expected by the building type mapper:')
-            logger.error(f'{leftovers}')
-            raise RuntimeError('Unable to process the specified building type enumerations.')
-
-        self.data = df.copy(deep=True)
+        """Change the building type names from snake_case to UpperCamelCase."""
+        self.data = normalize_building_types(self.data)
 
     def upsample_hvac_system_fuel_types(self):
-        """Apply fuel type and HVAC system type TSVs to the stock truth data estimate.
+        """Bootstrap the estimate and draw a heating fuel and an HVAC system type for every copy.
 
-        :return: an updated dataframe with 'heating_fuel', 'hvac_system_type', and 'hvac_and_fueltype' columns that represent the distributions defined by self.heating_fuel_type_prob and self.hvac_system_type_prob.
-        :rtype: pandas.DataFrame
-
-        """
-
+        Adds cen_div, county_id, heating_fuel, census_region, system_type and hvac_and_fueltype.
+        What the probability tables' faults did is logged and kept in self.table_reports.
+        See bootstrap_with_fuel_and_hvac."""
         logger.info('Upsampling truth data with fuel type and HVAC system type')
-        df = self.data.copy(deep=True)
+        self._check_settings()
+        self.data, self.table_reports = bootstrap_with_fuel_and_hvac(
+            self.data,
+            fuel=heating_fuel_table(self.heating_fuel_type_prob),
+            hvac=hvac_system_table(self.hvac_system_type_prob),
+            bootstrap_coefficient=self.bootstrap_coefficient,
+            duplicate_table_keys=self.duplicate_table_keys,
+            unmatched_buildings=self.unmatched_buildings,
+        )
 
-        # Begin by bootstraping to the desired degree
-        df = df.loc[df.index.repeat(self.bootstrap_coefficient), :]
+    # ---- sampling input -----------------------------------------------------------------
 
-        # Apply the census divion mapper here (helpfully called region) for efficiencies sake
-        df.loc[:, 'cen_div'] = df.loc[:, 'state'].map(self.CEN_DIV_LKUP)
+    def generate_sampling_input(self, n_samples=[1, 12], output_dir=None):
+        """Write the sampling input csv(s) for the ComStock sampler from the truth data.
 
-        # Load in the heating fuel type proability TSV and process it to merge w/ the truth dataset
-        hfdf = self.heating_fuel_type_prob.copy(deep=True)
-        fcols = [col.replace('Option=', '') for col in hfdf.columns if 'Option=' in col]
-        hfdf.columns = [col.replace('Dependency=', '').replace('Option=', '') for col in hfdf.columns]
-        hfdf.loc[:, 'building_type'] = hfdf.loc[:, 'building_type'].map(self.BUILDING_TYPE_NAME_MAPPER)
-        df = df.merge(hfdf, left_on=['building_type', 'county'], right_on=['building_type', 'county_id'])
-
-        # Use the merged probabilities to sample in fuel type
-        # Note this can be made fuel type enumeration agnostic by looping over fcols but it is very not readable
-        # Set the numpy random seed - note this is bad for Ry and Hernan's work
-        np.random.seed(54321)
-        df.loc[: , 'ft_rand'] = np.random.rand(df.shape[0])
-        df.loc[:, 'heating_fuel'] = 'DistrictHeating'
-        df.loc[df.loc[:, 'ft_rand'] >= df.loc[:, 'DistrictHeating'], 'heating_fuel'] = 'Electricity'
-        df.loc[df.loc[:, 'ft_rand'] >= df.loc[:, ['DistrictHeating', 'Electricity']].sum(axis=1), 'heating_fuel'] = 'FuelOil'
-        df.loc[df.loc[:, 'ft_rand'] >= df.loc[:, ['DistrictHeating', 'Electricity', 'FuelOil']].sum(axis=1), 'heating_fuel'] = 'NaturalGas'
-        df.loc[df.loc[:, 'ft_rand'] >= df.loc[:, ['DistrictHeating', 'Electricity', 'FuelOil', 'NaturalGas']].sum(axis=1), 'heating_fuel'] = 'Propane'
-        df = df.drop(fcols + ['ft_rand'], axis=1)
-
-        # Load in the hvac system type probability TSV and process it to merge with the truth dataset
-        logger.info('Sampling fuel type onto truth data')
-        hsdf = self.hvac_system_type_prob.copy(deep=True)
-        hcols = [col.replace('Option=', '') for col in hsdf.columns if 'Option=' in col]
-        hsdf.columns = [col.replace('Dependency=', '').replace('Option=', '') for col in hsdf.columns]
-        hsdf.loc[:, 'building_type'] = hsdf.loc[:, 'building_type'].map(self.BUILDING_TYPE_NAME_MAPPER)
-        hsdf.loc[:, 'census_region'] = hsdf.loc[:, 'census_region'].replace('Mid-Atlantic', 'Middle Atlantic')
-        df = df.merge(hsdf, left_on=['building_type', 'size_bin', 'heating_fuel', 'cen_div'], right_on=['building_type', 'size_bin', 'heating_fuel', 'census_region'])
-
-        # Use the merged probabilities to sample in fuel type
-        # Note this is system type agnostic due to the enumeration county and not readable - refer above for the idea
-        # TODO can wenyi find a less dumb way to do this?
-        logger.info('Sampling HVAC system type onto truth data')
-        df.loc[: , 'hs_rand'] = np.random.rand(df.shape[0])
-        df.loc[:, 'system_type'] = hcols[0]
-        calced_systems = [hcols[0]]
-        for h in hcols[1:]:
-            df.loc[df.loc[:, 'hs_rand'] >= df.loc[:, calced_systems].sum(axis=1), 'system_type'] = h
-            calced_systems += [h]
-        df = df.drop(hcols + ['hs_rand'], axis=1)
-        df.loc[:, 'hvac_and_fueltype'] = df.loc[:, 'system_type'] + '_' + df.loc[:, 'heating_fuel']
-
-        # Confirm no unexpected nans
-        non_nan_cols = df.columns != 'tract_assignment_type'
-        assert(0 == df.loc[df.loc[:, non_nan_cols].isna().any(axis=1), non_nan_cols].shape[0])
-
-        self.data = df.copy(deep=True)
-
-    def generate_sampling_input(self, n_samples=[1, 12]):
-        """Apply sampling regions on a county basis for calculation of distributions.
-
-        :param df: input pandas dataframe where each row is a single building
-        :type df: pandas.DataFrame
-        :return: an updated dataframe with a 'sampling_region' column that is defined by sampling_region_lkup.json
-        :rtype: pandas.DataFrame
-
+        One file per entry of n_samples, with that many rows per bucket; see
+        select_sampling_buckets for which buckets. Written to output_dir, by default the
+        repository's sampling folder. Returns the paths.
         """
 
         logger.info('Using the apportioned dataset to generate an input for sampling')
-        df = self.data.copy(deep=True)
-        df.loc[:, 'bucketid'] = df.sampling_region.astype(str) + '-' + df.building_type + '-' + df.size_bin.astype(str) + '-' + df.heating_fuel + '-' +  df.system_type
-        attrs = ['sampling_region', 'building_type', 'size_bin', 'heating_fuel', 'system_type']
-        possible_buckets = pd.DataFrame(df.loc[:, attrs].value_counts()).reset_index()
-        possible_buckets.loc[:, 'cumsum'] = possible_buckets.loc[:, 'count'].cumsum()
-        buckets = possible_buckets.loc[possible_buckets.loc[:, 'cumsum'] < df.shape[0]* 0.99, attrs]
-        needed_df_combos = df.loc[:, ['sampling_region', 'building_type', 'size_bin', 'heating_fuel']]
-        needed_df_combos = needed_df_combos.drop_duplicates(keep='first').to_dict(orient='index')
-        needed_df_combos = [tuple(needed_df_combos[k].values()) for k in needed_df_combos.keys()]
-        bucket_combos = buckets.loc[:, ['sampling_region', 'building_type', 'size_bin', 'heating_fuel']]
-        bucket_combos = bucket_combos.reset_index(drop=True).drop_duplicates(keep='first').to_dict(orient='index')
-        bucket_combos = [tuple(bucket_combos[k].values()) for k in bucket_combos.keys()]
-        to_add = list(set(needed_df_combos) - set(bucket_combos))
-        additional_buckets = list()
-        print(f'Including {len(to_add)} additional buckets')
-        print('This is expected to take ~15 minutes per 1,000 buckets')
-        for (sr, bt, sb, hf) in to_add:
-            bdict = dict()
-            bdict['sampling_region'] = sr
-            bdict['building_type'] = bt
-            bdict['size_bin'] = sb
-            bdict['heating_fuel'] = hf
-            bdict['system_type'] = df.loc[
-                (df.sampling_region == sr) &
-                (df.building_type == bt) &
-                (df.size_bin == sb) &
-                (df.heating_fuel == hf), 'system_type'
-            ].value_counts().index[0]
-            additional_buckets.append(bdict)
-        additional_buckets = pd.DataFrame(additional_buckets)
-        buckets = pd.concat([buckets, additional_buckets])
-        name_mapper = {v: k for k, v in self.BUILDING_TYPE_NAME_MAPPER.items()}
-        buckets.loc[:, 'building_type'] = buckets.building_type.map(name_mapper)
-        if not buckets.drop_duplicates(keep='first').shape[0] == buckets.shape[0]:
-            raise RuntimeError('Duplicates in bucket specification. Please debug.')
-        now = datetime.now()
-        date = now.strftime("%Y%m%d-%H%m")
-
-        # Remove buggy CA problem children:
-        # remove 103, hospital, size_bin 0
-        buckets = buckets.loc[~(
-            (buckets.sampling_region == 103) & (buckets.building_type == 'hospital') & (buckets.size_bin == 0)
-        ), :]
-        # remove 109, hospital, size_bin 0
-        buckets = buckets.loc[~(
-            (buckets.sampling_region == 109) & (buckets.building_type == 'hospital') & (buckets.size_bin == 0)
-        ), :]
-        # remove 110, large_hotel, size_bin 1
-        buckets = buckets.loc[~(
-            (buckets.sampling_region == 110) & (buckets.building_type == 'large_hotel') & (buckets.size_bin == 1)
-        ), :]
-
-        buckets = buckets.reset_index(drop=True)
-
+        buckets = select_sampling_buckets(self.data).rename({'system_type': 'hvac_system_type'})
+        if output_dir is None:
+            output_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', '..', 'sampling')
+        now = datetime.datetime.now()
+        paths = []
         for n_sample in n_samples:
-            to_write = buckets.loc[buckets.index.repeat(n_sample), :]
-            print('Number of copies of each row groupbed by count - if multiple enteries there is an error:')
-            print(to_write.loc[to_write.index.repeat(n_sample), :].value_counts().value_counts())
-            to_write = to_write.rename(columns={'system_type': 'hvac_system_type'})
-            to_write = to_write.reset_index(drop=True)
-            out_file = os.path.join(
-                os.path.abspath(os.path.dirname(__file__)), '..', '..', 'sampling',
-                f'sample_input_{date}_{to_write.shape[0]}.csv'
-            )
-            to_write.to_csv(out_file, index_label='Building')
+            to_write = repeat_rows(buckets, n_sample).with_row_index('Building')
+            path = os.path.join(output_dir, sampling_input_file_name(now, to_write.height))
+            to_write.write_csv(path)
+            logger.info(f'Wrote {to_write.height:,} rows ({buckets.height:,} buckets x {n_sample}) to {path}')
+            paths.append(path)
+        return paths

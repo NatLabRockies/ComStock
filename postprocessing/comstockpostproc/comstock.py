@@ -34,7 +34,7 @@ from comstockpostproc.athena_config import ATHENA_WORKGROUP
 from .comstock_query_builder import ComStockQueryBuilder
 from comstockpostproc.ami import AMI
 from comstockpostproc.cbecs import CBECS
-from comstockpostproc.comstock_apportionment import Apportion
+from comstockpostproc.comstock_apportionment import Apportion, apportionment_groups
 from comstockpostproc.eia import EIA
 from comstockpostproc.gas_correction_model import GasCorrectionModelMixin
 from comstockpostproc.naming_mixin import NamingMixin
@@ -3358,16 +3358,12 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
             # Create a apportionment group id which will be shared for iteration by both the target (apportionment data) and
             # domain (csdf data).
-            # TODO make the apportionment data object a lazy df nativly
+            # apportionment.data is a polars DataFrame
             APPO_GROUP_ID = 'appo_group_id'
-            apportionment.data.loc[:, 'hvac_and_fueltype'] = apportionment.data.loc[:, 'system_type'] + '_' + apportionment.data.loc[:, 'heating_fuel']
-            appo_group_df = apportionment.data.copy(deep=True).loc[
-                :, ['sampling_region', 'building_type', 'size_bin', 'hvac_and_fueltype']
-            ]
-            appo_group_df = appo_group_df.drop_duplicates(keep='first').sort_values(
-                by=['sampling_region', 'building_type', 'size_bin', 'hvac_and_fueltype']
-            ).reset_index(drop=True).reset_index(names=APPO_GROUP_ID)
-            appo_group_df = pl.DataFrame(appo_group_df).lazy()
+            truth_data = apportionment.data.with_columns(
+                pl.concat_str([pl.col('system_type'), pl.col('heating_fuel')], separator='_').alias('hvac_and_fueltype')
+            )
+            appo_group_df = apportionment_groups(truth_data, APPO_GROUP_ID).lazy()
 
             # Join apportionment group id into comstock data
             csdf = csdf.join(
@@ -3379,7 +3375,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 raise RuntimeError('Not all combinations of sampling region, bt, and size bin could be matched.')
 
             # Join apportionment group id into comstock data
-            tdf = pl.DataFrame(apportionment.data.copy(deep=True)).lazy()
+            tdf = truth_data.lazy()
             tdf = tdf.join(appo_group_df, on=['sampling_region', 'building_type', 'size_bin', 'hvac_and_fueltype'])
 
             # Identify combination in the truth data not supported by the current sample.
