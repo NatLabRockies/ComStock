@@ -89,8 +89,6 @@ jobs:
           PY
 
   integration-tests:
-    # Re-enable after local validation.
-    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
