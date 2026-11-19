@@ -87,9 +87,11 @@ pip install NREL-PySAM==4.2.0
   - `bundle exec rake unit_tests:workflow_measure_tests` to run all workflow measure tests.
 	- `bundle exec rake unit_tests:upgrade_measure_tests` to run all `upgrade_` measure tests.
 
-Tests run in parallel. A failed or crashed test fails the Rake task and CI step.
-Results use the usual Minitest format, with a summary of failures at the end of
-each test group. Reports are saved under `test/reports`.
+Tests run in parallel within each group. The `bundle exec rake unit_tests:all_tests`
+task runs all groups before failing, even if tests fail or crash along the way.
+Results use the usual Minitest format, with a final failure summary. Any failures
+also fail the CI step.
+Reports are saved under `test/reports`.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above

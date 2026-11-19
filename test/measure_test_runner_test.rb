@@ -1,3 +1,6 @@
+# Regression tests for subprocess failures, fresh JUnit reports, readable failure
+# summaries, and continuing through all test groups before reporting failure.
+
 require 'minitest/autorun'
 require 'rake'
 require 'tmpdir'
@@ -26,6 +29,31 @@ class MeasureTestRunnerTest < Minitest::Test
         end
       end
     RUBY
+  end
+
+  def with_test_groups
+    names = ['all_tests', 'reporting_measure_tests', 'workflow_measure_tests', 'upgrade_measure_tests']
+    original_tasks = names.map { |name| Rake::Task["unit_tests:#{name}"] }
+
+    with_fixture do
+      FileUtils.mkdir_p('test')
+      ['reporting', 'workflow', 'upgrade'].each do |group|
+        file = "#{group}_fixture_test.rb"
+        File.write(file, passing_test)
+        File.write("test/#{group}_measure_tests.txt", "#{file}\n")
+      end
+
+      Rake.with_application do
+        namespace :unit_tests do
+          original_tasks.each do |original|
+            task original.name.split(':').last => original.prerequisites do
+              original.execute
+            end
+          end
+        end
+        yield
+      end
+    end
   end
 
   def test_successful_file_produces_its_own_report
@@ -119,6 +147,31 @@ class MeasureTestRunnerTest < Minitest::Test
 
       assert_includes(error.message, 'JUnit reports contain failures or errors')
       assert_includes(error.message, 'FixtureTest#test_failure: expected failure')
+    end
+  end
+
+  def test_all_tests_continues_after_failures_and_summarizes_every_failed_group
+    with_test_groups do
+      File.write('reporting_fixture_test.rb', "exit! 42\n")
+      File.write('upgrade_fixture_test.rb', passing_test.sub('assert true', "flunk 'expected upgrade failure'"))
+
+      error = assert_raises(RuntimeError) { Rake::Task['unit_tests:all_tests'].invoke }
+
+      assert_includes(error.message, 'reporting_measure_tests:')
+      assert_includes(error.message, 'reporting_fixture_test.rb (exit 42)')
+      assert_includes(error.message, 'upgrade_measure_tests:')
+      assert_includes(error.message, 'FixtureTest#test_passes: expected upgrade failure')
+      reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'workflow_fixture_test', 'TEST-*.xml'))
+      assert_equal(1, reports.size)
+    end
+  end
+
+  def test_all_tests_succeeds_when_every_group_passes
+    with_test_groups do
+      Rake::Task['unit_tests:all_tests'].invoke
+
+      reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), '*_fixture_test', 'TEST-*.xml'))
+      assert_equal(3, reports.size)
     end
   end
 end

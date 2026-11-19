@@ -56,8 +56,19 @@ end
 desc 'Run measure tests'
 namespace :unit_tests do
   desc 'Run all measure tests'
-  task all_tests: [:reporting_measure_tests, :workflow_measure_tests, :upgrade_measure_tests] do
+  task :all_tests do
     puts 'Running all measure tests:'
+    groups = [:reporting_measure_tests, :workflow_measure_tests, :upgrade_measure_tests]
+    errors = groups.map do |group|
+      Rake::Task["unit_tests:#{group}"].invoke
+      nil
+    rescue StandardError => e
+      message = "#{group}:\n#{e.message}"
+      warn message
+      message
+    end.compact
+
+    raise "Measure test groups failed (#{errors.length}):\n#{errors.join("\n\n")}" unless errors.empty?
   end
 
   desc 'Run reporting measure tests'
