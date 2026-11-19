@@ -216,6 +216,8 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
 
     {
       'form_defaults' => entry['form_defaults'],
+      # the building type's layout, with the subtype's own keys over it
+      'layout' => (entry['layout'] || {}).merge(row['layout'] || {}),
       'deer_building_type' => entry['deer_building_type'],
       'thermostat_overrides' => entry['thermostat_overrides'],
       'service_water_heating_overrides' => entry['service_water_heating_overrides'],
@@ -317,6 +319,20 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     party_wall_stories_north party_wall_stories_south party_wall_stories_west perim_mult
     single_floor_area space_type_sort_logic story_multiplier_method
     top_story_exterior_exposed_roof total_bldg_floor_area wwr enforce_space_area_constraints
+  ].freeze
+
+  # spec[:form] keys a building type's layout in comstock_building_types.json may set: how it
+  # is divided into spaces, placed on its stories and zoned, its stairs and elevators, and the
+  # code-required spaces it gets. Building geometry (area, stories, shape) stays with the
+  # buildstock arguments and form_defaults.
+  LAYOUT_KEYS = %w[
+    bar_division_method core_layout position_size_threshold
+    perimeter_zone_depth perimeter_depth_min perimeter_depth_max
+    front_facade front_depth_min front_depth_max back_depth_min back_depth_max front_anchor back_anchor
+    story_placement story_placement_overrides
+    zoning_method zone_group_default zone_groups
+    vertical_circulation
+    code_required_spaces code_space_mode restroom_occupant_basis restroom_per_floor code_space_wwr
   ].freeze
 
   # create_bar arguments with no spec[:form] equivalent. Recorded so the measure can report
@@ -626,8 +642,9 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
         # generator skips space type creation for entries flagged false (basements,
         # undeveloped area) while still counting their floor area, so dropping the flag
         # would give those areas real space types and shift the area-weighted load
-        # densities. story_height, wwr, default and circ are passed for the same reason.
-        %w[story_height wwr default circ space_type_gen].each do |flag|
+        # densities. story_height, wwr, default and circ are passed for the same reason, and
+        # position and orientation place the space type in the building type's layout.
+        %w[story_height wwr default circ space_type_gen position orientation].each do |flag|
           entry[flag] = properties[flag] if properties.key?(flag)
         end
         entries << entry
@@ -730,6 +747,18 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     end
     # only the keys spec[:form][:building_form_defaults] accepts
     form['building_form_defaults'] = defaults.slice('aspect_ratio', 'wwr', 'typical_story', 'first_story', 'perim_mult')
+
+    # How the primary building type is laid out and zoned: division method, zoning, zone
+    # groups, code-required spaces. ComStock owns these per building type, so they win over
+    # the buildstock arguments, which give every building type the same bar_division_method.
+    layout = @primary_definition['layout'] || {}
+    unknown = layout.keys - LAYOUT_KEYS
+    unless unknown.empty?
+      runner.registerError("Unknown layout key(s) for building type '#{primary_type}': #{unknown.join(', ')}. " \
+                           "Expected some of #{LAYOUT_KEYS.join(', ')}.")
+      return false
+    end
+    form.merge!(layout)
 
     # The spec has no slot for the neighbor shading arguments or story_multiplier, so those
     # buildstock inputs do not reach the model on this leg. Report them rather than letting

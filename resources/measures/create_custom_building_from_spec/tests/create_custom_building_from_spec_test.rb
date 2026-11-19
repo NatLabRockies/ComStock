@@ -105,6 +105,68 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
     refute(ratios.any? { |r| r.key?('building_type') }, 'typical entries carry no building_type')
   end
 
+  def test_entries_carry_their_layout_position
+    ratios = @measure.space_type_ratios(@runner, base_args('Hospital'))
+    refute_nil(ratios, "expansion failed: #{errors}")
+    nurses = ratios.find { |r| r['space_type'] == 'nurses station' }
+    assert_equal('core', nurses['position'], 'an explicit position rides on the ratio entry')
+    refute(ratios.find { |r| r['space_type'] == 'office' }.key?('position'), 'no position leaves the heuristics to decide')
+  end
+
+  # --- layout -------------------------------------------------------------------------
+
+  def test_every_building_type_has_a_layout_with_code_required_spaces
+    @measure.building_type_data['building_types'].each do |building_type, entry|
+      layout = entry['layout']
+      refute_nil(layout, "#{building_type} has no layout")
+      assert_empty(layout.keys - CreateCustomBuildingFromSpec::LAYOUT_KEYS, "#{building_type} layout keys")
+      assert_equal(true, layout['code_required_spaces'], "#{building_type} sizes its code-required spaces")
+      assert_equal(true, layout['vertical_circulation'], "#{building_type} sizes its stairs and elevators")
+      assert_equal('heuristic', layout['story_placement'], "#{building_type} places its space types on stories")
+      refute(layout.key?('max_zone_load'), "#{building_type} sets no zone load cap")
+      if layout['bar_division_method'] == 'Multiple Space Types - Perimeter and Core Sliced' && building_type != 'RetailStripmall'
+        assert_equal('squarified', layout['core_layout'], "#{building_type} lays its core out as near-square rooms")
+      end
+      entry['space_type_ratios'].each do |row|
+        next unless row['layout']
+
+        assert_empty(row['layout'].keys - CreateCustomBuildingFromSpec::LAYOUT_KEYS, "#{building_type} #{row['building_subtype']} layout keys")
+      end
+    end
+  end
+
+  # support spaces, data centers and operating rooms get no windows; the building's window to
+  # wall ratio goes on the other walls
+  def test_support_space_types_have_no_windows
+    support = [/\Afood preparation/, /\Astorage\z/, /\Arestroom/, %r{\Aelectrical/mechanical\z}, %r{\Alaundry/washing},
+               /\Ashaft\z/, /\Astairwell\z/, /\Alocker room\z/, /\Adatacenter/, /\Aoperating room\z/]
+    count = 0
+    @measure.building_type_data['building_types'].each do |building_type, entry|
+      entry['space_type_ratios'].each do |row|
+        row['space_types'].each do |name, props|
+          next unless support.any? { |re| re.match?(name) }
+
+          assert_equal(0.0, props['wwr'], "#{building_type} #{row['building_subtype']} #{name}")
+          count += 1
+        end
+      end
+    end
+    assert_operator(count, :>, 0)
+    # the warehouse's storage is its main use, not support, and the office keeps its own ratio
+    warehouse = @measure.definition_for('Warehouse', 'NA', 'ComStock 90.1-2013')
+    refute(warehouse['space_types']['storage - warehouse - medium to bulky palletized items'].key?('wwr'))
+    assert_equal(0.71, warehouse['space_types']['office']['wwr'])
+  end
+
+  def test_a_subtype_layout_overrides_its_building_type
+    office = @measure.definition_for('LargeOffice', 'NA', 'ComStock 90.1-2013')
+    datacenter = @measure.definition_for('LargeOffice', 'largeoffice_datacenteronly', 'ComStock 90.1-2013')
+    assert_equal('Multiple Space Types - Perimeter and Core Sliced', office['layout']['bar_division_method'])
+    assert_equal('Multiple Space Types - Individual Stories Sliced', datacenter['layout']['bar_division_method'])
+    assert_equal('Individual Spaces', datacenter['layout']['zoning_method'])
+    assert_equal(true, datacenter['layout']['code_required_spaces'], 'keys the subtype does not set come from the building type')
+  end
+
   def test_unknown_building_type_is_an_error
     assert_nil(@measure.space_type_ratios(@runner, base_args('NoSuchBuildingType')))
     assert(errors.any? { |e| e.include?('NoSuchBuildingType') })

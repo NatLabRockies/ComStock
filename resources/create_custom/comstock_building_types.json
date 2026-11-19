@@ -8,7 +8,10 @@
       "applicable_templates lists every template the entry covers, ASHRAE and DEER together.",
       "DEER templates reuse the ASHRAE ratios for their era: vintages before 2004 join the DOE Ref entry, 2004 and later join the 90.1 entry.",
       "construction_defaults carries the envelope every building type shares under a template; a building type entry carries only what differs from it. Merge the two, default first, one level into slots.",
-      "A merged construction spec names every surface, so it does not need a row in the standards construction_sets table. That table is keyed on the building types of the template family and holds no ASHRAE name under a DEER template."
+      "A merged construction spec names every surface, so it does not need a row in the standards construction_sets table. That table is keyed on the building types of the template family and holds no ASHRAE name under a DEER template.",
+      "layout is the spec form a building type is laid out and zoned with (division method, zoning, zone groups, code-required spaces); a space_type_ratios entry's own layout overrides it key by key. The primary building type's layout applies to a mixed building.",
+      "A space type's position places it in the layout (perimeter, core, front, middle or back); without one, the name and size heuristics decide.",
+      "Support space types (food preparation, storage, restrooms, electrical/mechanical, laundry, shafts, stairwells, locker rooms), data centers and operating rooms have a wwr of 0: their walls get no windows, and the building's window to wall ratio is made up on the other walls, up to 99% of a wall. Space types the code-required spaces add have none either (code_space_wwr, 0 by default)."
     ]
   },
   "building_types": {
@@ -18,6 +21,13 @@
         "wwr": 0.18,
         "typical_story": 10.0,
         "perim_mult": 1.0
+      },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Front and Back Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
       },
       "deer_building_type": "RSD",
       "space_type_ratios": [
@@ -52,7 +62,8 @@
             "food preparation": {
               "ratio": 0.2728,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -162,6 +173,24 @@
         "wwr": 0.15,
         "typical_story": 10.0,
         "perim_mult": 1.0
+      },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "perimeter_depth_max": 35.0,
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "dwelling units",
+            "space_types": [
+              "multifamily - dwelling unit"
+            ],
+            "zone_per": "facade"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
       },
       "deer_building_type": "OfL",
       "space_type_ratios": [
@@ -329,6 +358,44 @@
         "typical_story": 14.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "patient rooms",
+            "space_types": [
+              "patient room"
+            ],
+            "zone_per": "facade"
+          },
+          {
+            "name": "surgery",
+            "space_types": [
+              "operating room"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "emergency",
+            "space_types": [
+              "emergency room"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "imaging",
+            "space_types": [
+              "imaging"
+            ],
+            "zone_per": "space_type"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "Hsp",
       "space_type_ratios": [
         {
@@ -357,7 +424,8 @@
             "electrical/mechanical": {
               "ratio": 0.1667,
               "space_type_gen": false,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "corridor - hospital": {
               "ratio": 0.1741,
@@ -373,12 +441,14 @@
             "exam/treatment": {
               "ratio": 0.0374,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "core"
             },
             "nurses station": {
               "ratio": 0.2572,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "core"
             },
             "emergency room": {
               "ratio": 0.0075,
@@ -393,7 +463,8 @@
             "food preparation": {
               "ratio": 0.0414,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "laboratory": {
               "ratio": 0.0236,
@@ -413,12 +484,14 @@
             "operating room": {
               "ratio": 0.0273,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "physical therapy": {
               "ratio": 0.0217,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "perimeter"
             },
             "imaging": {
               "ratio": 0.0217,
@@ -593,6 +666,24 @@
         "first_story": 13.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "perimeter_depth_max": 35.0,
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "guest rooms",
+            "space_types": [
+              "guest room"
+            ],
+            "zone_per": "facade"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "Htl",
       "space_type_ratios": [
         {
@@ -626,7 +717,8 @@
             "electrical/mechanical": {
               "ratio": 0.1889,
               "space_type_gen": false,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "corridor": {
               "ratio": 0.1736,
@@ -637,17 +729,20 @@
             "guest room": {
               "ratio": 0.4099,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "perimeter"
             },
             "food preparation": {
               "ratio": 0.0091,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "laundry/washing": {
               "ratio": 0.0069,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.1153,
@@ -662,7 +757,8 @@
             "storage": {
               "ratio": 0.0084,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -784,6 +880,14 @@
         "typical_story": 13.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "OfL",
       "space_type_ratios": [
         {
@@ -837,7 +941,8 @@
             "electrical/mechanical": {
               "ratio": 0.0885,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.052,
@@ -847,27 +952,32 @@
             "datacenter/low ite": {
               "ratio": 0.0077,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "datacenter/high ite": {
               "ratio": 0.055,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "restroom": {
               "ratio": 0.029,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.0169,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.0178,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -916,7 +1026,8 @@
             "electrical/mechanical": {
               "ratio": 0.0944,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.0554,
@@ -926,17 +1037,20 @@
             "restroom": {
               "ratio": 0.031,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.018,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.019,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -966,8 +1080,13 @@
             "datacenter/low ite": {
               "ratio": 1.0,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
+          },
+          "layout": {
+            "bar_division_method": "Multiple Space Types - Individual Stories Sliced",
+            "zoning_method": "Individual Spaces"
           }
         },
         {
@@ -990,12 +1109,14 @@
             "datacenter/low ite": {
               "ratio": 0.016897,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "datacenter/high ite": {
               "ratio": 0.070454,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lounge/breakroom": {
               "ratio": 0.016261,
@@ -1031,7 +1152,8 @@
             "electrical/mechanical": {
               "ratio": 0.086172,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.050632,
@@ -1041,17 +1163,20 @@
             "restroom": {
               "ratio": 0.028237,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.016456,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.017332,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -1069,12 +1194,14 @@
             "datacenter/low ite": {
               "ratio": 0.0094,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "datacenter/high ite": {
               "ratio": 0.0169,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lounge/breakroom": {
               "ratio": 0.017332,
@@ -1110,7 +1237,8 @@
             "electrical/mechanical": {
               "ratio": 0.091917,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.053943,
@@ -1120,17 +1248,20 @@
             "restroom": {
               "ratio": 0.030185,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.017527,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.0185,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -1185,7 +1316,8 @@
             "electrical/mechanical": {
               "ratio": 0.09442,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.055479,
@@ -1195,17 +1327,20 @@
             "restroom": {
               "ratio": 0.03094,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.018031,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.018991,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -1254,7 +1389,8 @@
             "electrical/mechanical": {
               "ratio": 0.0944,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.0554,
@@ -1264,17 +1400,20 @@
             "restroom": {
               "ratio": 0.031,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.018,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.019,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -1358,6 +1497,14 @@
         "typical_story": 13.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "OfL",
       "space_type_ratios": [
         {
@@ -1412,7 +1559,8 @@
             "electrical/mechanical": {
               "ratio": 0.03,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.055,
@@ -1422,17 +1570,20 @@
             "restroom": {
               "ratio": 0.036,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.037,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.0686,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -1515,6 +1666,24 @@
         "wwr": 0.15,
         "typical_story": 10.0,
         "perim_mult": 1.0
+      },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "perimeter_depth_max": 35.0,
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "dwelling units",
+            "space_types": [
+              "multifamily - dwelling unit"
+            ],
+            "zone_per": "facade"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
       },
       "deer_building_type": "MFm",
       "space_type_ratios": [
@@ -1708,6 +1877,31 @@
         "typical_story": 10.0,
         "perim_mult": 1.121
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "surgery",
+            "space_types": [
+              "operating room",
+              "recovery"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "imaging",
+            "space_types": [
+              "imaging"
+            ],
+            "zone_per": "space_type"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "OfL",
       "space_type_ratios": [
         {
@@ -1741,7 +1935,8 @@
             "storage": {
               "ratio": 0.1521,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "dining": {
               "ratio": 0.0103,
@@ -1756,7 +1951,8 @@
             "electrical/mechanical": {
               "ratio": 0.0131,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "corridor": {
               "ratio": 0.1924,
@@ -1767,7 +1963,8 @@
             "datacenter/low ite": {
               "ratio": 0.0027,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.051699999999999996,
@@ -1777,7 +1974,8 @@
             "locker room": {
               "ratio": 0.019,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lounge/breakroom": {
               "ratio": 0.0293,
@@ -1802,7 +2000,9 @@
             "operating room": {
               "ratio": 0.0545,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "core",
+              "wwr": 0.0
             },
             "recovery": {
               "ratio": 0.0232,
@@ -1812,17 +2012,20 @@
             "physical therapy": {
               "ratio": 0.0462,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "perimeter"
             },
             "stairwell": {
               "ratio": 0.0146,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "restroom": {
               "ratio": 0.0193,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -1936,6 +2139,30 @@
         "typical_story": 13.0,
         "perim_mult": 1.914
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "gymnasium",
+            "space_types": [
+              "playing area - primary school"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "cafeteria",
+            "space_types": [
+              "dining - primary school"
+            ],
+            "zone_per": "space_type"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "EPr",
       "space_type_ratios": [
         {
@@ -1984,7 +2211,8 @@
             "food preparation - primary school": {
               "ratio": 0.0244,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "library - primary school": {
               "ratio": 0.0581,
@@ -1999,7 +2227,8 @@
             "electrical/mechanical": {
               "ratio": 0.0367,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "office": {
               "ratio": 0.0642,
@@ -2009,7 +2238,8 @@
             "restroom - primary school": {
               "ratio": 0.0277,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -2048,7 +2278,8 @@
             "food preparation - primary school": {
               "ratio": 0.0244,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "library - primary school": {
               "ratio": 0.0,
@@ -2063,7 +2294,8 @@
             "electrical/mechanical": {
               "ratio": 0.0367,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "office": {
               "ratio": 0.0642,
@@ -2073,7 +2305,8 @@
             "restroom - primary school": {
               "ratio": 0.0277,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -2144,6 +2377,13 @@
         "typical_story": 10.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Front and Back Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
+      },
       "deer_building_type": "RFF",
       "space_type_ratios": [
         {
@@ -2177,7 +2417,8 @@
             "food preparation": {
               "ratio": 0.5,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -2293,6 +2534,13 @@
         "typical_story": 20.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Front and Back Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
+      },
       "deer_building_type": "RtL",
       "space_type_ratios": [
         {
@@ -2321,7 +2569,8 @@
             "storage": {
               "ratio": 0.1656,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.0052,
@@ -2331,7 +2580,8 @@
             "retail - mass merchandising": {
               "ratio": 0.8291999999999999,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             }
           }
         }
@@ -2441,6 +2691,13 @@
         "typical_story": 17.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
+      },
       "deer_building_type": "RtS",
       "space_type_ratios": [
         {
@@ -2543,6 +2800,38 @@
         "typical_story": 13.0,
         "perim_mult": 1.568
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "gymnasium",
+            "space_types": [
+              "playing area - secondary school",
+              "audience seating - gymnasium - secondary school"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "auditorium",
+            "space_types": [
+              "audience seating - secondary school"
+            ],
+            "zone_per": "space_type"
+          },
+          {
+            "name": "cafeteria",
+            "space_types": [
+              "dining - secondary school"
+            ],
+            "zone_per": "space_type"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "ESe",
       "space_type_ratios": [
         {
@@ -2604,7 +2893,8 @@
             "food preparation - secondary school": {
               "ratio": 0.011,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "library - secondary school": {
               "ratio": 0.0429,
@@ -2619,7 +2909,8 @@
             "electrical/mechanical": {
               "ratio": 0.0349,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "office": {
               "ratio": 0.0543,
@@ -2629,7 +2920,8 @@
             "restroom - secondary school": {
               "ratio": 0.0214,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         },
@@ -2681,7 +2973,8 @@
             "food preparation - secondary school": {
               "ratio": 0.011,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "library - secondary school": {
               "ratio": 0.0429,
@@ -2696,7 +2989,8 @@
             "electrical/mechanical": {
               "ratio": 0.0349,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "office": {
               "ratio": 0.0543,
@@ -2706,7 +3000,8 @@
             "restroom - secondary school": {
               "ratio": 0.0214,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -2761,6 +3056,24 @@
         "first_story": 11.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "perimeter_depth_max": 35.0,
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "guest rooms",
+            "space_types": [
+              "guest room"
+            ],
+            "zone_per": "facade"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "Mtl",
       "space_type_ratios": [
         {
@@ -2795,12 +3108,14 @@
             "electrical/mechanical": {
               "ratio": 0.011899999999999999,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "shaft": {
               "ratio": 0.0113,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "exercise area": {
               "ratio": 0.0081,
@@ -2815,12 +3130,14 @@
             "guest room": {
               "ratio": 0.6312,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "perimeter"
             },
             "laundry/washing - coin-operated laundries": {
               "ratio": 0.0244,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "conference/meeting/multipurpose": {
               "ratio": 0.02,
@@ -2835,17 +3152,20 @@
             "restroom": {
               "ratio": 0.0081,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.04,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.0325,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -3002,6 +3322,14 @@
         "typical_story": 10.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Perimeter and Core Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true,
+        "core_layout": "squarified"
+      },
       "deer_building_type": "OfS",
       "space_type_ratios": [
         {
@@ -3046,7 +3374,8 @@
             "electrical/mechanical": {
               "ratio": 0.0201,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.0818,
@@ -3056,17 +3385,20 @@
             "restroom": {
               "ratio": 0.0402,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "stairwell": {
               "ratio": 0.0201,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "storage": {
               "ratio": 0.1363,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             }
           }
         }
@@ -3153,6 +3485,13 @@
         "typical_story": 20.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Front and Back Sliced",
+        "zoning_method": "Perimeter Orientation and Core",
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
+      },
       "deer_building_type": "Gro",
       "space_type_ratios": [
         {
@@ -3181,17 +3520,20 @@
             "food preparation - deli/bakery": {
               "ratio": 0.05,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "retail - supermarket": {
               "ratio": 0.7733,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             },
             "storage": {
               "ratio": 0.101,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "wwr": 0.0
             },
             "office": {
               "ratio": 0.0067,
@@ -3211,7 +3553,8 @@
             "electrical/mechanical": {
               "ratio": 0.0133,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "wwr": 0.0
             },
             "conference/meeting/multipurpose": {
               "ratio": 0.0111,
@@ -3221,7 +3564,8 @@
             "restroom": {
               "ratio": 0.015,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "wwr": 0.0
             },
             "lobby": {
               "ratio": 0.0067,
@@ -3313,6 +3657,23 @@
         "typical_story": 28.0,
         "perim_mult": 1.0
       },
+      "layout": {
+        "bar_division_method": "Multiple Space Types - Front and Back Sliced",
+        "zoning_method": "Space Type Groups",
+        "zone_groups": [
+          {
+            "name": "storage",
+            "space_types": [
+              "storage - warehouse - medium to bulky palletized items",
+              "storage - warehouse - smaller hand-carried items"
+            ],
+            "zone_per": "space_type"
+          }
+        ],
+        "story_placement": "heuristic",
+        "vertical_circulation": true,
+        "code_required_spaces": true
+      },
       "deer_building_type": "SUn",
       "space_type_ratios": [
         {
@@ -3341,12 +3702,14 @@
             "storage - warehouse - medium to bulky palletized items": {
               "ratio": 0.6628,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             },
             "storage - warehouse - smaller hand-carried items": {
               "ratio": 0.2882,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             },
             "office": {
               "ratio": 0.049,
@@ -3383,7 +3746,8 @@
             "storage - warehouse - medium to bulky palletized items": {
               "ratio": 1.0,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             }
           }
         },
@@ -3413,12 +3777,14 @@
             "storage - warehouse - medium to bulky palletized items": {
               "ratio": 0.2,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             },
             "storage - warehouse - smaller hand-carried items": {
               "ratio": 0.751,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             },
             "office": {
               "ratio": 0.049,
@@ -3455,12 +3821,14 @@
             "storage - warehouse - medium to bulky palletized items": {
               "ratio": 0.4,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             },
             "storage - warehouse - smaller hand-carried items": {
               "ratio": 0.551,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             },
             "office": {
               "ratio": 0.049,
@@ -3497,12 +3865,14 @@
             "storage - warehouse - medium to bulky palletized items": {
               "ratio": 0.8,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             },
             "storage - warehouse - smaller hand-carried items": {
               "ratio": 0.151,
               "space_type_gen": true,
-              "default": false
+              "default": false,
+              "position": "middle"
             },
             "office": {
               "ratio": 0.049,
@@ -3539,7 +3909,8 @@
             "storage - warehouse - smaller hand-carried items": {
               "ratio": 1.0,
               "space_type_gen": true,
-              "default": true
+              "default": true,
+              "position": "middle"
             }
           }
         }
