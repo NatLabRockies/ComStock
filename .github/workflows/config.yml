@@ -28,7 +28,6 @@ defaults:
 
 jobs:
   unit-tests:
-    name: Measure tests (includes simulations)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -36,11 +35,11 @@ jobs:
       BUNDLE_PATH: ${{ github.workspace }}/.custom_gems
       BUNDLE_WITHOUT: ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -92,15 +91,14 @@ jobs:
   integration-tests:
     # Re-enable after local validation.
     if: ${{ false }}
-    name: BuildStockBatch baseline smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -154,14 +152,13 @@ jobs:
           print(f"Validated {len(results)} successful baseline simulations.")
           PY
 
-  docker-build:
+  container-build:
     # Re-enable after local validation.
     if: ${{ false }}
-    name: Build and verify container images
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
