@@ -97,5 +97,5 @@ pip install NREL-PySAM==4.2.0
 The Rake task checks without changing code by default. To enable all available
 corrections, run `bundle exec rake "rubocop[true]"`. This includes unsafe
 corrections that may change behavior; review the resulting diff and rerun tests.
-The CI workflow uses this option and fails if tracked files change or the XML
-report contains offenses. It does not commit corrections.
+The CI workflow uses this option and fails the lint check if tracked files change.
+Remaining offenses alone do not fail the lint check. It does not commit corrections.
