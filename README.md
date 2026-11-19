@@ -87,6 +87,11 @@ pip install NREL-PySAM==4.2.0
   - `bundle exec rake unit_tests:workflow_measure_tests` to run all workflow measure tests.
 	- `bundle exec rake unit_tests:upgrade_measure_tests` to run all `upgrade_` measure tests.
 
+Each listed test file runs in a separate Ruby subprocess, with up to one process
+per processor. A nonzero exit or missing JUnit test cases fails the task. Reports
+are written to per-file subdirectories under `test/reports`; old reports for each
+selected file are removed before it runs.
+
 ## Running Rubocop
 1. Follow the developer installation instructions above
 2. navigate to the `.custom_gems` directory

@@ -2,12 +2,40 @@ require 'rake/testtask'
 require 'minitest/reporters'
 require 'parallel'
 require 'rubocop/rake_task'
+require 'rexml/document'
 
 # generate the xml reports from tests.
 Minitest::Reporters.use! [
   Minitest::Reporters::DefaultReporter.new,
   Minitest::Reporters::JUnitReporter.new('test/reports')
 ]
+
+def run_measure_tests(file_list)
+  reports_root = ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR', File.expand_path('test/reports'))
+  runner = File.join(__dir__, 'test/helpers/measure_test_runner.rb')
+  load_paths = $LOAD_PATH.join(File::PATH_SEPARATOR)
+
+  # Wait for all subprocesses to finish before propagating a failure.
+  errors = Parallel.map(file_list, in_threads: Parallel.processor_count) do |file|
+    report_dir = File.expand_path(File.join(reports_root, file.sub(/\.rb\z/, '')))
+    FileUtils.rm_f(Dir.glob(File.join(report_dir, 'TEST-*.xml')))
+
+    puts "Running test #{file}"
+    ruby '-I', load_paths, runner, File.expand_path(file), report_dir, verbose: false
+
+    reports = Dir.glob(File.join(report_dir, 'TEST-*.xml'))
+    unless reports.any? { |report| !REXML::Document.new(File.read(report)).get_elements('//testcase').empty? }
+      raise "No JUnit test cases were produced by #{file}"
+    end
+
+    nil
+  rescue StandardError => e
+    warn "Error in #{file}: #{e.message}"
+    e
+  end.compact
+
+  raise errors.first unless errors.empty?
+end
 
 desc 'Run measure tests'
 namespace :unit_tests do
@@ -21,16 +49,8 @@ namespace :unit_tests do
     puts 'Running all reporting measure tests:'
     # load test files from file
     file_list = FileList.new(File.readlines('test/reporting_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') && File.exist?(item) }
-    Parallel.each(file_list, in_processes: Parallel.processor_count) do |file|
-      puts "Running test #{file} in process #{Process.pid}"
-      load file
-      true
-    rescue StandardError => e
-      puts "Error in #{file}: #{e.message}"
-      Minitest::Reporters.reporter.report_error(file, e)
-      false
-    end
+    file_list.select! { |item| item.include?('rb') }
+    run_measure_tests(file_list)
   end
 
   desc 'Run workflow measure tests'
@@ -38,16 +58,8 @@ namespace :unit_tests do
     puts 'Running all workflow measure tests:'
     # load test files from file
     file_list = FileList.new(File.readlines('test/workflow_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') && !item.include?('upgrade') && File.exist?(item) }
-    Parallel.each(file_list, in_processes: Parallel.processor_count) do |file|
-      puts "Running test #{file} in process #{Process.pid}"
-      load file
-      true
-    rescue StandardError => e
-      puts "Error in #{file}: #{e.message}"
-      Minitest::Reporters.reporter.report_error(file, e)
-      false
-    end
+    file_list.select! { |item| item.include?('rb') && !item.include?('upgrade') }
+    run_measure_tests(file_list)
   end
 
   desc 'Run upgrade measure tests'
@@ -55,16 +67,8 @@ namespace :unit_tests do
     puts 'Running all upgrade measure tests:'
     # load test files from file
     file_list = FileList.new(File.readlines('test/upgrade_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') && item.include?('upgrade') && File.exist?(item) }
-    Parallel.each(file_list, in_processes: Parallel.processor_count) do |file|
-      puts "Running test #{file} in process #{Process.pid}"
-      load file
-      true
-    rescue StandardError => e
-      puts "Error in #{file}: #{e.message}"
-      Minitest::Reporters.reporter.report_error(file, e)
-      false
-    end
+    file_list.select! { |item| item.include?('rb') && item.include?('upgrade') }
+    run_measure_tests(file_list)
   end
 end
 
