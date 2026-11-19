@@ -1,1 +1,5 @@
 *.twb binary
+*.rb text eol=crlf
+*.rake text eol=crlf
+Gemfile text eol=crlf
+Rakefile text eol=crlf

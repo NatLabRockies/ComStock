@@ -105,3 +105,5 @@ corrections, run `bundle exec rake "rubocop[true]"`. This includes unsafe
 corrections that may change behavior; review the resulting diff and rerun tests.
 The CI workflow uses this option and fails the lint check if tracked files change.
 Remaining offenses alone do not fail the lint check. It does not commit corrections.
+
+Ruby files use CRLF line endings on every platform so local RuboCop checks match CI.
