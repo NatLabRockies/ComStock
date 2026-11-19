@@ -128,24 +128,6 @@ jobs:
 
       - name: Check every sample building succeeded
         run: |
-          python - <<'PY'
-          from collections import Counter
-          import csv
-          import gzip
-          import json
-          from pathlib import Path
-
-          with Path("samples/bsb-integration-test.csv").open(newline="") as stream:
-              expected = [int(row["Building"]) for row in csv.DictReader(stream)]
-          result_path = Path("baseline_test_output/simulation_output/results_job0.json.gz")
-          with gzip.open(result_path, "rt") as stream:
-              results = json.load(stream)
-          actual = Counter((int(row["building_id"]), int(row["upgrade"])) for row in results)
-          wanted = Counter((building, 0) for building in expected)
-          if not expected or actual != wanted:
-              raise SystemExit(f"Baseline result IDs/counts differ: {actual} != {wanted}")
-          for row in results:
-              if row.get("completed_status") != "Success":
-                  raise SystemExit(f"Building {row['building_id']} failed: {row}")
-          print(f"Validated {len(results)} successful baseline simulations.")
-          PY
+          python .github/scripts/check_baseline_results.py \
+            samples/bsb-integration-test.csv \
+            baseline_test_output/simulation_output/results_job0.json.gz
