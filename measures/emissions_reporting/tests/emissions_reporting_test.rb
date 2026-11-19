@@ -34,8 +34,6 @@ class EmissionsReportingTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = EmissionsReporting.new
 
@@ -225,7 +223,6 @@ class EmissionsReportingTest < Minitest::Test
   end
 
   def test_timeseries_lrmer
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/smalloffice.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
 
@@ -249,7 +246,6 @@ class EmissionsReportingTest < Minitest::Test
   end
 
   def test_all_scenarios
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/smalloffice.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
 
@@ -286,7 +282,6 @@ class EmissionsReportingTest < Minitest::Test
   end
 
   def test_hawaii
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/smalloffice.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
 
@@ -310,7 +305,6 @@ class EmissionsReportingTest < Minitest::Test
   end
 
   def test_district_energy
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/../../../resources/tests/models/LargeOffice_VAV_district_chw_hw.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
 
@@ -334,7 +328,6 @@ class EmissionsReportingTest < Minitest::Test
   end
 
   def test_propane
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/../../../resources/tests/models/Quick_Service_Restaurant_Pre1980_3A.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
 

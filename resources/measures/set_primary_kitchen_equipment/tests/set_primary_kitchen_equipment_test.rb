@@ -107,8 +107,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SetPrimaryKitchenEquipment.new
 
@@ -182,8 +180,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"
@@ -228,7 +224,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
 
   # names the measure must and must not treat as a commercial kitchen
   def test_kitchen_name_matching
-    puts "\n######\nTEST:#{__method__}\n######\n"
     measure = SetPrimaryKitchenEquipment.new
 
     # prototype spellings
@@ -341,7 +336,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
   end
 
   def test_spec_style_food_preparation_kitchen
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation', num_kitchens: 3, zone_multiplier: 5)
     # three 100 m2 kitchens in zones of multiplier 5, at 649.25 W/m2
     assert_in_delta(3 * 5 * 100.0 * 649.25, building_gas_equipment_w(model), 1.0)
@@ -376,7 +370,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
   end
 
   def test_spec_style_school_kitchen_with_no_appliances
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation - primary school', num_kitchens: 1, zone_multiplier: 1)
     result = run_measure_on(model, { 'cook_dining_type' => 'None' })
     assert_equal('Success', result.value.valueName)
@@ -385,7 +378,6 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
   end
 
   def test_grocery_bakery_is_not_a_kitchen
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation - bakery', num_kitchens: 1, zone_multiplier: 1)
     before = building_gas_equipment_w(model)
     result = run_measure_on(model, { 'cook_dining_type' => 'None' })

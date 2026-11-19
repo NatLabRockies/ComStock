@@ -107,8 +107,6 @@ class SetWallTemplateTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SetWallTemplate.new
 
@@ -145,8 +143,6 @@ class SetWallTemplateTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

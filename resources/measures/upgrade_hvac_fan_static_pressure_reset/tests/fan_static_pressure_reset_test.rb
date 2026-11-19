@@ -176,10 +176,6 @@ class FanStaticPressureResetTest < Minitest::Test
     osm_name = 'SP_reset_measure_Test.osm'
     epw_name = 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw'
 
-    test_name = 'confirm_fan_curve_change'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     osm_path = model_input_path(osm_name)
     epw_path = epw_input_path(epw_name)
 

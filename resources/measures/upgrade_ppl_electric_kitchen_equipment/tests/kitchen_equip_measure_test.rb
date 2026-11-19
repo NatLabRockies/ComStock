@@ -116,14 +116,12 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
   end
 
   def test_number_of_arguments_and_argument_names
-    puts "\n######\nTEST:#{__method__}\n######\n"
     measure = ElectrifyKitchenEquipment.new
     model = OpenStudio::Model::Model.new
     assert_equal(0, measure.arguments(model).size)
   end
 
   def test_appliance_name_parsing
-    puts "\n######\nTEST:#{__method__}\n######\n"
     measure = ElectrifyKitchenEquipment.new
     assert_equal(2.0, measure.get_quantity_from_name('gas_fryer_equipment_bldg_quantity=2.0'))
     assert_equal('fryer', measure.get_equip_type_from_name('gas_fryer_equipment_bldg_quantity=2.0'))
@@ -133,7 +131,6 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
 
   # a prototype-derived model: kitchen spaces named 'Kitchen'
   def test_prototype_full_service_restaurant
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = models_for_tests.find { |p| File.basename(p) == 'Full_Service_Restaurant_4A.osm' }
     assert(!osm_path.nil?)
     model = load_model(osm_path)
@@ -153,7 +150,6 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
 
   # a spec-style model: kitchen spaces named 'food preparation', zones with multipliers
   def test_spec_style_food_preparation_kitchen
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation', num_kitchens: 3, zone_multiplier: 5)
     install_gas_appliances(model, { 'fryer' => 2, 'griddle' => 1 })
     assert_in_delta(((2 * 23.447) + 26.377) * 1000.0, building_equipment_w(model, :gas), 1.0)
@@ -174,7 +170,6 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
 
   # gas equipment that is not a sampled appliance is left alone and reported
   def test_non_appliance_gas_equipment_is_left_as_gas
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation - secondary school', num_kitchens: 1, zone_multiplier: 1)
     gas_before = building_equipment_w(model, :gas)
     result = run_measure_on(ElectrifyKitchenEquipment.new, model)
@@ -184,7 +179,6 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
   end
 
   def test_no_kitchen_is_not_applicable
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation - bakery', num_kitchens: 1, zone_multiplier: 1)
     result = run_measure_on(ElectrifyKitchenEquipment.new, model)
     assert_equal('NA', result.value.valueName)

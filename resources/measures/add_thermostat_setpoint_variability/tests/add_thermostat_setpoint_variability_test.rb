@@ -139,8 +139,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -157,8 +155,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_bad_argument_values
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -192,8 +188,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_all_default
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -217,8 +211,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_no_zones
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -240,8 +232,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_overlapping_setpoint
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -276,15 +266,11 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
       htg_schs << zone.thermostatSetpointDualSetpoint.get.heatingSetpointTemperatureSchedule.get
     end
 
-    puts "#{clg_schs.size} Cooling Schedules"
-    puts "#{htg_schs.size} Heating Schedules"
-
     before_vals = {}
     (clg_schs + htg_schs).each do |sch|
       sch = sch.to_ScheduleRuleset.get
       before_vals[sch.name.get] = get_sch_minmax(sch)
     end
-    puts before_vals
 
     # apply the measure to the model and optionally run the model
     result = apply_measure_and_run(instance_test[:model], measure, argument_map, osm_path, epw_path, run_model: false)
@@ -307,15 +293,12 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
       max_htg = OpenStudio.convert(get_sch_minmax(htg)[:max], 'C', 'F').get
 
       unless (OpenStudio.convert(before_vals[clg_name][:min], 'C', 'F').get == min_clg) || (OpenStudio.convert(before_vals[htg_name][:max], 'C', 'F').get == max_htg)
-        puts "comparing changed #{clg_name} or #{htg_name}"
         assert_in_delta(min_clg, max_htg, 2.0001, "#{clg_name} or #{htg_name}")
       end
     end
   end
 
   def test_bad_setback
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -346,8 +329,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_non_ruleset_schedule
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -381,8 +362,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_flat_schedule
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddThermostatSetpointVariability.new
 
@@ -419,8 +398,6 @@ class AddThermostatSetpointVariabilityTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # run all model test sets
     models_to_test.each do |set|
       instance_test_name = set[:model]

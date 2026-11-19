@@ -124,8 +124,6 @@ class SimulationOutputReportTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SimulationOutputReport.new
 
@@ -136,7 +134,6 @@ class SimulationOutputReportTest < Minitest::Test
 
   def test_fuel_oil_boiler
     # fuel_oil_boiler
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000034.osm"
     epw_path = "#{__dir__}/USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -147,7 +144,6 @@ class SimulationOutputReportTest < Minitest::Test
 
   def test_propane_boiler
     # propane_boiler
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000090.osm"
     epw_path = "#{__dir__}/USA_NV_Nellis.Afb.723865_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -158,7 +154,6 @@ class SimulationOutputReportTest < Minitest::Test
 
   def test_heat_pump_boiler_1
     # heat_pump_boiler_1
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/heat_pump_boiler_1.osm"
     epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
     assert(run_test(__method__, osm_path, epw_path))

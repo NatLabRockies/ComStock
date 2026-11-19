@@ -225,9 +225,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = AddHeatPumpRtu.new
 
@@ -291,9 +288,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   def test_table_lookup_format
     # This test ensures the format of lookup tables
-    test_name = 'test_lookup_table_format'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
     json_files.each do |file_path|
@@ -372,9 +366,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   def test_biquadratic_format
     # This test ensures the format of biquadratic curves used in DX units
-    test_name = 'test_biquadratic_format'
-    puts "\n######\nTEST: #{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
 
@@ -2146,10 +2137,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     osm_name = 'Retail_PSZ-AC.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
 
-    test_name = 'confirm_heating_setback_change_square_wave'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)
 
@@ -2233,10 +2220,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     # confirm that any heating setbacks are now 2F
     osm_name = 'Retail_PSZ-AC_updated_39_opt_start.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
-
-    test_name = 'confirm_heating_setback_change_opt_start'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
 
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)

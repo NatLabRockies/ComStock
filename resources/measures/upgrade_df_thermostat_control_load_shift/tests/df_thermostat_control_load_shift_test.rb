@@ -170,9 +170,6 @@ class DfThermostatControlLoadShiftTest < Minitest::Test
   end
 
   def test_models
-    test_name = 'test_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

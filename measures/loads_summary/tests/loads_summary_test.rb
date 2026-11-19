@@ -123,8 +123,6 @@ class LoadsSummaryTest < Minitest::Test
     # ro.setForwardTranslatorOptions(fto)
     # workflow.setRunOptions(ro)
 
-    puts workflow
-
     workflow.saveAs(osw_path)
 
     cli_path = OpenStudio.getOpenStudioCLI
@@ -132,7 +130,6 @@ class LoadsSummaryTest < Minitest::Test
     stdout_str, stderr_str, status = Open3.capture3(get_run_env, command)
 
     assert(status.success?, "Error running command: '#{command}'\nstdout: #{stdout_str}\nstderr: #{stderr_str}")
-    puts "Successfully ran command: '#{command}'"
 
     assert_path_exists(sql_path(test_name))
     assert_path_exists(out_osw_path)

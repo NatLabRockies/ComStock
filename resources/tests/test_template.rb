@@ -117,8 +117,6 @@ class UpperCamelCaseClassNameTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = UpperCamelCaseClassName.new
 
@@ -133,8 +131,6 @@ class UpperCamelCaseClassNameTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an array of hashes with model name, weather, expected result, and any specific
     models_to_test = []
     models_to_test << { model: 'PSZ-AC_with_gas_coil_heat_3B', weather: 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16', result: 'Success', arg_hash: { 'arg_1' => 'value_1', 'arg_2' => 'value_2' } }

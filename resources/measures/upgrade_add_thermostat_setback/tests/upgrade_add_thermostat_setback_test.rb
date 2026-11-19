@@ -174,9 +174,6 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = UpgradeAddThermostatSetback.new
 
@@ -198,10 +195,6 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
     # confirm that any heating setbacks are now 2F
     osm_name = '380_psz_ac_with_gas_boiler.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
-
-    test_name = 'confirm_heating_setback_change_square_wave'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
 
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)
