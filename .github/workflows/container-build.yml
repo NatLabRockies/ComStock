@@ -1,0 +1,124 @@
+name: ComStock container builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  OPENSTUDIO_VER: '3.10.0'
+  OPENSTUDIO_SHA: '86d7e215a1'
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      build: ${{ steps.filter.outputs.result }}
+    steps:
+      - uses: actions/github-script@v8
+        id: filter
+        with:
+          script: |
+            if (context.eventName === 'workflow_dispatch') {
+              return true;
+            }
+            if (context.payload.action === 'labeled') {
+              return context.payload.label.name === 'ci:containers';
+            }
+
+            const pr = context.payload.pull_request;
+            if (pr.labels.some(label => label.name === 'ci:containers')) {
+              return true;
+            }
+            if (pr.changed_files > 3000) {
+              core.info('Building containers because the PR exceeds GitHub\'s 3,000-file listing limit.');
+              return true;
+            }
+
+            const inputs = new Set([
+              'resources/Gemfile',
+              'build/Dockerfile',
+              'build/apptainer/Dockerfile',
+              '.dockerignore',
+              'build/.dockerignore',
+              'build/Dockerfile.dockerignore',
+              'build/apptainer/Dockerfile.dockerignore',
+              '.github/workflows/container-build.yml',
+            ]);
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const changed = files.flatMap(file => [file.filename, file.previous_filename])
+              .filter(filename => inputs.has(filename));
+            core.info(`Changed container inputs: ${changed.join(', ') || 'none'}`);
+            return changed.length > 0;
+
+  container-build:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --file build/Dockerfile --tag comstock-ci .
+
+      - name: Check OpenStudio version
+        run: |
+          version="$(docker run --rm comstock-ci openstudio --version)"
+          echo "OpenStudio ${version}"
+          test "$version" = "${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}"
+
+      - name: Check bundled ComStock gem loads
+        run: |
+          docker run --rm comstock-ci openstudio \
+            --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems \
+            --bundle_without test \
+            -e 'require "comstock-typical"; puts "comstock-typical loaded"'
+
+      - name: Build Apptainer builder image
+        run: docker build --file build/apptainer/Dockerfile --tag apptainer-ci ./build
+
+      - name: Convert simulation image to SIF
+        # Read the local image through the Docker socket; no registry is needed.
+        run: |
+          docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            apptainer-ci apptainer build /root/build/comstock-ci.sif \
+            docker-daemon://comstock-ci:latest
+
+      - name: Check OpenStudio version inside SIF
+        run: |
+          version="$(docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            apptainer-ci apptainer exec /root/build/comstock-ci.sif \
+            openstudio --version)"
+          echo "OpenStudio ${version}"
+          test "$version" = "${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}"
+
+      - name: Check bundled ComStock gem loads inside SIF
+        run: |
+          docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            apptainer-ci apptainer exec /root/build/comstock-ci.sif \
+            openstudio --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems \
+            --bundle_without test \
+            -e 'require "comstock-typical"; puts "comstock-typical loaded"'
