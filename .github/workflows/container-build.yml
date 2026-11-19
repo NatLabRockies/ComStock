@@ -19,6 +19,8 @@ env:
 
 jobs:
   check-build-needed:
+    # Temporarily skip the workflow; remove this guard to restore conditional builds.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: read
