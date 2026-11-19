@@ -264,7 +264,7 @@ class DFLoadShedTest < Minitest::Test
       # argument_map['apply_measure'] = apply_measure
 
       # actual hourly timestep
-      if demand_flexibility_objective.valueAsString == 'grid peak load' or demand_flexibility_objective.valueAsString == 'emissions'
+      if (demand_flexibility_objective.valueAsString == 'grid peak load') || (demand_flexibility_objective.valueAsString == 'emissions')
         timestep = 1
       else
         timestep = num_timesteps_in_hr.valueAsInteger

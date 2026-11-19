@@ -41,11 +41,10 @@ require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'fileutils'
 require 'minitest/autorun'
-require_relative '../measure.rb'
+require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
 class AdvancedRTUControlTest < Minitest::Test
-
   # return file paths to test models in test directory
   def models_for_tests
     paths = Dir.glob(File.join(File.dirname(__FILE__), '../../../tests/models/*.osm'))
@@ -70,13 +69,13 @@ class AdvancedRTUControlTest < Minitest::Test
 
   def run_dir(test_name)
     # always generate test output in specially named 'output' directory so result files are not made part of the measure
-	puts "run dir expanded=" + "#{File.expand_path(File.join(File.dirname(__FILE__),'output', test_name.to_s))}"
-    return File.join(File.dirname(__FILE__),"output","#{test_name}")
+    puts "run dir expanded=#{File.expand_path(File.join(File.dirname(__FILE__), 'output', test_name.to_s))}"
+    return File.join(File.dirname(__FILE__), 'output', test_name.to_s)
   end
 
   def model_input_path(osm_name)
     # return models_for_tests.select { |x| set[:model] == osm_name }
-	puts (File.expand_path(File.dirname(__FILE__))) #expands path relative to current wd, passing abs path back
+    puts(__dir__) # expands path relative to current wd, passing abs path back
     return File.expand_path(File.join(File.dirname(__FILE__), '../../../tests/models', osm_name))
   end
 
@@ -102,25 +101,25 @@ class AdvancedRTUControlTest < Minitest::Test
     assert(File.exist?(epw_path))
 
     # create run directory if it does not exist
-    if !File.exist?(run_dir(test_name))
-      FileUtils.mkdir_p(run_dir(test_name))
-    end
+
+    FileUtils.mkdir_p(run_dir(test_name))
+
     assert(File.exist?(run_dir(test_name)))
 
     # remove prior runs if they exist
     # if File.exist?(model_output_path(test_name))
-      # FileUtils.rm(model_output_path(test_name))
+    # FileUtils.rm(model_output_path(test_name))
     # end
-    if File.exist?(report_path(test_name))
-      FileUtils.rm(report_path(test_name))
-    end
+
+    FileUtils.rm_f(report_path(test_name))
+
 
     # copy the osm and epw to the test directory
-	#osm_path = File.expand_path(osm_path)
-	puts(osm_path)
+    # osm_path = File.expand_path(osm_path)
+    puts(osm_path)
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
-	new_osm_path = File.expand_path(new_osm_path)
-	puts(new_osm_path)
+    new_osm_path = File.expand_path(new_osm_path)
+    puts(new_osm_path)
     FileUtils.cp(osm_path, new_osm_path)
     new_epw_path = File.expand_path("#{run_dir(test_name)}/#{File.basename(epw_path)}")
     FileUtils.cp(epw_path, new_epw_path)
@@ -144,7 +143,7 @@ class AdvancedRTUControlTest < Minitest::Test
       std = Standard.build('90.1-2013')
       std.model_run_sizing_run(model, run_dir(test_name))
     end
-    assert(File.exist?(File.join(run_dir(test_name), "in.osm")))
+    assert(File.exist?(File.join(run_dir(test_name), 'in.osm')))
     assert(File.exist?(sql_path(test_name)))
 
     # change into run directory for tests
@@ -158,14 +157,14 @@ class AdvancedRTUControlTest < Minitest::Test
     result = runner.result
     result_success = result.value.valueName == 'Success'
 
-	# change back directory
+    # change back directory
     Dir.chdir(start_dir)
 
     # Show the output
     show_output(result)
 
     # Save model
-	puts "saving model to" + File.expand_path(model_output_path(test_name))
+    puts "saving model to#{File.expand_path(model_output_path(test_name))}"
     model.save(File.expand_path(model_output_path(test_name)), true)
 
     if run_model && result_success
@@ -197,9 +196,7 @@ class AdvancedRTUControlTest < Minitest::Test
     assert_equal(2, arguments.size)
   end
 
-
-
-   def test_econo
+  def test_econo
     osm_name = '361_Small_Office_PSZ_Gas_3a.osm'
     epw_name = 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw'
 
@@ -213,9 +210,9 @@ class AdvancedRTUControlTest < Minitest::Test
     model = load_model(osm_path)
     arguments = measure.arguments(model)
     argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
-    #put base case assertions here
+    # put base case assertions here
     # create hash of argument values
-    args_hash = { 'add_econo' => true, 'add_dcv' => false}
+    args_hash = { 'add_econo' => true, 'add_dcv' => false }
     # populate argument with specified hash value if specified
     arguments.each do |arg|
       temp_arg_var = arg.clone
@@ -229,25 +226,24 @@ class AdvancedRTUControlTest < Minitest::Test
     # Apply the measure to the model and optionally run the model
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)
     model = load_model(File.expand_path(model_output_path(__method__)))
-	#confirm that at least one air loop now has an economizer
-	has_econo = false
-	model.getAirLoopHVACs.sort.each do |air_loop_hvac|
-	oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem
-	if oa_system.is_initialized
-	  oa_system = oa_system.get
-	  oa_controller = oa_system.getControllerOutdoorAir
-	  economizer_type = oa_controller.getEconomizerControlType
-	  if economizer_type != 'NoEconomizer'
-	    has_econo = true
-	  end
-	else
-	    runner.registerInfo("Air loop #{air_loop_hvac.name} does not have outdoor air and cannot economize.")
-	end
-
-	end
-	assert(has_econo)
-#put in assertions here
-#then duplicate it for other models if needed
+    # confirm that at least one air loop now has an economizer
+    has_econo = false
+    model.getAirLoopHVACs.sort.each do |air_loop_hvac|
+      oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem
+      if oa_system.is_initialized
+        oa_system = oa_system.get
+        oa_controller = oa_system.getControllerOutdoorAir
+        economizer_type = oa_controller.getEconomizerControlType
+        if economizer_type != 'NoEconomizer'
+          has_econo = true
+        end
+      else
+        runner.registerInfo("Air loop #{air_loop_hvac.name} does not have outdoor air and cannot economize.")
+      end
+    end
+    assert(has_econo)
+    # put in assertions here
+    # then duplicate it for other models if needed
   end
 
   def test_var_vol_fan
@@ -266,9 +262,9 @@ class AdvancedRTUControlTest < Minitest::Test
     model = load_model(osm_path)
     arguments = measure.arguments(model)
     argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
-     #put base case assertions here
+    # put base case assertions here
     # create hash of argument values
-    args_hash = { 'add_econo' => false, 'add_dcv' => false}
+    args_hash = { 'add_econo' => false, 'add_dcv' => false }
     # populate argument with specified hash value if specified
     arguments.each do |arg|
       temp_arg_var = arg.clone
@@ -283,26 +279,24 @@ class AdvancedRTUControlTest < Minitest::Test
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)
     model = load_model(File.expand_path(model_output_path(__method__)))
 
-	var_vol_fan = false
-	model.getAirLoopHVACs.sort.each do |air_loop_hvac|
-	  air_loop_hvac.supplyComponents.each do |component|
-	  obj_type = component.iddObjectType.valueName.to_s
-	  case obj_type
-      when 'OS_AirLoopHVAC_UnitarySystem'
-	  component = component.to_AirLoopHVACUnitarySystem.get
-	  sup_fan = component.supplyFan
-	  if sup_fan.is_initialized
-	    sup_fan = sup_fan.get
-        if sup_fan.to_FanVariableVolume.is_initialized
-		  var_vol_fan = true
-		end
-	  end
-	  end
+    var_vol_fan = false
+    model.getAirLoopHVACs.sort.each do |air_loop_hvac|
+      air_loop_hvac.supplyComponents.each do |component|
+        obj_type = component.iddObjectType.valueName.to_s
+        case obj_type
+          when 'OS_AirLoopHVAC_UnitarySystem'
+            component = component.to_AirLoopHVACUnitarySystem.get
+            sup_fan = component.supplyFan
+            if sup_fan.is_initialized
+              sup_fan = sup_fan.get
+              if sup_fan.to_FanVariableVolume.is_initialized
+                var_vol_fan = true
+              end
+            end
+        end
       end
-	end
+    end
 
-	assert(var_vol_fan)
-
+    assert(var_vol_fan)
   end
-
 end

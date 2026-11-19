@@ -1563,9 +1563,7 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
     # Remove air aloops
     applicable_air_loops.each do |air_loop|
       # Don't remove airloops representing non-mechanically cooled systems
-      if !air_loop.additionalProperties.hasFeature('non_mechanically_cooled')
-        air_loop.remove
-      else
+      if air_loop.additionalProperties.hasFeature('non_mechanically_cooled')
         # Remove heating coil on
         air_loop.supplyComponents.each do |supply_comp|
           # Remove standalone heating coils
@@ -1582,6 +1580,8 @@ class HvacVrfHrDoas < OpenStudio::Measure::ModelMeasure
             end
           end
         end
+      else
+        air_loop.remove
       end
     end
     # Zone equipment for applicable thermal zones or non-applicable mz thermal zones needing new equipment

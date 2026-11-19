@@ -43,7 +43,6 @@ require 'comstock-typical'
 
 # start the measure
 class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
-
   # human readable name
   def name
     return 'Set Envelope to Current Code'
@@ -75,7 +74,7 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       return false
     end
 
-    # Get additional properties of the model. Used to look up state, climate zone, existing wall template, existing roof template, existing window construction. 
+    # Get additional properties of the model. Used to look up state, climate zone, existing wall template, existing roof template, existing window construction.
     addtl_props = model.getBuilding.additionalProperties
 
     # Get state and then lookup current_code_in_force using resource file
@@ -96,15 +95,15 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       if current_code_in_force
         runner.registerInfo("Current code in force for #{state_name} is: #{current_code_in_force}.")
       else
-        runner.registerError("Current code in force not found for #{state_name}, cannot apply measure.")        
+        runner.registerError("Current code in force not found for #{state_name}, cannot apply measure.")
       end
     else
-      runner.registerError("State not found, cannot lookup current code in force.")
+      runner.registerError('State not found, cannot lookup current code in force.')
       return false
     end
 
     # Make a standard that matches the current code in force
-    standard = Standard.build("#{current_code_in_force}")
+    standard = Standard.build(current_code_in_force.to_s)
 
     # Check that a default construction set is defined
     bldg_def_const_set = model.getBuilding.defaultConstructionSet
@@ -159,7 +158,7 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       end
       puts "Climate zone is: #{climate_zone}."
     else
-      runner.registerError("Climate zone not found. Cannot lookup window construction.")
+      runner.registerError('Climate zone not found. Cannot lookup window construction.')
     end
 
     ## WALLS ##
@@ -169,15 +168,15 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       puts "Existing walls template is: #{existing_walls_template}."
       existing_walls_ranking = template_ranking[existing_walls_template]
     else
-      puts "Existing walls template not found."
-      # Assume worst wall insulation ranking and wall insulation will be upgraded. 
+      puts 'Existing walls template not found.'
+      # Assume worst wall insulation ranking and wall insulation will be upgraded.
       existing_walls_ranking = 0
     end
 
-    # Check if existing wall template is worse than current code in force. If so, then proceed with wall insulation upgrade. Otherwise, wall insulation will not be upgraded. 
+    # Check if existing wall template is worse than current code in force. If so, then proceed with wall insulation upgrade. Otherwise, wall insulation will not be upgraded.
     if existing_walls_ranking >= current_code_in_force_ranking
       runner.registerInfo('Existing wall insulation is already equivalent or better than the current code in force. Wall insulation will not be upgraded.')
-    else 
+    else
       # Check that a default exterior wall is defined
       unless ext_surf_consts.wallConstruction.is_initialized
         runner.registerError("Default surface construction set #{ext_surf_consts.name} has no default exterior wall construction.")
@@ -208,15 +207,16 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       climate_zone_set = standard.model_find_climate_zone_set(model, climate_zone)
 
       new_wall_construction = standard.model_find_and_add_construction(model,
-                                                                  climate_zone_set,
-                                                                  'ExteriorWall',
-                                                                  old_wall_construction_type,
-                                                                  occ_type)
-      #apply new construction to exterior wall surfaces
+                                                                       climate_zone_set,
+                                                                       'ExteriorWall',
+                                                                       old_wall_construction_type,
+                                                                       occ_type)
+      # apply new construction to exterior wall surfaces
       model.getSurfaces.each do |surface|
         next unless surface.outsideBoundaryCondition == 'Outdoors' && surface.surfaceType == 'Wall'
+
         surface.setConstruction(new_wall_construction)
-      end                                                            
+      end
 
       runner.registerInfo("Successfully applied wall construction #{new_wall_construction.name} to the model.")
     end
@@ -228,12 +228,12 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       puts "Existing roof template is: #{existing_roof_template}."
       existing_roof_ranking = template_ranking[existing_roof_template]
     else
-      puts "Existing roof template not found."
-      # Assume worst roof insulation ranking and roof insulation will be upgraded. 
+      puts 'Existing roof template not found.'
+      # Assume worst roof insulation ranking and roof insulation will be upgraded.
       existing_roof_ranking = 0
     end
 
-    # Check if existing wall template is worse than current code in force. If so, then proceed with wall insulation upgrade. Otherwise, wall insulation will not be upgraded. 
+    # Check if existing wall template is worse than current code in force. If so, then proceed with wall insulation upgrade. Otherwise, wall insulation will not be upgraded.
     if existing_roof_ranking >= current_code_in_force_ranking
       runner.registerInfo('Existing roof insulation is already equivalent or better than the current code in force. Roof will not be replaced.')
     else
@@ -265,22 +265,23 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       end
       climate_zone_set = standard.model_find_climate_zone_set(model, climate_zone)
       new_roof_construction = standard.model_find_and_add_construction(model,
-                                                                  climate_zone_set,
-                                                                  'ExteriorRoof',
-                                                                  old_roof_construction_type,
-                                                                  occ_type)
-      #apply new construction to exterior roof surfaces
+                                                                       climate_zone_set,
+                                                                       'ExteriorRoof',
+                                                                       old_roof_construction_type,
+                                                                       occ_type)
+      # apply new construction to exterior roof surfaces
       model.getSurfaces.each do |surface|
         next unless surface.outsideBoundaryCondition == 'Outdoors' && surface.surfaceType == 'RoofCeiling'
+
         surface.setConstruction(new_roof_construction)
-      end                                                              
+      end
 
       runner.registerInfo("Successfully applied roof construction #{new_roof_construction.name} to the model.")
     end
 
     ## WINDOWS ##
     # Create ranking of window construction (worst to best U-val) so we can evaluate whether the existing window is better than the current code in force
-    # Some constructions have the same or nearly the same U-value so they are ranked the same. 
+    # Some constructions have the same or nearly the same U-value so they are ranked the same.
     # This avoids a scenario where you are replacing a window with U-value 0.559 with U-value 0.557, which is not realistic.
     window_ranking = {
       'Single - No LowE - Clear - Aluminum' => 0,
@@ -303,8 +304,8 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
       puts "Existing window construction is: #{existing_window_construction}."
       existing_window_ranking = window_ranking[existing_window_construction]
     else
-      puts "Existing window construction not found."
-      # Assume worst window ranking and windows will be replaced. 
+      puts 'Existing window construction not found.'
+      # Assume worst window ranking and windows will be replaced.
       existing_window_ranking = 0
     end
 
@@ -380,7 +381,7 @@ class SetEnvelopeToCurrentCode < OpenStudio::Measure::ModelMeasure
     end
 
     # report final condition of model
-    runner.registerFinalCondition("Upgraded model to follow the current wall, roof, and window code in the state.")
+    runner.registerFinalCondition('Upgraded model to follow the current wall, roof, and window code in the state.')
 
     return true
   end

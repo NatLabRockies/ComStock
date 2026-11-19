@@ -140,7 +140,7 @@ class SimulationOutputReportTest < Minitest::Test
     osm_path = "#{__dir__}/bldg0000034.osm"
     epw_path = "#{__dir__}/USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
-    sql = OpenStudio::SqlFile.new(sql_path("#{__method__}"))
+    sql = OpenStudio::SqlFile.new(sql_path(__method__.to_s))
     assert(sql.fuelOilNo2TotalEndUses.get > 0)
     assert(sql.fuelOilNo2Heating.get > 0)
   end
@@ -151,7 +151,7 @@ class SimulationOutputReportTest < Minitest::Test
     osm_path = "#{__dir__}/bldg0000090.osm"
     epw_path = "#{__dir__}/USA_NV_Nellis.Afb.723865_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
-    sql = OpenStudio::SqlFile.new(sql_path("#{__method__}"))
+    sql = OpenStudio::SqlFile.new(sql_path(__method__.to_s))
     assert(sql.propaneTotalEndUses.get > 0)
     assert(sql.propaneHeating.get > 0)
   end
@@ -162,7 +162,7 @@ class SimulationOutputReportTest < Minitest::Test
     osm_path = "#{__dir__}/heat_pump_boiler_1.osm"
     epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
     assert(run_test(__method__, osm_path, epw_path))
-    sql = OpenStudio::SqlFile.new(sql_path("#{__method__}"))
+    sql = OpenStudio::SqlFile.new(sql_path(__method__.to_s))
     assert(sql.electricityHeating.get > 0)
     assert(sql.naturalGasHeating.get == 0)
   end

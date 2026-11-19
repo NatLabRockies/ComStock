@@ -614,7 +614,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
   #### End predefined functions
 
   # define what happens when the measure is run
-  # rubocop:disable Naming/PredicateMethod
   def run(model, runner, user_arguments)
     super
 
@@ -1918,7 +1917,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
 
     true
   end
-  # rubocop:enable Naming/PredicateMethod
 end
 
 # register the measure to be used by the application

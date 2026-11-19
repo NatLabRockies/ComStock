@@ -709,6 +709,7 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
           next unless ['Unitary'].any? do |word|
                         obj_type.include?(word)
                       end
+
           # TODO: There are more unitary systems types we are not including here
 
           # get unitary system

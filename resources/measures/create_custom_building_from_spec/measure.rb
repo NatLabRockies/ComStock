@@ -142,7 +142,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
   # ComStock-owned building type definitions: space type ratios and building form defaults.
   # Deliberately read from ComStock rather than from openstudio-standards, so adding or
   # refining a building type is a ComStock data edit and does not require a standards
-  # change. 
+  # change.
   BUILDING_TYPE_DATA_PATH = File.expand_path('../../create_custom/comstock_building_types.json', __dir__)
 
   # @return [Hash] the ComStock building type definitions, loaded once per measure instance
@@ -151,6 +151,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
       unless File.exist?(BUILDING_TYPE_DATA_PATH)
         raise "ComStock building type data not found at #{BUILDING_TYPE_DATA_PATH}."
       end
+
       JSON.parse(File.read(BUILDING_TYPE_DATA_PATH))
     end
   end
@@ -186,8 +187,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     return spec unless default_surfaces.is_a?(Hash)
 
     entry_surfaces = (entry.nil? ? nil : entry['spec']['surfaces']) || {}
-    spec = spec.merge('surfaces' => default_surfaces.merge(entry_surfaces))
-    spec
+    spec.merge('surfaces' => default_surfaces.merge(entry_surfaces))
   end
 
   # Building type definition for one building type, subtype and template, from ComStock data.
@@ -296,12 +296,8 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
 
   # Arguments consumed to build the spec's top level or its space_type_ratios. Everything
   # else that came from create_typical is forwarded as a typical_options keyword.
-  BAR_ONLY_ARGS = %w[
-    bldg_type_a bldg_type_b bldg_type_c bldg_type_d
-    bldg_subtype_a bldg_subtype_b bldg_subtype_c bldg_subtype_d
-    bldg_type_b_fract_bldg_area bldg_type_c_fract_bldg_area bldg_type_d_fract_bldg_area
-    bldg_type_a_num_units bldg_type_b_num_units bldg_type_c_num_units bldg_type_d_num_units
-    space_type_sort_logic use_upstream_args
+  BAR_ONLY_ARGS = [
+    'bldg_type_a', 'bldg_type_b', 'bldg_type_c', 'bldg_type_d', 'bldg_subtype_a', 'bldg_subtype_b', 'bldg_subtype_c', 'bldg_subtype_d', 'bldg_type_b_fract_bldg_area', 'bldg_type_c_fract_bldg_area', 'bldg_type_d_fract_bldg_area', 'bldg_type_a_num_units', 'bldg_type_b_num_units', 'bldg_type_c_num_units', 'bldg_type_d_num_units', 'space_type_sort_logic', 'use_upstream_args'
   ].freeze
 
   # Keys spec[:form] accepts, taken from the "form" definition in
@@ -309,27 +305,19 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
   # and create_bar_from_building_type_ratios declares several arguments the spec has no
   # slot for -- the neighbor_* shading arguments and story_multiplier among them -- so
   # those are dropped rather than forwarded. See the note in run about what that means.
-  FORM_ARGS = %w[
-    bar_division_method bar_sep_dist_mult bar_width bottom_story_ground_exposed_floor
-    building_form_defaults building_rotation custom_height_bar double_loaded_corridor
-    floor_height make_mid_story_surfaces_adiabatic ns_to_ew_ratio num_stories_above_grade
-    num_stories_below_grade party_wall_fraction party_wall_stories_east
-    party_wall_stories_north party_wall_stories_south party_wall_stories_west perim_mult
-    single_floor_area space_type_sort_logic story_multiplier_method
-    top_story_exterior_exposed_roof total_bldg_floor_area wwr enforce_space_area_constraints
+  FORM_ARGS = [
+    'bar_division_method', 'bar_sep_dist_mult', 'bar_width', 'bottom_story_ground_exposed_floor', 'building_form_defaults', 'building_rotation', 'custom_height_bar', 'double_loaded_corridor', 'floor_height', 'make_mid_story_surfaces_adiabatic', 'ns_to_ew_ratio', 'num_stories_above_grade', 'num_stories_below_grade', 'party_wall_fraction', 'party_wall_stories_east', 'party_wall_stories_north', 'party_wall_stories_south', 'party_wall_stories_west', 'perim_mult', 'single_floor_area', 'space_type_sort_logic', 'story_multiplier_method', 'top_story_exterior_exposed_roof', 'total_bldg_floor_area', 'wwr', 'enforce_space_area_constraints'
   ].freeze
 
   # create_bar arguments with no spec[:form] equivalent. Recorded so the measure can report
   # what it dropped instead of silently discarding geometry inputs.
-  UNMAPPED_BAR_ARGS = %w[
-    story_multiplier building_height_relative_to_neighbors neighbor_height_method
-    neighbor_height_north neighbor_height_south neighbor_height_east neighbor_height_west
-    neighbor_offset_north neighbor_offset_south neighbor_offset_east neighbor_offset_west
+  UNMAPPED_BAR_ARGS = [
+    'story_multiplier', 'building_height_relative_to_neighbors', 'neighbor_height_method', 'neighbor_height_north', 'neighbor_height_south', 'neighbor_height_east', 'neighbor_height_west', 'neighbor_offset_north', 'neighbor_offset_south', 'neighbor_offset_east', 'neighbor_offset_west'
   ].freeze
 
   # create_typical_building_from_model keyword arguments that the spec manages itself and
   # that typical_options is not allowed to carry.
-  SPEC_MANAGED = %w[template climate_zone].freeze
+  SPEC_MANAGED = ['template', 'climate_zone'].freeze
 
   # Keywords create_typical_building_from_model accepts that the replaced measure sets at
   # its call site rather than exposing as measure arguments. They are invisible from the
@@ -603,7 +591,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
       if definition.nil? || definition['space_types'].empty?
         runner.registerError("No ComStock space type ratios defined for building type '#{building_type}' " \
                              "subtype '#{building_subtype}' template '#{template}'. Add them to " \
-                             "resources/create_custom/comstock_building_types.json.")
+                             'resources/create_custom/comstock_building_types.json.')
         return nil
       end
 
@@ -627,7 +615,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
         # undeveloped area) while still counting their floor area, so dropping the flag
         # would give those areas real space types and shift the area-weighted load
         # densities. story_height, wwr, default and circ are passed for the same reason.
-        %w[story_height wwr default circ space_type_gen].each do |flag|
+        ['story_height', 'wwr', 'default', 'circ', 'space_type_gen'].each do |flag|
           entry[flag] = properties[flag] if properties.key?(flag)
         end
         entries << entry
@@ -691,8 +679,8 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     # than receiving a nil.
     # same accessor the replaced measures use, so values arrive already typed
     typed = runner.getArgumentValues(arguments(model), user_arguments)
-    typed = typed.collect { |key, value| [key.to_s, value] }.to_h
-    typed.reject! { |_key, value| value.nil? }
+    typed = typed.transform_keys(&:to_s)
+    typed.compact!
 
     reset_log if respond_to?(:reset_log)
 
@@ -714,7 +702,7 @@ class CreateCustomBuildingFromSpec < OpenStudio::Measure::ModelMeasure
     # substitution is gone.
     #
     # Two things read the building type rather than the space type and therefore change for
-    # DEER models: refrigeration case and walk-in sizing, and the ComStock interior equipment 
+    # DEER models: refrigeration case and walk-in sizing, and the ComStock interior equipment
     # power densities. The equipment data carries only one or two rows per DEER building type
     # against eight to sixteen per ASHRAE type, so most DEER space types have been taking a
     # median across building types rather than their own value; they now take the ASHRAE row.

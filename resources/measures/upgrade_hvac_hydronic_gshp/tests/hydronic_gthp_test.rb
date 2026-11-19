@@ -54,7 +54,7 @@ class HydronicGTHPTest < Minitest::Test
       Open3.capture3(command)
     rescue StandardError
       msg = 'GHEDesigner python package not found in this test environment, pip install GHEDesigner and retry'
-      raise LoadError.new msg
+      raise LoadError, msg
     end
   end
 

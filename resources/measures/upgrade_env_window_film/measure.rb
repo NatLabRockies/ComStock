@@ -64,10 +64,10 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     args = OpenStudio::Measure::OSArgumentVector.new
 
     filmtypes = [
-      "no film",
-      "int. film / min. SHGC / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "ext. film / min. SHGC / min. VLT"
+      'no film',
+      'int. film / min. SHGC / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'ext. film / min. SHGC / min. VLT'
     ]
 
     ################################################################################
@@ -233,38 +233,38 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     # ]
     #-------------------------------------------------------------------------------
     filmtypes_singlepane = [
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT",
-      "int. film / min. SHGC / min. U-factor / min. VLT"
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT',
+      'int. film / min. SHGC / min. U-factor / min. VLT'
     ]
     filmtypes_doublepane = [
-      "ext. film / min. SHGC / min. VLT",
-      "ext. film / min. SHGC / min. VLT",
-      "ext. film / min. SHGC / min. VLT",
-      "ext. film / min. SHGC / min. VLT",
-      "ext. film / min. SHGC / min. VLT",
-      "ext. film / min. SHGC / min. VLT",
-      "no film",
-      "no film"
+      'ext. film / min. SHGC / min. VLT',
+      'ext. film / min. SHGC / min. VLT',
+      'ext. film / min. SHGC / min. VLT',
+      'ext. film / min. SHGC / min. VLT',
+      'ext. film / min. SHGC / min. VLT',
+      'ext. film / min. SHGC / min. VLT',
+      'no film',
+      'no film'
     ]
     #-------------------------------------------------------------------------------
 
     # create hash: map_input_arg[window pane type][climate zone number] = window film type (user input)
     map_input_arg = {}
-    [filmtypes_singlepane, filmtypes_doublepane].zip(["Single","Double"]).each do |filmtypes, label|
+    [filmtypes_singlepane, filmtypes_doublepane].zip(['Single', 'Double']).each do |filmtypes, label|
       map_input_arg[label] = {}
-      filmtypes.each_with_index do |filmtype,i|
-        map_input_arg[label][i+1] = filmtype.to_s
+      filmtypes.each_with_index do |filmtype, i|
+        map_input_arg[label][i + 1] = filmtype.to_s
       end
     end
 
     # create hash: map_cec_to_iecc[CEC climate zone #] = ASHRAE climate zone #
-    """
+    "
     # reference map
     CEC1 - 4B
     CEC2 - 3C
@@ -281,24 +281,24 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     CEC13 - 3B
     CEC15 - 2B
     CEC16 - 5B
-    """
+    "
     map_cec_to_iecc = {
-      1=>4,
-      2=>3,
-      3=>3,
-      4=>3,
-      5=>3,
-      6=>3,
-      7=>3,
-      8=>3,
-      9=>3,
-      10=>3,
-      11=>3,
-      12=>3,
-      13=>3,
-      14=>3,
-      15=>2,
-      16=>5
+      1 => 4,
+      2 => 3,
+      3 => 3,
+      4 => 3,
+      5 => 3,
+      6 => 3,
+      7 => 3,
+      8 => 3,
+      9 => 3,
+      10 => 3,
+      11 => 3,
+      12 => 3,
+      13 => 3,
+      14 => 3,
+      15 => 2,
+      16 => 5
     }
 
     ################################################################
@@ -307,181 +307,181 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
 
     # set hash:  map_window[comstock glazing name][window film type (user input)] = [U-factor(SI), SHGC, VLT]
     map_window = {
-      "Simple Glazing Single - No LowE - Clear - Aluminum"=> {
-        "panetype"=> "Single",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Single - No LowE - Clear - Aluminum' => {
+        'panetype' => 'Single',
+        'int. film / min. SHGC / min. VLT' => [
           6.619,
           0.239,
           0.101
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           5.502,
           0.248,
           0.17
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           6.678,
           0.332,
           0.174
         ]
       },
-      "Simple Glazing Single - No LowE - Tinted/Reflective - Aluminum"=> {
-        "panetype"=> "Single",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Single - No LowE - Tinted/Reflective - Aluminum' => {
+        'panetype' => 'Single',
+        'int. film / min. SHGC / min. VLT' => [
           6.618,
           0.283,
           0.059
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           5.502,
           0.259,
           0.1
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           6.677,
           0.3,
           0.105
         ]
       },
-      "Simple Glazing Single - No LowE - Clear - Wood"=> {
-        "panetype"=> "Single",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Single - No LowE - Clear - Wood' => {
+        'panetype' => 'Single',
+        'int. film / min. SHGC / min. VLT' => [
           5.102,
           0.199,
           0.097
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           4.031,
           0.208,
           0.163
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           5.159,
           0.289,
           0.167
         ]
       },
-      "Simple Glazing Single - No LowE - Tinted/Reflective - Wood"=> {
-        "panetype"=> "Single",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Single - No LowE - Tinted/Reflective - Wood' => {
+        'panetype' => 'Single',
+        'int. film / min. SHGC / min. VLT' => [
           5.101,
           0.242,
           0.057
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           4.031,
           0.219,
           0.096
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           5.158,
           0.258,
           0.101
         ]
       },
-      "Simple Glazing Double - No LowE - Clear - Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - No LowE - Clear - Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           4.22,
           0.33,
           0.093
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           3.889,
           0.324,
           0.157
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           4.236,
           0.246,
           0.154
         ]
       },
-      "Simple Glazing Double - No LowE - Tinted/Reflective - Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - No LowE - Tinted/Reflective - Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           4.237,
           0.27,
           0.056
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           3.901,
           0.26,
           0.094
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           4.253,
           0.214,
           0.095
         ]
       },
-      "Simple Glazing Double - LowE - Clear - Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - LowE - Clear - Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           3.168,
           0.237,
           0.081
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           3.039,
           0.242,
           0.136
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           3.173,
           0.154,
           0.136
         ]
       },
-      "Simple Glazing Double - LowE - Clear - Thermally Broken Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - LowE - Clear - Thermally Broken Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           2.826,
           0.229,
           0.081
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           2.697,
           0.233,
           0.136
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           2.832,
           0.146,
           0.136
         ]
       },
-      "Simple Glazing Double - LowE - Tinted/Reflective - Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - LowE - Tinted/Reflective - Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           3.153,
           0.185,
           0.048
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           3.027,
           0.185,
           0.081
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           3.159,
           0.129,
           0.083
         ]
       },
-      "Simple Glazing Double - LowE - Tinted/Reflective - Thermally Broken Aluminum"=> {
-        "panetype"=> "Double",
-        "int. film / min. SHGC / min. VLT"=> [
+      'Simple Glazing Double - LowE - Tinted/Reflective - Thermally Broken Aluminum' => {
+        'panetype' => 'Double',
+        'int. film / min. SHGC / min. VLT' => [
           2.812,
           0.176,
           0.048
         ],
-        "int. film / min. SHGC / min. U-factor / min. VLT"=> [
+        'int. film / min. SHGC / min. U-factor / min. VLT' => [
           2.685,
           0.177,
           0.081
         ],
-        "ext. film / min. SHGC / min. VLT"=> [
+        'ext. film / min. SHGC / min. VLT' => [
           2.817,
           0.121,
           0.083
@@ -498,6 +498,7 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     constructions = []
     model.getSubSurfaces.each do |sub_surface|
       next unless sub_surface.subSurfaceType.include?('Window')
+
       sub_surfaces << sub_surface
       constructions << sub_surface.construction.get
       puts "--- add window to the list: #{sub_surface.name} | #{sub_surface.construction.get.to_Construction.get.layers[0].name}"
@@ -514,7 +515,7 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
       runner.registerAsNotApplicable('The building has no windows.')
       return true
     else
-      runner.registerInitialCondition("Found #{sub_surfaces.length()} sub-surfaces that include window")
+      runner.registerInitialCondition("Found #{sub_surfaces.length} sub-surfaces that include window")
     end
 
     ################################################################
@@ -534,13 +535,13 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     if climate_zone.empty?
       runner.registerError('Unable to determine climate zone for model. Cannot apply window film without climate zone information.')
     else
-      if climate_zone.include?("CEC")
-        climate_zone_num_ca = climate_zone.split("CEC")[-1]
+      if climate_zone.include?('CEC')
+        climate_zone_num_ca = climate_zone.split('CEC')[-1]
         puts "--- climate_zone_num_ca = #{climate_zone_num_ca}"
         climate_zone_num_iecc = map_cec_to_iecc[climate_zone_num_ca.to_i].to_i
         puts "--- climate_zone_num_iecc = #{climate_zone_num_iecc}"
-      elsif climate_zone.include?("ASHRAE")
-        climate_zone_num_iecc = climate_zone.split("-")[-1][0].to_i
+      elsif climate_zone.include?('ASHRAE')
+        climate_zone_num_iecc = climate_zone.split('-')[-1][0].to_i
         puts "--- climate_zone_num_iecc = #{climate_zone_num_iecc}"
       else
         runner.registerError('Unable to determine climate zone for model. Cannot apply window film without climate zone information.')
@@ -562,21 +563,19 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
 
     # replace window performances in baseline windows
     constructions.each do |construction|
-
       # don't apply measure if specified in input
       # break if apply_measure == false
 
       simple_glazings.each do |simple_glazing|
-
         simple_glazing_name = simple_glazing.name.get
         construction_name = construction.name.get
 
-        puts "--- ----------------------------------------------------------------------"
+        puts '--- ----------------------------------------------------------------------'
         puts "--- construction = #{construction_name}"
         puts "--- simple_glazing = #{simple_glazing_name}"
 
         # check availability of simple glazing system name in filtered construction
-        if not construction.to_Construction.get.layers[0].name.get == simple_glazing_name
+        if construction.to_Construction.get.layers[0].name.get != simple_glazing_name
           puts "--- simple glazing object name (#{simple_glazing_name}) not available in construction in interest. skipping.."
           next
         end
@@ -597,7 +596,7 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
         puts "--- found values in the map with climate zone #{climate_zone_num_iecc}"
 
         # get old values
-        puts "--- get existing window properties"
+        puts '--- get existing window properties'
         old_simple_glazing_u = simple_glazing.uFactor
         old_simple_glazing_shgc = simple_glazing.solarHeatGainCoefficient
         if simple_glazing.visibleTransmittance.is_initialized
@@ -608,15 +607,15 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
 
         # get correct pane type based on comstock glazing name
         # TODO: maybe there's a more elegant way than this
-        panetype = simple_glazing_name.split(" - ")[0].split("Simple Glazing ")[1]
+        panetype = simple_glazing_name.split(' - ')[0].split('Simple Glazing ')[1]
         puts "--- pane type based on glazing system name = #{panetype}"
 
         # get new values
         # map_input_arg[window pane type][climate zone number] = window film type (user input)
         # map_window[comstock glazing name][window film type (user input)] = [U-factor(SI), SHGC, VLT]
         filmtype = map_input_arg[panetype][climate_zone_num_iecc]
-        if filmtype == "no film"
-          puts "--- film type is not selected for this pane type and climate zone. skipping.."
+        if filmtype == 'no film'
+          puts '--- film type is not selected for this pane type and climate zone. skipping..'
           next
         end
         puts "--- film option type based on pane type and climate zone = #{filmtype}"
@@ -625,12 +624,12 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
         new_simple_glazing_vlt = map_window[simple_glazing_name][filmtype][2]
 
         # calculate relative differences
-        puts "--- calculate performance changes for reporting"
-        pct_u = ((new_simple_glazing_u-old_simple_glazing_u)/old_simple_glazing_u*100).round() # negative number meaning improvement
+        puts '--- calculate performance changes for reporting'
+        pct_u = ((new_simple_glazing_u - old_simple_glazing_u) / old_simple_glazing_u * 100).round # negative number meaning improvement
         pct_us << pct_u
-        pct_shgc = ((new_simple_glazing_shgc-old_simple_glazing_shgc)/old_simple_glazing_shgc*100).round() # negative number meaning improvement
+        pct_shgc = ((new_simple_glazing_shgc - old_simple_glazing_shgc) / old_simple_glazing_shgc * 100).round # negative number meaning improvement
         pct_shgcs << pct_shgc
-        pct_vlt = ((new_simple_glazing_vlt-old_simple_glazing_vlt)/old_simple_glazing_vlt*100).round()
+        pct_vlt = ((new_simple_glazing_vlt - old_simple_glazing_vlt) / old_simple_glazing_vlt * 100).round
         pct_vlts << pct_vlt
 
         # check if construction has been made
@@ -670,6 +669,7 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
           puts "--- assigning new construction with the new glazing system to the surface (#{sub_surface.name.get}) with (exterior) windows"
           # assign new construction to fenestration surfaces and add total area changed if construction names match
           next unless sub_surface.construction.get.to_Construction.get.layers[0].name.get == construction.to_Construction.get.layers[0].name.get
+
           sub_surface.setConstruction(new_construction)
           area_changed_m2 += sub_surface.grossArea
           # report
@@ -731,13 +731,14 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     puts '### check measure applicability'
     ################################################################
 
-    if area_changed_m2 != 0
+    if area_changed_m2 == 0
+      area_changed_m2 == 0
+      runner.registerAsNotApplicable('No changes in U-factor/SHGC/VLT since window film is not added.')
+      return true
+    else
       runner.registerInfo("U-factor changes (in %) on each window by adding window film = #{pct_us}")
       runner.registerInfo("SHGC changes (in %) on each window by adding window film = #{pct_shgcs}")
       runner.registerInfo("VLT changes (in %) on each window by adding window film = #{pct_vlts}")
-    else area_changed_m2 == 0
-      runner.registerAsNotApplicable("No changes in U-factor/SHGC/VLT since window film is not added.")
-      return true
     end
 
     ################################################################
@@ -757,15 +758,14 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     puts "--- pct_vlt_avg = #{pct_vlt_avg}"
 
     area_changed_ft2 = OpenStudio.convert(area_changed_m2, 'm^2', 'ft^2').get
-    if area_changed_ft2 != 0
-      runner.registerFinalCondition("Added window film to a total of #{area_changed_ft2.round(2)} ft2 that changed U-factor by #{pct_u_avg}%, SHGC by #{pct_shgc_avg}%, and VLT by #{pct_vlt_avg}%.")
+    if area_changed_ft2 == 0
+      runner.registerFinalCondition('Window film is not added.')
     else
-      runner.registerFinalCondition("Window film is not added.")
+      runner.registerFinalCondition("Added window film to a total of #{area_changed_ft2.round(2)} ft2 that changed U-factor by #{pct_u_avg}%, SHGC by #{pct_shgc_avg}%, and VLT by #{pct_vlt_avg}%.")
     end
     runner.registerValue('env_window_film_fen_area_ft2', area_changed_ft2.round(2), 'ft2')
 
     return true
-
   end
 end
 

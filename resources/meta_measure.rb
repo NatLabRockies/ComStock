@@ -3,7 +3,7 @@
 
 # Helper methods related to having a meta-measure
 
-def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, osw_out=nil, show_measure_calls=true)
+def apply_measures(measures_dirs, measures, runner, model, workflow_json = nil, osw_out = nil, show_measure_calls = true)
   require 'openstudio'
 
   workflow_order = []
@@ -13,10 +13,11 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, os
     end
   else
     # Run measures in the order dictated by the json instead
-    JSON.parse(File.read(workflow_json), :symbolize_names=>true).each do |group|
+    JSON.parse(File.read(workflow_json), symbolize_names: true).each do |group|
       group[:group_steps].each do |step|
         step[:measures].each do |measure_subdir|
           next unless measures.keys.include? measure_subdir
+
           workflow_order << measure_subdir
         end
       end
@@ -24,22 +25,24 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, os
     # Tack additional measure not found in workflow_json on the end
     measures.keys.each do |measure_subdir|
       next if workflow_order.include? measure_subdir
+
       workflow_order << measure_subdir
     end
   end
 
-  if not osw_out.nil?
+  if !osw_out.nil?
     # Create a workflow based on the measures we're going to call. Convenient for debugging.
     workflowJSON = OpenStudio::WorkflowJSON.new
     workflowJSON.setOswPath(File.expand_path("../#{osw_out}"))
-    workflowJSON.addMeasurePath("measures")
-    workflowJSON.setSeedFile("seeds/EmptySeedModel.osm")
+    workflowJSON.addMeasurePath('measures')
+    workflowJSON.setSeedFile('seeds/EmptySeedModel.osm')
     steps = OpenStudio::WorkflowStepVector.new
     workflow_order.each do |measure_subdir|
       measures[measure_subdir].each do |args|
         step = OpenStudio::MeasureStep.new(measure_subdir)
-        args.each do |k,v|
+        args.each do |k, v|
           next if v.nil?
+
           step.setArgument(k, v)
         end
         steps.push(step)
@@ -57,7 +60,7 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, os
     # Find the full measure path in one of the measures directories
     full_measure_path = nil
     measures_dirs.each do |measures_dir|
-      potential_measure_path = File.join(measures_dir, measure_subdir, "measure.rb")
+      potential_measure_path = File.join(measures_dir, measure_subdir, 'measure.rb')
       if File.exist?(potential_measure_path)
         full_measure_path = potential_measure_path
         break
@@ -75,9 +78,10 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, os
       end
 
       measure_result = run_measure(model, measure_instance, argument_map, runner) # true, false, 'NA'
-      if not measure_result
+      if !measure_result
         return false
       end
+
       all_measure_results << measure_result # true, 'NA'
     end
   end
@@ -89,22 +93,22 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json=nil, os
 
   # Return true if one or more are applicable
   # Only return NA if ALL measures are NA
-  if num_applicable > 0
-    return true
-  else
-    return 'NA'
-  end
+  return true if num_applicable > 0
+
+
+  return 'NA'
 end
 
 def print_measure_call(measure_args, measure_dir, runner)
-  if measure_args.nil? or measure_dir.nil?
+  if measure_args.nil? || measure_dir.nil?
     return
   end
-  args_s = hash_to_string(measure_args, delim=" -> ", separator=" \n")
-  if args_s.size > 0
-    runner.registerInfo("Calling #{measure_dir.to_s} measure with arguments:\n#{args_s}")
+
+  args_s = hash_to_string(measure_args, delim = ' -> ', separator = " \n")
+  if args_s.empty?
+    runner.registerInfo("Calling #{measure_dir} measure with no arguments.")
   else
-    runner.registerInfo("Calling #{measure_dir.to_s} measure with no arguments.")
+    runner.registerInfo("Calling #{measure_dir} measure with arguments:\n#{args_s}")
   end
 end
 
@@ -112,67 +116,70 @@ def get_measure_instance(measure_rb_path)
   # Parse XML file for class name
   require 'rexml/document'
   require 'rexml/xpath'
-  xmldoc = REXML::Document.new(File.read(measure_rb_path.sub(".rb",".xml")))
-  measure_class = REXML::XPath.first(xmldoc, "//measure/class_name").text
+  xmldoc = REXML::Document.new(File.read(measure_rb_path.sub('.rb', '.xml')))
+  measure_class = REXML::XPath.first(xmldoc, '//measure/class_name').text
   # Create new instance
-  require (measure_rb_path)
+  require(measure_rb_path)
   measure = eval(measure_class).new
   return measure
 end
 
-def validate_measure_args(measure_args, provided_args, lookup_file, measure_name, runner=nil)
-  measure_arg_names = measure_args.map { |arg| arg.name }
-  lookup_file_str = ""
-  if not lookup_file.nil?
-    lookup_file_str = " in #{lookup_file.to_s}"
+def validate_measure_args(measure_args, provided_args, lookup_file, measure_name, runner = nil)
+  measure_arg_names = measure_args.map(&:name)
+  lookup_file_str = ''
+  if !lookup_file.nil?
+    lookup_file_str = " in #{lookup_file}"
   end
   # Verify all arguments have been provided
   measure_args.each do |arg|
     next if provided_args.keys.include?(arg.name)
-    next if not arg.required
-    register_error("Required argument '#{arg.name}' not provided#{lookup_file_str} for measure '#{measure_name.to_s}'.", runner)
+    next if !arg.required
+
+    register_error("Required argument '#{arg.name}' not provided#{lookup_file_str} for measure '#{measure_name}'.", runner)
   end
   provided_args.keys.each do |k|
     next if measure_arg_names.include?(k)
-    register_error("Extra argument '#{k}' specified#{lookup_file_str} for measure '#{measure_name.to_s}'.", runner)
+
+    register_error("Extra argument '#{k}' specified#{lookup_file_str} for measure '#{measure_name}'.", runner)
   end
   # Check for valid argument values
   measure_args.each do |arg|
     # Get measure provided arg
     if provided_args[arg.name].nil?
-      if arg.required
-        register_error("Required argument '#{arg.name.to_s}' for measure '#{measure_name.to_s}' must have a value provided.", runner)
-      else
-        next
-      end
+      next unless arg.required
+
+      register_error("Required argument '#{arg.name}' for measure '#{measure_name}' must have a value provided.", runner)
+
+
+
     else
       provided_args[arg.name] = provided_args[arg.name].to_s
     end
     case arg.type.valueName.downcase
-    when "boolean"
-      if not ['true','false'].include?(provided_args[arg.name])
-        register_error("Value of '#{provided_args[arg.name].to_s}' for argument '#{arg.name.to_s}' and measure '#{measure_name.to_s}' must be 'true' or 'false'.", runner)
+    when 'boolean'
+      if !['true', 'false'].include?(provided_args[arg.name])
+        register_error("Value of '#{provided_args[arg.name]}' for argument '#{arg.name}' and measure '#{measure_name}' must be 'true' or 'false'.", runner)
       end
-    when "double"
-      if not provided_args[arg.name].is_number?
-        register_error("Value of '#{provided_args[arg.name].to_s}' for argument '#{arg.name.to_s}' and measure '#{measure_name.to_s}' must be a number.", runner)
+    when 'double'
+      if !provided_args[arg.name].is_number?
+        register_error("Value of '#{provided_args[arg.name]}' for argument '#{arg.name}' and measure '#{measure_name}' must be a number.", runner)
       end
-    when "integer"
-      if not provided_args[arg.name].is_integer?
-        register_error("Value of '#{provided_args[arg.name].to_s}' for argument '#{arg.name.to_s}' and measure '#{measure_name.to_s}' must be an integer.", runner)
+    when 'integer'
+      if !provided_args[arg.name].is_integer?
+        register_error("Value of '#{provided_args[arg.name]}' for argument '#{arg.name}' and measure '#{measure_name}' must be an integer.", runner)
       end
-    when "string"
+    when 'string'
       # no op
-    when "choice"
-      if not arg.choiceValues.include?(provided_args[arg.name])
-        register_error("Value of '#{provided_args[arg.name].to_s}' for argument '#{arg.name.to_s}' and measure '#{measure_name.to_s}' must be one of: #{arg.choiceValues.to_s}.", runner)
+    when 'choice'
+      if !arg.choiceValues.include?(provided_args[arg.name])
+        register_error("Value of '#{provided_args[arg.name]}' for argument '#{arg.name}' and measure '#{measure_name}' must be one of: #{arg.choiceValues}.", runner)
       end
     end
   end
   return provided_args
 end
 
-def get_argument_map(model, measure, provided_args, lookup_file, measure_name, runner=nil)
+def get_argument_map(model, measure, provided_args, lookup_file, measure_name, runner = nil)
   require 'openstudio'
   measure_args = measure.arguments(model)
   provided_args = validate_measure_args(measure_args, provided_args, lookup_file, measure_name, runner)
@@ -220,24 +227,24 @@ def run_measure(model, measure, argument_map, runner)
     result_child.errors.each do |error|
       runner.registerError(error.logMessage)
     end
-    if result_child.errors.size > 0
+    if !result_child.errors.empty?
       return false
     end
 
     # log all the measure arguments
     measure_name = measure.name.to_s.downcase.gsub(' ', '_')
     argument_map.each do |arg_name, arg|
-      runner.registerValue("#{measure_name}_#{arg.name}", "#{arg.valueAsString}" )
+      runner.registerValue("#{measure_name}_#{arg.name}", arg.valueAsString.to_s)
     end
 
     # log runtime for detecting measure hotspots within meta-measure
     runner.registerInfo("#{measure_name} runtime: #{(end_time - start_time).round(1)} seconds")
 
     # convert a return false in the measure to a return false and error here.
-    if result_child.value.valueName == "Fail"
-      runner.registerError("The measure was not successful")
+    if result_child.value.valueName == 'Fail'
+      runner.registerError('The measure was not successful')
       return false
-    elsif result_child.value.valueName == "NA"
+    elsif result_child.value.valueName == 'NA'
       runner.registerValue("#{measure_name}_applicable", false) # For understanding multi-measure upgrades in results_csv
       return 'NA'
     else
@@ -251,40 +258,38 @@ def run_measure(model, measure, argument_map, runner)
   return true
 end
 
-def hash_to_string(hash, delim="=", separator=",")
-  hash_s = ""
-  hash.each do |k,v|
-    hash_s << "#{k.to_s}#{delim.to_s}#{v.to_s}#{separator.to_s}"
+def hash_to_string(hash, delim = '=', separator = ',')
+  hash_s = ''
+  hash.each do |k, v|
+    hash_s << "#{k}#{delim}#{v}#{separator}"
   end
-  if hash_s.size > 0
+  if !hash_s.empty?
     hash_s = hash_s.chomp(separator.to_s)
   end
   return hash_s
 end
 
-def register_error(msg, runner=nil)
-  if not runner.nil?
-    runner.registerError(msg)
-    fail msg # OS 2.0 will handle this more gracefully
-  else
-    raise "ERROR: #{msg}"
-  end
+def register_error(msg, runner = nil)
+  raise "ERROR: #{msg}" if runner.nil?
+
+  runner.registerError(msg)
+  raise msg # OS 2.0 will handle this more gracefully
 end
 
-def check_file_exists(full_path, runner=nil)
-  if not File.exist?(full_path)
-    register_error("Cannot find file #{full_path.to_s}.", runner)
-  end
+def check_file_exists(full_path, runner = nil)
+  return if File.exist?(full_path)
+
+  register_error("Cannot find file #{full_path}.", runner)
 end
 
-def check_dir_exists(full_path, runner=nil)
-  if not Dir.exist?(full_path)
-    register_error("Cannot find directory #{full_path.to_s}.", runner)
-  end
+def check_dir_exists(full_path, runner = nil)
+  return if Dir.exist?(full_path)
+
+  register_error("Cannot find directory #{full_path}.", runner)
 end
 
-def update_args_hash(hash, key, args, add_new=true)
-  if not hash.keys.include? key
+def update_args_hash(hash, key, args, add_new = true)
+  if !hash.keys.include? key
     hash[key] = [args]
   elsif add_new
     hash[key] << args
@@ -297,17 +302,19 @@ end
 
 class String
   def is_number?
-    true if Float(self) rescue false
+    true if Float(self)
+  rescue StandardError
+    false
   end
 
   def is_integer?
-    if not self.is_number?
+    if !is_number?
       return false
     end
     if Integer(Float(self)).to_f != Float(self)
       return false
     end
+
     return true
   end
-
 end

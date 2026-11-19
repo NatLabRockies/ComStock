@@ -156,9 +156,9 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   # Build array of arrays: each top element is a week, each sub element is an hour of week
   all_week_values = []
   hr_of_yr = -1
-  (0..51).each do |_iweek|
+  52.times do |_iweek|
     week_values = []
-    (0..167).each do |hr_of_wk|
+    168.times do |hr_of_wk|
       hr_of_yr += 1
       week_values[hr_of_wk] = values[hr_of_yr]
     end
@@ -199,9 +199,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   all_week_rules = { iweek_previous_week_rule: week_1_rules }
 
   # temporary loop for debugging
-  week_n_rules.each do |sch_rule|
-    sch_rule.daySchedule
-  end
+  week_n_rules.each(&:daySchedule)
 
   # For each subsequent week, check if it is same as previous
   # If same, then append to Schedule:Rule of previous week
@@ -210,7 +208,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
     is_a_match = true
     start_date = end_date + one_day
     end_date += seven_days
-    (0..167).each do |ihr|
+    168.times do |ihr|
       if all_week_values[iweek][ihr] != all_week_values[iweek_previous_week_rule][ihr]
         is_a_match = false
         break
@@ -223,7 +221,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
     else
       # Create a new week schedule for this week
       num_week_scheds += 1
-      week_sch_name = sch_name + '_ws' + num_week_scheds.to_s
+      week_sch_name = "#{sch_name}_ws#{num_week_scheds}"
       week_n_rules = std.make_week_ruleset_sched_from_168(model, sch_ruleset, all_week_values[iweek], start_date,
                                                           end_date, week_sch_name)
       all_week_rules[:iweek_previous_week_rule] = week_n_rules
@@ -233,9 +231,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   end
 
   # temporary loop for debugging
-  week_n_rules.each do |sch_rule|
-    sch_rule.daySchedule
-  end
+  week_n_rules.each(&:daySchedule)
 
   # Need to handle week 52 with days 365 and 366
   # For each of these days, check if it matches a day from the previous week
@@ -258,7 +254,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
         day_values << now_value
       end
     end
-    (0..23).each do |ihr|
+    24.times do |ihr|
       next unless day_values[ihr] != all_week_values[iweek][ihr + ihr_start]
 
       # not matching for this day_rule
@@ -278,7 +274,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
     day_names = [day_of_week]
     day_sch_name = "#{sch_name}_Day_365"
     day_sch_values = []
-    (0..23).each do |ihr|
+    24.times do |ihr|
       day_sch_values << all_week_values[iweek][ihr]
     end
     # sch_rule is a sub-component of the ScheduleRuleset
@@ -361,10 +357,10 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   hr_of_yr = -1
   max_eflh = 0
   ihr_max = -1
-  (0..364).each do |_iday|
+  365.times do |_iday|
     eflh = 0
     ihr_start = hr_of_yr + 1
-    (0..23).each do |_ihr|
+    24.times do |_ihr|
       hr_of_yr += 1
       eflh += 1 if values[hr_of_yr] > 0
     end
@@ -377,7 +373,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   # Create the schedules for the design days
   day_sch = OpenStudio::Model::ScheduleDay.new(model)
   day_sch.setName("#{sch_name} Winter Design Day")
-  (0..23).each do |ihr|
+  24.times do |ihr|
     hr_of_yr = ihr_max + ihr
     next if values[hr_of_yr] == values[hr_of_yr + 1]
 
@@ -387,7 +383,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
 
   day_sch = OpenStudio::Model::ScheduleDay.new(model)
   day_sch.setName("#{sch_name} Summer Design Day")
-  (0..23).each do |ihr|
+  24.times do |ihr|
     hr_of_yr = ihr_max + ihr
     next if values[hr_of_yr] == values[hr_of_yr + 1]
 

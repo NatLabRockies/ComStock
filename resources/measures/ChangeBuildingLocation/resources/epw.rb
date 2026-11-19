@@ -94,7 +94,7 @@ module OpenStudio
           xml_builder_obj.visibility '0'
           xml_builder_obj.description do
             xml_builder_obj.cdata!('<img src="kml/ep_header8.png" width=180 align=right><br><table><tr><td colspan="2">'\
-                           "<b>#{@city}</b></href></td></tr>\n" +
+                                   "<b>#{@city}</b></href></td></tr>\n" +
                                        # "<tr><td></td><td><b>Data Type</td></tr>\n"+
                                        "<tr><td></td><td>WMO <b>#{@wmo}</b></td></tr>\n" +
                                        # "<tr><td></td><td>E   3� 15'   N 36� 43'</td></tr>\n"+
@@ -200,11 +200,12 @@ module OpenStudio
             @state = row[2]
             @country = row[3]
             @data_type = row[4]
-            if @data_type =~ /TMY3/i
+            case @data_type
+            when /TMY3/i
               @data_type = 'TMY3'
-            elsif @data_type =~ /TMY2/i
+            when /TMY2/i
               @data_type = 'TMY2'
-            elsif @data_type =~ /TMY/i
+            when /TMY/i
               @data_type = 'TMY'
             end
             @wmo = row[5]

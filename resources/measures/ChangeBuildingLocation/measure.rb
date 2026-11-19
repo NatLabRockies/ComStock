@@ -326,7 +326,7 @@ class ChangeBuildingLocation < OpenStudio::Measure::ModelMeasure
       # Get Climate zone.
       # - Climate type "3B" (ASHRAE Standard 196-2013 Climate Zone)**
       # - Climate type "6A" (ASHRAE Standards 90.1-2004 and 90.2-2004 Climate Zone)**
-      regex = /Climate type \"(.*?)\" \(ASHRAE Standards?(.*)\)\*\*/
+      regex = /Climate type "(.*?)" \(ASHRAE Standards?(.*)\)\*\*/
       match_data = text.match(regex)
       if match_data.nil?
         runner.registerWarning("Can't find ASHRAE climate zone in stat file.")

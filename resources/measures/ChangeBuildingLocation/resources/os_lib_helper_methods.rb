@@ -92,11 +92,10 @@ module OsLib_HelperMethods
       end
     end
 
-    if error
-      return false
-    else
-      return result
-    end
+    return false if error
+
+
+    return result
   end
 
   # check choice argument made from model objects
@@ -205,11 +204,10 @@ module OsLib_HelperMethods
     end
 
     # check for any errors
-    if error
-      return false
-    else
-      return true
-    end
+    return false if error
+
+
+    return true
   end
 
   # open channel to log info/warning/error messages
@@ -306,10 +304,10 @@ module OsLib_HelperMethods
   def self.neatConvertWithUnitDisplay(double, fromString, toString, digits, unitBefore = false, unitAfter = true, space = true, parentheses = true)
     # convert units
     doubleConverted = OpenStudio.convert(double, fromString, toString)
-    if !doubleConverted.nil?
-      doubleConverted = doubleConverted.get
-    else
+    if doubleConverted.nil?
       puts "Couldn't convert values, check string choices passed in. From: #{fromString}, To: #{toString}"
+    else
+      doubleConverted = doubleConverted.get
     end
 
     # get neat version of converted
@@ -356,10 +354,8 @@ module OsLib_HelperMethods
     objectArray.each do |object|
       object_LCCs = object.lifeCycleCosts
       object_LCCs.each do |object_LCC|
-        if object_LCC.category == category
-          if onlyYearFromStartZero == false || object_LCC.yearsFromStart == 0
-            counter += object_LCC.totalCost
-          end
+        if object_LCC.category == category && (onlyYearFromStartZero == false || object_LCC.yearsFromStart == 0)
+          counter += object_LCC.totalCost
         end
       end
     end
@@ -374,17 +370,17 @@ module OsLib_HelperMethods
 
     spaceTypeArray.each do |spaceType|
       # get standards building
-      if !spaceType.standardsBuildingType.empty?
-        standardsBuilding = spaceType.standardsBuildingType.get
-      else
+      if spaceType.standardsBuildingType.empty?
         standardsBuilding = nil
+      else
+        standardsBuilding = spaceType.standardsBuildingType.get
       end
 
       # get standards space type
-      if !spaceType.standardsSpaceType.empty?
-        standardsSpaceType = spaceType.standardsSpaceType.get
-      else
+      if spaceType.standardsSpaceType.empty?
         standardsSpaceType = nil
+      else
+        standardsSpaceType = spaceType.standardsSpaceType.get
       end
 
       # populate hash

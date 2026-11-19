@@ -6,7 +6,7 @@
 # see the URL below for information on how to write OpenStudio measures
 # http://nrel.github.io/OpenStudio-user-documentation/reference/measure_writing_guide/
 require 'comstock-typical'
-Dir[File.dirname(__FILE__) + '/resources/*.rb'].each { |file| require file }
+Dir["#{File.dirname(__FILE__)}/resources/*.rb"].sort.each { |file| require file }
 
 # start the measure
 class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
@@ -40,7 +40,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     args = OpenStudio::Measure::OSArgumentVector.new
 
     # make list of backup heat options
-    li_backup_heat_options = %w[match_original_primary_heating_fuel electric_resistance_backup]
+    li_backup_heat_options = ['match_original_primary_heating_fuel', 'electric_resistance_backup']
     v_backup_heat_options = OpenStudio::StringVector.new
     li_backup_heat_options.each do |option|
       v_backup_heat_options << option
@@ -97,7 +97,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     args << hp_min_comp_lockout_temp_f
 
     # make list of cchpc scenarios
-    li_hprtu_scenarios = %w[two_speed_standard_eff two_speed_lab_data variable_speed_high_eff cchpc_2027_spec]
+    li_hprtu_scenarios = ['two_speed_standard_eff', 'two_speed_lab_data', 'variable_speed_high_eff', 'cchpc_2027_spec']
     v_li_hprtu_scenarios = OpenStudio::StringVector.new
     li_hprtu_scenarios.each do |option|
       v_li_hprtu_scenarios << option
@@ -583,7 +583,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
           runner.registerInfo("stage summary: dx_rated_cap_applied: #{dx_rated_cap_applied}")
         end
 
-        ratio_allowance_50_pct = ratio + (stage_cap_fractions[stage + 1] - ratio) * 0.65
+        ratio_allowance_50_pct = ratio + ((stage_cap_fractions[stage + 1] - ratio) * 0.65)
         required_stage_cap_ratio = airflow / m_3_per_s_per_w_max / (stage_cap_fractions[rated_stage_num] * dx_rated_cap_applied)
         stage_airflow_limit_max = m_3_per_s_per_w_max * stage_capacity
         # if not violating min airflow requirement
@@ -672,7 +672,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_dx_cooling_coil.setLatentCapacityTimeConstant(45)
       # For crankcase heater, conversion is watts to tons
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS AND COMMERCIAL AND INDUSTRIAL EQUIPMENT AIR-COOLED COMMERCIAL UNITARY AIR CONDITIONERS AND COMMERCIAL UNITARY HEAT PUMPS"
-      crankcase_heater_power = ((60 * (stage_caps_cooling[rated_stage_num_cooling] * 0.0002843451 / 10)**0.67))
+      crankcase_heater_power = ((60 * ((stage_caps_cooling[rated_stage_num_cooling] * 0.0002843451 / 10)**0.67)))
       new_dx_cooling_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
       new_dx_cooling_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-25)
 
@@ -690,7 +690,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_dx_cooling_coil.setFuelType('Electricity')
       new_dx_cooling_coil.setMaximumOutdoorDryBulbTemperatureforCrankcaseHeaterOperation(4.4)
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS AND COMMERCIAL AND INDUSTRIAL EQUIPMENT AIR-COOLED COMMERCIAL UNITARY AIR CONDITIONERS AND COMMERCIAL UNITARY HEAT PUMPS"
-      crankcase_heater_power = ((60 * (stage_caps_cooling[rated_stage_num_cooling] * 0.0002843451 / 10)**0.67))
+      crankcase_heater_power = ((60 * ((stage_caps_cooling[rated_stage_num_cooling] * 0.0002843451 / 10)**0.67)))
       new_dx_cooling_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
       new_dx_cooling_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-25)
 
@@ -764,7 +764,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_dx_heating_coil.setPartLoadFractionCorrelationCurve(heat_plf_fplr1)
       # For crankcase heater, conversion is watts to tons
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS AND COMMERCIAL AND INDUSTRIAL EQUIPMENT AIR-COOLED COMMERCIAL UNITARY AIR CONDITIONERS AND COMMERCIAL UNITARY HEAT PUMPS"
-      crankcase_heater_power = ((60 * (stage_caps_heating[rated_stage_num_heating] * 0.0002843451 / 10)**0.67))
+      crankcase_heater_power = ((60 * ((stage_caps_heating[rated_stage_num_heating] * 0.0002843451 / 10)**0.67)))
       new_dx_heating_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
       new_dx_heating_coil.setMaximumOutdoorDryBulbTemperatureforCrankcaseHeaterOperation(4.4)
       new_dx_heating_coil.setDefrostEnergyInputRatioFunctionofTemperatureCurve(defrost_eir)
@@ -785,7 +785,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       new_dx_heating_coil.setApplyPartLoadFractiontoSpeedsGreaterthan1(enable_cycling_losses_above_lowest_speed)
       new_dx_heating_coil.setFuelType('Electricity')
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS AND COMMERCIAL AND INDUSTRIAL EQUIPMENT AIR-COOLED COMMERCIAL UNITARY AIR CONDITIONERS AND COMMERCIAL UNITARY HEAT PUMPS"
-      crankcase_heater_power = ((60 * (stage_caps_heating[rated_stage_num_heating] * 0.0002843451 / 10)**0.67))
+      crankcase_heater_power = ((60 * ((stage_caps_heating[rated_stage_num_heating] * 0.0002843451 / 10)**0.67)))
       new_dx_heating_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
       new_dx_heating_coil.setMaximumOutdoorDryBulbTemperatureforCrankcaseHeaterOperation(4.4)
       new_dx_heating_coil.setDefrostEnergyInputRatioFunctionofTemperatureCurve(defrost_eir)
@@ -881,10 +881,10 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       y2 = ind_var_2[i2_upper]
 
       # Get dependent variable values for bilinear interpolation
-      v11 = dep_var[i1_lower * ind_var_2.size + i2_lower]  # (x1, y1)
-      v12 = dep_var[i1_lower * ind_var_2.size + i2_upper]  # (x1, y2)
-      v21 = dep_var[i1_upper * ind_var_2.size + i2_lower]  # (x2, y1)
-      v22 = dep_var[i1_upper * ind_var_2.size + i2_upper]  # (x2, y2)
+      v11 = dep_var[(i1_lower * ind_var_2.size) + i2_lower]  # (x1, y1)
+      v12 = dep_var[(i1_lower * ind_var_2.size) + i2_upper]  # (x1, y2)
+      v21 = dep_var[(i1_upper * ind_var_2.size) + i2_lower]  # (x2, y1)
+      v22 = dep_var[(i1_upper * ind_var_2.size) + i2_upper]  # (x2, y2)
 
       # If exact match, return directly
       if input1 == x1 && input2 == y1
@@ -901,15 +901,15 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       dx = x2 - x1
       dy = y2 - y1
       return v11 if dx == 0 && dy == 0
-      return v11 + (v21 - v11) * (input1 - x1) / dx if dy == 0
-      return v11 + (v12 - v11) * (input2 - y1) / dy if dx == 0
+      return v11 + ((v21 - v11) * (input1 - x1) / dx) if dy == 0
+      return v11 + ((v12 - v11) * (input2 - y1) / dy) if dx == 0
 
       # Bilinear interpolation
       interpolated_value =
-        v11 * (x2 - input1) * (y2 - input2) +
-        v21 * (input1 - x1) * (y2 - input2) +
-        v12 * (x2 - input1) * (input2 - y1) +
-        v22 * (input1 - x1) * (input2 - y1)
+        (v11 * (x2 - input1) * (y2 - input2)) +
+        (v21 * (input1 - x1) * (y2 - input2)) +
+        (v12 * (x2 - input1) * (input2 - y1)) +
+        (v22 * (input1 - x1) * (input2 - y1))
 
       interpolated_value /= (x2 - x1) * (y2 - y1)
 
@@ -991,9 +991,9 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       air_loop_hvac.supplyComponents.each do |component|
         obj_type = component.iddObjectType.valueName.to_s
         # flag system if contains water coil; this will cause air loop to be skipped
-        is_water_coil = true if %w[Coil_Heating_Water Coil_Cooling_Water].any? { |word| obj_type.include?(word) }
+        is_water_coil = true if ['Coil_Heating_Water', 'Coil_Cooling_Water'].any? { |word| obj_type.include?(word) }
         # flag gas heating as true if gas coil is found in any airloop
-        prim_ht_fuel_type = 'gas' if %w[Gas GAS gas].any? { |word| obj_type.include?(word) }
+        prim_ht_fuel_type = 'gas' if ['Gas', 'GAS', 'gas'].any? { |word| obj_type.include?(word) }
         # check unitary systems for DX heating or water coils
         if obj_type == 'OS_AirLoopHVAC_UnitarySystem'
           unitary_sys = component.to_AirLoopHVACUnitarySystem.get
@@ -1008,7 +1008,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
             elsif ['Water'].any? { |word| htg_coil.include?(word) }
               is_water_coil = true
             # check for gas heating
-            elsif %w[Gas GAS gas].any? { |word| htg_coil.include?(word) }
+            elsif ['Gas', 'GAS', 'gas'].any? { |word| htg_coil.include?(word) }
               prim_ht_fuel_type = 'gas'
             end
           else
@@ -1039,7 +1039,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # skip kitchens
       next if OpenstudioStandards::SpaceType.air_loop_hvac_serves_space_types?(air_loop_hvac, ['food preparation'])
       # skip VAV sysems
-      next if %w[VAV PVAV].any? { |word| air_loop_hvac.name.get.include?(word) }
+      next if ['VAV', 'PVAV'].any? { |word| air_loop_hvac.name.get.include?(word) }
       # skip if residential system
       next if air_loop_res?(air_loop_hvac)
       # skip if system has no outdoor air, also indication of residential system
@@ -1290,7 +1290,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
     # building type not applicable to ERVs as part of this measure will receive no additional or modification of ERV systems
     # this is only relevant if the user selected to add ERVs
     # space type applicability is handled later in the code when looping through individual air loops
-    building_types_to_exclude = %w[RFF RSD QuickServiceRestaurant FullServiceRestaurant]
+    building_types_to_exclude = ['RFF', 'RSD', 'QuickServiceRestaurant', 'FullServiceRestaurant']
     # determine building type applicability for ERV
     btype_erv_applicable = true
     building_types_to_exclude = building_types_to_exclude.map(&:downcase)
@@ -1315,7 +1315,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
     # Get ER/HR type from climate zone
     _, _, doas_type =
-      if %w[1A 2A 3A 4A 5A 6A 7 7A 8 8A].include?(climate_zone_classification)
+      if ['1A', '2A', '3A', '4A', '5A', '6A', '7', '7A', '8', '8A'].include?(climate_zone_classification)
         [12.7778, 19.4444, 'ERV']
       else
         [15.5556, 19.4444, 'HRV']
@@ -1727,7 +1727,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
           # convert component to string name
           obj_type = component.iddObjectType.valueName.to_s
           # skip unless component is of relevant type
-          next unless %w[Fan Unitary Coil].any? { |word| obj_type.include?(word) }
+          next unless ['Fan', 'Unitary', 'Coil'].any? { |word| obj_type.include?(word) }
 
           # make list of equipment to delete
           equip_to_delete << component
@@ -1832,7 +1832,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
           # convert component to string name
           obj_type = component.iddObjectType.valueName.to_s
           # skip unless component is of relevant type
-          next unless %w[Fan Unitary Coil].any? { |word| obj_type.include?(word) }
+          next unless ['Fan', 'Unitary', 'Coil'].any? { |word| obj_type.include?(word) }
 
           # make list of equipment to delete
           equip_to_delete << component
@@ -2064,7 +2064,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
 
       # user-specified design
       oa_temp_c = hp_sizing_temp_c
-      dns_htg_load_at_user_dsn_temp = htg_load_slope * hp_sizing_temp_c + htg_load_intercept
+      dns_htg_load_at_user_dsn_temp = (htg_load_slope * hp_sizing_temp_c) + htg_load_intercept
       if heat_cap_ft_curve_stages[rated_stage_num_heating].to_TableLookup.is_initialized
         table_lookup_obj = heat_cap_ft_curve_stages[rated_stage_num_heating].to_TableLookup.get
         hp_derate_factor_at_user_dsn = AddHeatPumpRtu.get_dep_var_from_lookup_table_with_interpolation(runner, table_lookup_obj,
@@ -2182,11 +2182,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       end
 
       # set airloop design airflow based on the maximum of heating and cooling design flow
-      design_airflow_for_sizing_m_3_per_s = if design_cooling_airflow_m_3_per_s < design_heating_airflow_m_3_per_s
-                                              design_heating_airflow_m_3_per_s
-                                            else
-                                              design_cooling_airflow_m_3_per_s
-                                            end
+      design_airflow_for_sizing_m_3_per_s = [design_cooling_airflow_m_3_per_s, design_heating_airflow_m_3_per_s].max
 
       # reset supply airflow if less than minimum OA
       design_airflow_for_sizing_m_3_per_s = oa_flow_m3_per_s if oa_flow_m3_per_s > design_airflow_for_sizing_m_3_per_s
@@ -2228,7 +2224,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
                   else
                     ratio * design_heating_airflow_m_3_per_s
                   end
-        stage_flows_heating[stage] = airflow >= min_airflow_m3_per_s ? airflow : min_airflow_m3_per_s
+        stage_flows_heating[stage] = [airflow, min_airflow_m3_per_s].max
       end
 
       # determine airflows for each stage of cooling
@@ -2237,7 +2233,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       stage_flows_cooling = {}
       stage_flow_fractions_cooling.sort.each do |stage, ratio|
         airflow = ratio * design_cooling_airflow_m_3_per_s
-        stage_flows_cooling[stage] = airflow >= min_airflow_m3_per_s ? airflow : min_airflow_m3_per_s
+        stage_flows_cooling[stage] = [airflow, min_airflow_m3_per_s].max
       end
 
       if debug_verbose

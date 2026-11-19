@@ -476,7 +476,7 @@ class UtilityBillsTest < Minitest::Test
     assert_includes(rvs['electricity_utility_bill_results'].scan(utility_id_regexp).flatten, elec_util_from_file)
 
     # check that all results are populated with min, max, mean, med, num
-    results_regexp = "/\|#{elec_util_from_file}:(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?)\|/"
+    results_regexp = "/|#{elec_util_from_file}:(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?)|/"
     bill_vals = rvs['electricity_utility_bill_results'].match(results_regexp).captures.map(&:to_i)
     assert_equal(10, bill_vals.size)
     keys = [
@@ -586,7 +586,7 @@ class UtilityBillsTest < Minitest::Test
     assert_includes(rvs['electricity_utility_bill_results'].scan(utility_id_regexp).flatten, elec_util_from_file)
 
     # check that all results are populated with min, max, mean, med, num
-    results_regexp = "/\|#{elec_util_from_file}:(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?)\|/"
+    results_regexp = "/|#{elec_util_from_file}:(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?):(.+?)|/"
     bill_vals = rvs['electricity_utility_bill_results'].match(results_regexp).captures.map(&:to_i)
     assert_equal(10, bill_vals.size)
     keys = [
@@ -703,7 +703,7 @@ class UtilityBillsTest < Minitest::Test
       end
     end
     # the assignments do something: PacifiCorp's Oregon tariffs are Oregon's, its Utah tariffs Utah's
-    by_label = rows.map { |r| [r['label'], r['state'].to_s] }.to_h
+    by_label = rows.to_h { |r| [r['label'], r['state'].to_s] }
     pacificorp = Dir.glob(File.join(resources, 'elec_rates', '14354', '*.json')).map { |p| by_label[File.basename(p, '.json')] }
     assert(pacificorp.count('OR') > pacificorp.count('UT'))
     assert(pacificorp.count('UT') > 0)

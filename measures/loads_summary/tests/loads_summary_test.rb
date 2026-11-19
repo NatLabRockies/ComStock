@@ -23,7 +23,7 @@ class LoadsSummaryTest < Minitest::Test
 
   def script_version
     # return true
-    return 2  # change this to the version of the script you are testing
+    return 2 # change this to the version of the script you are testing
   end
 
   def teardown
@@ -58,7 +58,7 @@ class LoadsSummaryTest < Minitest::Test
     return "#{run_dir(test_name)}/report.html"
   end
 
-  def get_run_env()
+  def get_run_env
     new_env = {}
     new_env['BUNDLER_ORIG_MANPATH'] = nil
     new_env['BUNDLER_ORIG_PATH'] = nil
@@ -83,14 +83,14 @@ class LoadsSummaryTest < Minitest::Test
     assert(File.exist?(epw_path))
 
     # Make the run directory for this test
-    FileUtils.mkdir_p(run_dir(test_name)) unless File.exist?(run_dir(test_name))
+    FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
     # Remove the previous output report
-    FileUtils.rm(report_path(test_name)) if File.exist?(report_path(test_name))
+    FileUtils.rm_f(report_path(test_name))
 
     # Remove the previous output model
-    FileUtils.rm(model_out_path(test_name)) if File.exist?(model_out_path(test_name))
+    FileUtils.rm_f(model_out_path(test_name))
 
     osw_path = File.join(run_dir(test_name), 'in.osw')
     osw_path = File.absolute_path(osw_path)
@@ -106,7 +106,7 @@ class LoadsSummaryTest < Minitest::Test
       step.setArgument(key, value)
     end
 
-    check = workflow.setMeasureSteps(OpenStudio::MeasureType.new("ReportingMeasure"), [step])
+    check = workflow.setMeasureSteps(OpenStudio::MeasureType.new('ReportingMeasure'), [step])
 
     # # try not translating spaces
     # fto = OpenStudio::ForwardTranslatorOptions.new
@@ -123,7 +123,7 @@ class LoadsSummaryTest < Minitest::Test
 
     cli_path = OpenStudio.getOpenStudioCLI
     command = "\"#{cli_path}\" run -w \"#{osw_path}\""
-    stdout_str, stderr_str, status = Open3.capture3(get_run_env(), command)
+    stdout_str, stderr_str, status = Open3.capture3(get_run_env, command)
 
     if status.success?
       puts "Successfully ran command: '#{command}'"
@@ -139,20 +139,19 @@ class LoadsSummaryTest < Minitest::Test
 
   # create test files if they do not exist when the test first runs
   def setup_test(test_name, idf_output_requests, model_in_path = model_in_path_default, epw_path = epw_path_default)
-    if !File.exist?(run_dir(test_name))
-      FileUtils.mkdir_p(run_dir(test_name))
-    end
+    FileUtils.mkdir_p(run_dir(test_name))
+
     assert_path_exists(run_dir(test_name))
 
-    if File.exist?(report_path(test_name))
-      FileUtils.rm(report_path(test_name))
-    end
+
+    FileUtils.rm_f(report_path(test_name))
+
 
     assert_path_exists(model_in_path)
 
-    if File.exist?(model_out_path(test_name))
-      FileUtils.rm(model_out_path(test_name))
-    end
+
+    FileUtils.rm_f(model_out_path(test_name))
+
 
     # convert output requests to OSM for testing, OS App and PAT will add these to the E+ Idf
     workspace = OpenStudio::Workspace.new('Draft'.to_StrictnessLevel, 'EnergyPlus'.to_IddFileType)
@@ -168,9 +167,9 @@ class LoadsSummaryTest < Minitest::Test
     model.save(model_out_path(test_name), true)
 
     if ENV['OPENSTUDIO_TEST_NO_CACHE_SQLFILE']
-      if File.exist?(sql_path(test_name))
-        FileUtils.rm_f(sql_path(test_name))
-      end
+
+      FileUtils.rm_f(sql_path(test_name))
+
     end
 
     osw_path = File.join(run_dir(test_name), 'in.osw')
@@ -193,27 +192,25 @@ class LoadsSummaryTest < Minitest::Test
     test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/test.epw"
 
-    args_hash = {
-    }
+    args_hash = {}
 
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
   end
 
   def test_cz3C_small_office
-    test_name = "test_cz3C_small_office"
+    test_name = 'test_cz3C_small_office'
     test_model_name = 'CZ3C_small_office_10001_25000_PTHP.osm'
-    test_model_path =  "#{__dir__}/#{test_model_name}"
+    test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/G0600530.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
 
     # test with timeseries output
-    run_in_workflow("#{test_name}_timeseries", test_model_path, {'timeseries_output' => true}, epw_path)
+    run_in_workflow("#{test_name}_timeseries", test_model_path, { 'timeseries_output' => true }, epw_path)
 
     return true
   end
@@ -225,8 +222,7 @@ class LoadsSummaryTest < Minitest::Test
     epw_path = "#{__dir__}/G0600530.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
@@ -240,8 +236,7 @@ class LoadsSummaryTest < Minitest::Test
     epw_path = "#{__dir__}/G3600070.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
@@ -251,18 +246,17 @@ class LoadsSummaryTest < Minitest::Test
   def test_cz4B_retail
     test_name = 'test_cz4B_retail'
     test_model_name = 'CZ4B_retail_10001_25000_PSZ-AC with gas coil.osm'
-    test_model_path =  "#{__dir__}/#{test_model_name}"
+    test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/G3500010.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
     # test with timeseries output
 
-    run_in_workflow("#{test_name}_timeseries", test_model_path, {'timeseries_output' => true}, epw_path)
+    run_in_workflow("#{test_name}_timeseries", test_model_path, { 'timeseries_output' => true }, epw_path)
 
     return true
   end
@@ -270,12 +264,11 @@ class LoadsSummaryTest < Minitest::Test
   def test_cz4C_warehouse
     test_name = 'test_cz4C_warehouse'
     test_model_name = 'CZ4C_warehouse_100001_200000_PVAV with PFP boxes.osm'
-    test_model_path =  "#{__dir__}/#{test_model_name}"
+    test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/G5300670.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
@@ -286,18 +279,17 @@ class LoadsSummaryTest < Minitest::Test
   def test_cz2A_retail
     test_name = 'test_cz2A_retail'
     test_model_name = 'CZ2A_retail.osm'
-    test_model_path =  "#{__dir__}/#{test_model_name}"
+    test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/G1300990.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
     # test with timeseries output
 
-    run_in_workflow("#{test_name}_timeseries", test_model_path, {'timeseries_output' => true}, epw_path)
+    run_in_workflow("#{test_name}_timeseries", test_model_path, { 'timeseries_output' => true }, epw_path)
 
     return true
   end
@@ -305,20 +297,18 @@ class LoadsSummaryTest < Minitest::Test
   def test_cz2A_retail_adiabatic
     test_name = 'test_cz2A_retail_adiabatic'
     test_model_name = 'CZ2A_retail_adiabatic.osm'
-    test_model_path =  "#{__dir__}/#{test_model_name}"
+    test_model_path = "#{__dir__}/#{test_model_name}"
     epw_path = "#{__dir__}/G1300990.epw"
 
     # set the arguments to test
-    args_hash = {
-    }
+    args_hash = {}
 
     # run the measure
     run_in_workflow(test_name, test_model_path, args_hash, epw_path)
     # test with timeseries output
 
-    run_in_workflow("#{test_name}_timeseries", test_model_path, {'timeseries_output' => true}, epw_path)
+    run_in_workflow("#{test_name}_timeseries", test_model_path, { 'timeseries_output' => true }, epw_path)
 
     return true
   end
 end
-

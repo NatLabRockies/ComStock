@@ -60,7 +60,7 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
     ddy_path = "#{epw_path.gsub('.epw', '')}.ddy"
 
     # create run directory if it does not exist
-    FileUtils.mkdir_p(run_dir(test_name)) unless File.exist?(run_dir(test_name))
+    FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
     # change into run directory for tests
@@ -68,8 +68,8 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
     Dir.chdir run_dir(test_name)
 
     # remove prior runs if they exist
-    FileUtils.rm(model_output_path(test_name)) if File.exist?(model_output_path(test_name))
-    FileUtils.rm(report_path(test_name)) if File.exist?(report_path(test_name))
+    FileUtils.rm_f(model_output_path(test_name))
+    FileUtils.rm_f(report_path(test_name))
 
     # copy the osm and epw to the test directory
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
@@ -118,7 +118,7 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
       end
 
       # assert
-      assert_equal(false, model.getDesignDays.size.zero?)
+      assert_equal(false, model.getDesignDays.empty?)
     end
 
     if apply

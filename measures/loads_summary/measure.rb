@@ -46,20 +46,20 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
 
   def components
     [
-    'people_gain',
-    'light_gain',
-    'equip_gain',
-    'ref_equip_gain',
-    'win_sol',
-    'ext_wall',
-    'fnd_wall',
-    'roof',
-    'ext_flr',
-    'gnd_flr',
-    'win_cond',
-    'door',
-    'infil',
-    'vent'
+      'people_gain',
+      'light_gain',
+      'equip_gain',
+      'ref_equip_gain',
+      'win_sol',
+      'ext_wall',
+      'fnd_wall',
+      'roof',
+      'ext_flr',
+      'gnd_flr',
+      'win_cond',
+      'door',
+      'infil',
+      'vent'
     ]
   end
 
@@ -175,7 +175,6 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
   # If you mean to modify the model in a significant way, use a `ModelMeasure`
   # NOTE: this method will ONLY be called if you use the C++ CLI, not the `classic` (Ruby) one
   def modelOutputRequests(model, runner, user_arguments)
-
     timeseries_output = runner.getBoolArgumentValue('timeseries_output', user_arguments)
 
     # request advanced reporting for window heat gain components
@@ -196,14 +195,13 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
 
 
         # add a regular output variable that references it
-        out_var = OpenStudio::Model::OutputVariable.new("PythonPlugin:OutputVariable", model)
+        out_var = OpenStudio::Model::OutputVariable.new('PythonPlugin:OutputVariable', model)
         out_var.setKeyValue(py_out_var.nameString)
         if timeseries_output
           out_var.setReportingFrequency('Timestep')
         else
           out_var.setReportingFrequency('RunPeriod')
         end
-
       end
     end
 
@@ -237,7 +235,7 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
 
     # write the python plugin file to resources dir
     plugin_dir = File.join(Dir.pwd, 'python_EMS')
-    FileUtils.mkdir_p(plugin_dir) unless File.exist?(plugin_dir)
+    FileUtils.mkdir_p(plugin_dir)
     plugin_path = File.join(plugin_dir, 'in.py')
     File.write(plugin_path, py_out)
 
@@ -258,7 +256,7 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
   def get_timeseries_array(runner, sql, env_period, timestep, variable_name, key_value, num_timesteps, expected_units = nil, desired_units = nil)
     time_series_array = []
     time_series = sql.timeSeries(env_period, timestep, variable_name, key_value)
-    if time_series.is_initialized #checks to see if time_series exists
+    if time_series.is_initialized # checks to see if time_series exists
       time_series = time_series.get
       # Check the units
       unless expected_units.nil?
@@ -270,7 +268,7 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
         if !desired_units.nil? && time_series.units != desired_units
           begin
             conversion = OpenStudio.convert(1.0, time_series.units, desired_units).get
-            time_series = time_series * conversion
+            time_series *= conversion
           rescue StandardError => e
             runner.registerError("Failed to convert units from #{time_series.units} to #{desired_units} for #{variable_name}: #{e.message}")
             return Array.new(num_timesteps, 0.0)
@@ -289,7 +287,7 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
   end
 
   def get_runperiod_variable_value(runner, sql, env_period, key_value, desired_units = nil)
-    query = %{
+    query = %(
     SELECT rvd.VariableValue
     FROM ReportVariableData AS rvd
     JOIN ReportVariableDataDictionary AS rvdd
@@ -300,11 +298,11 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
     AND rvdd.VariableName = 'PythonPlugin:OutputVariable'
     AND rvdd.ReportingFrequency = 'Run Period'
     AND t.IntervalType = 4;
-    }
+    )
 
     result = sql.execAndReturnFirstDouble(query)
     if result.empty?
-      runner.registerError('Cannot find run period variable value for ' + key_value)
+      runner.registerError("Cannot find run period variable value for #{key_value}")
       return false
     else
       result = result.get
@@ -345,11 +343,9 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
     ann_env_pd = nil
     sql_file.availableEnvPeriods.each do |env_pd|
       env_type = sql_file.environmentType(env_pd)
-      if env_type.is_initialized
-        if env_type.get == OpenStudio::EnvironmentType.new('WeatherRunPeriod')
-          ann_env_pd = env_pd
-          break
-        end
+      if env_type.is_initialized && (env_type.get == OpenStudio::EnvironmentType.new('WeatherRunPeriod'))
+        ann_env_pd = env_pd
+        break
       end
     end
 

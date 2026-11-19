@@ -187,7 +187,7 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
 
     # load the test model
     osm_path = "#{__dir__}/restaurant.osm"
-    epw_path = epws_for_tests.select { |x| 'MI_DETROIT_725375_12' == File.basename(x, '.epw') }[0]
+    epw_path = epws_for_tests.select { |x| File.basename(x, '.epw') == 'MI_DETROIT_725375_12' }[0]
 
     # set arguments here; will vary by measure
     arguments = measure.arguments(model)

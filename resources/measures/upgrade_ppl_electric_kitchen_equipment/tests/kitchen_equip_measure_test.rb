@@ -139,7 +139,7 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
     model = load_model(osm_path)
     install_gas_appliances(model, { 'fryer' => 2, 'range' => 1, 'oven' => 1 })
     gas_before = building_equipment_w(model, :gas)
-    assert_in_delta((2 * 23.447 + 42.497 + 12.896) * 1000.0, gas_before, 1.0)
+    assert_in_delta(((2 * 23.447) + 42.497 + 12.896) * 1000.0, gas_before, 1.0)
 
     result = run_measure_on(ElectrifyKitchenEquipment.new, model)
     assert_equal('Success', result.value.valueName)
@@ -156,14 +156,14 @@ class ElectrifyKitchenEquipmentTest < Minitest::Test
     puts "\n######\nTEST:#{__method__}\n######\n"
     model = spec_style_model(kitchen_space_type_name: 'food preparation', num_kitchens: 3, zone_multiplier: 5)
     install_gas_appliances(model, { 'fryer' => 2, 'griddle' => 1 })
-    assert_in_delta((2 * 23.447 + 26.377) * 1000.0, building_equipment_w(model, :gas), 1.0)
+    assert_in_delta(((2 * 23.447) + 26.377) * 1000.0, building_equipment_w(model, :gas), 1.0)
     elec_before = building_equipment_w(model, :elec)
 
     result = run_measure_on(ElectrifyKitchenEquipment.new, model)
     assert_equal('Success', result.value.valueName)
     # all gas appliances are gone; the electric equivalents carry the same building-level count
     assert_in_delta(0.0, building_equipment_w(model, :gas), 1e-6)
-    assert_in_delta(elec_before + (2 * 14009.0 + 17116.0), building_equipment_w(model, :elec), 1.0)
+    assert_in_delta(elec_before + ((2 * 14009.0) + 17116.0), building_equipment_w(model, :elec), 1.0)
     kitchen_type = model.getSpaceTypeByName('food preparation').get
     fryer = kitchen_type.electricEquipment.find { |e| e.name.to_s == 'electric_fryer_equipment_bldg_quantity=2.0' }
     assert(!fryer.nil?)

@@ -530,11 +530,11 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
     model = OpenStudio::Model::Model.new
     hvac = OpenStudio::Model::ScheduleRuleset.new(model, 0.0)
     weekdays = OpenStudio::Model::ScheduleRule.new(hvac)
-    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| weekdays.send("setApply#{d}", true) }
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].each { |d| weekdays.send("setApply#{d}", true) }
     weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 8, 0, 0), 0.0)
     weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 16, 0, 0), 1.0)
     summer = OpenStudio::Model::ScheduleRule.new(hvac)
-    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| summer.send("setApply#{d}", true) }
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].each { |d| summer.send("setApply#{d}", true) }
     summer.setStartDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('July'), 1))
     summer.setEndDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('September'), 1))
 
@@ -551,7 +551,7 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
       date = OpenStudio::Date.new(OpenStudio::MonthOfYear.new(month), day, year)
       on_day = hvac.getDaySchedules(date, date).first
       off_day = off.getDaySchedules(date, date).first
-      (0..23).each do |hr|
+      24.times do |hr|
         t = OpenStudio::Time.new(0, hr, 30, 0)
         assert_in_delta(1.0, on_day.getValue(t) + off_day.getValue(t), 1e-9, "on + off != 1 on #{month}/#{day} #{hr}:30")
       end

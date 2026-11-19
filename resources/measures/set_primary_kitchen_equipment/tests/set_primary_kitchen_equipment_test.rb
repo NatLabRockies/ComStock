@@ -347,11 +347,11 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
     assert_in_delta(3 * 5 * 100.0 * 649.25, building_gas_equipment_w(model), 1.0)
 
     result = run_measure_on(model, {
-      'cook_dining_type' => 'Restaurant A',
-      'cook_fuel_fryer' => 'Gas', 'cook_fryers_counts' => 2,
-      'cook_fuel_range' => 'Gas', 'cook_ranges_counts' => 1,
-      'cook_fuel_oven' => 'Electric', 'cook_ovens_counts' => 1
-    })
+                              'cook_dining_type' => 'Restaurant A',
+                              'cook_fuel_fryer' => 'Gas', 'cook_fryers_counts' => 2,
+                              'cook_fuel_range' => 'Gas', 'cook_ranges_counts' => 1,
+                              'cook_fuel_oven' => 'Electric', 'cook_ovens_counts' => 1
+                            })
     assert_equal('Success', result.value.valueName)
 
     kitchen_type = model.getSpaceTypeByName('food preparation').get
@@ -359,7 +359,7 @@ class SetPrimaryKitchenEquipmentTest < Minitest::Test
     assert(kitchen_type.gasEquipment.none? { |g| g.name.to_s == 'food preparation Gas Equip' })
     assert_equal(2, kitchen_type.gasEquipment.size)
     # the building holds 2 fryers and 1 range regardless of how many kitchen spaces or zone multipliers
-    assert_in_delta((2 * 23.447 + 1 * 42.497) * 1000.0, building_gas_equipment_w(model), 1.0)
+    assert_in_delta(((2 * 23.447) + (1 * 42.497)) * 1000.0, building_gas_equipment_w(model), 1.0)
     kitchen_type.gasEquipment.each do |g|
       assert_in_delta(1.0 / 15, g.multiplier, 1e-9)
       assert_equal('food preparation gas equipment', g.schedule.get.name.to_s)

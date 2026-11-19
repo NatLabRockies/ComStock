@@ -181,7 +181,6 @@ class UpperCamelCaseClassNameTest < Minitest::Test
       model = load_model(model_output_path(instance_test_name))
 
       # add additional tests here to check model outputs
-
     end
   end
 end
