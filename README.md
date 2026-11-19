@@ -92,6 +92,10 @@ per processor. A nonzero exit or missing JUnit test cases fails the task. Report
 are written to per-file subdirectories under `test/reports`; old reports for each
 selected file are removed before it runs.
 
+The loads-summary workflow tests also remove previous SQL and output workflow
+files, require a successful CLI exit, and check that the new output workflow
+reports `Success`.
+
 ## Running Rubocop
 1. Follow the developer installation instructions above
 2. navigate to the `.custom_gems` directory

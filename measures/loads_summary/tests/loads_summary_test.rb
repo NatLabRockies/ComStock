@@ -4,8 +4,11 @@
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'fileutils'
+require 'json'
 require 'open3'
+require 'tmpdir'
 
 require_relative '../measure'
 require_relative '../../../test/helpers/minitest_helper'
@@ -92,6 +95,9 @@ class LoadsSummaryTest < Minitest::Test
     # Remove the previous output model
     FileUtils.rm_f(model_out_path(test_name))
 
+    out_osw_path = File.join(run_dir(test_name), 'out.osw')
+    FileUtils.rm_f([sql_path(test_name), out_osw_path])
+
     osw_path = File.join(run_dir(test_name), 'in.osw')
     osw_path = File.absolute_path(osw_path)
 
@@ -125,16 +131,13 @@ class LoadsSummaryTest < Minitest::Test
     command = "\"#{cli_path}\" run -w \"#{osw_path}\""
     stdout_str, stderr_str, status = Open3.capture3(get_run_env, command)
 
-    if status.success?
-      puts "Successfully ran command: '#{command}'"
-    else
-      puts "Error running command: '#{command}'"
-      puts "stdout: #{stdout_str}"
-      puts "stderr: #{stderr_str}"
-    end
+    assert(status.success?, "Error running command: '#{command}'\nstdout: #{stdout_str}\nstderr: #{stderr_str}")
+    puts "Successfully ran command: '#{command}'"
 
-    # Check that the model output and sql file exist
-    assert(File.exist?(sql_path(test_name)))
+    assert_path_exists(sql_path(test_name))
+    assert_path_exists(out_osw_path)
+    assert_equal('Success', JSON.parse(File.read(out_osw_path))['completed_status'],
+                 "Workflow did not complete successfully: #{out_osw_path}")
   end
 
   # create test files if they do not exist when the test first runs
@@ -184,6 +187,78 @@ class LoadsSummaryTest < Minitest::Test
     cmd = "\"#{cli_path}\" run -w \"#{osw_path}\""
     puts cmd
     system(cmd)
+  end
+
+  def test_run_in_workflow_rejects_failed_command_with_sql
+    status = Minitest::Mock.new
+    status.expect(:success?, false)
+
+    Dir.mktmpdir('loads-summary-') do |output_dir|
+      stub(:run_dir, output_dir) do
+        capture = lambda do |*_args|
+          FileUtils.mkdir_p(File.dirname(sql_path(__method__)))
+          File.write(sql_path(__method__), 'partial SQL')
+          ['workflow stdout', 'workflow stderr', status]
+        end
+
+        Open3.stub(:capture3, capture) do
+          error = assert_raises(Minitest::Assertion) do
+            run_in_workflow(__method__, "#{__dir__}/simple_test.osm", {}, "#{__dir__}/test.epw")
+          end
+          assert_includes(error.message, 'workflow stdout')
+          assert_includes(error.message, 'workflow stderr')
+          assert_path_exists(sql_path(__method__))
+        end
+      end
+    end
+    status.verify
+  end
+
+  def test_run_in_workflow_rejects_failed_workflow
+    status = Minitest::Mock.new
+    status.expect(:success?, true)
+
+    Dir.mktmpdir('loads-summary-') do |output_dir|
+      stub(:run_dir, output_dir) do
+        capture = lambda do |*_args|
+          FileUtils.mkdir_p(File.dirname(sql_path(__method__)))
+          File.write(sql_path(__method__), 'partial SQL')
+          File.write(File.join(output_dir, 'out.osw'), JSON.generate('completed_status' => 'Fail'))
+          ['', '', status]
+        end
+
+        Open3.stub(:capture3, capture) do
+          error = assert_raises(Minitest::Assertion) do
+            run_in_workflow(__method__, "#{__dir__}/simple_test.osm", {}, "#{__dir__}/test.epw")
+          end
+          assert_includes(error.message, 'Fail')
+        end
+      end
+    end
+    status.verify
+  end
+
+  def test_run_in_workflow_rejects_stale_results
+    status = Minitest::Mock.new
+    status.expect(:success?, true)
+
+    Dir.mktmpdir('loads-summary-') do |output_dir|
+      stub(:run_dir, output_dir) do
+        FileUtils.mkdir_p(File.dirname(sql_path(__method__)))
+        File.write(sql_path(__method__), 'stale SQL')
+        out_osw_path = File.join(output_dir, 'out.osw')
+        File.write(out_osw_path, JSON.generate('completed_status' => 'Success'))
+
+        Open3.stub(:capture3, ['', '', status]) do
+          assert_raises(Minitest::Assertion) do
+            run_in_workflow(__method__, "#{__dir__}/simple_test.osm", {}, "#{__dir__}/test.epw")
+          end
+          refute_path_exists(sql_path(__method__))
+          refute_path_exists(out_osw_path)
+        end
+      end
+    end
+    status.verify
   end
 
   def test_simple_model
