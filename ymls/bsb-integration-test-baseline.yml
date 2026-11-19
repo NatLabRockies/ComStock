@@ -2,7 +2,7 @@ schema_version: '0.3'
 buildstock_directory: ../
 project_directory: national
 output_directory: ../baseline_test_output
-weather_files_url: https://data.nrel.gov/system/files/156/BuildStock_TMY3_FIPS.zip
+weather_files_url: https://data.nlr.gov/system/files/156/BuildStock_TMY3_FIPS.zip
 
 sampler:
   type: precomputed
