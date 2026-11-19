@@ -17,24 +17,40 @@ def run_measure_tests(file_list)
 
   # Wait for all subprocesses to finish before propagating a failure.
   errors = Parallel.map(file_list, in_threads: Parallel.processor_count) do |file|
+    process_failure = nil
+    test_failures = []
     report_dir = File.expand_path(File.join(reports_root, file.sub(/\.rb\z/, '')))
     FileUtils.rm_f(Dir.glob(File.join(report_dir, 'TEST-*.xml')))
 
     puts "Running test #{file}"
-    ruby '-I', load_paths, runner, File.expand_path(file), report_dir, verbose: false
+    ruby '-I', load_paths, runner, File.expand_path(file), report_dir, verbose: false do |success, status|
+      process_failure = status.exited? ? "exit #{status.exitstatus}" : status.to_s unless success
+    end
 
     reports = Dir.glob(File.join(report_dir, 'TEST-*.xml'))
-    unless reports.any? { |report| !REXML::Document.new(File.read(report)).get_elements('//testcase').empty? }
+    test_cases = reports.flat_map { |report| REXML::Document.new(File.read(report)).get_elements('//testcase') }
+    test_failures = test_cases.flat_map do |test_case|
+      test_case.get_elements('failure|error').map do |failure|
+        "  #{test_case.attributes['classname']}##{test_case.attributes['name']}: #{failure.attributes['message']}"
+      end
+    end
+
+    raise process_failure if process_failure
+    if test_cases.empty?
       raise "No JUnit test cases were produced by #{file}"
     end
+    raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
     nil
   rescue StandardError => e
-    warn "Error in #{file}: #{e.message}"
-    e
+    reason = [process_failure, e.message].compact.uniq.join('; ')
+    message = "FAILED: #{file} (#{reason})"
+    message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
+    warn message
+    message
   end.compact
 
-  raise errors.first unless errors.empty?
+  raise "Measure test failures (#{errors.length}):\n#{errors.join("\n")}" unless errors.empty?
 end
 
 desc 'Run measure tests'

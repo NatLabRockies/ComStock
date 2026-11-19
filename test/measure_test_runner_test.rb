@@ -40,14 +40,17 @@ class MeasureTestRunnerTest < Minitest::Test
     end
   end
 
-  def test_nonzero_exit_fails_even_after_passing_report_is_written
+  def test_failed_files_are_summarized_after_all_subprocesses_finish
     with_fixture do
       File.write('fixture_test.rb', "#{passing_test}\nMinitest.after_run { exit! 42 }\n")
-      File.write('other_test.rb', "#{passing_test}\nMinitest.after_run { File.write('completed', 'done') }\n")
+      File.write('other_test.rb', "#{passing_test}\nMinitest.after_run { File.write('completed', 'done'); exit! 17 }\n")
 
       error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb', 'other_test.rb']) }
 
-      assert_match('status (42)', error.message)
+      assert_includes(error.message, 'Measure test failures (2):')
+      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 42)')
+      assert_includes(error.message, 'FAILED: other_test.rb (exit 17)')
+      refute_includes(error.message, $LOAD_PATH.join(File::PATH_SEPARATOR))
       refute_empty(Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test', 'TEST-*.xml')))
       assert(File.exist?('completed'))
     end
@@ -63,6 +66,59 @@ class MeasureTestRunnerTest < Minitest::Test
 
       assert_match('No JUnit test cases', error.message)
       assert_empty(Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test', 'TEST-*.xml')))
+    end
+  end
+
+  def test_summary_names_failed_test_methods_and_messages
+    with_fixture do
+      File.write('fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_failure
+            flunk 'expected value missing'
+          end
+
+          def test_error
+            raise 'missing input'
+          end
+        end
+      RUBY
+
+      error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb']) }
+
+      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 1)')
+      assert_includes(error.message, 'FixtureTest#test_failure: expected value missing')
+      assert_includes(error.message, 'FixtureTest#test_error: RuntimeError: missing input')
+      refute_includes(error.message, 'FixtureTest#test_passes')
+    end
+  end
+
+  def test_crash_without_report_keeps_file_and_exit_status
+    with_fixture do
+      File.write('fixture_test.rb', "exit! 42\n")
+
+      error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb']) }
+
+      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 42)')
+    end
+  end
+
+  def test_failure_report_is_not_hidden_by_successful_exit
+    with_fixture do
+      File.write('fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_failure
+            flunk 'expected failure'
+          end
+        end
+        Minitest.after_run { exit! 0 }
+      RUBY
+
+      error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb']) }
+
+      assert_includes(error.message, 'JUnit reports contain failures or errors')
+      assert_includes(error.message, 'FixtureTest#test_failure: expected failure')
     end
   end
 end
