@@ -8,7 +8,7 @@
 # from a previous run, a secondary building type's overrides silently dropped.
 
 # dependencies
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require_relative '../measure'
 

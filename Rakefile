@@ -1,14 +1,7 @@
 require 'rake/testtask'
-require 'minitest/reporters'
 require 'parallel'
 require 'rubocop/rake_task'
 require 'rexml/document'
-
-# generate the xml reports from tests.
-Minitest::Reporters.use! [
-  Minitest::Reporters::DefaultReporter.new,
-  Minitest::Reporters::JUnitReporter.new('test/reports')
-]
 
 def run_measure_tests(file_list)
   reports_root = ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR', File.expand_path('test/reports'))
@@ -46,7 +39,6 @@ def run_measure_tests(file_list)
     reason = [process_failure, e.message].compact.uniq.join('; ')
     message = "FAILED: #{file} (#{reason})"
     message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
-    warn message
     message
   end.compact
 
@@ -63,12 +55,19 @@ namespace :unit_tests do
       Rake::Task["unit_tests:#{group}"].invoke
       nil
     rescue StandardError => e
-      message = "#{group}:\n#{e.message}"
-      warn message
-      message
+      "#{group}:\n#{e.message}"
     end.compact
 
-    raise "Measure test groups failed (#{errors.length}):\n#{errors.join("\n\n")}" unless errors.empty?
+    next if errors.empty?
+
+    heading = "Measure test groups failed (#{errors.length})"
+    details = errors.join("\n\n")
+    if (step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil))
+      File.open(step_summary, 'a') do |file|
+        file.puts "## #{heading}\n\n#{details.gsub(/^/, '    ')}"
+      end
+    end
+    abort "#{heading}:\n#{details}"
   end
 
   desc 'Run reporting measure tests'

@@ -2,7 +2,7 @@
 
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'minitest/mock'
 require 'fileutils'
 

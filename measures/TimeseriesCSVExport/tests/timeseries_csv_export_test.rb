@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../test/helpers/minitest_helper'
 require 'open3'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'

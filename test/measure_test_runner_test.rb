@@ -1,7 +1,8 @@
 # Regression tests for subprocess failures, fresh JUnit reports, readable failure
 # summaries, and continuing through all test groups before reporting failure.
 
-require 'minitest/autorun'
+require_relative 'helpers/minitest_helper'
+require 'open3'
 require 'rake'
 require 'tmpdir'
 
@@ -63,6 +64,45 @@ class MeasureTestRunnerTest < Minitest::Test
       run_measure_tests(['fixture_test.rb'])
 
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test', 'TEST-*.xml'))
+      assert_equal(1, reports.size)
+      assert_equal(1, REXML::Document.new(File.read(reports.first)).get_elements('//testcase').size)
+    end
+  end
+
+  def test_helper_formats_direct_runs_without_creating_junit_reports
+    with_fixture do
+      helper = File.expand_path('helpers/minitest_helper.rb', __dir__)
+      File.write('fixture_test.rb', passing_test.sub("require 'minitest/autorun'", "require #{helper.inspect}"))
+
+      stdout, stderr, status = Open3.capture3(
+        { 'MINITEST_REPORTERS_REPORTS_DIR' => nil, 'JENKINS_HOME' => nil },
+        RbConfig.ruby, '-I', $LOAD_PATH.join(File::PATH_SEPARATOR), 'fixture_test.rb', '-n', 'test_passes'
+      )
+
+      assert(status.success?, stderr)
+      assert_includes(stdout, 'FixtureTest')
+      assert_match(/test_passes.*PASS/, stdout)
+      assert_empty(Dir.glob('**/TEST-*.xml'))
+    end
+  end
+
+  def test_runner_formats_results_and_preserves_per_file_junit_with_shared_helper
+    with_fixture do
+      helper = File.expand_path('helpers/minitest_helper.rb', __dir__)
+      runner = File.expand_path('helpers/measure_test_runner.rb', __dir__)
+      report_dir = File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test')
+      File.write('fixture_test.rb', "require #{helper.inspect}\n#{passing_test}")
+
+      stdout, stderr, status = Open3.capture3(
+        { 'JENKINS_HOME' => 'fixture-jenkins' },
+        RbConfig.ruby, '-I', $LOAD_PATH.join(File::PATH_SEPARATOR),
+        runner, File.expand_path('fixture_test.rb'), report_dir
+      )
+
+      assert(status.success?, stderr)
+      assert_includes(stdout, 'FixtureTest')
+      assert_match(/test_passes.*PASS/, stdout)
+      reports = Dir.glob(File.join(report_dir, 'TEST-*.xml'))
       assert_equal(1, reports.size)
       assert_equal(1, REXML::Document.new(File.read(reports.first)).get_elements('//testcase').size)
     end
@@ -150,20 +190,31 @@ class MeasureTestRunnerTest < Minitest::Test
     end
   end
 
-  def test_all_tests_continues_after_failures_and_summarizes_every_failed_group
+  def test_all_tests_continues_after_failures_and_prints_one_final_summary
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
       File.write('reporting_fixture_test.rb', "exit! 42\n")
       File.write('upgrade_fixture_test.rb', passing_test.sub('assert true', "flunk 'expected upgrade failure'"))
 
-      error = assert_raises(RuntimeError) { Rake::Task['unit_tests:all_tests'].invoke }
+      _, stderr = capture_io do
+        error = assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke }
+        assert_equal(1, error.status)
+      end
 
-      assert_includes(error.message, 'reporting_measure_tests:')
-      assert_includes(error.message, 'reporting_fixture_test.rb (exit 42)')
-      assert_includes(error.message, 'upgrade_measure_tests:')
-      assert_includes(error.message, 'FixtureTest#test_passes: expected upgrade failure')
+      heading, details = stderr.split("\n", 2)
+      assert_equal('Measure test groups failed (2):', heading)
+      assert_includes(details, 'reporting_measure_tests:')
+      assert_includes(details, 'reporting_fixture_test.rb (exit 42)')
+      assert_includes(details, 'upgrade_measure_tests:')
+      assert_includes(details, 'FixtureTest#test_passes: expected upgrade failure')
+      assert_equal(2, details.scan(/^FAILED:/).size)
+      assert_equal("## #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}\n", File.read('step-summary.md'))
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'workflow_fixture_test', 'TEST-*.xml'))
       assert_equal(1, reports.size)
     end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
   end
 
   def test_all_tests_succeeds_when_every_group_passes
