@@ -165,9 +165,6 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
   end
 
   def test_model
-    # FIXME: Restore env_code_test_model.osm before enabling this test.
-    skip 'Missing env_code_test_model.osm fixture.'
-
     osm_name = 'env_code_test_model.osm'
     epw_name = 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw'
 
