@@ -93,3 +93,9 @@ pip install NREL-PySAM==4.2.0
 3. run `bundle exec rake rubocop:show` in terminal
 4. review results by opening the `rubocop-results.html` in the `.rubocop/` directory
 5. rubcop can automatically fix errors by running `rubocop --autocorrect`. This will fix some, but not all errors, so you still need to check and make manual fixes.
+
+The Rake task checks without changing code by default. To enable all available
+corrections, run `bundle exec rake "rubocop[true]"`. This includes unsafe
+corrections that may change behavior; review the resulting diff and rerun tests.
+The CI workflow uses this option and fails if tracked files change or the XML
+report contains offenses. It does not commit corrections.

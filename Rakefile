@@ -69,12 +69,13 @@ namespace :unit_tests do
 end
 
 desc 'Check the code for style consistency'
-RuboCop::RakeTask.new(:rubocop) do |t|
+RuboCop::RakeTask.new(:rubocop, [:autocorrect_all]) do |t, args|
   # Make a folder for the output
   out_dir = '.rubocop'
   FileUtils.mkdir_p(out_dir)
   # Output both XML (CheckStyle format) and HTML
   t.options = ["--out=#{out_dir}/rubocop-results.xml", '--format=h', "--out=#{out_dir}/rubocop-results.html", '--format=offenses', "--out=#{out_dir}/rubocop-summary.txt"]
+  t.options << '--autocorrect-all' if args[:autocorrect_all] == 'true'
   t.requires = ['rubocop/formatter/checkstyle_formatter']
   t.formatters = ['RuboCop::Formatter::CheckstyleFormatter']
   # don't abort rake on failure

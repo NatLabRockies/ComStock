@@ -63,7 +63,8 @@ jobs:
 
       - name: Run RuboCop
         run: |
-          bundle _2.4.10_ exec rake rubocop
+          bundle _2.4.10_ exec rake 'rubocop[true]'
+          git diff --exit-code
           python - <<'PY'
           import xml.etree.ElementTree as ET
 
