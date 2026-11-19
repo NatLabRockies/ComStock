@@ -3,36 +3,6 @@
 ## *NOTE: REQUIREMENTS:
 * OPENSTUDIO VERSIONS > 3.0
 
-## Container CI
-
-The separate [ComStock container builds workflow](../.github/workflows/container-build.yml)
-builds the Docker image, converts it to an Apptainer SIF, and verifies the
-OpenStudio version and ComStock gem loading in both formats.
-
-For pull requests, builds run automatically when the PR changes:
-
-- [resources/Gemfile](../resources/Gemfile).
-- Either [simulation](Dockerfile) or [Apptainer builder](apptainer/Dockerfile)
-  Dockerfile.
-- Docker ignore files for either build context or Dockerfile.
-- The container workflow itself.
-
-Detection uses the PR's cumulative diff, not just its latest push. Update the
-workflow's input list if the Dockerfiles start consuming additional files.
-
-For other changes, apply the `ci:containers` PR label to request a build.
-Create that repository label first if it does not already exist.
-The label is a persistent opt-in: later pushes also build while it remains.
-Removing it stops that opt-in for future pushes; dependency changes still
-trigger builds. Adding unrelated labels does not trigger a container build.
-The workflow can also be started manually with **Run workflow**.
-
-Container builds do not rerun the separate ComStock test workflow. They do not
-publish images or upload the SIF as an artifact. Dependency detection checks
-changes to these repository files, not new upstream dependency releases.
-PRs exceeding GitHub's 3,000-file listing limit conservatively trigger a build.
-Docker/SIF execution on GitHub Actions still needs validation.
-
 ## Modify the Dockerfile to change OpenStudio version
 
 ## Editing the Gemfile to install the Gems of your choice
