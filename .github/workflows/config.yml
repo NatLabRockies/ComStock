@@ -1,0 +1,208 @@
+name: ComStock tests (draft)
+
+# Start manually while validating the setup.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENSTUDIO_VER: '3.10.0'
+  OPENSTUDIO_SHA: '86d7e215a1'
+  OPENSTUDIO_PLATFORM: Ubuntu-24.04-x86_64
+  # Pin develop's tip at drafting time so runs use the same BuildStockBatch code.
+  # This revision has not been validated for ComStock compatibility.
+  # Use 'develop' instead to follow its latest changes on every run.
+  BUILDSTOCK_BATCH_REF: 88dd3b107cf8074acbae282b0ff6f8dfaf8a21e1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  unit-tests:
+    name: Measure tests (includes simulations)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/resources/Gemfile
+      BUNDLE_PATH: ${{ github.workspace }}/.custom_gems
+      BUNDLE_WITHOUT: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.2'
+          bundler: '2.4.10'
+
+      - name: Install official OpenStudio
+        run: |
+          package="OpenStudio-${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}-${OPENSTUDIO_PLATFORM}.deb"
+          curl --fail --location --retry 3 \
+            "https://github.com/NatLabRockies/OpenStudio/releases/download/v${OPENSTUDIO_VER}/${package}" \
+            --output "${RUNNER_TEMP}/${package}"
+          sudo apt-get update
+          sudo apt-get install -y "${RUNNER_TEMP}/${package}"
+          os_root="/usr/local/openstudio-${OPENSTUDIO_VER}"
+          echo "${os_root}/bin" >> "$GITHUB_PATH"
+          echo "RUBYLIB=${os_root}/Ruby" >> "$GITHUB_ENV"
+          "${os_root}/bin/openstudio" --version
+
+      - name: Install measure dependencies
+        run: |
+          python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
+          bundle _2.4.10_ install
+
+      - name: Run RuboCop
+        run: |
+          bundle _2.4.10_ exec rake rubocop
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          report = ET.parse(".rubocop/rubocop-results.xml")
+          if report.findall(".//error"):
+              raise SystemExit("RuboCop reported offenses")
+          PY
+
+      - name: Run measure tests through Rake
+        run: bundle _2.4.10_ exec rake unit_tests:all_tests
+
+      - name: Check tests actually ran
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          cases = [case for report in Path("test/reports").glob("**/*.xml")
+                   for case in ET.parse(report).getroot().iter("testcase")]
+          if not any(case.find("skipped") is None for case in cases):
+              raise SystemExit("No executed tests in JUnit reports; check Rake worker execution")
+          if any(case.find("failure") is not None or case.find("error") is not None for case in cases):
+              raise SystemExit("JUnit reports contain failures or errors")
+          PY
+
+  integration-tests:
+    name: BuildStockBatch baseline smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.2'
+          bundler: '2.4.10'
+
+      - name: Install official OpenStudio
+        run: |
+          package="OpenStudio-${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}-${OPENSTUDIO_PLATFORM}.deb"
+          curl --fail --location --retry 3 \
+            "https://github.com/NatLabRockies/OpenStudio/releases/download/v${OPENSTUDIO_VER}/${package}" \
+            --output "${RUNNER_TEMP}/${package}"
+          sudo apt-get update
+          sudo apt-get install -y "${RUNNER_TEMP}/${package}"
+          os_exe="/usr/local/openstudio-${OPENSTUDIO_VER}/bin/openstudio"
+          echo "$(dirname "$os_exe")" >> "$GITHUB_PATH"
+          echo "OPENSTUDIO_EXE=${os_exe}" >> "$GITHUB_ENV"
+          "$os_exe" --version
+
+      - name: Install BuildStockBatch and measure Python dependencies
+        run: |
+          python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
+          python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
+
+      - name: Run baseline simulations and BuildStockBatch postprocessing
+        run: buildstock_local ymls/bsb-integration-test-baseline.yml -j 2
+
+      - name: Check every sample building succeeded
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import csv
+          import gzip
+          import json
+          from pathlib import Path
+
+          with Path("samples/bsb-integration-test.csv").open(newline="") as stream:
+              expected = [int(row["Building"]) for row in csv.DictReader(stream)]
+          result_path = Path("baseline_test_output/simulation_output/results_job0.json.gz")
+          with gzip.open(result_path, "rt") as stream:
+              results = json.load(stream)
+          actual = Counter((int(row["building_id"]), int(row["upgrade"])) for row in results)
+          wanted = Counter((building, 0) for building in expected)
+          if not expected or actual != wanted:
+              raise SystemExit(f"Baseline result IDs/counts differ: {actual} != {wanted}")
+          for row in results:
+              if row.get("completed_status") != "Success":
+                  raise SystemExit(f"Building {row['building_id']} failed: {row}")
+          print(f"Validated {len(results)} successful baseline simulations.")
+          PY
+
+  docker-build:
+    name: Build and verify container images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --file build/Dockerfile --tag comstock-ci .
+
+      - name: Check OpenStudio version
+        run: |
+          version="$(docker run --rm comstock-ci openstudio --version)"
+          echo "OpenStudio ${version}"
+          test "$version" = "${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}"
+
+      - name: Check bundled ComStock gem loads
+        run: |
+          docker run --rm comstock-ci openstudio \
+            --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems \
+            --bundle_without test \
+            -e 'require "comstock-typical"; puts "comstock-typical loaded"'
+
+      - name: Build Apptainer builder image
+        run: docker build --file build/apptainer/Dockerfile --tag apptainer-ci ./build
+
+      - name: Convert simulation image to SIF
+        # Read the local image through the Docker socket; no registry is needed.
+        run: |
+          docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            apptainer-ci apptainer build /root/build/comstock-ci.sif \
+            docker-daemon://comstock-ci:latest
+
+      - name: Check OpenStudio version inside SIF
+        run: |
+          version="$(docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            apptainer-ci apptainer exec /root/build/comstock-ci.sif \
+            openstudio --version)"
+          echo "OpenStudio ${version}"
+          test "$version" = "${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}"
+
+      - name: Check bundled ComStock gem loads inside SIF
+        run: |
+          docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}/build:/root/build" \
+            apptainer-ci apptainer exec /root/build/comstock-ci.sif \
+            openstudio --bundle /var/oscli/Gemfile --bundle_path /var/oscli/gems \
+            --bundle_without test \
+            -e 'require "comstock-typical"; puts "comstock-typical loaded"'
