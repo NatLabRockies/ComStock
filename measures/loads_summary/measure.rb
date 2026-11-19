@@ -193,7 +193,6 @@ class LoadsSummary < OpenStudio::Measure::ReportingMeasure
         py_out_var.setUpdateFrequency('ZoneTimestep')
         py_out_var.setUnits('J')
 
-
         # add a regular output variable that references it
         out_var = OpenStudio::Model::OutputVariable.new('PythonPlugin:OutputVariable', model)
         out_var.setKeyValue(py_out_var.nameString)

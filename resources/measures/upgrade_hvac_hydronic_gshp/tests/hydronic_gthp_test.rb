@@ -45,7 +45,6 @@ require 'open3'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class HydronicGTHPTest < Minitest::Test
   def setup
     # Check that the test is being run in an environment that has the GHEdesigner package

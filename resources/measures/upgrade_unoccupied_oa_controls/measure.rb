@@ -134,7 +134,6 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       return false
     end
 
-
     template = 'ComStock 90.1-2013'
     std = Standard.build(template)
 
@@ -193,7 +192,6 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       runner.registerAsNotApplicable('No constant HVAC operation schedules or no candidate air loops found--measure not applicable.')
       return true
     end
-
 
     if (li_unitary_systems.size + li_non_unitary_systems.size) < 1
       runner.registerAsNotApplicable('No applicable systems were found.')

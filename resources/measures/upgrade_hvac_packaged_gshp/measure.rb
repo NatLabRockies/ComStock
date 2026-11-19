@@ -957,7 +957,6 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       std.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
       zone_data["#{thermal_zone.name} min_fan_flow_ratio"] = min_fan_flow_ratio
 
-
       # Create a new water-to-air ground source heat pump system
       unitary_system = OpenStudio::Model::AirLoopHVACUnitarySystem.new(model)
       unitary_system.setControlType('Load')

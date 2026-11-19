@@ -95,7 +95,6 @@ def apply_measures(measures_dirs, measures, runner, model, workflow_json = nil, 
   # Only return NA if ALL measures are NA
   return true if num_applicable > 0
 
-
   return 'NA'
 end
 
@@ -149,8 +148,6 @@ def validate_measure_args(measure_args, provided_args, lookup_file, measure_name
       next unless arg.required
 
       register_error("Required argument '#{arg.name}' for measure '#{measure_name}' must have a value provided.", runner)
-
-
 
     else
       provided_args[arg.name] = provided_args[arg.name].to_s

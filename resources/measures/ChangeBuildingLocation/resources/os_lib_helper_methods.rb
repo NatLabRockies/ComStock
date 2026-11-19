@@ -94,7 +94,6 @@ module OsLib_HelperMethods
 
     return false if error
 
-
     return result
   end
 
@@ -205,7 +204,6 @@ module OsLib_HelperMethods
 
     # check for any errors
     return false if error
-
 
     return true
   end

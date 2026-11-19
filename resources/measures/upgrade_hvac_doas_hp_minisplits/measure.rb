@@ -1,7 +1,6 @@
 # ComStock™, Copyright (c) 2025 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
 
-
 # see the URL below for information on how to write OpenStudio measures
 # http://nrel.github.io/OpenStudio-user-documentation/reference/measure_writing_guide/
 require 'comstock-typical'
@@ -137,7 +136,6 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
     climate_zone = OpenstudioStandards::Weather.model_get_climate_zone(model)
     climate_zone_classification = climate_zone.split('-')[-1]
 
-
     # DOAS temperature supply settings - colder cooling discharge air for humid climates
     doas_dat_clg_c = nil
     doas_dat_htg_c = nil
@@ -269,7 +267,6 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
 
     # report initial condition of model
     runner.registerInitialCondition("The building has #{selected_air_loops.size} applicable air loops that will be replaced with a DOAS-ERV/HRV and heat pump ductless minisplits, representing #{(applicable_floorspace_frac * 100).round(2)}% of the building floor area.")
-
 
     thermal_zones = []
     # replace existing applicable air loops with new heat pump rtu air loops
@@ -583,7 +580,6 @@ class HvacDoasHpMinisplits < OpenStudio::Measure::ModelMeasure
         air_loop_hvac.remove
       end
     end
-
 
     # perform sizing run to get sizing values
     if std.model_run_sizing_run(model, "#{Dir.pwd}/SR_HP") == false

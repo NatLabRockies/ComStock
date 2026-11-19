@@ -706,8 +706,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
         coil_design_cop = coil.ratedCOP.get
 
-
-
       end
     elsif coil.to_CoilCoolingDXTwoSpeed.is_initialized
       coil = coil.to_CoilCoolingDXTwoSpeed.get
@@ -728,8 +726,6 @@ class AddHeatPumpRtuTest < Minitest::Test
         raise "'Rated High Speed COP' not available for DX coil '#{coil.name}'." unless coil.ratedHighSpeedCOP.is_initialized
 
         coil_design_cop = coil.ratedHighSpeedCOP.get
-
-
 
       end
     elsif coil.to_CoilCoolingDXMultiSpeed.is_initialized
@@ -2193,12 +2189,10 @@ class AddHeatPumpRtuTest < Minitest::Test
 
     schedule_deltas = [] # keep track of differences between min and max values in schedules
 
-
     # Loop thru zones and look at temp setbacks
     model.getAirLoopHVACs.sort.each do |air_loop_hvac|
       puts "loop class #{air_loop_hvac.class}"
       zones = air_loop_hvac.thermalZones
-
 
       zones.sort.each do |thermal_zone|
         next unless thermal_zone.thermostatSetpointDualSetpoint.is_initialized
@@ -2281,14 +2275,11 @@ class AddHeatPumpRtuTest < Minitest::Test
     assert_equal('Success', result.value.valueName)
     model = load_model(model_output_path(__method__))
 
-
     schedule_deltas = [] # keep track of differences between min and max values in schedules
-
 
     # Loop thru zones and look at temp setbacks
     model.getAirLoopHVACs.sort.each do |air_loop_hvac|
       zones = air_loop_hvac.thermalZones
-
 
       zones.sort.each do |thermal_zone|
         next unless thermal_zone.thermostatSetpointDualSetpoint.is_initialized
@@ -2325,7 +2316,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
     # Make sure no deltas are greater than the expected setback value
     deltas_out_of_range = schedule_deltas.any? { |x| x > setback_value_c }
-
 
     puts("Temperature deltas in schedule match expected values: #{deltas_out_of_range == false}")
 

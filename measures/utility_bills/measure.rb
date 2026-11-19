@@ -391,7 +391,6 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     state_avg_propane_results = ''
     state_avg_fueloil_results = ''
 
-
     state_eia_map.keys.each do |state_abbreviation|
       elec_eia_ids = state_eia_map[state_abbreviation]
 

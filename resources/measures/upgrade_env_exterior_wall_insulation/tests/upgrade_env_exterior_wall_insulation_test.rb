@@ -44,7 +44,6 @@ require 'minitest/autorun'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class ExteriorWallInsulationTest < Minitest::Test
   # return file paths to test models in test directory
   def models_for_tests

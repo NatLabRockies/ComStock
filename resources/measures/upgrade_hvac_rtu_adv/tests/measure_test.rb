@@ -626,16 +626,16 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
 
       # skip for inapplicable (not upgraded) RTUs
       if system.name.to_s.downcase.include?('kitchen')
-        puts('--- CHECKING: skipping for this RTU which was not'\
-             ' upgraded due to space type (i.e., kitchen)')
+        puts('--- CHECKING: skipping for this RTU which was not ' \
+             'upgraded due to space type (i.e., kitchen)')
         next
       end
 
       # skip for inapplicable (not upgraded) RTUs
       if system.name.to_s.downcase.include?('datacenter') ||
          system.name.to_s.downcase.include?('data center')
-        puts('--- CHECKING: skipping for this RTU which was'\
-             ' not upgraded due to space type (i.e., data center)')
+        puts('--- CHECKING: skipping for this RTU which was ' \
+             'not upgraded due to space type (i.e., data center)')
         next
       end
 

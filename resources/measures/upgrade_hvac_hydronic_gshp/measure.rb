@@ -114,7 +114,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     hp_des_cap_htg.setDefaultValue(40.0) # TODO: change this for GTHP
     args << hp_des_cap_htg
 
-
     hp_des_cap_clg = OpenStudio::Measure::OSArgument.makeDoubleArgument('hp_des_cap_clg', true)
     hp_des_cap_clg.setDisplayName('Rated capacity per cooling heat pump--maximum')
     hp_des_cap_clg.setUnits('kW')
@@ -451,7 +450,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
           runner.registerInfo("SupplyAirFlowRateMethodDuringHeatingOperation reset to use 'Autosize' method")
         end
 
-
       end
     end
 
@@ -498,7 +496,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ground_loop_sizing = ground_loop.sizingPlant
     ground_loop_sizing.setLoopType('Condenser')
     ground_loop_sizing.setDesignLoopExitTemperature((ground_loop_sp_c + ground_loop_sp_h) / 2) # averaging the range
-
 
     # Create and add a pump to the loop
     ground_pump = OpenStudio::Model::PumpConstantSpeed.new(model)
@@ -607,7 +604,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # heat_exchanger.addToNode(inlet) ##AA commented this out and added line below 7/12
     intermed_htg_cond_loop.addDemandBranchForComponent(inter_htg_heat_exchanger) # #AA added this 7/13
 
-
     # #Add intermediate cooling condenser loop
     intermed_clg_cond_loop = OpenStudio::Model::PlantLoop.new(model)
     runner.registerInfo('Intermediate Cooling Condenser Loop added.')
@@ -625,7 +621,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     intermed_clg_cond_loop_setpoint_manager.setName('Intermediate Clg Cond Loop Supply Temp Setpoint Manager')
     intermed_clg_cond_loop_setpoint_manager.addToNode(intermed_clg_cond_loop.supplyOutletNode)
 
-
     # Add HX to connect clg loop and intermediate loop
     inter_clg_heat_exchanger = OpenStudio::Model::HeatExchangerFluidToFluid.new(model)
     inter_clg_heat_exchanger.setName('Intermediate heat ex--clg')
@@ -634,7 +629,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     inter_clg_heat_exchanger.setHeatTransferMeteringEndUseType('LoopToLoop')
     # heat_exchanger.addToNode(inlet) ##AA commented this out and added line below 7/12
     intermed_clg_cond_loop.addDemandBranchForComponent(inter_clg_heat_exchanger) # #AA added this 7/13
-
 
     # add a pump to the intermediate clg condenser loop
     pump_clg_intermed_loop = OpenStudio::Model::PumpConstantSpeed.new(model)
@@ -662,7 +656,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # pump.addToNode(hp_loop.supplyInletNode) ##AA commented out
     pump.addToNode(cond_loop.supplyInletNode)
     pump.setPumpControlType('Continuous')
-
 
     # #AA added below for case where no CHW loop present
 
@@ -796,7 +789,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
 
     cap_coils_comb = cap_coils + unitary_cap
 
-
     ### end of additions for no chw loop case
     # get chw coil's air outlet node
 
@@ -880,7 +872,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       # end
       heating_heatpumps = []
 
-
       # calculate # of hps required
       working_des_cap_htg = [hp_des_cap_htg * 1000, elec_htg_cap].max
 
@@ -892,7 +883,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         no_hps = 1
         working_hp_cap_htg = elec_htg_cap
       end
-
 
       (1..no_hps).each do |hp| # adding heat pumps to the loop
         # create water source heat pump object
@@ -923,7 +913,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         heatpump.setElectricInputtoOutputRatioModifierFunctionofPartLoadRatioCurve(hpwh_eir_plr)
         add_lookup_performance_data(model, heatpump, 'hydronic_gshp', 'Carrier_61WG_Glycol_90kW', runner)
 
-
         # adding the heat pump to the supply side of the heat pump loop
         # hp_loop.addSupplyBranchForComponent(heatpump) ##AA commented out
         cond_loop.addDemandBranchForComponent(heatpump) # #AA added
@@ -951,9 +940,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # runner.registerInfo("coil outlet node#{coil.get.outletNode}")
 
     # end
-
-
-
 
     # if no_chillers == 0 && no_unit_sys == false
     # runner.registerAsNotApplicable('No chillers in model and unitary systems present--measure will not be applied.')
@@ -1055,7 +1041,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         pump.autosizeRatedPowerConsumption
       end
 
-
       working_des_cap_clg = [hp_des_cap_clg * 1000, cap_chiller].max
       # runner.registerInfo("cap chiller: #{cap_chiller}")
 
@@ -1081,7 +1066,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         heatpump.setReferenceCapacity(working_hp_cap_clg)
         # heatpump.setReferenceCapacity(hp_des_cap_htg*1000)
         # heatpump.setReferenceCoefficientofPerformance(cop)
-
 
         hpwh_eir_plr = OpenStudio::Model::CurveQuadratic.new(model)
         hpwh_eir_plr.setName('HPWH-EIR-PLR')
@@ -1111,7 +1095,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     end
 
     # end
-
 
     model.getBoilerHotWaters.sort.each do |boiler|
       # runner.registerInfo("starting hot water loop #{Time.now}")
@@ -1197,7 +1180,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
         # heatpump.setElectricInputtoOutputRatioModifierFunctionofTemperatureCurve(hpwh_eir)
         heatpump.setElectricInputtoOutputRatioModifierFunctionofPartLoadRatioCurve(hpwh_eir_plr)
         add_lookup_performance_data(model, heatpump, 'hydronic_gshp', 'Carrier_61WG_Glycol_90kW', runner)
-
 
         # adding the heat pump to the supply side of the heat pump loop
         # hp_loop.addSupplyBranchForComponent(heatpump) ##AA commented out
@@ -1342,7 +1324,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
       end
     end
 
-
     # Calculate maximum load on ground loop
     ground_loads_abs = ground_loads.map(&:abs)
     max_ground_loop_load = ground_loads_abs.max
@@ -1362,7 +1343,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     # for heatpump in cooling_heatpumps
     # heatpump.setSourceSideReferenceFlowRate(source_side_mcs)
     # end
-
 
     # Make directory for GHEDesigner simulation
     # ghedesigner_run_dir = "C:/Users/mprapros/Desktop/ghedesigner"
@@ -1479,7 +1459,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     ghx.setGFunctionReferenceRatio(reference_ratio)
     # ghx.setMaximumLengthofSimulation() # TODO
 
-
     # ratio of borehole radius (mm) to active length(m)
 
     # G function
@@ -1500,7 +1479,6 @@ class HVACHydronicGSHP < OpenStudio::Measure::ModelMeasure
     true
   end
 end
-
 
 # register the measure to be used by the application
 HVACHydronicGSHP.new.registerWithApplication

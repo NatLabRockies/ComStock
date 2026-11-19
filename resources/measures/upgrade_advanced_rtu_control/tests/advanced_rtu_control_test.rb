@@ -113,7 +113,6 @@ class AdvancedRTUControlTest < Minitest::Test
 
     FileUtils.rm_f(report_path(test_name))
 
-
     # copy the osm and epw to the test directory
     # osm_path = File.expand_path(osm_path)
     puts(osm_path)
@@ -130,7 +129,6 @@ class AdvancedRTUControlTest < Minitest::Test
     if model.nil?
       model = load_model(new_osm_path)
     end
-
 
     # set model weather file
     epw_file = OpenStudio::EpwFile.new(OpenStudio::Path.new(new_epw_path))
@@ -149,7 +147,6 @@ class AdvancedRTUControlTest < Minitest::Test
     # change into run directory for tests
     start_dir = Dir.pwd
     Dir.chdir run_dir(test_name)
-
 
     # run the measure
     puts "\nAPPLYING MEASURE..."
@@ -222,7 +219,6 @@ class AdvancedRTUControlTest < Minitest::Test
       argument_map[arg.name] = temp_arg_var
     end
 
-
     # Apply the measure to the model and optionally run the model
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)
     model = load_model(File.expand_path(model_output_path(__method__)))
@@ -250,8 +246,6 @@ class AdvancedRTUControlTest < Minitest::Test
     osm_name = '361_Retail_PSZ_Gas_5a.osm'
     epw_name = 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw'
 
-
-
     osm_path = model_input_path(osm_name)
     epw_path = epw_input_path(epw_name)
 
@@ -273,7 +267,6 @@ class AdvancedRTUControlTest < Minitest::Test
       end
       argument_map[arg.name] = temp_arg_var
     end
-
 
     # Apply the measure to the model and optionally run the model
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)

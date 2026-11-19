@@ -146,15 +146,11 @@ class LoadsSummaryTest < Minitest::Test
 
     assert_path_exists(run_dir(test_name))
 
-
     FileUtils.rm_f(report_path(test_name))
-
 
     assert_path_exists(model_in_path)
 
-
     FileUtils.rm_f(model_out_path(test_name))
-
 
     # convert output requests to OSM for testing, OS App and PAT will add these to the E+ Idf
     workspace = OpenStudio::Workspace.new('Draft'.to_StrictnessLevel, 'EnergyPlus'.to_IddFileType)

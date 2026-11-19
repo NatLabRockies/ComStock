@@ -114,7 +114,6 @@ class EnvRoofInsulAedgTest < Minitest::Test
     FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
-
     # remove prior runs if they exist
     FileUtils.rm_f(model_output_path(test_name))
     FileUtils.rm_f(report_path(test_name))

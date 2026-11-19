@@ -36,7 +36,6 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # *******************************************************************************
 
-
 # dependencies
 require 'comstock-typical'
 
@@ -130,7 +129,6 @@ class UpgradeHvacEnableIdealAirLoads < OpenStudio::Measure::ModelMeasure
                                                         heat_recovery_latent_eff: 0.65,
                                                         add_output_meters: false)
 
-
     # remove any EMS objects tied to ground HX; these will fail model since HVAC has been removed
     # get all EMS objects in the model
     ems_objects = model.getEnergyManagementSystemSensors +
@@ -151,7 +149,6 @@ class UpgradeHvacEnableIdealAirLoads < OpenStudio::Measure::ModelMeasure
       runner.registerInfo('Removing unused GSHP objects from the model.')
       object_to_remove.remove
     end
-
 
     # validity checks
     if ideal_loads_objects.empty?

@@ -187,9 +187,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
 
     oa_system = oa_system.get
 
-
-
-
     # check if airloop is DOAS; skip if true
     sizing_system = air_loop_hvac.sizingSystem
     type_of_load = sizing_system.typeofLoadtoSizeOn
@@ -263,7 +260,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
     add_econo = runner.getBoolArgumentValue('add_econo', user_arguments)
     add_dcv = runner.getBoolArgumentValue('add_dcv', user_arguments)
 
-
     # set airflow design ratio
     min_flow = 0.4	# Based on Catalyst
 
@@ -332,7 +328,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
     if overall_sel_air_loops.empty?
       runner.registerAsNotApplicable('No applicable air loops found in model')
     end
-
 
     overall_sel_air_loops.sort.each do |air_loop_hvac| # iterating thru air loops in the model to identify ones suitable for VAV conversion
       # set control type
@@ -521,7 +516,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
 
         # runner.registerInfo("Air loop #{air_loop_hvac.name} does not have outdoor air and cannot economize.")
 
-
         sizing_system = air_loop_hvac.sizingSystem
         type_of_load = sizing_system.typeofLoadtoSizeOn
         if type_of_load == 'VentilationRequirement'
@@ -537,7 +531,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
         selected_air_loops << air_loop_hvac
 
         # runner.registerInfo("Air loop #{air_loop_hvac.name} has an existing #{current_economizer_type} economizer.")
-
 
         # get airLoopHVACOutdoorAirSystem
         oa_sys = air_loop_hvac.airLoopHVACOutdoorAirSystem
@@ -624,8 +617,6 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
         oa_system = oa_system.get
 
         # runner.registerInfo("Air loop #{air_loop_hvac.name} does not have outdoor air and cannot economize.")
-
-
 
         # get economizer from OA controller
         oa_controller = oa_system.getControllerOutdoorAir

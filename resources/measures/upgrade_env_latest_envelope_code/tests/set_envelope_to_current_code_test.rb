@@ -44,7 +44,6 @@ require 'minitest/autorun'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class SetEnvelopeToCurrentCodeTest < Minitest::Test
   # return file paths to test models in test directory
   def models_for_tests
@@ -109,9 +108,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
 
     FileUtils.rm_f(model_output_path(test_name))
 
-
     FileUtils.rm_f(report_path(test_name))
-
 
     # create an instance of a runner
     runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)

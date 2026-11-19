@@ -661,7 +661,6 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
           new_construction_hash[construction] = new_construction
           puts "--- create simple glazing system (#{new_simple_glazing.name.get}) for this construction"
 
-
         end
 
         # loop over fenestration surfaces and add new construction

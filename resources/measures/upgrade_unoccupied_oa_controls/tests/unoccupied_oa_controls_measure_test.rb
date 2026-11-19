@@ -106,15 +106,12 @@ class UnoccupiedOAControlsTest < Minitest::Test
 
     assert(File.exist?(run_dir(test_name)))
 
-
-
     # remove prior runs if they exist
     # if File.exist?(model_output_path(test_name))
     # FileUtils.rm(model_output_path(test_name))
     # end
 
     FileUtils.rm_f(report_path(test_name))
-
 
     # copy the osm and epw to the test directory
     # osm_path = File.expand_path(osm_path)
@@ -134,7 +131,6 @@ class UnoccupiedOAControlsTest < Minitest::Test
       model = load_model(new_osm_path)
     end
 
-
     # set model weather file
     epw_file = OpenStudio::EpwFile.new(OpenStudio::Path.new(new_epw_path))
     OpenStudio::Model::WeatherFile.setWeatherFile(model, epw_file)
@@ -153,7 +149,6 @@ class UnoccupiedOAControlsTest < Minitest::Test
     # change into run directory for tests
     start_dir = Dir.pwd
     Dir.chdir run_dir(test_name)
-
 
     # run the measure
     puts "\nAPPLYING MEASURE..."
@@ -228,7 +223,6 @@ class UnoccupiedOAControlsTest < Minitest::Test
     argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
     # no arguments to measure
 
-
     # Apply the measure to the model and optionally run the model
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)
     model = load_model(File.expand_path(model_output_path(__method__)))
@@ -262,7 +256,6 @@ class UnoccupiedOAControlsTest < Minitest::Test
     arguments = measure.arguments(model)
     argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
     # no arguments to measure
-
 
     # Apply the measure to the model and optionally run the model
     result = apply_measure_and_run(__method__, measure, argument_map, osm_path, epw_path, run_model: false)

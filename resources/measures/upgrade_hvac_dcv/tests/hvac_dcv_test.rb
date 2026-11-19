@@ -44,7 +44,6 @@ require 'minitest/autorun'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class HVACDCVTest < Minitest::Test
   # all tests are a sub definition of this class, e.g.:
   # def test_new_kind_of_test
