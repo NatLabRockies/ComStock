@@ -9,7 +9,7 @@ require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
 # require all .rb files in resources folder
-Dir["#{File.dirname(__FILE__)}/../resources/*.rb"].sort.each { |file| require file }
+Dir["#{__dir__}/../resources/*.rb"].sort.each { |file| require file }
 
 class DfThermostatControlLoadShiftTest < Minitest::Test
   # def setup

@@ -9,7 +9,7 @@ require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
 # require all .rb files in resources folder (sorted)
-Dir["#{File.dirname(__FILE__)}/../resources/*.rb"].sort.each { |file| require file }
+Dir["#{__dir__}/../resources/*.rb"].sort.each { |file| require file }
 
 class DFLoadShedTest < Minitest::Test
   # def setup
