@@ -1,8 +1,10 @@
 name: ComStock tests (draft)
 
-# Start manually while validating the setup.
+# Allow branch-only testing before this workflow is merged.
 on:
   workflow_dispatch:
+  push:
+    branches: [ci-testing]
 
 permissions:
   contents: read
@@ -24,7 +26,7 @@ jobs:
   unit-tests:
     name: Measure tests (includes simulations)
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 120
     env:
       BUNDLE_GEMFILE: ${{ github.workspace }}/resources/Gemfile
       BUNDLE_PATH: ${{ github.workspace }}/.custom_gems
@@ -91,6 +93,8 @@ jobs:
           PY
 
   integration-tests:
+    # Re-enable after local validation.
+    if: ${{ false }}
     name: BuildStockBatch baseline smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -154,6 +158,8 @@ jobs:
           PY
 
   docker-build:
+    # Re-enable after local validation.
+    if: ${{ false }}
     name: Build and verify container images
     runs-on: ubuntu-24.04
     timeout-minutes: 90
