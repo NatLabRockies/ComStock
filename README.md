@@ -80,18 +80,14 @@ pip install NREL-PySAM==4.2.0
 ```
 
 ## Measure Tests
-1. Follow the developer installation instructions above. In particular, `GHEDesigner==1.0` must be installed with `pip install GHEDesigner==1.0`.
-2. Run the measure tests with the rake command:
-  - `bundle exec rake unit_tests:all_tests` to run all measure tests.
-  - `bundle exec rake unit_tests:reporting_measure_tests` to run all reporting measure tests.
-  - `bundle exec rake unit_tests:workflow_measure_tests` to run all workflow measure tests.
-	- `bundle exec rake unit_tests:upgrade_measure_tests` to run all `upgrade_` measure tests.
+After completing the developer setup above, run:
 
-Tests run in parallel within each group. The `bundle exec rake unit_tests:all_tests`
-task runs all groups before failing, even if tests fail or crash along the way.
-Results use the usual Minitest format, with a final failure summary. Any failures
-also fail the CI step.
-Reports are saved under `test/reports`.
+- `bundle exec rake unit_tests:all_tests` for all measure tests.
+- `bundle exec rake unit_tests:reporting_measure_tests` for reporting tests.
+- `bundle exec rake unit_tests:workflow_measure_tests` for workflow tests.
+- `bundle exec rake unit_tests:upgrade_measure_tests` for upgrade tests.
+
+Rake prints a failure summary at the end and saves JUnit reports in `test/reports`.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above
