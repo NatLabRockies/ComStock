@@ -98,7 +98,8 @@ To run one test from the repository root (with your test bundle configured):
 bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
 ```
 
-The GitHub Actions integration job retains its baseline CSV for one day in the `buildstockbatch-results-csv` artifact and pushes changed results back to the triggering branch on success.
+On successful push or manual branch runs, the GitHub Actions integration job pushes changed [baseline results](test/base_results/baseline/results_up00.csv) back to the triggering branch.
+The committed CSV omits `utility_bills.electricity_utility_bill_results` because some values exceed Excel's cell length limit. The raw BuildStockBatch output is unchanged and is not uploaded as an artifact.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above

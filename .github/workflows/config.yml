@@ -143,24 +143,19 @@ jobs:
             samples/bsb-integration-test.csv \
             baseline_test_output/simulation_output/results_job0.json.gz
 
-      - name: Extract baseline results CSV
-        run: gunzip -k baseline_test_output/results_csvs/results_up00.csv.gz
-
-      - name: Upload baseline results CSV
-        uses: actions/upload-artifact@v7
-        with:
-          name: buildstockbatch-results-csv
-          path: baseline_test_output/results_csvs/results_up00.csv
-          retention-days: 1
-          if-no-files-found: error
+      - name: Prepare baseline results CSV without detailed electricity bills
+        run: |
+          gunzip -k baseline_test_output/results_csvs/results_up00.csv.gz
+          mkdir -p test/base_results/baseline
+          python .github/scripts/filter_baseline_csv.py \
+            baseline_test_output/results_csvs/results_up00.csv \
+            test/base_results/baseline/results_up00.csv
 
       - name: Commit and push baseline results CSV
         if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p test/base_results/baseline
-          cp baseline_test_output/results_csvs/results_up00.csv test/base_results/baseline/
           git add -- test/base_results/baseline/results_up00.csv
           if ! git diff --cached --quiet -- test/base_results/baseline/results_up00.csv; then
             git -c user.name="GitHub Actions" -c user.email="github-actions[bot]@users.noreply.github.com" \
