@@ -107,8 +107,11 @@ class EnvSecondaryWindowsTest < Minitest::Test
     Dir.chdir run_dir(test_name)
 
     # remove prior runs if they exist
-    FileUtils.rm(model_output_path(test_name))
-    FileUtils.rm(report_path(test_name))
+    [model_output_path(test_name), report_path(test_name)].each do |path|
+      FileUtils.rm(path)
+    rescue Errno::ENOENT
+      # No prior output on a fresh run.
+    end
 
     # copy the osm and epw to the test directory
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
