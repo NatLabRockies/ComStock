@@ -202,6 +202,10 @@ class MeasureTestRunnerTest < Minitest::Test
             flunk 'expected upgrade failure'
           end
 
+          def test_errors
+            raise 'expected upgrade error'
+          end
+
           def test_skipped
             skip 'not a pass'
           end
@@ -221,11 +225,21 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(details, 'FixtureTest#test_fails: expected upgrade failure')
       assert_equal(2, details.scan(/^FAIL:/).size)
       summary = File.read('step-summary.md')
-      assert_includes(summary, "## #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
-      assert_includes(summary, '## Measure tests passed (2)')
-      assert_includes(summary, 'PASS: FixtureTest#test_passes (workflow_fixture_test.rb)')
-      assert_includes(summary, 'PASS: FixtureTest#test_passes (upgrade_fixture_test.rb)')
-      refute_match(/PASS: .*test_(fails|skipped)/, summary)
+      failed, passed = summary.split("\n## Measure tests passed", 2)
+      assert_includes(failed, '## Measure tests failed (2)')
+      assert_includes(failed, 'without a JUnit test result are listed below but not counted')
+      assert_includes(failed, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
+      assert_equal(<<~SUMMARY.chomp, passed.strip)
+        (2)
+
+            workflow_measure_tests:
+            PASS: workflow_fixture_test.rb
+              FixtureTest#test_passes
+
+            upgrade_measure_tests:
+            PASS: upgrade_fixture_test.rb
+              FixtureTest#test_passes
+      SUMMARY
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'workflow_fixture_test', 'TEST-*.xml'))
       assert_equal(1, reports.size)
     end
@@ -240,6 +254,7 @@ class MeasureTestRunnerTest < Minitest::Test
       Rake::Task['unit_tests:all_tests'].invoke
 
       summary = File.read('step-summary.md')
+      assert_includes(summary, '## Measure tests failed (0)')
       assert_includes(summary, '## Measure tests passed (3)')
       assert_equal(3, summary.scan(/^    PASS:/).size)
       refute_includes(summary, 'FAIL:')

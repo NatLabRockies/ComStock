@@ -3,7 +3,7 @@ require 'parallel'
 require 'rubocop/rake_task'
 require 'rexml/document'
 
-def run_measure_tests(file_list, passed_tests: nil)
+def run_measure_tests(file_list, summary: nil)
   reports_root = ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR', File.expand_path('test/reports'))
   runner = File.join(__dir__, 'test/helpers/measure_test_runner.rb')
   load_paths = $LOAD_PATH.join(File::PATH_SEPARATOR)
@@ -12,6 +12,7 @@ def run_measure_tests(file_list, passed_tests: nil)
   results = Parallel.map(file_list, in_threads: Parallel.processor_count) do |file|
     process_failure = nil
     test_failures = []
+    failed_count = 0
     passes = []
     report_dir = File.expand_path(File.join(reports_root, file.sub(/\.rb\z/, '')))
     FileUtils.rm_f(Dir.glob(File.join(report_dir, 'TEST-*.xml')))
@@ -23,16 +24,14 @@ def run_measure_tests(file_list, passed_tests: nil)
 
     reports = Dir.glob(File.join(report_dir, 'TEST-*.xml'))
     test_cases = reports.flat_map { |report| REXML::Document.new(File.read(report)).get_elements('//testcase') }
-    test_failures = test_cases.flat_map do |test_case|
-      test_case.get_elements('failure|error').map do |failure|
-        "  #{test_case.attributes['classname']}##{test_case.attributes['name']}: #{failure.attributes['message']}"
-      end
-    end
-    if passed_tests
-      passes = test_cases.filter_map do |test_case|
-        next unless test_case.get_elements('failure|error|skipped').empty?
-
-        "PASS: #{test_case.attributes['classname']}##{test_case.attributes['name']} (#{file})"
+    test_cases.each do |test_case|
+      name = "#{test_case.attributes['classname']}##{test_case.attributes['name']}"
+      failures = test_case.get_elements('failure|error')
+      if failures.empty?
+        passes << name if summary && test_case.get_elements('skipped').empty?
+      else
+        failed_count += 1
+        failures.each { |failure| test_failures << "  #{name}: #{failure.attributes['message']}" }
       end
     end
 
@@ -42,16 +41,21 @@ def run_measure_tests(file_list, passed_tests: nil)
     end
     raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
-    [nil, passes]
+    { file: file, passes: passes, failed_count: failed_count }
   rescue StandardError => e
     reason = [process_failure, e.message].compact.uniq.join('; ')
     message = "FAIL: #{file} (#{reason})"
     message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
-    [message, passes]
+    { file: file, passes: passes, failed_count: failed_count, error: message }
   end
 
-  passed_tests&.concat(results.flat_map(&:last))
-  errors = results.filter_map(&:first)
+  if summary
+    results.each do |result|
+      summary[:passes][result[:file]] = result[:passes] unless result[:passes].empty?
+      summary[:failed_count] += result[:failed_count]
+    end
+  end
+  errors = results.filter_map { |result| result[:error] }
 
   raise "Measure test failures (#{errors.length}):\n#{errors.join("\n")}" unless errors.empty?
 end
@@ -63,10 +67,10 @@ namespace :unit_tests do
     workflow: ->(file) { file.include?('rb') && !file.include?('upgrade') },
     upgrade: ->(file) { file.include?('rb') && file.include?('upgrade') }
   }
-  run_group = lambda do |group, passed_tests = nil|
+  run_group = lambda do |group, summary = nil|
     puts "Running all #{group} measure tests:"
     files = FileList.new(File.readlines("test/#{group}_measure_tests.txt", chomp: true))
-    run_measure_tests(files.select(&filters.fetch(group)), passed_tests: passed_tests)
+    run_measure_tests(files.select(&filters.fetch(group)), summary: summary)
   end
 
   filters.each_key do |group|
@@ -80,9 +84,10 @@ namespace :unit_tests do
   task :all_tests do
     puts 'Running all measure tests:'
     step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
-    passed_tests = [] if step_summary
+    summaries = {}
     errors = filters.keys.filter_map do |group|
-      run_group.call(group, passed_tests)
+      summaries[group] = { passes: {}, failed_count: 0 } if step_summary
+      run_group.call(group, summaries[group])
       nil
     rescue StandardError => e
       "#{group}_measure_tests:\n#{e.message}"
@@ -91,10 +96,24 @@ namespace :unit_tests do
     heading = "Measure test groups failed (#{errors.length})"
     details = errors.join("\n\n")
     if step_summary
+      failed_count = summaries.values.sum { |summary| summary[:failed_count] }
+      passed_count = summaries.values.sum { |summary| summary[:passes].values.sum(&:length) }
       File.open(step_summary, 'a') do |file|
-        file.puts "## #{heading}\n\n#{details.gsub(/^/, '    ')}\n" unless errors.empty?
-        file.puts "## Measure tests passed (#{passed_tests.length})\n"
-        passed_tests.each { |result| file.puts "    #{result}" }
+        file.puts "## Measure tests failed (#{failed_count})\n"
+        unless errors.empty?
+          file.puts "\nFile or group failures without a JUnit test result are listed below but not counted as failed tests.\n"
+          file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
+        end
+        file.puts "\n## Measure tests passed (#{passed_count})\n"
+        summaries.each do |group, summary|
+          next if summary[:passes].empty?
+
+          file.puts "\n    #{group}_measure_tests:"
+          summary[:passes].each do |test_file, passes|
+            file.puts "    PASS: #{test_file}"
+            passes.each { |test_name| file.puts "      #{test_name}" }
+          end
+        end
       end
     end
     abort "#{heading}:\n#{details}" unless errors.empty?

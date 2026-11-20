@@ -89,7 +89,8 @@ After completing the developer setup above, run:
 
 Rake prints a failure summary at the end and saves JUnit reports in `test/reports`.
 In GitHub Actions, download them from the `measure-test-reports` artifact, even if tests fail.
-The run summary lists individual passes and failures.
+The run summary lists passes and failures by test group and file, with totals from JUnit.
+Unreported test results, such as a crash before JUnit output, do not count toward the failed-test total.
 
 To run one test from the repository root (with your test bundle configured):
 
