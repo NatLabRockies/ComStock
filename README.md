@@ -90,6 +90,9 @@ After completing the developer setup above, run:
 Rake prints a failure summary at the end and saves JUnit reports in `test/reports`.
 In GitHub Actions, download them from the `measure-test-reports` artifact, even if tests fail.
 The run summary lists passes and failures by test group and file, with totals from JUnit.
+Percentage ranges use the number of tests Minitest discovers at runtime; unreported tests
+could have passed, failed, been skipped, or never run. Reported skips are neither passes
+nor failures. Ranges are unavailable if a test file fails before discovery completes.
 Unreported test results, such as a crash before JUnit output, do not count toward the failed-test total.
 
 To run one test from the repository root (with your test bundle configured):
@@ -98,9 +101,10 @@ To run one test from the repository root (with your test bundle configured):
 bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
 ```
 
-The GitHub Actions integration job runs the baseline and all upgrades in [the integration upgrades project](ymls/bsb-integration-test-upgrades.yml).
-On successful push or manual branch runs, it commits one CSV per scenario (including `results_up00.csv` for the baseline) under `test/base_results/upgrades` and pushes changes to the triggering branch.
-The committed CSVs omit `utility_bills.electricity_utility_bill_results` because some values exceed Excel's cell length limit. The raw BuildStockBatch CSVs are unchanged and are not uploaded as artifacts.
+The GitHub Actions integration job currently runs only the baseline in [the integration upgrades project](ymls/bsb-integration-test-upgrades.yml), using the [eight-building integration sample](samples/bsb-integration-test.csv); the upgrades are commented out for now.
+It configures AWS credentials from the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` repository secrets, following ResStock's CI configuration. The BuildStockBatch `comstock-publication-hook` branch must be pushed before the workflow can install it.
+BuildStockBatch runs ComStock postprocessing with the `2026R1` stock estimate and exports full weighted results by state and climate zone. This tiny sample is only a pipeline demonstration and is not representative of the national building stock.
+On successful push or manual branch runs, the job commits one published CSV per scenario (including `results_up00.csv` for the baseline) under `test/base_results/upgrades` and pushes changes to the triggering branch. Raw BuildStockBatch CSVs are available in the `integration-results-raw` artifact.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above

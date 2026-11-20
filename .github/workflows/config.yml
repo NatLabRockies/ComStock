@@ -17,10 +17,8 @@ env:
   OPENSTUDIO_VER: '3.10.0'
   OPENSTUDIO_SHA: '86d7e215a1'
   OPENSTUDIO_PLATFORM: Ubuntu-24.04-x86_64
-  # Pin develop's tip at drafting time so runs use the same BuildStockBatch code.
-  # This revision has not been validated for ComStock compatibility.
-  # Use 'develop' instead to follow its latest changes on every run.
-  BUILDSTOCK_BATCH_REF: 88dd3b107cf8074acbae282b0ff6f8dfaf8a21e1
+  # This branch must be pushed to BuildStockBatch before running the integration job.
+  BUILDSTOCK_BATCH_REF: comstock-publication-hook
 
 defaults:
   run:
@@ -109,7 +107,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.12.12'
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -133,9 +131,32 @@ jobs:
         run: |
           python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
           python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
+          python -m pip install -e ./postprocessing
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+          role-duration-seconds: 1200
+          role-session-name: MySession
 
       - name: Run baseline and upgrade simulations with BuildStockBatch postprocessing
+        id: integration-run
         run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 4
+
+      - name: Decompress raw integration results CSVs
+        if: ${{ !cancelled() && (steps.integration-run.outcome == 'success' || steps.integration-run.outcome == 'failure') }}
+        run: gunzip -k upgrades_test_output/results_csvs/*.csv.gz
+
+      - name: Upload raw integration results CSVs
+        if: ${{ !cancelled() && (steps.integration-run.outcome == 'success' || steps.integration-run.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results-raw
+          path: upgrades_test_output/results_csvs/*.csv
+          if-no-files-found: error
 
       - name: Check baseline and upgrade simulation results
         run: |
@@ -144,14 +165,12 @@ jobs:
             upgrades_test_output/simulation_output/results_job0.json.gz \
             --project-file ymls/bsb-integration-test-upgrades.yml
 
-      - name: Prepare integration results CSVs without detailed electricity bills
+      - name: Prepare published integration results CSVs
         run: |
           mkdir -p test/base_results/upgrades
-          for archive in upgrades_test_output/results_csvs/results_up*.csv.gz; do
+          for archive in upgrades_test_output/results_csvs_pub/results_up*.csv.gz; do
             gunzip -k "$archive"
-            csv="${archive%.gz}"
-            python .github/scripts/filter_baseline_csv.py \
-              "$csv" "test/base_results/upgrades/${csv##*/}"
+            cp "${archive%.gz}" test/base_results/upgrades/
           done
 
       - name: Commit and push upgrade integration results CSVs

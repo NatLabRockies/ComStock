@@ -69,7 +69,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def __init__(self, s3_base_dir, comstock_run_name, comstock_run_version, comstock_year, athena_table_name,
         truth_data_version, buildstock_csv_name = 'buildstock.csv', acceptable_failure_percentage=0.01, drop_failed_runs=True,
         color_hex=NamingMixin.COLOR_COMSTOCK_BEFORE, weighted_energy_units='tbtu', weighted_demand_units='gw', weighted_ghg_units='co2e_mmt', weighted_utility_units='billion_usd', skip_missing_columns=False,
-        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, output_dir=None, aws_profile_name=None):
+        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, output_dir=None, aws_profile_name=None, data_dir=None):
         """
         A class to load and transform ComStock data for export, analysis, and comparison.
         Args:
@@ -80,6 +80,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             comstock_year (int): The year represented by this ComStock run
             comstock_run_version (str): The version string for this ComStock run
             to differentiate it from other ComStock runs
+            data_dir (str, optional): Directory containing buildstock.csv and results_up*.parquet.
         """
 
         # Initialize members
@@ -89,7 +90,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.year = comstock_year
         self.truth_data_version = truth_data_version
         self.dataset_name = f'ComStock {self.comstock_run_version}'
-        self.data_dir = os.path.join(CURRENT_DIR, '..', 'comstock_data', self.comstock_run_version)
+        self.data_dir = data_dir if data_dir is not None else os.path.join(CURRENT_DIR, '..', 'comstock_data', self.comstock_run_version)
         self.truth_data_dir = os.path.join(CURRENT_DIR, '..', 'truth_data', self.truth_data_version)
         self.output_dir = self.setup_fsspec_filesystem(output_dir, aws_profile_name)
         self.results_file_name = 'results_up00.parquet'
