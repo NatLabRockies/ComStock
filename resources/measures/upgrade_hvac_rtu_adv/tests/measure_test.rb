@@ -542,6 +542,173 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     return model
   end
 
+  # unitary systems this measure created; kitchens and data centers keep their original unit
+  def adv_rtus(model)
+    model.getAirLoopHVACUnitarySystems.sort.select { |us| us.name.to_s.include?('RTU SZ-VAV high-efficiency') }
+  end
+
+  # value of an OpenStudio optional, or nil when it is not set
+  def optional_value(value)
+    return value if value.is_a?(Numeric)
+
+    value.is_initialized ? value.get : nil
+  end
+
+  # assert every advanced RTU's terminal passes at least the minimum outdoor air (OA) flow whenever the fan runs:
+  # the terminal's maximum airflow is hard-sized to the loop design airflow, and its minimum airflow (zone minimum air
+  # flow fraction x maximum) is at least the minimum OA flow and equals the unit's no-load airflow.
+  # A terminal that asks for less air than the fan moves can leave the OA controller with no airflow, which closes
+  # the outdoor air while the fan runs: see assert_oa_controller_sees_fan_airflow.
+  # Call this on the model as the measure left it; a later sizing run hard-sizes the terminal maximum on its own.
+  def assert_terminal_minimum_is_no_load_airflow(model, label)
+    rtus = adv_rtus(model)
+    refute_empty(rtus, "#{label}: no advanced RTUs to check")
+
+    rtus.each do |us|
+      air_loop_hvac = us.airLoopHVAC.get
+      name = "#{label} #{air_loop_hvac.name}"
+      controller_oa = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+      oa = optional_value(controller_oa.minimumOutdoorAirFlowRate) || optional_value(controller_oa.autosizedMinimumOutdoorAirFlowRate)
+      design = optional_value(air_loop_hvac.designSupplyAirFlowRate) || optional_value(air_loop_hvac.autosizedDesignSupplyAirFlowRate)
+      no_load = optional_value(us.supplyAirFlowRateWhenNoCoolingorHeatingisRequired)
+      refute_nil(oa, "#{name}: no minimum OA flow")
+      refute_nil(design, "#{name}: no design supply airflow")
+      refute_nil(no_load, "#{name}: no no-load supply airflow")
+
+      terminal = air_loop_hvac.demandComponents.map(&:to_AirTerminalSingleDuctVAVHeatAndCoolNoReheat).find(&:is_initialized)
+      refute_nil(terminal, "#{name}: no VAV heat and cool terminal on the air loop")
+      terminal_max = optional_value(terminal.get.maximumAirFlowRate)
+      refute_nil(terminal_max, "#{name}: the terminal's maximum airflow is not hard-sized")
+      assert_in_delta(design, terminal_max, design * 1e-6,
+                      "#{name}: terminal maximum airflow #{terminal_max.round(4)} m3/s differs from the loop design airflow #{design.round(4)} m3/s")
+      terminal_min = terminal.get.zoneMinimumAirFlowFraction * terminal_max
+      assert(terminal_min >= oa * (1 - 1e-6),
+             "#{name}: terminal minimum airflow #{terminal_min.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
+      assert_in_delta(no_load, terminal_min, no_load * 1e-6,
+                      "#{name}: terminal minimum airflow #{terminal_min.round(4)} m3/s differs from the no-load airflow #{no_load.round(4)} m3/s")
+    end
+  end
+
+  # assert the outdoor air controller of every advanced RTU air loop saw airflow whenever the supply fan ran, from the
+  # Fan Air Mass Flow Rate and Air System Mixed Air Mass Flow Rate records of an annual run.
+  # With a terminal minimum of 0 the terminal asks for no air while its zone has no load. In a model with no zone
+  # exhaust fan, EnergyPlus then reports no mixed air flow and delivers no outdoor air in those timesteps, although
+  # the fan runs at its no-load airflow. A model used with this check must not have a zone exhaust fan, or the check
+  # passes whatever the terminal minimum is.
+  def assert_oa_controller_sees_fan_airflow(model, test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+    series = lambda do |variable, key|
+      'SELECT r.TimeIndex AS ti, r.Value AS v FROM ReportData r ' \
+        'JOIN ReportDataDictionary d ON d.ReportDataDictionaryIndex = r.ReportDataDictionaryIndex ' \
+        'JOIN Time t ON t.TimeIndex = r.TimeIndex ' \
+        "WHERE d.Name = '#{variable}' AND d.KeyValue = '#{key.upcase.gsub("'", "''")}' AND t.WarmupFlag = 0 " \
+        'AND t.EnvironmentPeriodIndex IN (SELECT EnvironmentPeriodIndex FROM EnvironmentPeriods WHERE EnvironmentType = 3)'
+    end
+    rtus = adv_rtus(model)
+    refute_empty(rtus, "#{test_name}: no advanced RTUs to check")
+
+    rtus.each do |us|
+      air_loop_hvac = us.airLoopHVAC.get
+      fan = series.call('Fan Air Mass Flow Rate', us.supplyFan.get.name.to_s)
+      mixed = series.call('Air System Mixed Air Mass Flow Rate', air_loop_hvac.name.to_s)
+      joined = "FROM (#{fan}) f JOIN (#{mixed}) m ON m.ti = f.ti"
+      fan_records = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE f.v > 0").get
+      assert(fan_records.positive?, "#{test_name} #{air_loop_hvac.name}: no records with the supply fan running in the sql")
+
+      # records where the controller saw no airflow while the fan ran, and the year's mixed air over the year's fan
+      # airflow. The two flows need not match record by record: the terminal can sit at its minimum while the unit's
+      # fan runs at a higher airflow, and the terminal minimum still carries the minimum outdoor air.
+      no_air_records = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE f.v > 0 AND m.v < 0.01 * f.v").get
+      ratio = sql.execAndReturnFirstDouble("SELECT SUM(m.v) / SUM(f.v) #{joined}").get
+      assert_equal(0, no_air_records,
+                   "#{test_name} #{air_loop_hvac.name}: the outdoor air controller saw no airflow in #{no_air_records} of #{fan_records} records with the fan running")
+      assert(ratio >= 0.9, "#{test_name} #{air_loop_hvac.name}: annual mixed air flow is #{ratio.round(3)} of the fan's airflow")
+    end
+  ensure
+    sql&.close
+  end
+
+  # assert every advanced RTU has a UnitarySystemPerformance:Multispeed object whose no-load ratio gives the unit's
+  # no-load airflow: EnergyPlus takes the no-load airflow of a unit with a multispeed coil as that ratio times the
+  # cooling supply airflow and ignores the unit's own no-load airflow. Without the object OpenStudio writes one with a
+  # blank ratio (EnergyPlus default 1), and the fan runs at full airflow whenever there is no load.
+  # The stage ratios must be each cooling stage's rated airflow over the cooling supply airflow.
+  # The cooling coil must be a multispeed coil: OpenStudio 3.10 writes an assigned performance object with one cooling
+  # speed for a variable-speed coil, which stops EnergyPlus (the annual test would catch that).
+  def assert_no_load_airflow_ratio(model, label)
+    rtus = adv_rtus(model)
+    refute_empty(rtus, "#{label}: no advanced RTUs to check")
+
+    rtus.each do |us|
+      name = "#{label} #{us.name}"
+      no_load = optional_value(us.supplyAirFlowRateWhenNoCoolingorHeatingisRequired)
+      clg_flow = optional_value(us.supplyAirFlowRateDuringCoolingOperation)
+      refute_nil(no_load, "#{name}: no no-load supply airflow")
+      refute_nil(clg_flow, "#{name}: no cooling supply airflow")
+      assert(us.designSpecificationMultispeedObject.is_initialized, "#{name}: no multispeed performance object assigned")
+      performance = us.designSpecificationMultispeedObject.get
+
+      ratio = performance.noLoadSupplyAirflowRateRatio
+      assert_in_delta(no_load, ratio * clg_flow, no_load * 1e-6,
+                      "#{name}: no-load ratio #{ratio.round(4)} x cooling airflow #{clg_flow.round(4)} m3/s differs from the no-load airflow #{no_load.round(4)} m3/s")
+      assert(ratio >= 0.40 - 1e-6, "#{name}: no-load ratio #{ratio.round(4)} is below the 0.40 minimum airflow")
+      assert(ratio <= 1.0 + 1e-6, "#{name}: no-load ratio #{ratio.round(4)} exceeds 1.0")
+
+      assert(us.coolingCoil.get.to_CoilCoolingDXMultiSpeed.is_initialized, "#{name}: the cooling coil is not a multispeed coil")
+      stages = us.coolingCoil.get.to_CoilCoolingDXMultiSpeed.get.stages
+      fields = performance.supplyAirflowRatioFields
+      assert_equal(stages.size, fields.size, "#{name}: one airflow ratio field per cooling stage expected")
+      stages.each_with_index do |stage, i|
+        assert_in_delta(stage.ratedAirFlowRate.get / clg_flow, optional_value(fields[i].coolingRatio), 1e-6,
+                        "#{name}: cooling stage #{i + 1} airflow ratio differs from its rated airflow over the cooling airflow")
+        assert_in_delta(1.0, optional_value(fields[i].heatingRatio), 1e-6, "#{name}: heating airflow ratio #{i + 1} is not 1.0")
+      end
+    end
+  end
+
+  # assert every advanced RTU's supply fan sits at the no-load airflow while its zone has no load, from the records of
+  # an annual run where the unit's predicted sensible load is zero and the fan runs. The measure is the mean fan
+  # airflow in those records over the unit's design airflow, against the measure's minimum airflow ratio.
+  # - The ratio is read from the fan's power minimum flow fraction: a model saved after a simulation carries the
+  #   no-load airflow EnergyPlus used, not the one the measure set.
+  # - The design airflow is turned into a mass flow with EnergyPlus' standard air density for the site elevation (dry
+  #   air at 20 C and the standard pressure at that elevation). The year's highest fan airflow is no reference: a unit
+  #   that idles at its minimum may never reach its design airflow.
+  # Before the no-load ratio was set the fan ran at the design airflow in these records.
+  def assert_fan_at_no_load_airflow_without_load(model, test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+    series = lambda do |variable, key|
+      'SELECT r.TimeIndex AS ti, r.Value AS v FROM ReportData r ' \
+        'JOIN ReportDataDictionary d ON d.ReportDataDictionaryIndex = r.ReportDataDictionaryIndex ' \
+        'JOIN Time t ON t.TimeIndex = r.TimeIndex ' \
+        "WHERE d.Name = '#{variable}' AND d.KeyValue = '#{key.upcase.gsub("'", "''")}' AND t.WarmupFlag = 0 " \
+        'AND t.EnvironmentPeriodIndex IN (SELECT EnvironmentPeriodIndex FROM EnvironmentPeriods WHERE EnvironmentType = 3)'
+    end
+    rtus = adv_rtus(model)
+    refute_empty(rtus, "#{test_name}: no advanced RTUs to check")
+    assert(model.weatherFile.is_initialized, "#{test_name}: the model has no weather file to take the site elevation from")
+    standard_pressure_pa = 101_325.0 * ((1.0 - (2.25577e-5 * model.weatherFile.get.elevation))**5.2559)
+    standard_density_kg_per_m3 = standard_pressure_pa / (287.0 * 293.15)
+
+    rtus.each do |us|
+      name = "#{test_name} #{us.name}"
+      fan = series.call('Fan Air Mass Flow Rate', us.supplyFan.get.name.to_s)
+      load = series.call('Unitary System Predicted Sensible Load to Setpoint Heat Transfer Rate', us.name.to_s)
+      joined = "FROM (#{fan}) f JOIN (#{load}) q ON q.ti = f.ti"
+      no_load_records = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE f.v > 0 AND q.v = 0").get
+      assert(no_load_records > 100, "#{name}: only #{no_load_records} records with the fan running and no load; the check needs a model that idles")
+
+      mean_no_load_kg_per_s = sql.execAndReturnFirstDouble("SELECT AVG(f.v) #{joined} WHERE f.v > 0 AND q.v = 0").get
+      design_m3_per_s = [optional_value(us.supplyAirFlowRateDuringCoolingOperation), optional_value(us.supplyAirFlowRateDuringHeatingOperation)].max
+      actual = mean_no_load_kg_per_s / (design_m3_per_s * standard_density_kg_per_m3)
+      expected = optional_value(us.supplyFan.get.to_FanVariableVolume.get.fanPowerMinimumFlowFraction)
+      assert_in_delta(expected, actual, 0.03,
+                      "#{name}: with no load the fan averages #{actual.round(3)} of the design airflow, expected #{expected.round(3)}")
+    end
+  ensure
+    sql&.close
+  end
+
   def verify_adv_rtu(test_name, measure, argument_map, osm_path, epw_path)
     # set weather file but not apply measure
     result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path,
@@ -581,6 +748,10 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path,
                                                    epw_path, run_model: false, apply: true)
     model = load_model(model_output_path(test_name))
+
+    # the new terminals carry the unit's minimum airflow; checked before the sizing run below hard-sizes them
+    assert_terminal_minimum_is_no_load_airflow(model, test_name)
+    assert_no_load_airflow_ratio(model, test_name)
 
     # hardsize model
     model = _mimic_hardsize_model(model, "#{run_dir(test_name)}/SR_after")
@@ -655,50 +826,50 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
       assert(sup_htg_coil_avail, 'Expected supplemental heating coil to be available')
 
       # ***cooling***
-      # assert new unitary systems all have variable DX cooling coils
-      puts('--- CHECKING: Expected cooling coil to be variable speed')
+      # assert new unitary systems all have multispeed DX cooling coils
+      puts('--- CHECKING: Expected cooling coil to be multispeed')
       clg_coil = system.coolingCoil.get
-      assert(clg_coil.to_CoilCoolingDXVariableSpeed.is_initialized,
-             'Expected cooling coil to be variable speed')
-      clg_coil = clg_coil.to_CoilCoolingDXVariableSpeed.get
+      assert(clg_coil.to_CoilCoolingDXMultiSpeed.is_initialized,
+             'Expected cooling coil to be multispeed')
+      clg_coil = clg_coil.to_CoilCoolingDXMultiSpeed.get
 
-      # assert multispeed cooling coil has 3 speeds
-      puts('--- CHECKING: Expected cooling coil to have 3 speeds')
-      assert_equal(clg_coil.speeds.size, 3, 'Expected cooling coil to have 3 speeds')
-      clg_coil_spd3 = clg_coil.speeds[2]
+      # assert multispeed cooling coil has 3 stages
+      puts('--- CHECKING: Expected cooling coil to have 3 stages')
+      assert_equal(clg_coil.stages.size, 3, 'Expected cooling coil to have 3 stages')
+      clg_coil_spd3 = clg_coil.stages[2]
 
-      # assert speed 3 (highest speed) flowrate matches design flow rate
-      puts('--- CHECKING: Expected speed 3 flowrate to match design flow rate')
+      # assert stage 3 (highest stage) flowrate matches design flow rate
+      puts('--- CHECKING: Expected stage 3 flowrate to match design flow rate')
       clg_dsn_flowrate = system.supplyAirFlowRateDuringCoolingOperation
-      assert_in_delta(clg_dsn_flowrate.to_f, clg_coil_spd3.referenceUnitRatedAirFlowRate, 0.000001,
-                      'Expected speed 3 flowrate to match design flow rate')
+      assert_in_delta(clg_dsn_flowrate.to_f, clg_coil_spd3.ratedAirFlowRate.get, 0.000001,
+                      'Expected stage 3 flowrate to match design flow rate')
 
-      # assert flow rate reduces for lower speeds
-      puts('--- CHECKING: Expected flow rate to reduce for lower speeds')
-      clg_coil_spd2 = clg_coil.speeds[1]
-      clg_coil_spd1 = clg_coil.speeds[0]
+      # assert flow rate reduces for lower stages
+      puts('--- CHECKING: Expected flow rate to reduce for lower stages')
+      clg_coil_spd2 = clg_coil.stages[1]
+      clg_coil_spd1 = clg_coil.stages[0]
       assert(
-        clg_coil_spd3.referenceUnitRatedAirFlowRate >
-          clg_coil_spd2.referenceUnitRatedAirFlowRate,
-        'Expected flow rate to reduce for lower speeds between speed 3 and 2.'
+        clg_coil_spd3.ratedAirFlowRate.get >
+          clg_coil_spd2.ratedAirFlowRate.get,
+        'Expected flow rate to reduce for lower stages between stage 3 and 2.'
       )
       assert(
-        clg_coil_spd2.referenceUnitRatedAirFlowRate >
-          clg_coil_spd1.referenceUnitRatedAirFlowRate,
-        'Expected flow rate to reduce for lower speeds between speed 2 and 1.'
+        clg_coil_spd2.ratedAirFlowRate.get >
+          clg_coil_spd1.ratedAirFlowRate.get,
+        'Expected flow rate to reduce for lower stages between stage 2 and 1.'
       )
 
-      # assert capacity reduces for lower speeds
-      puts('--- CHECKING: Expected cooling coil capacity to reduce for lower speeds')
+      # assert capacity reduces for lower stages
+      puts('--- CHECKING: Expected cooling coil capacity to reduce for lower stages')
       assert(
-        clg_coil_spd3.referenceUnitGrossRatedTotalCoolingCapacity >
-          clg_coil_spd2.referenceUnitGrossRatedTotalCoolingCapacity,
-        'Expected capacity to reduce for lower speeds between speed 3 and 2.'
+        clg_coil_spd3.grossRatedTotalCoolingCapacity.get >
+          clg_coil_spd2.grossRatedTotalCoolingCapacity.get,
+        'Expected capacity to reduce for lower stages between stage 3 and 2.'
       )
       assert(
-        clg_coil_spd2.referenceUnitGrossRatedTotalCoolingCapacity >
-          clg_coil_spd1.referenceUnitGrossRatedTotalCoolingCapacity,
-        'Expected capacity to reduce for lower speeds between speed 2 and 1.'
+        clg_coil_spd2.grossRatedTotalCoolingCapacity.get >
+          clg_coil_spd1.grossRatedTotalCoolingCapacity.get,
+        'Expected capacity to reduce for lower stages between stage 2 and 1.'
       )
     end
     result
@@ -1277,5 +1448,73 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
       assert(min_flow <= 1.0 + 1e-6, "#{label}: minimum flow fraction #{min_flow} exceeds 1.0")
       assert(fan.pressureRise > 0, "#{label}: static pressure was not carried over")
     end
+  end
+
+  # The new terminal's minimum airflow must be the unit's no-load airflow, and at least the minimum outdoor air.
+  # Before the fix the terminal had no minimum (zone minimum air flow fraction 0) and an autosized maximum.
+  def test_terminal_minimum_is_the_no_load_airflow
+    puts "\n######\nTEST:test_terminal_minimum_is_the_no_load_airflow\n######\n"
+    applied = adv_apply('test_adv_terminal_minimum')
+    assert_terminal_minimum_is_no_load_airflow(applied, 'test_adv_terminal_minimum')
+  end
+
+  # The unit's no-load airflow must reach EnergyPlus through the multispeed performance object's no-load ratio.
+  # Before the fix no object was assigned, OpenStudio wrote one with a blank ratio, and the fan ran at full airflow
+  # whenever there was no load.
+  def test_no_load_airflow_ratio_is_set
+    puts "\n######\nTEST:test_no_load_airflow_ratio_is_set\n######\n"
+    applied = adv_apply('test_adv_no_load_ratio')
+    assert_no_load_airflow_ratio(applied, 'test_adv_no_load_ratio')
+  end
+
+  # Each cooling stage must carry the latent degradation inputs the variable-speed coil object had, acting at the lowest
+  # stage only. OpenStudio's stage data defaults the maximum cycling rate to 0, which turns EnergyPlus' latent
+  # degradation model off. In four of five test buildings the compressor then used 5% to 8% more electricity than with
+  # the variable-speed coil; with the model on it used the same and the coil removed 12% to 16% less moisture.
+  def test_cooling_stages_keep_latent_degradation_inputs
+    puts "\n######\nTEST:test_cooling_stages_keep_latent_degradation_inputs\n######\n"
+    applied = adv_apply('test_adv_latent_inputs')
+    rtus = adv_rtus(applied)
+    refute_empty(rtus, 'no advanced RTUs to check')
+    rtus.each do |us|
+      coil = us.coolingCoil.get.to_CoilCoolingDXMultiSpeed.get
+      refute(coil.applyLatentDegradationtoSpeedsGreaterthan1, "#{us.name}: latent degradation applies above the lowest stage")
+      coil.stages.each_with_index do |stage, i|
+        label = "#{us.name} cooling stage #{i + 1}"
+        assert_in_delta(1000.0, stage.nominalTimeforCondensateRemovaltoBegin, 1e-9, "#{label}: nominal time for condensate removal to begin")
+        assert_in_delta(1.5, stage.ratioofInitialMoistureEvaporationRateandSteadyStateLatentCapacity, 1e-9, "#{label}: initial moisture evaporation ratio")
+        assert_in_delta(2.5, stage.maximumCyclingRate, 1e-9, "#{label}: maximum cycling rate")
+        assert_in_delta(45.0, stage.latentCapacityTimeConstant, 1e-9, "#{label}: latent capacity time constant")
+      end
+    end
+  end
+
+  # Annual simulation: the outdoor air controller must see airflow whenever the supply fan runs, and the fan must sit
+  # at the no-load airflow while the zone has no load.
+  # The model is one zone with no zone exhaust fan, which the outdoor air defect needs: a model with an exhaust fan
+  # anywhere keeps its outdoor air whatever the terminal minimum is. The weather is the in-repo Los Angeles file, where
+  # the zone spends much of the year with no load.
+  def test_outdoor_air_controller_sees_fan_airflow
+    test_name = 'test_adv_outdoor_air_delivered'
+    puts "\n######\nTEST:#{test_name}\n######\n"
+    osm_path = model_input_path('310_PSZ-AC with electric coil.osm')
+    epw_path = epw_input_path('CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw')
+    measure = UpgradeHvacRtuAdv.new
+    model = load_model(osm_path)
+    assert_empty(model.getFanZoneExhausts, 'this check needs a model with no zone exhaust fan')
+
+    arguments = measure.arguments(model)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    wanted = { 'hr' => false, 'dcv' => false, 'debug_verbose' => false }
+    arguments.each do |arg|
+      cloned = arg.clone
+      cloned.setValue(wanted[arg.name]) if wanted.key?(arg.name)
+      argument_map[arg.name] = cloned
+    end
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                          run_model: true, apply: true)
+    applied = load_model(model_output_path(test_name))
+    assert_oa_controller_sees_fan_airflow(applied, test_name)
+    assert_fan_at_no_load_airflow_without_load(applied, test_name)
   end
 end

@@ -687,6 +687,38 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     true
   end
 
+  # Give a unitary system with a multispeed DX cooling coil its own UnitarySystemPerformance:Multispeed so its
+  # continuous-fan no-load airflow is no_load_flow_m3_per_s. EnergyPlus ignores the unitary system's no-load supply air
+  # flow rate when that object is present: it resets the no-load flow to the cooling supply air flow times the object's
+  # No Load Supply Air Flow Rate Ratio. OpenStudio generates the object at translation when none is assigned, with the
+  # ratio blank (EnergyPlus default 1), so the units ran at full design airflow whenever the fan ran with no load.
+  # The stage ratios here are the ones the OpenStudio translator generates: each cooling stage's rated airflow over the
+  # unit's cooling supply air flow, and 1.0 for the single-speed heating coil.
+  # upgrade_hvac_add_heat_pump_rtu has the same method for its multispeed coils.
+  # @return [OpenStudio::Model::UnitarySystemPerformanceMultispeed, nil] the object assigned, or nil if none
+  def assign_multispeed_performance(model, runner, unitary, cooling_coil, no_load_flow_m3_per_s)
+    stages = cooling_coil.stages
+    clg_flow = unitary.supplyAirFlowRateDuringCoolingOperation
+    if stages.empty? || clg_flow.empty? || stages.any? { |stage| stage.ratedAirFlowRate.empty? }
+      runner.registerWarning("#{unitary.name}: cooling stage airflows or the cooling supply airflow are missing, so the no-load airflow ratio was not set and the unit runs at full airflow with no load.")
+      return nil
+    end
+    clg_flow = clg_flow.get
+
+    ratio_fields = stages.map do |stage|
+      OpenStudio::Model::SupplyAirflowRatioField.new(1.0, stage.ratedAirFlowRate.get / clg_flow)
+    end
+    no_load_ratio = (no_load_flow_m3_per_s / clg_flow).clamp(0.0, 1.0)
+
+    performance = OpenStudio::Model::UnitarySystemPerformanceMultispeed.new(model)
+    performance.setName("#{unitary.name} Unitary System Performance")
+    performance.setSingleModeOperation(false)
+    performance.setNoLoadSupplyAirflowRateRatio(no_load_ratio)
+    performance.setSupplyAirflowRatioFields(ratio_fields)
+    unitary.setDesignSpecificationMultispeedObject(performance)
+    performance
+  end
+
   def run(model, runner, user_arguments)
     super
 
@@ -1691,6 +1723,15 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
         min_airflow_m3_per_s = min_airflow_ratio * old_terminal_sa_flow_m3_per_s
       end
 
+      # the new terminal's maximum flow is the loop design flow, as the terminal it replaces had, and its minimum flow is
+      # the unit's minimum airflow, so the terminal minimum equals the unit's no-load airflow.
+      # Left to autosize, EnergyPlus sizes the maximum from the zone design loads, which can come out below the unit's
+      # airflow. Left at its default of 0, the minimum lets the terminal ask for no air when its zone has no load. In
+      # models with no zone exhaust fan EnergyPlus then passes zero flow to the outdoor air controller, which closes the
+      # outdoor air while the unit's fan keeps running at its no-load airflow.
+      new_terminal.setMaximumAirFlowRate(old_terminal_sa_flow_m3_per_s)
+      new_terminal.setZoneMinimumAirFlowFraction([min_airflow_ratio, 1.0].min)
+
       # set minimum fan power flow fraction to the higher of 0.40 or the min flow fraction
       if min_airflow_ratio > min_flow
         new_fan.setFanPowerMinimumFlowFraction(min_airflow_ratio)
@@ -1703,29 +1744,45 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       # create coils: cooling
       # -------------------------------------------------------
-      # define variable speed cooling coil
+      # define the cooling coil: three stages (low, medium, high) of a variable-capacity compressor, as a multispeed
+      # DX coil object. The variable-speed coil object with three speeds was used before; EnergyPlus stages both the
+      # same way in a unitary system (it blends neighboring stages and cycles at the lowest), but the unit's no-load
+      # airflow can only be set through its UnitarySystemPerformance:Multispeed object, and OpenStudio 3.10 writes that
+      # object with one cooling speed for a variable-speed coil once the model assigns it, which stops EnergyPlus.
+      # Two things EnergyPlus 25.1 does differently with the same inputs: the multispeed coil runs its crankcase heater
+      # whenever the compressor is off below the temperature limit (the variable-speed coil only counted it in
+      # timesteps with the compressor on), and with latent degradation at the lowest stage it removes less moisture
+      # (the variable-speed coil took the extra sensible capacity but still removed the moisture, without counting it
+      # in its cooling or its electricity).
       if debug_verbose
-        runner.registerInfo('--- adding new variable speed cooling coil')
+        runner.registerInfo('--- adding new three-stage cooling coil')
       end
       _, size_category = UpgradeHvacRtuAdv.get_capacity_category(runner, orig_clg_coil_gross_cap)
-      new_dx_cooling_coil = OpenStudio::Model::CoilCoolingDXVariableSpeed.new(model)
+      new_dx_cooling_coil = OpenStudio::Model::CoilCoolingDXMultiSpeed.new(model)
       new_dx_cooling_coil.setName("#{air_loop_hvac.name} Adv RTU Cooling Coil")
       new_dx_cooling_coil.setCondenserType('AirCooled')
+      new_dx_cooling_coil.setAvailabilitySchedule(always_on)
+      new_dx_cooling_coil.setFuelType('Electricity')
       new_dx_cooling_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-25)
       new_dx_cooling_coil.setMaximumOutdoorDryBulbTemperatureforCrankcaseHeaterOperation(4.4)
+      # cycling losses and latent degradation apply at the lowest stage only, as with the variable-speed coil object
+      new_dx_cooling_coil.setApplyPartLoadFractiontoSpeedsGreaterthan1(false)
+      new_dx_cooling_coil.setApplyLatentDegradationtoSpeedsGreaterthan1(false)
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS
       # AND COMMERCIAL AND INDUSTRIAL EQUIPMENT AIR-COOLED COMMERCIAL UNITARY AIR CONDITIONERS
       # AND COMMERCIAL UNITARY HEAT PUMPS"
       crankcase_heater_power = ((60 * ((orig_clg_coil_gross_cap * 0.0002843451 / 10)**0.67)))
       new_dx_cooling_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
-      new_dx_cooling_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-25)
-      new_dx_cooling_coil.setNominalTimeforCondensatetoBeginLeavingtheCoil(1000)
-      new_dx_cooling_coil.setInitialMoistureEvaporationRateDividedbySteadyStateACLatentCapacity(1.5)
-      new_dx_cooling_coil.setLatentCapacityTimeConstant(45)
-      new_dx_cooling_coil.setEnergyPartLoadFractionCurve(
-        curve_table_map['high_stage'][size_category]['eir_fn_of_plr']
-      )
-      new_dx_cooling_coil.setNominalSpeedLevel(3)
+
+      # part-load fraction curve of the coil. EnergyPlus holds a DX coil's part-load fraction at 0.7 or above. With the
+      # variable-speed coil object it did so at run time (in a run it was exactly 0.700 in every cycling timestep below
+      # about 60% part load, where this curve gives less). The multispeed coil object checks the curve at input and
+      # stops on an EnergyPlus error when the curve goes below 0.7, so the same floor is set on the curve itself.
+      plf_curve = curve_table_map['high_stage'][size_category]['eir_fn_of_plr']
+      if plf_curve.respond_to?(:minimumCurveOutput) &&
+         (plf_curve.minimumCurveOutput.empty? || plf_curve.minimumCurveOutput.get < 0.7)
+        plf_curve.setMinimumCurveOutput(0.7)
+      end
 
       # define rated to lower stage ratios: low, medium, high stages
       stage_ratios = [0.333, 0.666, 1.0] # lower stage to higher stage
@@ -1768,39 +1825,43 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           }")
         end
 
-        # add speed data for each stage
-        dx_coil_speed_data = OpenStudio::Model::CoilCoolingDXVariableSpeedSpeedData.new(model)
-        dx_coil_speed_data.setReferenceUnitGrossRatedTotalCoolingCapacity(reference_capacity_w)
-        dx_coil_speed_data.setReferenceUnitRatedAirFlowRate(reference_airflow_m_3_per_s)
-        dx_coil_speed_data.setReferenceUnitGrossRatedSensibleHeatRatio(UpgradeHvacRtuAdv.get_shr(
-                                                                         runner, stage
-                                                                       ))
-        dx_coil_speed_data.setReferenceUnitGrossRatedCoolingCOP(
+        # add stage data for each stage
+        dx_coil_stage_data = OpenStudio::Model::CoilCoolingDXMultiSpeedStageData.new(model)
+        dx_coil_stage_data.setGrossRatedTotalCoolingCapacity(reference_capacity_w)
+        dx_coil_stage_data.setRatedAirFlowRate(reference_airflow_m_3_per_s)
+        dx_coil_stage_data.setGrossRatedSensibleHeatRatio(UpgradeHvacRtuAdv.get_shr(runner, stage))
+        dx_coil_stage_data.setGrossRatedCoolingCOP(
           rated_cop_post_rated_airflow_adjust * UpgradeHvacRtuAdv.get_reference_cop_ratio(
             runner, stage
           )
         )
-        dx_coil_speed_data.setRatedEvaporatorFanPowerPerVolumeFlowRate2017(773.3)
-        dx_coil_speed_data.setTotalCoolingCapacityFunctionofTemperatureCurve(
+        dx_coil_stage_data.setRatedEvaporatorFanPowerPerVolumeFlowRate2017(773.3)
+        dx_coil_stage_data.setTotalCoolingCapacityFunctionofTemperatureCurve(
           curve_table_map[stage_label][size_category]['capacity_fn_of_t']
         )
-        dx_coil_speed_data.setTotalCoolingCapacityFunctionofAirFlowFractionCurve(
+        dx_coil_stage_data.setTotalCoolingCapacityFunctionofFlowFractionCurve(
           curve_table_map[stage_label][size_category]['capacity_fn_of_ff']
         )
-        dx_coil_speed_data.setEnergyInputRatioFunctionofTemperatureCurve(
+        dx_coil_stage_data.setEnergyInputRatioFunctionofTemperatureCurve(
           curve_table_map[stage_label][size_category]['eir_fn_of_t']
         )
-        dx_coil_speed_data.setEnergyInputRatioFunctionofAirFlowFractionCurve(
+        dx_coil_stage_data.setEnergyInputRatioFunctionofFlowFractionCurve(
           curve_table_map[stage_label][size_category]['eir_fn_of_ff']
         )
+        # one part-load fraction curve for the coil, as the variable-speed coil object had; it acts at the lowest stage
+        dx_coil_stage_data.setPartLoadFractionCorrelationCurve(plf_curve)
+        # latent degradation inputs, as the variable-speed coil object had. Its maximum cycling rate was that object's
+        # default of 2.5 per hour; the stage data defaults to 0, which turns the latent degradation model off.
+        dx_coil_stage_data.setNominalTimeforCondensateRemovaltoBegin(1000)
+        dx_coil_stage_data.setRatioofInitialMoistureEvaporationRateandSteadyStateLatentCapacity(1.5)
+        dx_coil_stage_data.setMaximumCyclingRate(2.5)
+        dx_coil_stage_data.setLatentCapacityTimeConstant(45)
+        dx_coil_stage_data.setEvaporativeCondenserEffectiveness(0.9)
+        dx_coil_stage_data.autosizeEvaporativeCondenserAirFlowRate
+        dx_coil_stage_data.autosizeRatedEvaporativeCondenserPumpPowerConsumption
 
-        # add speed data to variable speed coil object
-        new_dx_cooling_coil.addSpeed(dx_coil_speed_data)
-
-        if stage == 3
-          new_dx_cooling_coil.setGrossRatedTotalCoolingCapacityAtSelectedNominalSpeedLevel(reference_capacity_w)
-          new_dx_cooling_coil.setRatedAirFlowRateAtSelectedNominalSpeedLevel(reference_airflow_m_3_per_s)
-        end
+        # add stage data to the multispeed coil object
+        new_dx_cooling_coil.addStage(dx_coil_stage_data)
       end
 
       # -------------------------------------------------------
@@ -1887,6 +1948,9 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       new_rtu.setSupplyAirFlowRateDuringHeatingOperation(supply_airflow_during_heating)
       # set no load design flow rate
       new_rtu.setSupplyAirFlowRateWhenNoCoolingorHeatingisRequired(min_airflow_m3_per_s)
+      # a unit with a multispeed coil takes its no-load airflow from its UnitarySystemPerformance:Multispeed object
+      # (see the method)
+      assign_multispeed_performance(model, runner, new_rtu, new_dx_cooling_coil, min_airflow_m3_per_s)
 
       # -------------------------------------------------------
       # DCV update

@@ -1820,6 +1820,10 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # loads, which an envelope upgrade lowers (this measure's roof and window options, or envelope measures run before
       # it), so the terminal throttled the unit below its design airflow and the zone under-heated.
       new_terminal.setMaximumAirFlowRate(design_airflow_for_sizing_m_3_per_s)
+      # the new terminal's minimum flow is the unit's minimum airflow. Left at its default of 0, the terminal asks for no air
+      # when its zone has no load. In models with no zone exhaust fan EnergyPlus then passes zero flow to the outdoor air
+      # controller, which closes the outdoor air while the unit's fan keeps running at its no-load airflow.
+      new_terminal.setZoneMinimumAirFlowFraction([min_airflow_ratio, 1.0].min)
 
       if debug_verbose
         runner.registerInfo("sizing summary: design_airflow_for_sizing_m_3_per_s = #{design_airflow_for_sizing_m_3_per_s}")
