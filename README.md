@@ -97,8 +97,8 @@ To run one test from the repository root (with your test bundle configured):
 bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
 ```
 
-The [GitHub Actions integration job](.github/workflows/config.yml) runs a baseline-only
-BuildStockBatch pipeline using a small sample that is not representative of the national
+The [GitHub Actions integration job](.github/workflows/config.yml) runs a baseline and three
+upgrades through BuildStockBatch using a small sample that is not representative of the national
 building stock. Raw results are available in the `integration-results-raw` artifact;
 published results are committed to `test/base_results/upgrades` on successful branch runs.
 

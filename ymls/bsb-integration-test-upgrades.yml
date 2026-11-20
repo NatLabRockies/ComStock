@@ -8,8 +8,7 @@ weather_files_path: ../samples/bsb-integration-test-weather.zip # Temporary TMY3
 sampler:
   type: precomputed
   args:
-    # sample_file: ../samples/bsb-integration-test-upgrades.csv
-    sample_file: ../samples/bsb-integration-test.csv
+    sample_file: ../samples/bsb-integration-test-upgrades.csv
 
 baseline:
   n_buildings_represented: 10
@@ -42,16 +41,16 @@ postprocessing:
     truth_data_version: 'v01'
     comstock_year: 2018
 
-upgrades: []
-#   - upgrade_name: HP RTU E Backup
-#     options:
-#       - option: hvac_add_heat_pump_rtu|electric_backup_base
-#   - upgrade_name: HP RTU G Backup
-#     options:
-#       - option: hvac_add_heat_pump_rtu|orig_fuel_backup_base
-#   - upgrade_name: HP RTU + ER
-#     options:
-#       - option: hvac_add_heat_pump_rtu|electric_backup_no_oversize_hr
+upgrades:
+  - upgrade_name: HP RTU E Backup
+    options:
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: HP RTU G Backup
+    options:
+      - option: hvac_add_heat_pump_rtu|orig_fuel_backup_base
+  - upgrade_name: HP RTU + ER
+    options:
+      - option: hvac_add_heat_pump_rtu|electric_backup_no_oversize_hr
 #   - upgrade_name: HP RTU Std Performance
 #     options:
 #       - option: hvac_add_heat_pump_rtu|standard_performance

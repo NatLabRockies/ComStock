@@ -170,7 +170,7 @@ jobs:
       - name: Check baseline and upgrade simulation results
         run: |
           python .github/scripts/check_baseline_results.py \
-            samples/bsb-integration-test.csv \
+            samples/bsb-integration-test-upgrades.csv \
             upgrades_test_output/simulation_output/results_job0.json.gz \
             --project-file ymls/bsb-integration-test-upgrades.yml
 
