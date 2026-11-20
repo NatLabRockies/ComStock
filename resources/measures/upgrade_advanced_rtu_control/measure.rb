@@ -389,7 +389,7 @@ class AdvancedRTUControl < OpenStudio::Measure::ModelMeasure
             fan.setMaximumFlowRate(fan_flow) # keep it the same as the existing fan, since the fan itself will be the same
             fan.setFanTotalEfficiency(fan_motor_eff * fan_eff)
             # set fan curve coefficients
-            standard.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
+            OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
             fan.setFanPowerMinimumFlowFraction(min_flow_fraction) # resetting minimum flow fraction to be appropriate for retrofit as opposed to 10% in method above
             # Add it to the unitary sys
             component.setSupplyFan(fan)

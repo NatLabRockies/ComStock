@@ -281,6 +281,7 @@ class AdvancedRTUControlTest < Minitest::Test
               sup_fan = sup_fan.get
               if sup_fan.to_FanVariableVolume.is_initialized
                 var_vol_fan = true
+                assert_in_delta(0.027827882, sup_fan.to_FanVariableVolume.get.fanPowerCoefficient1.get, 0.000001)
               end
             end
         end
