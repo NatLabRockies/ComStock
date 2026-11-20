@@ -536,6 +536,8 @@ def test_only_options_with_a_probability_are_drawn_and_floor_area_is_conserved(t
 # 2. Keys missing from the HVAC table. The merge is an inner join, so a building whose
 #    (type, size bin, drawn fuel, division) has no row in the table disappears.
 # 3. Tract inference stops in the debugger and then fails; it cannot have run.
+# 4. A building type in a probability table that the building type mapper does not have. The
+#    pandas code leaves the name as it is, so the row matches no building and nothing says so.
 
 def _table_rows(hvac, keep):
     """The HVAC table with one row per key, keeping the first or last copy."""
@@ -627,6 +629,23 @@ def test_buildings_missing_from_the_table_can_be_refused(tmp_path):
     write_truth_data(tmp_path, hvac_missing=True)
     with pytest.raises(ValueError, match='hvac_system_type.*no row'):
         run_new(tmp_path, unmatched_buildings='error')
+
+
+@pytest.mark.parametrize('table', ['hvac', 'fuel'])
+def test_unknown_building_type_in_a_table_is_an_error(tmp_path, table):
+    """The estimate's building types are checked against the mapper; the tables' are now too. The
+    reference reads the same file without complaint and returns what it does without the row."""
+    info = write_truth_data(tmp_path, n=500)
+    expected = frame(run_legacy(tmp_path))
+    file_name = {'hvac': 'hvac_system_type_name', 'fuel': 'space_heating_fuel_type_name'}[table]
+    rows = info[table]
+    extra = rows.iloc[[0]].assign(**{'Dependency=building_type': 'bowling_alley'})
+    pd.concat([rows, extra], ignore_index=True).to_csv(os.path.join(info['path'], FILE_NAMES[file_name]),
+                                                       sep='\t', index=False)
+    assert_frame_equal(frame(run_legacy(tmp_path)), expected)
+    name = {'hvac': 'hvac_system_type', 'fuel': 'heating_fuel'}[table]
+    with pytest.raises(ValueError, match=f'{name} table.*bowling_alley'):
+        run_new(tmp_path)
 
 
 def test_unknown_settings_are_refused(tmp_path):

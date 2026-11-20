@@ -429,30 +429,46 @@ def assign_sampling_regions(df: pl.DataFrame, county_regions: dict, cec_cz_2010:
     return df
 
 
+def _recode_building_type():
+    """The building_type column from snake_case to UpperCamelCase, for the estimate and for the
+    probability tables alike. A type BUILDING_TYPE_NAME_MAPPER does not have becomes null."""
+    return pl.col('building_type').replace_strict(BUILDING_TYPE_NAME_MAPPER, default=None, return_dtype=pl.String)
+
+
+def _unknown_building_types(before: pl.Series, after: pl.Series) -> list:
+    """The building types that _recode_building_type could not name."""
+    return before.filter(after.is_null()).unique().sort().to_list()
+
+
 def normalize_building_types(df: pl.DataFrame) -> pl.DataFrame:
     """building_type from snake_case to UpperCamelCase; an unknown type is an error."""
-    out = df.with_columns(
-        pl.col('building_type').replace_strict(BUILDING_TYPE_NAME_MAPPER, default=None, return_dtype=pl.String))
-    unknown = df.filter(out.get_column('building_type').is_null()).get_column('building_type').unique().to_list()
+    out = df.with_columns(_recode_building_type())
+    unknown = _unknown_building_types(df.get_column('building_type'), out.get_column('building_type'))
     if unknown:
         logger.error(f'Building type values from the building estimate not expected by the building type mapper: {unknown}')
         raise RuntimeError(f'Unable to process the specified building type enumerations: {unknown}')
     return out
 
 
-def _recode_building_type():
-    return pl.col('building_type').replace_strict(BUILDING_TYPE_NAME_MAPPER, default=None, return_dtype=pl.String)
+def _table_by_building_type(name, raw: pl.DataFrame, recode=None) -> ProbabilityTable:
+    """A probability table keyed on building type, its building types named as the estimate's are.
+    An unknown type is an error here too: a row that can match no building is a fault in the file
+    (or a type missing from BUILDING_TYPE_NAME_MAPPER), not something to skip without a word."""
+    table = ProbabilityTable.from_tsv_frame(name, raw, recode={'building_type': _recode_building_type(), **(recode or {})})
+    unknown = _unknown_building_types(raw.get_column('Dependency=building_type'), table.frame.get_column('building_type'))
+    if unknown:
+        raise ValueError(f'{name} table has building type values that BUILDING_TYPE_NAME_MAPPER does not: {unknown}')
+    return table
 
 
 def heating_fuel_table(raw: pl.DataFrame) -> ProbabilityTable:
     """heating_fuel_v*.tsv: fuel by building type and county."""
-    return ProbabilityTable.from_tsv_frame('heating_fuel', raw, recode={'building_type': _recode_building_type()})
+    return _table_by_building_type('heating_fuel', raw)
 
 
 def hvac_system_table(raw: pl.DataFrame) -> ProbabilityTable:
     """hvac_system_type_v*.tsv: system by building type, size bin, heating fuel and census division."""
-    return ProbabilityTable.from_tsv_frame('hvac_system_type', raw, recode={
-        'building_type': _recode_building_type(),
+    return _table_by_building_type('hvac_system_type', raw, recode={
         'census_region': pl.col('census_region').replace(CENSUS_DIVISION_ALIASES),
     })
 
