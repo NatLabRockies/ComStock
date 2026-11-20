@@ -61,6 +61,7 @@ jobs:
               '.github/scripts/check_baseline_results.py',
               'ymls/bsb-integration-test-baseline.yml',
               'samples/bsb-integration-test.csv',
+              'samples/bsb-integration-test-weather.zip',
             ]);
             const files = await github.paginate(github.rest.pulls.listFiles, {
               ...context.repo,
