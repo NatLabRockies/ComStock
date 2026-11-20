@@ -119,7 +119,7 @@ class UpgradeHvacChiller < OpenStudio::Measure::ModelMeasure
   end
 
   # get pump specifications
-  def self.pump_specifications(applicable_pumps, pumps, std)
+  def self.pump_specifications(applicable_pumps, pumps, _std)
     # initialize variables
     pump_motor_eff_weighted_sum = 0.0
     pump_motor_bhp_weighted_sum = 0.0
@@ -156,7 +156,7 @@ class UpgradeHvacChiller < OpenStudio::Measure::ModelMeasure
       pump_motor_eff = pump.motorEfficiency
 
       # pump motor BHP
-      pump_motor_bhp = std.pump_brake_horsepower(pump)
+      pump_motor_bhp = OpenstudioStandards::HVAC.pump_get_brake_horsepower(pump)
 
       # get partload curve coefficients from variable speed pump
       if pump.to_PumpVariableSpeed.is_initialized
