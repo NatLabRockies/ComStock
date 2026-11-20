@@ -135,7 +135,7 @@ jobs:
           python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
 
       - name: Run baseline and upgrade simulations with BuildStockBatch postprocessing
-        run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 2
+        run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 4
 
       - name: Check baseline and upgrade simulation results
         run: |
