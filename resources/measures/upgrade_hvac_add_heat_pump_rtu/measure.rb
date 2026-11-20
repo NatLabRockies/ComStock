@@ -1401,8 +1401,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       end
 
       # the unit night cycles if the supply fan operating schedule includes a 0
-      # TODO: include?([0, 0.0]) tests for an array element and is never true; the intended check is likely for 0 or 0.0
-      unit_night_cycles = night_cyc_sched_vals.include?([0, 0.0])
+      unit_night_cycles = night_cyc_sched_vals.any?(&:zero?)
 
       # remove from applicability if the OA limit is exceeded and the unit night cycles
       next unless (min_oa_flow_ratio > oa_ratio_allowance) && unit_night_cycles
