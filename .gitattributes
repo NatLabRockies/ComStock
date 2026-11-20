@@ -3,4 +3,4 @@
 *.rake text eol=crlf
 Gemfile text eol=crlf
 Rakefile text eol=crlf
-/test/base_results/baseline/results_up00.csv text eol=crlf
+/test/base_results/upgrades/results_up*.csv text eol=crlf

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Remove detailed electricity bills from the baseline CSV.")
+    parser = argparse.ArgumentParser(description="Remove detailed electricity bills from a results CSV.")
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
     args = parser.parse_args()
@@ -13,11 +13,13 @@ def main() -> None:
     with args.source.open(encoding="utf-8", newline="") as stream:
         rows = list(csv.reader(stream, strict=True))
 
-    if not rows or rows[0].count(column) != 1:
-        parser.error(f"{args.source} must contain exactly one {column!r} column")
+    if not rows or not rows[0]:
+        parser.error(f"{args.source} must contain a header")
 
     header = rows[0]
-    index = header.index(column)
+    if header.count(column) > 1:
+        parser.error(f"{args.source} contains duplicate {column!r} columns")
+    index = header.index(column) if column in header else len(header)
     for row_number, row in enumerate(rows, start=1):
         if len(row) != len(header):
             parser.error(f"{args.source}: row {row_number} has {len(row)} fields, expected {len(header)}")

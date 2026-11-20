@@ -99,7 +99,7 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
     permissions:
       contents: write
     steps:
@@ -134,32 +134,35 @@ jobs:
           python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
           python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
 
-      - name: Run baseline simulations and BuildStockBatch postprocessing
-        run: buildstock_local ymls/bsb-integration-test-baseline.yml -j 2
+      - name: Run baseline and upgrade simulations with BuildStockBatch postprocessing
+        run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 2
 
-      - name: Check every sample building succeeded
+      - name: Check baseline and upgrade simulation results
         run: |
           python .github/scripts/check_baseline_results.py \
             samples/bsb-integration-test.csv \
-            baseline_test_output/simulation_output/results_job0.json.gz
+            upgrades_test_output/simulation_output/results_job0.json.gz \
+            --project-file ymls/bsb-integration-test-upgrades.yml
 
-      - name: Prepare baseline results CSV without detailed electricity bills
+      - name: Prepare integration results CSVs without detailed electricity bills
         run: |
-          gunzip -k baseline_test_output/results_csvs/results_up00.csv.gz
-          mkdir -p test/base_results/baseline
-          python .github/scripts/filter_baseline_csv.py \
-            baseline_test_output/results_csvs/results_up00.csv \
-            test/base_results/baseline/results_up00.csv
+          mkdir -p test/base_results/upgrades
+          for archive in upgrades_test_output/results_csvs/results_up*.csv.gz; do
+            gunzip -k "$archive"
+            csv="${archive%.gz}"
+            python .github/scripts/filter_baseline_csv.py \
+              "$csv" "test/base_results/upgrades/${csv##*/}"
+          done
 
-      - name: Commit and push baseline results CSV
+      - name: Commit and push upgrade integration results CSVs
         if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git add -- test/base_results/baseline/results_up00.csv
-          if ! git diff --cached --quiet -- test/base_results/baseline/results_up00.csv; then
+          git add -- 'test/base_results/upgrades/results_up*.csv'
+          if ! git diff --cached --quiet -- 'test/base_results/upgrades/results_up*.csv'; then
             git -c user.name="GitHub Actions" -c user.email="github-actions[bot]@users.noreply.github.com" \
-              commit -m "Update baseline integration test results [skip ci]" -- test/base_results/baseline/results_up00.csv
+              commit -m "Upgrade integration test results [skip ci]" -- 'test/base_results/upgrades/results_up*.csv'
             git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
               push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
           fi
