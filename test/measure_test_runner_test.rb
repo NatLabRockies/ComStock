@@ -116,8 +116,8 @@ class MeasureTestRunnerTest < Minitest::Test
       error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb', 'other_test.rb']) }
 
       assert_includes(error.message, 'Measure test failures (2):')
-      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 42)')
-      assert_includes(error.message, 'FAILED: other_test.rb (exit 17)')
+      assert_includes(error.message, 'FAIL: fixture_test.rb (exit 42)')
+      assert_includes(error.message, 'FAIL: other_test.rb (exit 17)')
       refute_includes(error.message, $LOAD_PATH.join(File::PATH_SEPARATOR))
       refute_empty(Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test', 'TEST-*.xml')))
       assert(File.exist?('completed'))
@@ -154,7 +154,7 @@ class MeasureTestRunnerTest < Minitest::Test
 
       error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb']) }
 
-      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 1)')
+      assert_includes(error.message, 'FAIL: fixture_test.rb (exit 1)')
       assert_includes(error.message, 'FixtureTest#test_failure: expected value missing')
       assert_includes(error.message, 'FixtureTest#test_error: RuntimeError: missing input')
       refute_includes(error.message, 'FixtureTest#test_passes')
@@ -167,7 +167,7 @@ class MeasureTestRunnerTest < Minitest::Test
 
       error = assert_raises(RuntimeError) { run_measure_tests(['fixture_test.rb']) }
 
-      assert_includes(error.message, 'FAILED: fixture_test.rb (exit 42)')
+      assert_includes(error.message, 'FAIL: fixture_test.rb (exit 42)')
     end
   end
 
@@ -195,7 +195,18 @@ class MeasureTestRunnerTest < Minitest::Test
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
       File.write('reporting_fixture_test.rb', "exit! 42\n")
-      File.write('upgrade_fixture_test.rb', passing_test.sub('assert true', "flunk 'expected upgrade failure'"))
+      File.write('upgrade_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_fails
+            flunk 'expected upgrade failure'
+          end
+
+          def test_skipped
+            skip 'not a pass'
+          end
+        end
+      RUBY
 
       _, stderr = capture_io do
         error = assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke }
@@ -207,9 +218,14 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(details, 'reporting_measure_tests:')
       assert_includes(details, 'reporting_fixture_test.rb (exit 42)')
       assert_includes(details, 'upgrade_measure_tests:')
-      assert_includes(details, 'FixtureTest#test_passes: expected upgrade failure')
-      assert_equal(2, details.scan(/^FAILED:/).size)
-      assert_equal("## #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}\n", File.read('step-summary.md'))
+      assert_includes(details, 'FixtureTest#test_fails: expected upgrade failure')
+      assert_equal(2, details.scan(/^FAIL:/).size)
+      summary = File.read('step-summary.md')
+      assert_includes(summary, "## #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
+      assert_includes(summary, '## Measure tests passed (2)')
+      assert_includes(summary, 'PASS: FixtureTest#test_passes (workflow_fixture_test.rb)')
+      assert_includes(summary, 'PASS: FixtureTest#test_passes (upgrade_fixture_test.rb)')
+      refute_match(/PASS: .*test_(fails|skipped)/, summary)
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'workflow_fixture_test', 'TEST-*.xml'))
       assert_equal(1, reports.size)
     end
@@ -218,11 +234,19 @@ class MeasureTestRunnerTest < Minitest::Test
   end
 
   def test_all_tests_succeeds_when_every_group_passes
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
       Rake::Task['unit_tests:all_tests'].invoke
 
+      summary = File.read('step-summary.md')
+      assert_includes(summary, '## Measure tests passed (3)')
+      assert_equal(3, summary.scan(/^    PASS:/).size)
+      refute_includes(summary, 'FAIL:')
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), '*_fixture_test', 'TEST-*.xml'))
       assert_equal(3, reports.size)
     end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
   end
 end

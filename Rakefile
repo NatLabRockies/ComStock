@@ -3,15 +3,16 @@ require 'parallel'
 require 'rubocop/rake_task'
 require 'rexml/document'
 
-def run_measure_tests(file_list)
+def run_measure_tests(file_list, passed_tests: nil)
   reports_root = ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR', File.expand_path('test/reports'))
   runner = File.join(__dir__, 'test/helpers/measure_test_runner.rb')
   load_paths = $LOAD_PATH.join(File::PATH_SEPARATOR)
 
   # Wait for all subprocesses to finish before propagating a failure.
-  errors = Parallel.map(file_list, in_threads: Parallel.processor_count) do |file|
+  results = Parallel.map(file_list, in_threads: Parallel.processor_count) do |file|
     process_failure = nil
     test_failures = []
+    passes = []
     report_dir = File.expand_path(File.join(reports_root, file.sub(/\.rb\z/, '')))
     FileUtils.rm_f(Dir.glob(File.join(report_dir, 'TEST-*.xml')))
 
@@ -27,6 +28,13 @@ def run_measure_tests(file_list)
         "  #{test_case.attributes['classname']}##{test_case.attributes['name']}: #{failure.attributes['message']}"
       end
     end
+    if passed_tests
+      passes = test_cases.filter_map do |test_case|
+        next unless test_case.get_elements('failure|error|skipped').empty?
+
+        "PASS: #{test_case.attributes['classname']}##{test_case.attributes['name']} (#{file})"
+      end
+    end
 
     raise process_failure if process_failure
     if test_cases.empty?
@@ -34,67 +42,62 @@ def run_measure_tests(file_list)
     end
     raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
-    nil
+    [nil, passes]
   rescue StandardError => e
     reason = [process_failure, e.message].compact.uniq.join('; ')
-    message = "FAILED: #{file} (#{reason})"
+    message = "FAIL: #{file} (#{reason})"
     message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
-    message
-  end.compact
+    [message, passes]
+  end
+
+  passed_tests&.concat(results.flat_map(&:last))
+  errors = results.filter_map(&:first)
 
   raise "Measure test failures (#{errors.length}):\n#{errors.join("\n")}" unless errors.empty?
 end
 
 desc 'Run measure tests'
 namespace :unit_tests do
+  filters = {
+    reporting: ->(file) { file.include?('rb') },
+    workflow: ->(file) { file.include?('rb') && !file.include?('upgrade') },
+    upgrade: ->(file) { file.include?('rb') && file.include?('upgrade') }
+  }
+  run_group = lambda do |group, passed_tests = nil|
+    puts "Running all #{group} measure tests:"
+    files = FileList.new(File.readlines("test/#{group}_measure_tests.txt", chomp: true))
+    run_measure_tests(files.select(&filters.fetch(group)), passed_tests: passed_tests)
+  end
+
+  filters.each_key do |group|
+    desc "Run #{group} measure tests"
+    task :"#{group}_measure_tests" do
+      run_group.call(group)
+    end
+  end
+
   desc 'Run all measure tests'
   task :all_tests do
     puts 'Running all measure tests:'
-    groups = [:reporting_measure_tests, :workflow_measure_tests, :upgrade_measure_tests]
-    errors = groups.map do |group|
-      Rake::Task["unit_tests:#{group}"].invoke
+    step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    passed_tests = [] if step_summary
+    errors = filters.keys.filter_map do |group|
+      run_group.call(group, passed_tests)
       nil
     rescue StandardError => e
-      "#{group}:\n#{e.message}"
-    end.compact
-
-    next if errors.empty?
+      "#{group}_measure_tests:\n#{e.message}"
+    end
 
     heading = "Measure test groups failed (#{errors.length})"
     details = errors.join("\n\n")
-    if (step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil))
+    if step_summary
       File.open(step_summary, 'a') do |file|
-        file.puts "## #{heading}\n\n#{details.gsub(/^/, '    ')}"
+        file.puts "## #{heading}\n\n#{details.gsub(/^/, '    ')}\n" unless errors.empty?
+        file.puts "## Measure tests passed (#{passed_tests.length})\n"
+        passed_tests.each { |result| file.puts "    #{result}" }
       end
     end
-    abort "#{heading}:\n#{details}"
-  end
-
-  desc 'Run reporting measure tests'
-  task :reporting_measure_tests do
-    puts 'Running all reporting measure tests:'
-    # load test files from file
-    file_list = FileList.new(File.readlines('test/reporting_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') }
-    run_measure_tests(file_list)
-  end
-
-  desc 'Run workflow measure tests'
-  task :workflow_measure_tests do
-    puts 'Running all workflow measure tests:'
-    # load test files from file
-    file_list = FileList.new(File.readlines('test/workflow_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') && !item.include?('upgrade') }
-    run_measure_tests(file_list)
-  end
-
-  desc 'Run upgrade measure tests'
-  task :upgrade_measure_tests do
-    puts 'Running all upgrade measure tests:'
-    # load test files from file
-    file_list = FileList.new(File.readlines('test/upgrade_measure_tests.txt').map(&:chomp))
-    file_list.select! { |item| item.include?('rb') && item.include?('upgrade') }
-    run_measure_tests(file_list)
+    abort "#{heading}:\n#{details}" unless errors.empty?
   end
 end
 
