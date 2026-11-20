@@ -54,6 +54,7 @@ setup(
         'pandas',
         'plotly',
         'polars==1.32.2',
+        'PyAthena>=3.40.0,<4',  # PyAthena 4 requires SQLAlchemy 2.
         'pyarrow',
         'pyyaml',
         's3fs',
