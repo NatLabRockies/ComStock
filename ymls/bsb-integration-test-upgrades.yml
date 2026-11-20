@@ -1,0 +1,149 @@
+schema_version: '0.3'
+buildstock_directory: ../
+project_directory: national
+output_directory: ../upgrades_test_output
+# weather_files_url: https://data.nlr.gov/system/files/156/BuildStock_TMY3_FIPS.zip
+weather_files_path: ../samples/bsb-integration-test-weather.zip # Temporary TMY3 subset for the counties in the precomputed sample.
+
+sampler:
+  type: precomputed
+  args:
+    sample_file: ../samples/bsb-integration-test.csv
+
+baseline:
+  n_buildings_represented: 10
+  custom_gems: True
+
+os_version: 3.10.0
+os_sha: 86d7e215a1
+workflow_generator:
+  type: commercial_default
+  args:
+    reporting_measures:
+    - measure_dir_name: SimulationOutputReport
+    - measure_dir_name: comstock_sensitivity_reports
+    - measure_dir_name: qoi_report
+    - measure_dir_name: simulation_settings_check
+      arguments:
+        run_sim_settings_checks: true
+    - measure_dir_name: emissions_reporting
+    - measure_dir_name: utility_bills
+    - measure_dir_name: run_directory_cleanup
+    timeseries_csv_export:
+        reporting_frequency: Timestep
+        inc_output_variables: false
+
+upgrades:
+  - upgrade_name: HP RTU E Backup
+    options:
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: HP RTU G Backup
+    options:
+      - option: hvac_add_heat_pump_rtu|orig_fuel_backup_base
+  - upgrade_name: HP RTU + ER
+    options:
+      - option: hvac_add_heat_pump_rtu|electric_backup_no_oversize_hr
+  - upgrade_name: HP RTU Std Performance
+    options:
+      - option: hvac_add_heat_pump_rtu|standard_performance
+  - upgrade_name: VRF with DOAS
+    options:
+      - option: hvac_vrf_hr_doas|vrf_hr
+  - upgrade_name: VRF with 25pct Upsizing Allowance
+    options:
+      - option: hvac_vrf_hr_doas|vrf_25pct_upsizing
+  - upgrade_name: DOAS HP Minisplits
+    options:
+      - option: hvac_add_doas_heat_pump_minisplit|hp_minisplit_default
+  - upgrade_name: HP Boiler E Backup
+    options:
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+  - upgrade_name: HP Boiler G Backup
+    options:
+      - option: hvac_replace_boiler_by_heatpump|gas_boiler_backup_new_hot_water_setpoint_coil_autosize
+  - upgrade_name: Economizer
+    options:
+      - option: hvac_economizer|apply_measure
+  - upgrade_name: DCV
+    options:
+      - option: hvac_dcv_v2|demand_control_ventilation
+  - upgrade_name: Energy Recovery
+    options:
+      - option: hvac_exhaust_air_energy_or_heat_recovery|add_energy_or_heat_recovery
+  - upgrade_name: Advanced RTU Controls
+    options:
+      - option: hvac_advanced_rtu_controls|advanced_rtu_dcv_econ
+  - upgrade_name: Unoccupied AHU Control
+    options:
+      - option: hvac_unocc_oa_control|unocc_oa_control
+  - upgrade_name: Hydronic GHP
+    options:
+      - option: hvac_hydronic_geothermal_hp|hydronic_ghp
+  - upgrade_name: Packaged GHP
+    options:
+      - option: hvac_packaged_geothermal_hp|packaged_ghp_dcv_econ
+  - upgrade_name: Console GHP
+    options:
+      - option: hvac_console_geothermal_hp|console_ghp
+  - upgrade_name: Comprehensive GHP
+    options:
+      - option: hvac_hydronic_geothermal_hp|hydronic_ghp
+      - option: hvac_packaged_geothermal_hp|packaged_ghp_dcv_econ
+      - option: hvac_console_geothermal_hp|console_ghp
+  - upgrade_name: shedfb
+    options:
+      - option: thermostat_control_load_shed|shed_full_baseline_15min
+  - upgrade_name: shiftfb
+    options:
+      - option: thermostat_control_load_shift|shift_full_baseline_15min
+  - upgrade_name: LED Lighting
+    options:
+      - option: light_led|lighting_technology_gen5
+  - upgrade_name: Electric Kitchen Equipment
+    options:
+      - option: ppl_electric_kitchen_equip|electric_kitchen_equip
+  - upgrade_name: Wall Insulation
+    options:
+      - option: env_exterior_wall_insulation|exterior_wall_insulation
+  - upgrade_name: Roof Insulation
+    options:
+      - option: env_roof_insul_aedg|roof_insul_aedg
+  - upgrade_name: Secondary Windows
+    options:
+      - option: env_secondary_windows|secondary_windows
+  - upgrade_name: Window Film
+    options:
+      - option: env_window_film|window_film
+  - upgrade_name: New Windows
+    options:
+      - option: env_new_aedg_windows|new_aedg_windows
+  - upgrade_name: Package 1
+    options:
+      - option: env_exterior_wall_insulation|exterior_wall_insulation
+      - option: env_roof_insul_aedg|roof_insul_aedg
+      - option: env_new_aedg_windows|new_aedg_windows
+  - upgrade_name: Package 2
+    options:
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: Package 3
+    options:
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|standard_performance
+  - upgrade_name: Package 4
+    options:
+      - option: env_exterior_wall_insulation|exterior_wall_insulation
+      - option: env_roof_insul_aedg|roof_insul_aedg
+      - option: env_new_aedg_windows|new_aedg_windows
+      - option: light_led|lighting_technology_gen5
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+  - upgrade_name: Package 5
+    options:
+      - option: hvac_add_heat_pump_rtu|electric_backup_base
+      - option: hvac_replace_boiler_by_heatpump|boiler_backup_new_hot_water_setpoint_coil_autosize
+      - option: hvac_economizer|apply_measure
+      - option: hvac_dcv_v2|demand_control_ventilation
+      - option: hvac_exhaust_air_energy_or_heat_recovery|add_energy_or_heat_recovery
