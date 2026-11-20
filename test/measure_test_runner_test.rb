@@ -226,6 +226,8 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_equal(2, details.scan(/^FAIL:/).size)
       summary = File.read('step-summary.md')
       failed, passed = summary.split("\n## Measure tests passed", 2)
+      assert_includes(failed, 'Discovered tests: unavailable; JUnit results: 5.')
+      assert_includes(failed, 'Percentage ranges are unavailable')
       assert_includes(failed, '## Measure tests failed (2)')
       assert_includes(failed, 'without a JUnit test result are listed below but not counted')
       assert_includes(failed, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
@@ -254,12 +256,56 @@ class MeasureTestRunnerTest < Minitest::Test
       Rake::Task['unit_tests:all_tests'].invoke
 
       summary = File.read('step-summary.md')
-      assert_includes(summary, '## Measure tests failed (0)')
-      assert_includes(summary, '## Measure tests passed (3)')
+      assert_includes(summary, 'Discovered tests: 3; JUnit results: 3.')
+      assert_includes(summary, '## Measure tests failed (0, 0.00%)')
+      assert_includes(summary, '## Measure tests passed (3, 100.00%)')
       assert_equal(3, summary.scan(/^    PASS:/).size)
       refute_includes(summary, 'FAIL:')
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), '*_fixture_test', 'TEST-*.xml'))
       assert_equal(3, reports.size)
+    end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
+  end
+
+  def test_summary_ranges_include_unreported_but_not_skipped_tests
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      File.write('reporting_fixture_test.rb', <<~RUBY)
+        require 'minitest/autorun'
+        class FixtureTest < Minitest::Test
+          def test_crash
+            exit! 42
+          end
+
+          def test_unknown
+            assert true
+          end
+        end
+      RUBY
+      File.write('upgrade_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_failure
+            flunk 'failure'
+          end
+
+          def test_error
+            raise 'error'
+          end
+
+          def test_skipped
+            skip 'skipped'
+          end
+        end
+      RUBY
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+
+      summary = File.read('step-summary.md')
+      assert_includes(summary, 'Discovered tests: 7; JUnit results: 5.')
+      assert_includes(summary, '## Measure tests failed (2, 28.57-57.14%)')
+      assert_includes(summary, '## Measure tests passed (2, 28.57-57.14%)')
     end
   ensure
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary

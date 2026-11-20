@@ -2,6 +2,7 @@ require 'rake/testtask'
 require 'parallel'
 require 'rubocop/rake_task'
 require 'rexml/document'
+require 'json'
 
 def run_measure_tests(file_list, summary: nil)
   reports_root = ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR', File.expand_path('test/reports'))
@@ -14,16 +15,30 @@ def run_measure_tests(file_list, summary: nil)
     test_failures = []
     failed_count = 0
     passes = []
+    discovered_count = nil
+    reported_count = 0
     report_dir = File.expand_path(File.join(reports_root, file.sub(/\.rb\z/, '')))
+    discovery_file = File.join(report_dir, 'discovered.json')
+    FileUtils.mkdir_p(report_dir) if summary
     FileUtils.rm_f(Dir.glob(File.join(report_dir, 'TEST-*.xml')))
+    FileUtils.rm_f(discovery_file) if summary
 
     puts "Running test #{file}"
-    ruby '-I', load_paths, runner, File.expand_path(file), report_dir, verbose: false do |success, status|
+    args = ['-I', load_paths, runner, File.expand_path(file), report_dir]
+    args << discovery_file if summary
+    ruby(*args, verbose: false) do |success, status|
       process_failure = status.exited? ? "exit #{status.exitstatus}" : status.to_s unless success
     end
 
+    discovered_count = JSON.parse(File.read(discovery_file)) if summary && File.exist?(discovery_file)
     reports = Dir.glob(File.join(report_dir, 'TEST-*.xml'))
     test_cases = reports.flat_map { |report| REXML::Document.new(File.read(report)).get_elements('//testcase') }
+    reported_count = test_cases.size
+    if discovered_count && (!discovered_count.is_a?(Integer) || discovered_count.negative? || reported_count > discovered_count)
+      discovered_count = nil
+      reported_count = 0
+      raise "JUnit results exceed or invalidate the discovered test count for #{file}"
+    end
     test_cases.each do |test_case|
       name = "#{test_case.attributes['classname']}##{test_case.attributes['name']}"
       failures = test_case.get_elements('failure|error')
@@ -41,19 +56,22 @@ def run_measure_tests(file_list, summary: nil)
     end
     raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
-    { file: file, passes: passes, failed_count: failed_count }
+    { file: file, passes: passes, failed_count: failed_count, discovered_count: discovered_count, reported_count: reported_count }
   rescue StandardError => e
     reason = [process_failure, e.message].compact.uniq.join('; ')
     message = "FAIL: #{file} (#{reason})"
     message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
-    { file: file, passes: passes, failed_count: failed_count, error: message }
+    { file: file, passes: passes, failed_count: failed_count, discovered_count: discovered_count, reported_count: reported_count, error: message }
   end
 
   if summary
     results.each do |result|
       summary[:passes][result[:file]] = result[:passes] unless result[:passes].empty?
       summary[:failed_count] += result[:failed_count]
+      summary[:discovered_counts] << result[:discovered_count]
+      summary[:reported_count] += result[:reported_count]
     end
+    summary[:completed] = true
   end
   errors = results.filter_map { |result| result[:error] }
 
@@ -86,7 +104,7 @@ namespace :unit_tests do
     step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     summaries = {}
     errors = filters.keys.filter_map do |group|
-      summaries[group] = { passes: {}, failed_count: 0 } if step_summary
+      summaries[group] = { passes: {}, failed_count: 0, discovered_counts: [], reported_count: 0, completed: false } if step_summary
       run_group.call(group, summaries[group])
       nil
     rescue StandardError => e
@@ -98,13 +116,35 @@ namespace :unit_tests do
     if step_summary
       failed_count = summaries.values.sum { |summary| summary[:failed_count] }
       passed_count = summaries.values.sum { |summary| summary[:passes].values.sum(&:length) }
+      counts = summaries.values.flat_map { |summary| summary[:discovered_counts] }
+      total_count = counts.sum if summaries.values.all? { |summary| summary[:completed] } && counts.none?(&:nil?)
+      reported_count = summaries.values.sum { |summary| summary[:reported_count] }
+      if total_count&.positive?
+        unknown_count = total_count - reported_count
+        percentages = lambda do |count|
+          minimum = 100.0 * count / total_count
+          if unknown_count.zero?
+            format('%.2f%%', minimum)
+          else
+            format('%<minimum>.2f-%<maximum>.2f%%', minimum: minimum, maximum: 100.0 * (count + unknown_count) / total_count)
+          end
+        end
+        failed_range = percentages.call(failed_count)
+        passed_range = percentages.call(passed_count)
+      end
       File.open(step_summary, 'a') do |file|
-        file.puts "## Measure tests failed (#{failed_count})\n"
+        file.puts "Discovered tests: #{total_count || 'unavailable'}; JUnit results: #{reported_count}."
+        if total_count&.positive?
+          file.puts "Percentages are rounded; ranges include unreported tests as possible passes or failures. Reported skips are neither.\n"
+        else
+          file.puts "Percentage ranges are unavailable when discovery is incomplete or no tests were discovered.\n"
+        end
+        file.puts "\n## Measure tests failed (#{failed_count}#{failed_range ? ", #{failed_range}" : ''})\n"
         unless errors.empty?
           file.puts "\nFile or group failures without a JUnit test result are listed below but not counted as failed tests.\n"
           file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
         end
-        file.puts "\n## Measure tests passed (#{passed_count})\n"
+        file.puts "\n## Measure tests passed (#{passed_count}#{passed_range ? ", #{passed_range}" : ''})\n"
         summaries.each do |group, summary|
           next if summary[:passes].empty?
 
