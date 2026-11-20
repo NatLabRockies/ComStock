@@ -963,15 +963,23 @@ class AddHeatPumpRtuTest < Minitest::Test
     end
   end
 
-  # assert every heat pump RTU moves at least its minimum outdoor air (OA) flow whenever its fan runs: the no-load airflow,
-  # every heating and cooling stage airflow, and the fan power floor (fan power minimum flow fraction x loop design airflow)
+  # unitary systems the measure made into heat pump RTUs: on an air loop, with a DX heating coil
   # unitary systems the measure skipped (no DX heating coil, e.g. kitchens) are left out
-  # @return [Array<Hash>] per RTU: air loop name, OA flow, loop design airflow, no-load airflow and fan power minimum flow fraction
-  def assert_airflows_meet_min_oa(model, label)
-    rtus = model.getAirLoopHVACUnitarySystems.sort.select do |us|
+  def heat_pump_rtus(model)
+    model.getAirLoopHVACUnitarySystems.sort.select do |us|
       us.airLoopHVAC.is_initialized && us.heatingCoil.is_initialized &&
         (us.heatingCoil.get.to_CoilHeatingDXMultiSpeed.is_initialized || us.heatingCoil.get.to_CoilHeatingDXSingleSpeed.is_initialized)
     end
+  end
+
+  # assert every heat pump RTU moves at least its minimum outdoor air (OA) flow whenever its fan runs: the no-load airflow,
+  # every heating and cooling stage airflow, the fan power floor (fan power minimum flow fraction x loop design airflow),
+  # and the terminal's minimum airflow, which must also equal the no-load airflow (a terminal that asks for less than the
+  # fan moves can leave the outdoor air controller with no airflow, which closes the outdoor air while the fan runs)
+  # @return [Array<Hash>] per RTU: air loop name, OA flow, loop design airflow, no-load airflow, fan power minimum flow
+  #   fraction and terminal minimum airflow
+  def assert_airflows_meet_min_oa(model, label)
+    rtus = heat_pump_rtus(model)
     refute_empty(rtus, "#{label}: no heat pump RTUs to check")
 
     rtus.map do |us|
@@ -995,7 +1003,17 @@ class AddHeatPumpRtuTest < Minitest::Test
       assert(fan_floor * design >= oa - tol,
              "#{name}: fan power floor #{fan_floor.round(4)} x design airflow #{design.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
 
-      { air_loop: air_loop_hvac.name.to_s, oa: oa, design: design, no_load: no_load, fan_floor: fan_floor }
+      terminal = air_loop_hvac.demandComponents.map(&:to_AirTerminalSingleDuctVAVHeatAndCoolNoReheat).find(&:is_initialized)
+      refute_nil(terminal, "#{name}: no VAV heat and cool terminal on the air loop")
+      terminal_max = unwrap_optional(terminal.get.maximumAirFlowRate)
+      refute_nil(terminal_max, "#{name}: the terminal's maximum airflow is not hard-sized")
+      terminal_min = terminal.get.zoneMinimumAirFlowFraction * terminal_max
+      assert(terminal_min >= oa - tol,
+             "#{name}: terminal minimum airflow #{terminal_min.round(4)} m3/s is below the minimum OA flow #{oa.round(4)} m3/s")
+      assert_in_delta(no_load, terminal_min, no_load * 1e-6,
+                      "#{name}: terminal minimum airflow #{terminal_min.round(4)} m3/s differs from the no-load airflow #{no_load.round(4)} m3/s")
+
+      { air_loop: air_loop_hvac.name.to_s, oa: oa, design: design, no_load: no_load, fan_floor: fan_floor, terminal_min: terminal_min }
     end
   end
 
@@ -1008,6 +1026,46 @@ class AddHeatPumpRtuTest < Minitest::Test
     hours = sql.execAndReturnVectorOfString(query).get.map(&:to_f)
     refute_empty(hours, "#{test_name}: no Outdoor Air Controller Limiting Factors rows in the sql")
     assert(hours.all?(&:zero?), "#{test_name}: outdoor air limited by the mixed air flow for up to #{hours.max} hours in an air loop")
+  ensure
+    sql&.close
+  end
+
+  # assert the outdoor air controller of every heat pump RTU air loop saw airflow whenever the supply fan ran,
+  # from the hourly Fan Air Mass Flow Rate and Air System Mixed Air Mass Flow Rate of an annual run.
+  # With a terminal minimum of 0 the terminal asks for no air while its zone has no load. In a model with no zone
+  # exhaust fan, EnergyPlus then reports no mixed air flow and delivers no outdoor air in those timesteps, although
+  # the fan runs at its no-load airflow. This test model has no exhaust fan: that was 3,200 to 4,100 hours a year per
+  # air loop, with annual mixed air at 0.51 to 0.62 of the fan's airflow. A model used with this check must not have a
+  # zone exhaust fan, or the check passes whatever the terminal minimum is.
+  def assert_oa_controller_sees_fan_airflow(model, test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+    series = lambda do |variable, key|
+      'SELECT r.TimeIndex AS ti, r.Value AS v FROM ReportData r ' \
+        'JOIN ReportDataDictionary d ON d.ReportDataDictionaryIndex = r.ReportDataDictionaryIndex ' \
+        'JOIN Time t ON t.TimeIndex = r.TimeIndex ' \
+        "WHERE d.Name = '#{variable}' AND d.KeyValue = '#{key.upcase.gsub("'", "''")}' AND t.WarmupFlag = 0 " \
+        'AND t.EnvironmentPeriodIndex IN (SELECT EnvironmentPeriodIndex FROM EnvironmentPeriods WHERE EnvironmentType = 3)'
+    end
+    rtus = heat_pump_rtus(model)
+    refute_empty(rtus, "#{test_name}: no heat pump RTUs to check")
+
+    rtus.each do |us|
+      air_loop_hvac = us.airLoopHVAC.get
+      fan = series.call('Fan Air Mass Flow Rate', us.supplyFan.get.name.to_s)
+      mixed = series.call('Air System Mixed Air Mass Flow Rate', air_loop_hvac.name.to_s)
+      joined = "FROM (#{fan}) f JOIN (#{mixed}) m ON m.ti = f.ti"
+      fan_hours = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE f.v > 0").get
+      assert(fan_hours.positive?, "#{test_name} #{air_loop_hvac.name}: no hours with the supply fan running in the sql")
+
+      # hours the controller saw no airflow while the fan ran, and the year's mixed air over the year's fan airflow.
+      # The two flows need not match hour by hour: the terminal can sit at its minimum while the unit's fan runs at a
+      # stage airflow, and the terminal minimum still carries the minimum outdoor air.
+      no_air_hours = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE f.v > 0 AND m.v < 0.01 * f.v").get
+      ratio = sql.execAndReturnFirstDouble("SELECT SUM(m.v) / SUM(f.v) #{joined}").get
+      assert_equal(0, no_air_hours,
+                   "#{test_name} #{air_loop_hvac.name}: the outdoor air controller saw no airflow in #{no_air_hours} of #{fan_hours} fan hours")
+      assert(ratio >= 0.9, "#{test_name} #{air_loop_hvac.name}: annual mixed air flow is #{ratio.round(3)} of the fan's airflow")
+    end
   ensure
     sql&.close
   end
@@ -1418,6 +1476,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     verify_cfm_per_ton(model, result)
     assert_airflows_meet_min_oa(model, __method__)
     assert_oa_never_limited_by_mixed_air_flow(__method__)
+    assert_oa_controller_sees_fan_airflow(model, __method__)
   end
 
   # cfm/ton check for the upsized standard unit with a sizing run and an annual simulation, with a lookup table value check
@@ -1440,6 +1499,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     verify_cfm_per_ton(model, result)
     assert_airflows_meet_min_oa(model, __method__)
     assert_oa_never_limited_by_mixed_air_flow(__method__)
+    assert_oa_controller_sees_fan_airflow(model, __method__)
   end
 
   # ##########################################################################
