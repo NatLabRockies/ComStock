@@ -72,9 +72,11 @@ jobs:
           git diff --exit-code
 
       - name: Run measure tests through Rake
+        id: measure-tests
         run: bundle _2.4.10_ exec rake unit_tests:all_tests
 
       - name: Check tests actually ran
+        if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -88,9 +90,18 @@ jobs:
               raise SystemExit("JUnit reports contain failures or errors")
           PY
 
+      - name: Upload measure test reports
+        if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-test-reports
+          path: test/reports/
+
   integration-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -131,3 +142,29 @@ jobs:
           python .github/scripts/check_baseline_results.py \
             samples/bsb-integration-test.csv \
             baseline_test_output/simulation_output/results_job0.json.gz
+
+      - name: Extract baseline results CSV
+        run: gunzip -k baseline_test_output/results_csvs/results_up00.csv.gz
+
+      - name: Upload baseline results CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildstockbatch-results-csv
+          path: baseline_test_output/results_csvs/results_up00.csv
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Commit and push baseline results CSV
+        if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p test/base_results/baseline
+          cp baseline_test_output/results_csvs/results_up00.csv test/base_results/baseline/
+          git add -- test/base_results/baseline/results_up00.csv
+          if ! git diff --cached --quiet -- test/base_results/baseline/results_up00.csv; then
+            git -c user.name="GitHub Actions" -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "Update baseline integration test results [skip ci]" -- test/base_results/baseline/results_up00.csv
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+              push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          fi

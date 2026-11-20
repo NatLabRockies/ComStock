@@ -88,6 +88,16 @@ After completing the developer setup above, run:
 - `bundle exec rake unit_tests:upgrade_measure_tests` for upgrade tests.
 
 Rake prints a failure summary at the end and saves JUnit reports in `test/reports`.
+In GitHub Actions, download them from the `measure-test-reports` artifact, even if tests fail.
+The run summary lists individual passes and failures.
+
+To run one test from the repository root (with your test bundle configured):
+
+```bash
+bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
+```
+
+The GitHub Actions integration job retains its baseline CSV for one day in the `buildstockbatch-results-csv` artifact and pushes changed results back to the triggering branch on success.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above
