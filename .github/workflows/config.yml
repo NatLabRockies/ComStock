@@ -107,6 +107,13 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
+          python-version: '3.11'
+
+      - name: Install measure Python dependencies
+        run: python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
+
+      - uses: actions/setup-python@v6
+        with:
           python-version: '3.12.12'
 
       - uses: ruby/setup-ruby@v1
@@ -127,11 +134,13 @@ jobs:
           echo "OPENSTUDIO_EXE=${os_exe}" >> "$GITHUB_ENV"
           "$os_exe" --version
 
-      - name: Install BuildStockBatch and measure Python dependencies
+      - name: Install BuildStockBatch and ComStock postprocessing
         run: |
-          python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
           python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
           python -m pip install -e ./postprocessing
+          python3.11 -c "import PySAM"
+          ghedesigner --help > /dev/null
+          python -c "import comstockpostproc.buildstockbatch"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
