@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload measure test reports
         if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: measure-test-reports
           path: test/reports/
@@ -147,7 +147,7 @@ jobs:
         run: gunzip -k baseline_test_output/results_csvs/results_up00.csv.gz
 
       - name: Upload baseline results CSV
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: buildstockbatch-results-csv
           path: baseline_test_output/results_csvs/results_up00.csv
