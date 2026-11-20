@@ -181,13 +181,18 @@ jobs:
             gunzip -k "$archive"
             cp "${archive%.gz}" test/base_results/upgrades/
           done
+          while IFS= read -r -d '' file; do
+            if [[ ! -f "upgrades_test_output/results_csvs_pub/${file##*/}.gz" ]]; then
+              rm -- "$file"
+            fi
+          done < <(git ls-files -z -- 'test/base_results/upgrades/results_up*.csv')
 
       - name: Commit and push upgrade integration results CSVs
         if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git add -- 'test/base_results/upgrades/results_up*.csv'
+          git add -A -- 'test/base_results/upgrades/results_up*.csv'
           if ! git diff --cached --quiet -- 'test/base_results/upgrades/results_up*.csv'; then
             git -c user.name="GitHub Actions" -c user.email="github-actions[bot]@users.noreply.github.com" \
               commit -m "Upgrade integration test results [skip ci]" -- 'test/base_results/upgrades/results_up*.csv'
