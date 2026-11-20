@@ -42,6 +42,7 @@ def publish_results(fs, results_dir, buildstock_csv_filename, cfg):
             output_dir=str(output_dir),
             skip_missing_columns=True,
             include_upgrades=len(cfg.get('upgrades', [])) > 0,
+            upgrade_names={i: upgrade['upgrade_name'] for i, upgrade in enumerate(cfg.get('upgrades', []), 1)},
             make_comparison_plots=False,
             make_timeseries_plots=False,
         )
