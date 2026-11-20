@@ -118,38 +118,68 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     assert_nil(label_stage)
   end
 
-  def test_get_shr
-    puts('### DEBUGGING: test_get_shr')
+  # m3/s per W of 1 cfm/ton
+  def m_3_per_s_per_w_per_cfm_per_ton
+    OpenStudio.convert(OpenStudio.convert(1.0, 'cfm', 'm^3/s').get, 'W', 'ton').get
+  end
 
-    # test: zero input
-    stage_number = 0
-    shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
-    puts("--- DEBUGGING: shr = #{shr}")
-    assert_nil(shr)
+  # A stage's rated sensible heat ratio is EnergyPlus' relation for autosized DX cooling coils: 0.676 at 300 cfm/ton,
+  # 0.798 at 450 cfm/ton, linear between and held at those values outside.
+  def test_stage_rated_shr
+    puts('### DEBUGGING: test_stage_rated_shr')
+    capacity_w = 10_000.0
+    { 250 => 0.676, 300 => 0.676, 350 => 0.717, 400 => 0.758, 450 => 0.798, 600 => 0.798 }.each do |cfm_per_ton, expected|
+      airflow_m_3_per_s = cfm_per_ton * m_3_per_s_per_w_per_cfm_per_ton * capacity_w
+      shr = UpgradeHvacRtuAdv.stage_rated_shr(airflow_m_3_per_s, capacity_w)
+      puts("--- DEBUGGING: #{cfm_per_ton} cfm/ton shr = #{shr}")
+      assert_in_delta(expected, shr, 0.001, "SHR at #{cfm_per_ton} cfm/ton")
+    end
+  end
 
-    # test: 1
-    stage_number = 1
-    shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
-    puts("--- DEBUGGING: shr = #{shr}")
-    assert_in_epsilon(0.7, shr, 0.001)
-
-    # test: 2
-    stage_number = 2
-    shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
-    puts("--- DEBUGGING: shr = #{shr}")
-    assert_in_epsilon(0.637, shr, 0.001)
-
-    # test: 3
-    stage_number = 3
-    shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
-    puts("--- DEBUGGING: shr = #{shr}")
-    assert_in_epsilon(0.626, shr, 0.001)
-
-    # test: 4
-    stage_number = 4
-    shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
-    puts("--- DEBUGGING: shr = #{shr}")
-    assert_nil(shr)
+  # Cooling stage airflows and capacities. No stage may move less air than the unit's minimum airflow; a lower stage
+  # that the minimum pushes above 450 cfm/ton gets more capacity, or is removed when that takes more than 65% of the
+  # step to the next stage. The medium stage is always kept.
+  # Each case: [rated cfm/ton, minimum airflow over the rated airflow] and, by stage, the expected
+  # [airflow over the rated airflow, capacity over the rated capacity].
+  def test_cooling_stage_flows_and_capacities
+    puts('### DEBUGGING: test_cooling_stage_flows_and_capacities')
+    measure = UpgradeHvacRtuAdv.new
+    capacity_w = 35_000.0
+    cases = {
+      # the low stage runs at the minimum airflow (420 cfm/ton); nothing else changes
+      [350.0, 0.40] => { 1 => [0.40, 0.333], 2 => [0.666, 0.666], 3 => [1.0, 1.0] },
+      # the low stage at the minimum airflow would be at 480 cfm/ton: capacity raised to 450 cfm/ton
+      [400.0, 0.40] => { 1 => [0.40, 0.40 * 400.0 / 450.0], 2 => [0.666, 0.666], 3 => [1.0, 1.0] },
+      # minimum outdoor air of 0.65: low stage capacity raised, medium stage untouched
+      [300.0, 0.65] => { 1 => [0.65, 0.65 * 300.0 / 450.0], 2 => [0.666, 0.666], 3 => [1.0, 1.0] },
+      # minimum outdoor air of 0.90: the low stage would need 0.70 of the rated capacity and is removed; the medium
+      # stage runs at the minimum airflow with its capacity raised to 450 cfm/ton
+      [350.0, 0.90] => { 2 => [0.90, 0.90 * 350.0 / 450.0], 3 => [1.0, 1.0] },
+      # all outdoor air: the medium stage takes the full allowance and stays above 450 cfm/ton
+      [400.0, 1.0] => { 2 => [1.0, 0.666 + (0.334 * 0.65)], 3 => [1.0, 1.0] },
+      # rated airflow below 300 cfm/ton: the medium stage's airflow is raised to 300 cfm/ton
+      [250.0, 0.40] => { 1 => [0.40, 0.333], 2 => [0.666 * 300.0 / 250.0, 0.666], 3 => [1.0, 1.0] },
+      # rated airflow above 450 cfm/ton: the medium stage's airflow is lowered to 450 cfm/ton, the low stage's
+      # capacity is raised
+      [500.0, 0.40] => { 1 => [0.40, 0.40 * 500.0 / 450.0], 2 => [0.666 * 450.0 / 500.0, 0.666], 3 => [1.0, 1.0] }
+    }
+    cases.each do |(rated_cfm_per_ton, min_ratio), expected|
+      label = "#{rated_cfm_per_ton.round(0)} cfm/ton, minimum airflow #{min_ratio}"
+      airflow = rated_cfm_per_ton * m_3_per_s_per_w_per_cfm_per_ton * capacity_w
+      flows, caps = measure.cooling_stage_flows_and_capacities(capacity_w, airflow, min_ratio * airflow)
+      puts("--- DEBUGGING: #{label}: flows #{flows.transform_values { |v| (v / airflow).round(4) }} caps #{caps.transform_values { |v| (v / capacity_w).round(4) }}")
+      assert_equal(expected.keys.sort, caps.keys.sort, "#{label}: stages kept")
+      assert_equal(caps.keys.sort, flows.keys.sort, "#{label}: airflow and capacity stages differ")
+      expected.each do |stage, (flow_fraction, cap_fraction)|
+        assert_in_delta(flow_fraction, flows[stage] / airflow, 1e-4, "#{label}: stage #{stage} airflow fraction")
+        assert_in_delta(cap_fraction, caps[stage] / capacity_w, 1e-4, "#{label}: stage #{stage} capacity fraction")
+        assert(flows[stage] >= (min_ratio * airflow) - 1e-9, "#{label}: stage #{stage} airflow is below the minimum airflow")
+      end
+      caps.keys.sort.each_cons(2) do |lower, higher|
+        assert(flows[higher] >= flows[lower] - 1e-9, "#{label}: stage #{higher} moves less air than stage #{lower}")
+        assert(caps[higher] > caps[lower], "#{label}: stage #{higher} has no more capacity than stage #{lower}")
+      end
+    end
   end
 
   def test_get_reference_cop_ratio
@@ -709,6 +739,46 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     sql&.close
   end
 
+  # assert every advanced RTU's supply fan moves at least the unit's minimum airflow in the records of an annual run
+  # where the unit is above its lowest cooling stage. The compressor then runs the whole record, so the fan's airflow
+  # is a blend of two stage airflows whatever the fan mode. Before the stage airflows were raised to the unit's
+  # minimum, the lowest stage ran at a third of the design airflow: a unit just above it moved less than its minimum
+  # airflow and, with a high outdoor air share, less than its minimum outdoor air.
+  # The minimum airflow ratio and the design mass flow are taken as in assert_fan_at_no_load_airflow_without_load.
+  def assert_fan_at_least_minimum_airflow_while_cooling(model, test_name)
+    sql = OpenStudio::SqlFile.new(OpenStudio::Path.new(sql_path(test_name)))
+    series = lambda do |variable, key|
+      'SELECT r.TimeIndex AS ti, r.Value AS v FROM ReportData r ' \
+        'JOIN ReportDataDictionary d ON d.ReportDataDictionaryIndex = r.ReportDataDictionaryIndex ' \
+        'JOIN Time t ON t.TimeIndex = r.TimeIndex ' \
+        "WHERE d.Name = '#{variable}' AND d.KeyValue = '#{key.upcase.gsub("'", "''")}' AND t.WarmupFlag = 0 " \
+        'AND t.EnvironmentPeriodIndex IN (SELECT EnvironmentPeriodIndex FROM EnvironmentPeriods WHERE EnvironmentType = 3)'
+    end
+    rtus = adv_rtus(model)
+    refute_empty(rtus, "#{test_name}: no advanced RTUs to check")
+    assert(model.weatherFile.is_initialized, "#{test_name}: the model has no weather file to take the site elevation from")
+    standard_pressure_pa = 101_325.0 * ((1.0 - (2.25577e-5 * model.weatherFile.get.elevation))**5.2559)
+    standard_density_kg_per_m3 = standard_pressure_pa / (287.0 * 293.15)
+
+    rtus.each do |us|
+      name = "#{test_name} #{us.name}"
+      fan = series.call('Fan Air Mass Flow Rate', us.supplyFan.get.name.to_s)
+      speed = series.call('Unitary System DX Coil Speed Level', us.name.to_s)
+      joined = "FROM (#{fan}) f JOIN (#{speed}) s ON s.ti = f.ti"
+      staged_records = sql.execAndReturnFirstInt("SELECT COUNT(*) #{joined} WHERE s.v >= 2").get
+      assert(staged_records > 20, "#{name}: only #{staged_records} records above the lowest cooling stage; the check needs a model that cools")
+
+      lowest_kg_per_s = sql.execAndReturnFirstDouble("SELECT MIN(f.v) #{joined} WHERE s.v >= 2").get
+      design_m3_per_s = [optional_value(us.supplyAirFlowRateDuringCoolingOperation), optional_value(us.supplyAirFlowRateDuringHeatingOperation)].max
+      actual = lowest_kg_per_s / (design_m3_per_s * standard_density_kg_per_m3)
+      expected = optional_value(us.supplyFan.get.to_FanVariableVolume.get.fanPowerMinimumFlowFraction)
+      assert(actual >= expected - 0.03,
+             "#{name}: above the lowest cooling stage the fan moved as little as #{actual.round(3)} of the design airflow (lowest of #{staged_records} records), below the minimum of #{expected.round(3)}")
+    end
+  ensure
+    sql&.close
+  end
+
   def verify_adv_rtu(test_name, measure, argument_map, osm_path, epw_path)
     # set weather file but not apply measure
     result = set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path,
@@ -752,6 +822,9 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     # the new terminals carry the unit's minimum airflow; checked before the sizing run below hard-sizes them
     assert_terminal_minimum_is_no_load_airflow(model, test_name)
     assert_no_load_airflow_ratio(model, test_name)
+    # the cooling stages as the measure set them: applying the sizing run's values below replaces each stage's
+    # airflow and capacity with EnergyPlus' own design sizes (equal steps of the highest stage)
+    adv_rtus(model).each { |us| assert_cooling_stages_respect_minimum_airflow(us) }
 
     # hardsize model
     model = _mimic_hardsize_model(model, "#{run_dir(test_name)}/SR_after")
@@ -833,46 +906,57 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
              'Expected cooling coil to be multispeed')
       clg_coil = clg_coil.to_CoilCoolingDXMultiSpeed.get
 
-      # assert multispeed cooling coil has 3 stages
-      puts('--- CHECKING: Expected cooling coil to have 3 stages')
-      assert_equal(clg_coil.stages.size, 3, 'Expected cooling coil to have 3 stages')
-      clg_coil_spd3 = clg_coil.stages[2]
+      # assert multispeed cooling coil has 3 stages, or 2 where the unit's minimum airflow removes the low stage
+      puts('--- CHECKING: Expected cooling coil to have 2 or 3 stages')
+      stages = clg_coil.stages
+      assert_includes([2, 3], stages.size, 'Expected cooling coil to have 2 or 3 stages')
 
-      # assert stage 3 (highest stage) flowrate matches design flow rate
-      puts('--- CHECKING: Expected stage 3 flowrate to match design flow rate')
+      # assert the highest stage's flowrate matches design flow rate
+      puts('--- CHECKING: Expected the highest stage flowrate to match design flow rate')
       clg_dsn_flowrate = system.supplyAirFlowRateDuringCoolingOperation
-      assert_in_delta(clg_dsn_flowrate.to_f, clg_coil_spd3.ratedAirFlowRate.get, 0.000001,
-                      'Expected stage 3 flowrate to match design flow rate')
-
-      # assert flow rate reduces for lower stages
-      puts('--- CHECKING: Expected flow rate to reduce for lower stages')
-      clg_coil_spd2 = clg_coil.stages[1]
-      clg_coil_spd1 = clg_coil.stages[0]
-      assert(
-        clg_coil_spd3.ratedAirFlowRate.get >
-          clg_coil_spd2.ratedAirFlowRate.get,
-        'Expected flow rate to reduce for lower stages between stage 3 and 2.'
-      )
-      assert(
-        clg_coil_spd2.ratedAirFlowRate.get >
-          clg_coil_spd1.ratedAirFlowRate.get,
-        'Expected flow rate to reduce for lower stages between stage 2 and 1.'
-      )
-
-      # assert capacity reduces for lower stages
-      puts('--- CHECKING: Expected cooling coil capacity to reduce for lower stages')
-      assert(
-        clg_coil_spd3.grossRatedTotalCoolingCapacity.get >
-          clg_coil_spd2.grossRatedTotalCoolingCapacity.get,
-        'Expected capacity to reduce for lower stages between stage 3 and 2.'
-      )
-      assert(
-        clg_coil_spd2.grossRatedTotalCoolingCapacity.get >
-          clg_coil_spd1.grossRatedTotalCoolingCapacity.get,
-        'Expected capacity to reduce for lower stages between stage 2 and 1.'
-      )
+      assert_in_delta(clg_dsn_flowrate.to_f, stages.last.ratedAirFlowRate.get, 0.000001,
+                      'Expected the highest stage flowrate to match design flow rate')
     end
     result
+  end
+
+  # assert an advanced RTU's cooling stages: no stage moves less air than the unit's minimum airflow (the lowest
+  # stage ran at a third of the design airflow before, below the minimum outdoor air of units with a high outdoor air
+  # share), airflow does not rise and capacity falls toward the lower stages, each stage's rated sensible heat ratio
+  # follows its airflow per capacity, and a lower stage is outside 300 to 450 cfm/ton only where the medium stage has
+  # taken its full capacity allowance (65% of the step to the high stage) and the unit's minimum airflow still holds
+  # it above the limit. The high stage keeps the airflow per capacity of the coil it replaces.
+  # The unit's minimum airflow is read as the fan's power minimum flow fraction times the cooling supply airflow.
+  def assert_cooling_stages_respect_minimum_airflow(system)
+    stages = system.coolingCoil.get.to_CoilCoolingDXMultiSpeed.get.stages
+    clg_flow = optional_value(system.supplyAirFlowRateDuringCoolingOperation)
+    min_ratio = optional_value(system.supplyFan.get.to_FanVariableVolume.get.fanPowerMinimumFlowFraction)
+    refute_nil(clg_flow, "#{system.name}: no cooling supply airflow")
+    refute_nil(min_ratio, "#{system.name}: no fan power minimum flow fraction")
+    min_airflow = min_ratio * clg_flow
+
+    stages.each_with_index do |stage, i|
+      label = "#{system.name} cooling stage #{i + 1} of #{stages.size}"
+      flow = stage.ratedAirFlowRate.get
+      capacity = stage.grossRatedTotalCoolingCapacity.get
+      cfm_per_ton = flow / capacity / m_3_per_s_per_w_per_cfm_per_ton
+      puts("--- CHECKING: #{label}: #{(flow / clg_flow).round(3)} of the design airflow, #{cfm_per_ton.round(0)} cfm/ton, minimum airflow #{min_ratio.round(3)}")
+      assert(flow >= min_airflow * (1 - 1e-6),
+             "#{label}: airflow #{flow.round(4)} m3/s is below the unit's minimum airflow #{min_airflow.round(4)} m3/s")
+      assert_in_delta(UpgradeHvacRtuAdv.stage_rated_shr(flow, capacity), stage.grossRatedSensibleHeatRatio.get, 1e-6,
+                      "#{label}: rated sensible heat ratio does not follow its airflow per capacity")
+      full_allowance = 0.666 + ((1.0 - 0.666) * 0.65)
+      held_medium_stage = (i == stages.size - 2) && (capacity / stages.last.grossRatedTotalCoolingCapacity.get >= full_allowance - 1e-6)
+      next if i == stages.size - 1 || held_medium_stage
+
+      assert(cfm_per_ton.round(0) >= 300 && cfm_per_ton.round(0) <= 450, "#{label}: #{cfm_per_ton.round(0)} cfm/ton is outside 300 to 450")
+    end
+    stages.each_cons(2) do |lower, higher|
+      assert(higher.ratedAirFlowRate.get >= lower.ratedAirFlowRate.get * (1 - 1e-9),
+             "#{system.name}: a higher cooling stage moves less air than the stage below it")
+      assert(higher.grossRatedTotalCoolingCapacity.get > lower.grossRatedTotalCoolingCapacity.get,
+             "#{system.name}: a higher cooling stage has no more capacity than the stage below it")
+    end
   end
 
   # check upgrade specs
@@ -1467,26 +1551,78 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     assert_no_load_airflow_ratio(applied, 'test_adv_no_load_ratio')
   end
 
-  # Each cooling stage must carry the latent degradation inputs the variable-speed coil object had, acting at the lowest
-  # stage only. OpenStudio's stage data defaults the maximum cycling rate to 0, which turns EnergyPlus' latent
-  # degradation model off. In four of five test buildings the compressor then used 5% to 8% more electricity than with
-  # the variable-speed coil; with the model on it used the same and the coil removed 12% to 16% less moisture.
-  def test_cooling_stages_keep_latent_degradation_inputs
-    puts "\n######\nTEST:test_cooling_stages_keep_latent_degradation_inputs\n######\n"
+  # The cooling part-load fraction curve of upgrade_hvac_add_heat_pump_rtu (cool_plf_plr1), read from each of its
+  # performance files: [coefficient 1, coefficient 2, coefficient 3, minimum output], which must be the same in all.
+  def heat_pump_rtu_cooling_plf_curve
+    files = Dir[File.join(File.dirname(__FILE__), '../../upgrade_hvac_add_heat_pump_rtu/resources/*.json')]
+    refute_empty(files, 'no performance files of upgrade_hvac_add_heat_pump_rtu found')
+    curves = files.map do |file|
+      tables = JSON.parse(File.read(file)).dig('tables', 'curves', 'table')
+      curve = tables.find { |table| table['name'] == 'cool_plf_plr1' }
+      refute_nil(curve, "#{File.basename(file)}: no cool_plf_plr1 curve")
+      assert_equal('Quadratic', curve['form'], "#{File.basename(file)}: cool_plf_plr1 is not a quadratic curve")
+      [curve['coeff_1'].to_f, curve['coeff_2'].to_f, curve['coeff_3'].to_f, curve['minimum_dependent_variable_output'].to_f]
+    end
+    assert_equal(1, curves.uniq.size, 'the performance files of upgrade_hvac_add_heat_pump_rtu differ in cool_plf_plr1')
+    curves.first
+  end
+
+  # Cycling losses and latent degradation of the cooling coil.
+  # The stages represent a variable-speed compressor, which modulates between two stages and cycles only below the
+  # lowest one: the part-load fraction curve must not apply above the lowest stage. Applied there, it added 9% to the
+  # coil's electricity in the records above the lowest stage of an annual test run.
+  # Below the lowest stage the part-load fraction curve must be the one upgrade_hvac_add_heat_pump_rtu uses (0.75 +
+  # 0.25 x part-load ratio, not below 0.7), one curve object for every unit. The fit of normalized power against
+  # part-load ratio used before was held at 0.7 by EnergyPlus and charged 43% more electricity than the load fraction.
+  # EnergyPlus' latent degradation model (moisture evaporating from the coil while the compressor is off and the fan
+  # runs) must be off at every cooling stage, as it is for the coils of the units this one replaces and of
+  # upgrade_hvac_add_heat_pump_rtu. EnergyPlus applies the model only when all four inputs are above 0; the stage
+  # data's defaults are 0. Modeled for this unit alone it lowered the compressor's electricity by up to 5% in test
+  # buildings and the moisture removed by 4% to 35%.
+  def test_cycling_losses_below_the_lowest_stage_only_and_no_latent_degradation
+    puts "\n######\nTEST:test_cycling_losses_below_the_lowest_stage_only_and_no_latent_degradation\n######\n"
     applied = adv_apply('test_adv_latent_inputs')
     rtus = adv_rtus(applied)
     refute_empty(rtus, 'no advanced RTUs to check')
+    expected_plf = heat_pump_rtu_cooling_plf_curve
+    assert_equal([0.75, 0.25, 0.0, 0.7], expected_plf, 'the heat pump RTU cooling part-load fraction curve changed')
+    plf_curves = []
     rtus.each do |us|
       coil = us.coolingCoil.get.to_CoilCoolingDXMultiSpeed.get
+      refute(coil.applyPartLoadFractiontoSpeedsGreaterthan1, "#{us.name}: cycling losses apply above the lowest stage")
       refute(coil.applyLatentDegradationtoSpeedsGreaterthan1, "#{us.name}: latent degradation applies above the lowest stage")
       coil.stages.each_with_index do |stage, i|
         label = "#{us.name} cooling stage #{i + 1}"
-        assert_in_delta(1000.0, stage.nominalTimeforCondensateRemovaltoBegin, 1e-9, "#{label}: nominal time for condensate removal to begin")
-        assert_in_delta(1.5, stage.ratioofInitialMoistureEvaporationRateandSteadyStateLatentCapacity, 1e-9, "#{label}: initial moisture evaporation ratio")
-        assert_in_delta(2.5, stage.maximumCyclingRate, 1e-9, "#{label}: maximum cycling rate")
-        assert_in_delta(45.0, stage.latentCapacityTimeConstant, 1e-9, "#{label}: latent capacity time constant")
+        plf = stage.partLoadFractionCorrelationCurve.to_CurveQuadratic
+        assert(plf.is_initialized, "#{label}: the part-load fraction curve is not a quadratic curve")
+        plf = plf.get
+        plf_curves << plf.handle.to_s
+        assert_in_delta(expected_plf[0], plf.coefficient1Constant, 1e-9, "#{label}: part-load fraction curve constant")
+        assert_in_delta(expected_plf[1], plf.coefficient2x, 1e-9, "#{label}: part-load fraction curve slope")
+        assert_in_delta(expected_plf[2], plf.coefficient3xPOW2, 1e-9, "#{label}: part-load fraction curve quadratic term")
+        assert_in_delta(expected_plf[3], optional_value(plf.minimumCurveOutput), 1e-9, "#{label}: part-load fraction curve minimum output")
+        assert_in_delta(1.0, plf.evaluate(1.0), 1e-9, "#{label}: part-load fraction at full load")
+        assert_in_delta(0.0, stage.nominalTimeforCondensateRemovaltoBegin, 1e-9, "#{label}: nominal time for condensate removal to begin")
+        assert_in_delta(0.0, stage.ratioofInitialMoistureEvaporationRateandSteadyStateLatentCapacity, 1e-9, "#{label}: initial moisture evaporation ratio")
+        assert_in_delta(0.0, stage.maximumCyclingRate, 1e-9, "#{label}: maximum cycling rate")
+        assert_in_delta(0.0, stage.latentCapacityTimeConstant, 1e-9, "#{label}: latent capacity time constant")
       end
     end
+    assert_equal(1, plf_curves.uniq.size, 'the units do not share one part-load fraction curve')
+    assert_equal(1, applied.getCurveQuadratics.count { |curve| curve.name.to_s == UpgradeHvacRtuAdv::COOLING_PLF_CURVE_NAME },
+                 'the part-load fraction curve was created more than once')
+    assert_empty(applied.getCurveLinears.select { |curve| curve.name.to_s.end_with?('_plr') },
+                 'the normalized power fits are still created in the model')
+  end
+
+  # Every cooling stage of every unit must move at least the unit's minimum airflow, with its sensible heat ratio set
+  # from its airflow per capacity (see assert_cooling_stages_respect_minimum_airflow).
+  def test_cooling_stages_respect_minimum_airflow
+    puts "\n######\nTEST:test_cooling_stages_respect_minimum_airflow\n######\n"
+    applied = adv_apply('test_adv_stage_airflow')
+    rtus = adv_rtus(applied)
+    refute_empty(rtus, 'no advanced RTUs to check')
+    rtus.each { |us| assert_cooling_stages_respect_minimum_airflow(us) }
   end
 
   # Annual simulation: the outdoor air controller must see airflow whenever the supply fan runs, and the fan must sit
@@ -1516,5 +1652,56 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
     applied = load_model(model_output_path(test_name))
     assert_oa_controller_sees_fan_airflow(applied, test_name)
     assert_fan_at_no_load_airflow_without_load(applied, test_name)
+    assert_fan_at_least_minimum_airflow_while_cooling(applied, test_name)
+  end
+
+  # Annual simulation of a unit whose minimum outdoor air is 90% of its design airflow. At that airflow the low stage
+  # would be far above 450 cfm/ton, so it is removed and the unit has two stages, the lower one at the minimum
+  # airflow. The outdoor air controller must see airflow whenever the fan runs and the fan must not drop below the
+  # minimum airflow while the unit cools.
+  def test_high_outdoor_air_unit_drops_the_low_stage
+    test_name = 'test_adv_high_outdoor_air'
+    puts "\n######\nTEST:#{test_name}\n######\n"
+    osm_path = model_input_path('310_PSZ-AC with electric coil.osm')
+    epw_path = epw_input_path('CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16.epw')
+    measure = UpgradeHvacRtuAdv.new
+    model = load_model(osm_path)
+    assert_empty(model.getFanZoneExhausts, 'this check needs a model with no zone exhaust fan')
+
+    arguments = measure.arguments(model)
+    argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
+    wanted = { 'hr' => false, 'dcv' => false, 'debug_verbose' => false }
+    arguments.each do |arg|
+      cloned = arg.clone
+      cloned.setValue(wanted[arg.name]) if wanted.key?(arg.name)
+      argument_map[arg.name] = cloned
+    end
+
+    # hard-size the model as the workflow does before an upgrade, then raise each unit's minimum outdoor air
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                          run_model: false, apply: false)
+    model = _mimic_hardsize_model(load_model(model_output_path(test_name)), "#{run_dir(test_name)}/SR_before")
+    model.getAirLoopHVACs.each do |air_loop_hvac|
+      controller_oa = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
+      controller_oa.setMinimumOutdoorAirFlowRate(0.9 * air_loop_hvac.designSupplyAirFlowRate.get)
+    end
+
+    set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path,
+                                          run_model: true, apply: true, model: model)
+    # the model as it was simulated: the model saved after the run has each stage's airflow and capacity replaced by
+    # EnergyPlus' own design sizes
+    applied = load_model("#{run_dir(test_name)}/in.osm")
+    rtus = adv_rtus(applied)
+    refute_empty(rtus, "#{test_name}: no advanced RTUs to check")
+    rtus.each do |us|
+      stages = us.coolingCoil.get.to_CoilCoolingDXMultiSpeed.get.stages
+      assert_equal(2, stages.size, "#{us.name}: the low stage was not removed at a minimum airflow of 0.9")
+      assert_in_delta(0.9, optional_value(us.supplyFan.get.to_FanVariableVolume.get.fanPowerMinimumFlowFraction), 1e-3,
+                      "#{us.name}: the unit's minimum airflow ratio is not the outdoor air share")
+      assert_cooling_stages_respect_minimum_airflow(us)
+    end
+    assert_no_load_airflow_ratio(applied, test_name)
+    assert_oa_controller_sees_fan_airflow(applied, test_name)
+    assert_fan_at_least_minimum_airflow_while_cooling(applied, test_name)
   end
 end

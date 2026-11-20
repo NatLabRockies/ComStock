@@ -29,6 +29,18 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
   SINGLE_ZONE_VAV_FAN_POWER_COEFFICIENTS = [0.027827882, 0.026583195, -0.0870687,
                                             1.03091975, 0.0].freeze
 
+  # rated airflow per capacity limits EnergyPlus applies to DX cooling coils, as in upgrade_hvac_add_heat_pump_rtu
+  CFM_PER_TON_MIN_RATED = 300
+  CFM_PER_TON_MAX_RATED = 450
+
+  # capacity and airflow of the low, medium and high cooling stage as fractions of the high stage, before the unit's
+  # minimum airflow and the cfm/ton limits are applied (see cooling_stage_flows_and_capacities)
+  COOLING_STAGE_FRACTIONS = { 1 => 0.333, 2 => 0.666, 3 => 1.0 }.freeze
+  RATED_COOLING_STAGE = 3
+
+  # name of the part-load fraction curve the cooling coils share (see cooling_part_load_fraction_curve)
+  COOLING_PLF_CURVE_NAME = 'rtu_adv_cool_plf_fplr'
+
   # human readable name
   def name
     return 'upgrade_hvac_rtu_adv'
@@ -494,20 +506,19 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     return label_stage
   end
 
-  # Return sensible heat ratio based on stage
-  # SHR values averaged from rated conditions of manufacturer data
-  def self.get_shr(runner, stage_number)
-    case stage_number
-    when 3
-      return 0.626 # 0.7279780362307693
-    when 2
-      return 0.637 # 0.7402533904615385
-    when 1
-      return 0.7 # 0.8136649204374999
-    else
-      runner.registerError("Invalid stage number: #{stage_number}. Must be 1, 2, or 3.")
-      return nil
-    end
+  # Return a cooling stage's gross rated sensible heat ratio (SHR) from its rated airflow per rated capacity.
+  # This is EnergyPlus' relation for an autosized DX cooling coil, a regression of actual coils that gives 0.676 at
+  # 300 cfm/ton and 0.798 at 450 cfm/ton. It sized the SHR of the coil this unit replaces, so a stage with the same
+  # airflow per ton removes moisture as that coil did. At the airflows of the manufacturer data behind this measure it
+  # also returns that data's SHRs: 0.72 at 350 cfm/ton (data: 0.73 at the high stage) and 0.80 at 450 cfm/ton (data:
+  # 0.81 at the low stage, which moves more air per ton).
+  # Fixed values of 0.626, 0.637 and 0.700 (high to low stage) were used before, lowered from the data so that the
+  # coil outlet stayed below saturation at a low airflow per ton.
+  def self.stage_rated_shr(airflow_m_3_per_s, capacity_w)
+    m_3_per_s_per_w_per_cfm_per_ton = OpenStudio.convert(OpenStudio.convert(1.0, 'cfm', 'm^3/s').get, 'W', 'ton').get
+    cfm_per_ton = airflow_m_3_per_s / capacity_w / m_3_per_s_per_w_per_cfm_per_ton
+    cfm_per_ton = cfm_per_ton.clamp(CFM_PER_TON_MIN_RATED, CFM_PER_TON_MAX_RATED)
+    0.431 + (6086.0 * cfm_per_ton * m_3_per_s_per_w_per_cfm_per_ton)
   end
 
   # Return reference COP ratio based on stage
@@ -628,6 +639,91 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     # Adjust rated COP (COP = 1 / EIR)
     adjusted_cop = original_rated_cop * (1.0 / modifier_eir)
     return adjusted_cop
+  end
+
+  # Converts m^3/s per W to CFM/ton.
+  def m_3_per_sec_watts_to_cfm_per_ton(m_3_per_sec_watts)
+    m_3_per_sec_watts / cfm_per_ton_to_m_3_per_sec_watts(1.0)
+  end
+
+  # Return the part-load fraction curve of the cooling coils, creating it once per model: the cycling losses of a
+  # compressor that cycles below its lowest stage. It is the curve upgrade_hvac_add_heat_pump_rtu uses (cool_plf_plr1
+  # in its performance files), 0.75 + 0.25 x part-load ratio and not below 0.7, so both RTU upgrades are charged alike.
+  # A fit of normalized power against part-load ratio was used before (Figure 11 of the measure documentation, from
+  # catalog data between 33% and 100% of a unit's load: 0.098 + 0.911 x part-load ratio for the smaller units; the
+  # eir_*_plr files in resources). EnergyPlus reads this curve as the part-load fraction, the efficiency while cycling
+  # over the steady-state efficiency, applies it below the lowest stage, and holds it at 0.7 or above. The fit is below
+  # 0.7 for part-load ratios under two thirds, so there the compressor drew 43% more electricity than in proportion to
+  # its load; the heat pump RTU curve gives 14% more at half load and the coils of the units this one replaces 4% to
+  # 9% more. Between 33% and 100% of the unit's load the stages and their COP ratios carry the part-load efficiency.
+  def cooling_part_load_fraction_curve(model)
+    existing_curve = model.getCurveQuadratics.find { |curve| curve.name.to_s == COOLING_PLF_CURVE_NAME }
+    return existing_curve if existing_curve
+
+    curve = OpenStudio::Model::CurveQuadratic.new(model)
+    curve.setName(COOLING_PLF_CURVE_NAME)
+    curve.setCoefficient1Constant(0.75)
+    curve.setCoefficient2x(0.25)
+    curve.setCoefficient3xPOW2(0.0)
+    curve.setMinimumValueofx(0.0)
+    curve.setMaximumValueofx(1.0)
+    curve.setMinimumCurveOutput(0.7)
+    curve.setMaximumCurveOutput(1.0)
+    curve
+  end
+
+  # Return the airflow (m3/s) and capacity (W) of each cooling stage, as two hashes keyed by stage number, following
+  # upgrade_hvac_add_heat_pump_rtu.
+  # Each stage starts at its COOLING_STAGE_FRACTIONS share of the high stage's capacity and airflow. A lower stage's
+  # airflow is then raised to the unit's minimum airflow where it is below it, so the unit never moves less than its
+  # minimum airflow, and with it the minimum outdoor air, while it cools. Before, the low stage ran at a third of the
+  # design airflow whatever the minimum was.
+  # That raises the stage's airflow per capacity, which is kept within the rated cfm/ton limits where possible. The
+  # high stage keeps the capacity and airflow of the coil it replaces. A lower stage, in order of preference:
+  #   - below the minimum cfm/ton: its airflow is raised to the minimum cfm/ton
+  #   - above the maximum cfm/ton: its airflow is lowered to the maximum cfm/ton if the unit's minimum airflow allows;
+  #     otherwise its capacity is raised, by up to 65% of the step to the next stage; otherwise the stage is removed.
+  #     The medium stage is never removed, because a multispeed coil needs two stages: it takes the full capacity
+  #     allowance and can stay above the maximum cfm/ton.
+  # The unit's minimum airflow is at least its minimum outdoor air flow, so no stage airflow is below that either.
+  # @return [Array<Hash>] stage airflows and stage capacities; a removed stage is in neither
+  def cooling_stage_flows_and_capacities(rated_capacity_w, rated_airflow_m3_per_s, min_airflow_m3_per_s)
+    flow_per_w_min = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MIN_RATED)
+    flow_per_w_max = cfm_per_ton_to_m_3_per_sec_watts(CFM_PER_TON_MAX_RATED)
+    stage_flows = {}
+    stage_caps = {}
+    COOLING_STAGE_FRACTIONS.sort.each do |stage, fraction|
+      capacity = fraction * rated_capacity_w
+      if stage == RATED_COOLING_STAGE
+        stage_flows[stage] = rated_airflow_m3_per_s
+        stage_caps[stage] = capacity
+        next
+      end
+
+      # a lower stage never moves more air than the high stage, also where the minimum airflow is above that
+      airflow = [fraction * rated_airflow_m3_per_s, min_airflow_m3_per_s].max
+      airflow = rated_airflow_m3_per_s if airflow > rated_airflow_m3_per_s
+      flow_per_w = airflow / capacity
+      if flow_per_w.round(8) < flow_per_w_min.round(8)
+        airflow = [flow_per_w_min * capacity, rated_airflow_m3_per_s].min
+      elsif flow_per_w.round(8) > flow_per_w_max.round(8)
+        airflow_at_limit = flow_per_w_max * capacity
+        fraction_required = airflow / flow_per_w_max / rated_capacity_w
+        fraction_allowed = fraction + ((COOLING_STAGE_FRACTIONS[stage + 1] - fraction) * 0.65)
+        if airflow_at_limit >= min_airflow_m3_per_s
+          airflow = airflow_at_limit
+        elsif fraction_required <= fraction_allowed
+          capacity = fraction_required * rated_capacity_w
+        elsif stage == RATED_COOLING_STAGE - 1
+          capacity = fraction_allowed * rated_capacity_w
+        else
+          next
+        end
+      end
+      stage_flows[stage] = airflow
+      stage_caps[stage] = capacity
+    end
+    [stage_flows, stage_caps]
   end
 
   #### End predefined functions
@@ -1085,10 +1181,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     curve_table_map = {
       'high_stage' => {
         'small_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_0_11_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_0_11_high',
             custom_performance_map_data, std, debug_verbose
@@ -1107,10 +1199,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'medium_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_11_20_high',
             custom_performance_map_data, std, debug_verbose
@@ -1129,10 +1217,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'large_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ), # missing (i.e., data unavailable) curve assumed
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_20_9999_high',
             custom_performance_map_data, std, debug_verbose
@@ -1153,10 +1237,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       },
       'medium_stage' => {
         'small_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_0_11_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_0_11_med',
             custom_performance_map_data, std, debug_verbose
@@ -1175,10 +1255,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'medium_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_11_20_med',
             custom_performance_map_data, std, debug_verbose
@@ -1197,10 +1273,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'large_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ), # missing (i.e., data unavailable) curve assumed
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_20_9999_med',
             custom_performance_map_data, std, debug_verbose
@@ -1221,10 +1293,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       },
       'low_stage' => {
         'small_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_0_11_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_0_11_low',
             custom_performance_map_data, std, debug_verbose
@@ -1243,10 +1311,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'medium_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ),
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_11_20_low',
             custom_performance_map_data, std, debug_verbose
@@ -1265,10 +1329,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           )
         },
         'large_unit' => {
-          'eir_fn_of_plr' => model_add_curve(
-            runner, model, 'poly_rtu_adv_eir_11_20_plr',
-            custom_performance_map_data, std, debug_verbose
-          ), # missing (i.e., data unavailable) curve assumed
           'capacity_fn_of_t' => model_add_curve(
             runner, model, 'lookup_rtu_adv_capacity_20_9999_low',
             custom_performance_map_data, std, debug_verbose
@@ -1744,18 +1804,17 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       # create coils: cooling
       # -------------------------------------------------------
-      # define the cooling coil: three stages (low, medium, high) of a variable-capacity compressor, as a multispeed
-      # DX coil object. The variable-speed coil object with three speeds was used before; EnergyPlus stages both the
-      # same way in a unitary system (it blends neighboring stages and cycles at the lowest), but the unit's no-load
-      # airflow can only be set through its UnitarySystemPerformance:Multispeed object, and OpenStudio 3.10 writes that
-      # object with one cooling speed for a variable-speed coil once the model assigns it, which stops EnergyPlus.
-      # Two things EnergyPlus 25.1 does differently with the same inputs: the multispeed coil runs its crankcase heater
+      # define the cooling coil: up to three stages (low, medium, high) of a variable-capacity compressor, as a
+      # multispeed DX coil object. The variable-speed coil object with three speeds was used before; EnergyPlus stages
+      # both the same way in a unitary system (it blends neighboring stages and cycles at the lowest), but the unit's
+      # no-load airflow can only be set through its UnitarySystemPerformance:Multispeed object, and OpenStudio 3.10
+      # writes that object with one cooling speed for a variable-speed coil once the model assigns it, which stops
+      # EnergyPlus.
+      # One thing EnergyPlus 25.1 does differently with the same inputs: the multispeed coil runs its crankcase heater
       # whenever the compressor is off below the temperature limit (the variable-speed coil only counted it in
-      # timesteps with the compressor on), and with latent degradation at the lowest stage it removes less moisture
-      # (the variable-speed coil took the extra sensible capacity but still removed the moisture, without counting it
-      # in its cooling or its electricity).
+      # timesteps with the compressor on).
       if debug_verbose
-        runner.registerInfo('--- adding new three-stage cooling coil')
+        runner.registerInfo('--- adding new cooling coil')
       end
       _, size_category = UpgradeHvacRtuAdv.get_capacity_category(runner, orig_clg_coil_gross_cap)
       new_dx_cooling_coil = OpenStudio::Model::CoilCoolingDXMultiSpeed.new(model)
@@ -1765,7 +1824,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       new_dx_cooling_coil.setFuelType('Electricity')
       new_dx_cooling_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-25)
       new_dx_cooling_coil.setMaximumOutdoorDryBulbTemperatureforCrankcaseHeaterOperation(4.4)
-      # cycling losses and latent degradation apply at the lowest stage only, as with the variable-speed coil object
+      # the stages represent a variable-speed compressor: above the lowest stage it modulates between two stages and
+      # does not cycle, so cycling losses (the part-load fraction curve) apply only below the lowest stage
       new_dx_cooling_coil.setApplyPartLoadFractiontoSpeedsGreaterthan1(false)
       new_dx_cooling_coil.setApplyLatentDegradationtoSpeedsGreaterthan1(false)
       # methods from "TECHNICAL SUPPORT DOCUMENT: ENERGY EFFICIENCY PROGRAM FOR CONSUMER PRODUCTS
@@ -1774,18 +1834,25 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       crankcase_heater_power = ((60 * ((orig_clg_coil_gross_cap * 0.0002843451 / 10)**0.67)))
       new_dx_cooling_coil.setCrankcaseHeaterCapacity(crankcase_heater_power)
 
-      # part-load fraction curve of the coil. EnergyPlus holds a DX coil's part-load fraction at 0.7 or above. With the
-      # variable-speed coil object it did so at run time (in a run it was exactly 0.700 in every cycling timestep below
-      # about 60% part load, where this curve gives less). The multispeed coil object checks the curve at input and
-      # stops on an EnergyPlus error when the curve goes below 0.7, so the same floor is set on the curve itself.
-      plf_curve = curve_table_map['high_stage'][size_category]['eir_fn_of_plr']
-      if plf_curve.respond_to?(:minimumCurveOutput) &&
-         (plf_curve.minimumCurveOutput.empty? || plf_curve.minimumCurveOutput.get < 0.7)
-        plf_curve.setMinimumCurveOutput(0.7)
-      end
+      # part-load fraction curve of the coil: the cycling losses below the lowest stage (see the method)
+      plf_curve = cooling_part_load_fraction_curve(model)
 
-      # define rated to lower stage ratios: low, medium, high stages
-      stage_ratios = [0.333, 0.666, 1.0] # lower stage to higher stage
+      # airflow and capacity of each stage: no stage moves less air than the unit's minimum airflow, and the lower
+      # stages are kept within the rated cfm/ton limits where that allows (see the method)
+      stage_flows_cooling, stage_caps_cooling = cooling_stage_flows_and_capacities(
+        orig_clg_coil_gross_cap, orig_clg_coil_rated_airflow_m_3_per_s, min_airflow_m3_per_s
+      )
+      removed_stages = COOLING_STAGE_FRACTIONS.keys - stage_caps_cooling.keys
+      unless removed_stages.empty?
+        runner.registerWarning("#{air_loop_hvac.name}: cooling stage #{removed_stages.join(', ')} removed, above #{CFM_PER_TON_MAX_RATED} cfm/ton at the unit's minimum airflow (#{min_airflow_ratio.round(3)} of the design airflow).")
+      end
+      stages_out_of_range = stage_caps_cooling.sort.filter_map do |stage, capacity_w|
+        cfm_per_ton = m_3_per_sec_watts_to_cfm_per_ton(stage_flows_cooling[stage] / capacity_w).round(0)
+        "stage #{stage} at #{cfm_per_ton.to_i} cfm/ton" if cfm_per_ton < CFM_PER_TON_MIN_RATED || cfm_per_ton > CFM_PER_TON_MAX_RATED
+      end
+      unless stages_out_of_range.empty?
+        runner.registerWarning("#{air_loop_hvac.name}: cooling #{stages_out_of_range.join(', ')} left outside the #{CFM_PER_TON_MIN_RATED} to #{CFM_PER_TON_MAX_RATED} cfm/ton limits (minimum airflow #{min_airflow_ratio.round(3)} of the design airflow).")
+      end
 
       # estimate rated COP
       rated_cop_pre_rated_airflow_adjust = UpgradeHvacRtuAdv.get_rated_cop_cooling_adv(
@@ -1800,22 +1867,12 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
         curve_table_map['high_stage'][size_category]['eir_fn_of_ff']
       )
 
-      # loop through stages
-      stage_ratios.sort.each_with_index do |ratio, index|
-        # convert index to stage number
-        stage = index + 1
-
+      # loop through the stages that are kept; a stage keeps its own curves and COP ratio whatever its position
+      stage_caps_cooling.sort.each do |stage, reference_capacity_w|
         # stage label
         stage_label = UpgradeHvacRtuAdv.get_stage_category(runner, stage)
 
-        # calculate reference capacity
-        if stage == 3
-          reference_capacity_w = orig_clg_coil_gross_cap
-          reference_airflow_m_3_per_s = orig_clg_coil_rated_airflow_m_3_per_s
-        else
-          reference_capacity_w = orig_clg_coil_gross_cap * ratio
-          reference_airflow_m_3_per_s = orig_clg_coil_rated_airflow_m_3_per_s * ratio
-        end
+        reference_airflow_m_3_per_s = stage_flows_cooling[stage]
         if debug_verbose
           runner.registerInfo("--- stage #{stage} | reference_capacity_w = #{
             reference_capacity_w
@@ -1829,7 +1886,9 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
         dx_coil_stage_data = OpenStudio::Model::CoilCoolingDXMultiSpeedStageData.new(model)
         dx_coil_stage_data.setGrossRatedTotalCoolingCapacity(reference_capacity_w)
         dx_coil_stage_data.setRatedAirFlowRate(reference_airflow_m_3_per_s)
-        dx_coil_stage_data.setGrossRatedSensibleHeatRatio(UpgradeHvacRtuAdv.get_shr(runner, stage))
+        dx_coil_stage_data.setGrossRatedSensibleHeatRatio(
+          UpgradeHvacRtuAdv.stage_rated_shr(reference_airflow_m_3_per_s, reference_capacity_w)
+        )
         dx_coil_stage_data.setGrossRatedCoolingCOP(
           rated_cop_post_rated_airflow_adjust * UpgradeHvacRtuAdv.get_reference_cop_ratio(
             runner, stage
@@ -1850,12 +1909,14 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
         )
         # one part-load fraction curve for the coil, as the variable-speed coil object had; it acts at the lowest stage
         dx_coil_stage_data.setPartLoadFractionCorrelationCurve(plf_curve)
-        # latent degradation inputs, as the variable-speed coil object had. Its maximum cycling rate was that object's
-        # default of 2.5 per hour; the stage data defaults to 0, which turns the latent degradation model off.
-        dx_coil_stage_data.setNominalTimeforCondensateRemovaltoBegin(1000)
-        dx_coil_stage_data.setRatioofInitialMoistureEvaporationRateandSteadyStateLatentCapacity(1.5)
-        dx_coil_stage_data.setMaximumCyclingRate(2.5)
-        dx_coil_stage_data.setLatentCapacityTimeConstant(45)
+        # no latent degradation inputs (moisture that evaporates from the coil while the compressor is off and the fan
+        # runs): the stage data's defaults of 0 leave that model off, as it is for the coils of the units this one
+        # replaces and for the coils of upgrade_hvac_add_heat_pump_rtu. Modeled for this unit alone, it lowered the
+        # compressor's electricity by up to 5% in test buildings against units that are not charged the same effect,
+        # and left the zones more humid than the baseline's.
+        # To model it, set all four: nominal time for condensate removal to begin (1000 s), ratio of initial moisture
+        # evaporation rate and steady state latent capacity (1.5), maximum cycling rate (2.5 per hour; the stage
+        # data's default of 0 turns the model off whatever the other three are) and latent capacity time constant (45 s).
         dx_coil_stage_data.setEvaporativeCondenserEffectiveness(0.9)
         dx_coil_stage_data.autosizeEvaporativeCondenserAirFlowRate
         dx_coil_stage_data.autosizeRatedEvaporativeCondenserPumpPowerConsumption
