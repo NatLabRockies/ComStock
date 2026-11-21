@@ -225,13 +225,19 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(details, 'FixtureTest#test_fails: expected upgrade failure')
       assert_equal(2, details.scan(/^FAIL:/).size)
       summary = File.read('step-summary.md')
-      failed, passed = summary.split("\n## Measure tests passed", 2)
-      assert_includes(failed, 'Discovered tests: unavailable; JUnit results: 5.')
-      assert_includes(failed, 'Percentage ranges are unavailable')
-      assert_includes(failed, '## Measure tests failed (2)')
-      assert_includes(failed, '## Measure tests skipped (1)')
-      assert_includes(failed, 'without a JUnit test result are listed below but not counted')
-      assert_includes(failed, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
+      passed = summary.split("\n## Measure tests passed", 2).last.split("\n## Measure tests failed", 2).first
+      assert_includes(summary, 'Discovered tests: unavailable; JUnit results: 5.')
+      assert_includes(summary, 'Percentage ranges are unavailable')
+      assert_includes(summary, '## Measure tests failed (2)')
+      assert_includes(summary, '## Measure tests skipped (1)')
+      assert_includes(summary, '## Measure tests without classified outcomes (unavailable)')
+      assert_includes(summary, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
+      assert_equal([
+                     '## Measure tests passed (2)',
+                     '## Measure tests failed (2)',
+                     '## Measure tests skipped (1)',
+                     '## Measure tests without classified outcomes (unavailable)'
+                   ], summary.lines.grep(/^## Measure tests /).map(&:strip))
       assert_equal(<<~SUMMARY.chomp, passed.strip)
         (2)
 
@@ -268,6 +274,7 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(summary, 'Discovered tests: 4; JUnit results: 4.')
       assert_includes(summary, '## Measure tests failed (0, 0.00%)')
       assert_includes(summary, '## Measure tests skipped (1, 25.00%)')
+      assert_includes(summary, '## Measure tests without classified outcomes (0, 0.00%)')
       assert_includes(summary, '## Measure tests passed (3, 75.00%)')
       assert_equal(3, summary.scan(/^    PASS:/).size)
       refute_includes(summary, 'FAIL:')
@@ -317,6 +324,93 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(summary, '## Measure tests failed (2, 28.57-57.14%)')
       assert_includes(summary, '## Measure tests passed (2, 28.57-57.14%)')
       assert_includes(summary, '## Measure tests skipped (1, 14.29-42.86%)')
+      assert_includes(summary, '## Measure tests without classified outcomes (2, 28.57%)')
+      assert_includes(summary, "### Discovered tests without a confirmed pass, failure, or skip\n")
+      assert_includes(summary, 'JUnit reports are missing, incomplete, or cannot be fully read.')
+      assert_includes(summary, 'The count is unavailable if discovery is incomplete.')
+    end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
+  end
+
+  def test_long_escaped_failure_message_does_not_hide_other_results
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      File.write('reporting_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_long_failure
+            flunk '<&' * 11_000
+          end
+          def test_other_pass
+            assert true
+          end
+        end
+      RUBY
+
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+
+      summary = File.read('step-summary.md')
+      assert_includes(summary, 'Discovered tests: 5; JUnit results: 5.')
+      assert_includes(summary, '## Measure tests failed (1, 20.00%)')
+      assert_includes(summary, '## Measure tests passed (4, 80.00%)')
+      assert_includes(summary, '## Measure tests without classified outcomes (0, 0.00%)')
+      assert_includes(summary, 'FixtureTest#test_long_failure:')
+      assert_includes(summary, '[truncated]')
+    end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
+  end
+
+  def test_unclassifiable_reported_case_is_counted_as_unknown
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      File.write('reporting_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        Minitest.after_run do
+          report = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'TEST-*.xml')).first
+          File.write(report, '<testsuite><testcase classname="' + ('&amp;' * 11_000) + '" name="test_passes"/></testsuite>')
+        end
+      RUBY
+
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+
+      summary = File.read('step-summary.md')
+      assert_includes(summary, 'Discovered tests: 3; JUnit results: 3.')
+      assert_includes(summary, '## Measure tests failed (0, 0.00-33.33%)')
+      assert_includes(summary, '## Measure tests passed (2, 66.67-100.00%)')
+      assert_includes(summary, '## Measure tests without classified outcomes (1, 33.33%)')
+      assert_includes(summary, 'entity expansion has grown too large')
+    end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
+  end
+
+  def test_incomplete_report_fails_even_when_process_succeeds
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      File.write('reporting_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_other_pass
+            assert true
+          end
+        end
+        Minitest.after_run do
+          report = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'TEST-*.xml')).first
+          File.write(report, '<testsuite><testcase classname="FixtureTest" name="test_passes"/></testsuite>')
+        end
+      RUBY
+
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+
+      summary = File.read('step-summary.md')
+      assert_includes(summary, 'Discovered tests: 4; JUnit results: 3.')
+      assert_includes(summary, 'JUnit reported 1 of 2 discovered tests')
+      assert_includes(summary, '## Measure tests without classified outcomes (1, 25.00%)')
     end
   ensure
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary

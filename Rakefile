@@ -51,13 +51,24 @@ def run_measure_tests(file_list, summary: nil)
         end
       else
         failed_count += 1
-        failures.each { |failure| test_failures << "  #{name}: #{failure.attributes['message']}" }
+        failures.each do |failure|
+          attribute = failure.attributes.get_attribute('message')
+          raw_message = attribute&.to_s
+          message = raw_message&.slice(0, 1000)&.sub(/&[^;]*\z/, '')
+          message = REXML::Text.unnormalize(message, failure.document.doctype) if message
+          message = "#{message}... [truncated]" if raw_message && raw_message.length > 1000
+          test_failures << "  #{name}: #{message}"
+        end
       end
     end
 
     raise process_failure if process_failure
     if test_cases.empty?
       raise "No JUnit test cases were produced by #{file}"
+    end
+    raise "No valid test discovery count was produced by #{file}" if summary && discovered_count.nil?
+    if summary && reported_count != discovered_count
+      raise "JUnit reported #{reported_count} of #{discovered_count} discovered tests"
     end
     raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
@@ -126,8 +137,8 @@ namespace :unit_tests do
       counts = summaries.values.flat_map { |summary| summary[:discovered_counts] }
       total_count = counts.sum if summaries.values.all? { |summary| summary[:completed] } && counts.none?(&:nil?)
       reported_count = summaries.values.sum { |summary| summary[:reported_count] }
+      unknown_count = total_count - failed_count - passed_count - skipped_count if total_count
       if total_count&.positive?
-        unknown_count = total_count - reported_count
         percentages = lambda do |count|
           minimum = 100.0 * count / total_count
           if unknown_count.zero?
@@ -139,20 +150,15 @@ namespace :unit_tests do
         failed_range = percentages.call(failed_count)
         passed_range = percentages.call(passed_count)
         skipped_range = percentages.call(skipped_count)
+        unknown_percentage = format('%.2f%%', 100.0 * unknown_count / total_count)
       end
       File.open(step_summary, 'a') do |file|
         file.puts "Discovered tests: #{total_count || 'unavailable'}; JUnit results: #{reported_count}."
         if total_count&.positive?
-          file.puts "Percentages are rounded; ranges include unreported tests as possible passes, failures, or skips.\n"
+          file.puts "Percentages are rounded; ranges include tests without classified outcomes as possible passes, failures, or skips.\n"
         else
           file.puts "Percentage ranges are unavailable when discovery is incomplete or no tests were discovered.\n"
         end
-        file.puts "\n## Measure tests failed (#{failed_count}#{failed_range ? ", #{failed_range}" : ''})\n"
-        unless errors.empty?
-          file.puts "\nFile or group failures without a JUnit test result are listed below but not counted as failed tests.\n"
-          file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
-        end
-        file.puts "\n## Measure tests skipped (#{skipped_count}#{skipped_range ? ", #{skipped_range}" : ''})\n"
         file.puts "\n## Measure tests passed (#{passed_count}#{passed_range ? ", #{passed_range}" : ''})\n"
         summaries.each do |group, summary|
           next if summary[:passes].empty?
@@ -163,6 +169,14 @@ namespace :unit_tests do
             passes.each { |test_name| file.puts "      #{test_name}" }
           end
         end
+        file.puts "\n## Measure tests failed (#{failed_count}#{failed_range ? ", #{failed_range}" : ''})\n"
+        unless errors.empty?
+          file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
+        end
+        file.puts "\n## Measure tests skipped (#{skipped_count}#{skipped_range ? ", #{skipped_range}" : ''})\n"
+        file.puts "\n## Measure tests without classified outcomes (#{unknown_count || 'unavailable'}#{unknown_percentage ? ", #{unknown_percentage}" : ''})\n"
+        file.puts "\n### Discovered tests without a confirmed pass, failure, or skip\n"
+        file.puts "\nThis can happen when JUnit reports are missing, incomplete, or cannot be fully read. The count is unavailable if discovery is incomplete.\n"
       end
     end
     abort "#{heading}:\n#{details}" unless errors.empty?
