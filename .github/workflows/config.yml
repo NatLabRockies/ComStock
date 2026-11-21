@@ -156,16 +156,43 @@ jobs:
         run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 4
 
       - name: Decompress raw integration results CSVs
-        if: ${{ !cancelled() && (steps.integration-run.outcome == 'success' || steps.integration-run.outcome == 'failure') }}
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'success' }}
         run: gunzip -k upgrades_test_output/results_csvs/*.csv.gz
 
       - name: Upload raw integration results CSVs
-        if: ${{ !cancelled() && (steps.integration-run.outcome == 'success' || steps.integration-run.outcome == 'failure') }}
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: integration-results-raw
           path: upgrades_test_output/results_csvs/*.csv
           if-no-files-found: error
+
+      - name: Upload BuildStockBatch crash details
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-crash-details
+          path: buildstockbatch_crash_details.log
+          if-no-files-found: warn
+
+      - name: Upload available raw integration results CSVs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results-raw-partial
+          path: upgrades_test_output/results_csvs/
+          if-no-files-found: warn
+
+      - name: Upload integration postprocessing inputs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-postprocessing-inputs
+          path: |
+            upgrades_test_output/simulation_output/results_job*.json.gz
+            upgrades_test_output/simulation_output/timeseries/
+            national/housing_characteristics/buildstock.csv
+          if-no-files-found: warn
 
       - name: Check baseline and upgrade simulation results
         run: |
