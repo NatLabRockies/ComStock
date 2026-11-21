@@ -89,18 +89,14 @@ After completing the developer setup above, run:
 
 Rake prints a failure summary and saves JUnit reports in `test/reports`. In GitHub Actions,
 the reports are available in the `measure-test-reports` artifact, even if tests fail.
-The run summary includes pass and fail percentage ranges that account for unreported tests.
+The run summary includes tests without classified outcomes alongside passes, failures, and skips.
+Percentage ranges account for those unknown outcomes when test discovery is complete.
 
 To run one test from the repository root (with your test bundle configured):
 
 ```bash
 bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
 ```
-
-The [GitHub Actions integration job](.github/workflows/config.yml) runs a baseline and three
-upgrades through BuildStockBatch using a small sample that is not representative of the national
-building stock. Raw results are available in the `integration-results-raw` artifact;
-published results are committed to `test/base_results/upgrades` on successful branch runs.
 
 ## Running Rubocop
 1. Follow the developer installation instructions above

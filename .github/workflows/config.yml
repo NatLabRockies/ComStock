@@ -151,9 +151,24 @@ jobs:
           role-duration-seconds: 1200
           role-session-name: MySession
 
+      - name: Disable S3 upload outside main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          ruby -ryaml - <<'RUBY'
+          project_file = 'ymls/bsb-integration-test-upgrades.yml'
+          project = YAML.safe_load_file(project_file)
+          raise 'Missing postprocessing AWS configuration' unless project.fetch('postprocessing').delete('aws')
+          File.write(project_file, YAML.dump(project))
+          RUBY
+
       - name: Run baseline and upgrade simulations with BuildStockBatch postprocessing
         id: integration-run
-        run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 4
+        run: |
+          upload_args=()
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            upload_args+=(--replace_existing)
+          fi
+          buildstock_local --low-disk "${upload_args[@]}" ymls/bsb-integration-test-upgrades.yml -j 4
 
       - name: Decompress raw integration results CSVs
         if: ${{ !cancelled() && steps.integration-run.outcome == 'success' }}
