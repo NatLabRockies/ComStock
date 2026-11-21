@@ -40,7 +40,8 @@ require 'openstudio'
 require 'date'
 require 'comstock-typical'
 
-def get_tstat_profiles_and_stats(tstat_schedule) # from add thermostat setpoint variability measure
+# from add thermostat setpoint variability measure
+def get_tstat_profiles_and_stats(tstat_schedule)
   if tstat_schedule.to_ScheduleRuleset.empty?
     runner.registerWarning("Schedule '#{tstat_schedule.name.get}' is not a ScheduleRuleset, will not be adjusted")
     false
@@ -60,7 +61,8 @@ def get_tstat_profiles_and_stats(tstat_schedule) # from add thermostat setpoint 
   end
 end
 
-def get_8760_values_from_schedule_ruleset(model, schedule_ruleset) # from a PR to standards, can call directly in the future
+# from a PR to standards, can call directly in the future
+def get_8760_values_from_schedule_ruleset(model, schedule_ruleset)
   Standard.build('90.1-2013') # build openstudio standards
   yd = model.getYearDescription
   start_date = yd.makeDate(1, 1)
@@ -199,9 +201,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   all_week_rules = { iweek_previous_week_rule: week_1_rules }
 
   # temporary loop for debugging
-  week_n_rules.each do |sch_rule|
-    sch_rule.daySchedule
-  end
+  week_n_rules.each(&:daySchedule)
 
   # For each subsequent week, check if it is same as previous
   # If same, then append to Schedule:Rule of previous week
@@ -223,7 +223,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
     else
       # Create a new week schedule for this week
       num_week_scheds += 1
-      week_sch_name = sch_name + '_ws' + num_week_scheds.to_s
+      week_sch_name = "#{sch_name}_ws#{num_week_scheds}"
       week_n_rules = std.make_week_ruleset_sched_from_168(model, sch_ruleset, all_week_values[iweek], start_date,
                                                           end_date, week_sch_name)
       all_week_rules[:iweek_previous_week_rule] = week_n_rules
@@ -233,9 +233,7 @@ def make_ruleset_sched_from_8760(model, _runner, values, sch_name, sch_type_limi
   end
 
   # temporary loop for debugging
-  week_n_rules.each do |sch_rule|
-    sch_rule.daySchedule
-  end
+  week_n_rules.each(&:daySchedule)
 
   # Need to handle week 52 with days 365 and 366
   # For each of these days, check if it matches a day from the previous week

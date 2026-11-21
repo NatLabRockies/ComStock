@@ -30,7 +30,6 @@ class MultispeedMinimumFlowTest < MiniTest::Unit::TestCase
     # create an instance of the measure
     measure = MultispeedMinimumFlow.new
 
-
     # create an instance of a runner with OSW
     runner = OpenStudio::Ruleset::OSRunner.new(OpenStudio::WorkflowJSON.new)
 

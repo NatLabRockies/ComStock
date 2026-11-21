@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../test/helpers/minitest_helper'
 require 'open3'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
@@ -42,13 +42,11 @@ class TimeseriesCSVExportTest < Minitest::Test
   def workspace_path(test_name)
     return "#{run_dir(test_name)}/run/in.idf" if openstudio_2?
 
-
     "#{run_dir(test_name)}/ModelToIdf/in.idf"
   end
 
   def sql_path(test_name)
     return "#{run_dir(test_name)}/run/eplusout.sql" if openstudio_2?
-
 
     "#{run_dir(test_name)}/ModelToIdf/EnergyPlusPreProcess-0/EnergyPlus-0/eplusout.sql"
   end

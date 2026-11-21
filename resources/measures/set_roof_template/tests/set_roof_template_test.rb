@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
@@ -110,7 +110,6 @@ class SetRoofTemplateTest < Minitest::Test
   # read the attic floor's WoodFramed type and ask the new template for a WoodFramed exterior
   # roof, which no template has; 16 small hotels in the 2026-09 100k run failed that way.
   def test_attic_floor_default_roof_is_replaced_on_the_hard_assigned_roof_surfaces
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = OpenStudio::Model::Model.new
     model.getBuilding.setStandardsBuildingType('SmallHotel')
     polygon = OpenStudio::Point3dVector.new
@@ -161,8 +160,6 @@ class SetRoofTemplateTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SetRoofTemplate.new
 
@@ -199,8 +196,6 @@ class SetRoofTemplateTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

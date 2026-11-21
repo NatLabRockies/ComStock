@@ -180,7 +180,6 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
       model.applySizingValues
     end
 
-
     # if a thermal zone started out with no equipment (aka it is unconditioned), skip this zone
     model.getThermalZones.each do |thermal_zone|
       if thermal_zone.equipment.empty?
@@ -310,8 +309,6 @@ class AddConsoleGSHP < OpenStudio::Measure::ModelMeasure
 
     # delete equipment from original loop
     equip_to_delete.each(&:remove)
-
-
 
     # get plant loops and remove
     # only relevant for direct evap coolers with baseboard gas boiler

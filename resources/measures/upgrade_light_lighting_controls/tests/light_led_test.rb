@@ -1,305 +1,92 @@
 # ComStock™, Copyright (c) 2023 Alliance for Sustainable Energy, LLC. All rights reserved.
 # See top level LICENSE.txt file for license terms.
 require 'openstudio'
-require 'openstudio/ruleset/ShowRunnerOutput'
 require 'minitest/autorun'
 require_relative '../measure'
-require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
-class LightLightingTechnologyTest < MiniTest::Test
+class LightingControlsTest < Minitest::Test
   def test_number_of_arguments_and_argument_names
-    # this test ensures that the current test is matched to the measure inputs
-
-    # create an instance of the measure
-    measure = LightLED.new
-
-    # make an empty model
+    measure = LightingControls.new
     model = OpenStudio::Model::Model.new
 
-    # get arguments and test that they are what we are expecting
     arguments = measure.arguments(model)
-    assert_equal(1, arguments.size)
-    assert_equal('lighting_generation', arguments[0].name)
+    assert_equal(['apply_daylighting', 'apply_occupancy'], arguments.map(&:name))
   end
 
-  def test_outpatient_no_change
-    # create an instance of the measure
-    measure = LightLED.new
+  def test_occupancy_controls_reduce_general_lighting
+    model, lights_definition = classroom_model('ComStock 90.1-2004')
 
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
+    result = run_measure(model, apply_daylighting: false, apply_occupancy: true)
 
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/outpatient.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
+    assert_equal('Success', result.value.valueName)
+    assert_in_delta(7.0, lights_definition.wattsperSpaceFloorArea.get, 0.001)
+    assert_empty(model.getDaylightingControls)
+  end
 
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
+  def test_occupancy_controls_skip_spaces_already_required_by_code
+    model, lights_definition = classroom_model('ComStock 90.1-2013')
 
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen6_led'))
-    argument_map['lighting_generation'] = lighting_generation
+    result = run_measure(model, apply_daylighting: false, apply_occupancy: true)
 
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
     assert_equal('NA', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_outpatient.osm"
-    model.save(output_file_path, true)
+    assert_in_delta(10.0, lights_definition.wattsperSpaceFloorArea.get, 0.001)
   end
 
-  def test_hospital
-    # create an instance of the measure
-    measure = LightLED.new
+  def test_disabled_controls_leave_lighting_unchanged
+    model, lights_definition = classroom_model('ComStock 90.1-2004')
 
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
+    result = run_measure(model, apply_daylighting: false, apply_occupancy: false)
 
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/hospital.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
-
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
-
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen5_led'))
-    argument_map['lighting_generation'] = lighting_generation
-
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
-    assert_equal('Success', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_hospital.osm"
-    model.save(output_file_path, true)
+    assert_equal('NA', result.value.valueName)
+    assert_in_delta(10.0, lights_definition.wattsperSpaceFloorArea.get, 0.001)
+    assert_empty(model.getDaylightingControls)
   end
 
-  def test_secondary_school
-    # create an instance of the measure
-    measure = LightLED.new
+  def test_daylighting_controls_skip_spaces_without_exterior_fenestration
+    model, lights_definition = classroom_model('ComStock 90.1-2004')
 
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
+    result = run_measure(model, apply_daylighting: true, apply_occupancy: false)
 
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/secondary_school_gen1.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
+    assert_equal('NA', result.value.valueName)
+    assert_in_delta(10.0, lights_definition.wattsperSpaceFloorArea.get, 0.001)
+    assert_empty(model.getDaylightingControls)
+  end
 
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
+  def classroom_model(template)
+    model = OpenStudio::Model::Model.new
+    model.getBuilding.additionalProperties.setFeature(
+      'energy_code_in_force_during_original_building_construction', template
+    )
 
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen5_led'))
-    argument_map['lighting_generation'] = lighting_generation
+    space_type = OpenStudio::Model::SpaceType.new(model)
+    space_type.setStandardsBuildingType('SecondarySchool')
+    space_type.setStandardsSpaceType('Classroom')
 
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
+    space = OpenStudio::Model::Space.new(model)
+    space.setSpaceType(space_type)
+    space.setThermalZone(OpenStudio::Model::ThermalZone.new(model))
 
-    # show the output
-    show_output(result)
+    lights_definition = OpenStudio::Model::LightsDefinition.new(model)
+    lights_definition.setWattsperSpaceFloorArea(10.0)
+    lights = OpenStudio::Model::Lights.new(lights_definition)
+    lights.setName('Classroom General Lighting')
+    lights.setSpaceType(space_type)
 
-    # assert that it ran correctly
-    assert_equal('Success', result.value.valueName)
+    [model, lights_definition]
+  end
 
-    # make sure it assigned a high bay fixture to the gym spaces
-    model.getSpaceTypes.each do |space_type|
-      next unless space_type.name.to_s == 'SecondarySchool Gym'
-
-      space_type.lights.each do |light|
-        next unless light.name.to_s == 'SecondarySchool Gym General Lighting'
-
-        light_definition = light.lightsDefinition
-        lighting_technology = light_definition.additionalProperties.getFeatureAsString('lighting_technology').to_s
-        assert_equal(lighting_technology, 'LED high bay luminaire')
-      end
+  def run_measure(model, apply_daylighting:, apply_occupancy:)
+    measure = LightingControls.new
+    runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
+    arguments = OpenStudio::Measure.convertOSArgumentVectorToMap(measure.arguments(model))
+    { 'apply_daylighting' => apply_daylighting, 'apply_occupancy' => apply_occupancy }.each do |name, value|
+      argument = arguments[name].clone
+      assert(argument.setValue(value))
+      arguments[name] = argument
     end
 
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_secondary_school.osm"
-    model.save(output_file_path, true)
-  end
-
-  def test_small_office
-    # create an instance of the measure
-    measure = LightLED.new
-
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
-
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/small_office.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
-
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
-
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen5_led'))
-    argument_map['lighting_generation'] = lighting_generation
-
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
-    assert_equal('Success', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_small_office.osm"
-    model.save(output_file_path, true)
-  end
-
-  def test_strip_mall_no_change
-    # create an instance of the measure
-    measure = LightLED.new
-
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
-
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/strip_mall_gen4.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
-
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
-
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen5_led'))
-    argument_map['lighting_generation'] = lighting_generation
-
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
-    assert_equal('NA', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_small_office_no_change.osm"
-    model.save(output_file_path, true)
-  end
-
-  def test_retailstandalone_no_change
-    # create an instance of the measure
-    measure = LightLED.new
-
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
-
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/RetailStandalone.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
-
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
-
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen7_led'))
-    argument_map['lighting_generation'] = lighting_generation
-
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
-    assert_equal('NA', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_retailstandalone.osm"
-    model.save(output_file_path, true)
-  end
-
-  def test_RtL
-    # create an instance of the measure
-    measure = LightLED.new
-
-    # create runner with empty OSW
-    osw = OpenStudio::WorkflowJSON.new
-    runner = OpenStudio::Measure::OSRunner.new(osw)
-
-    # load the test model
-    translator = OpenStudio::OSVersion::VersionTranslator.new
-    path = "#{File.dirname(__FILE__)}/RtL.osm"
-    model = translator.loadModel(path)
-    assert(!model.empty?)
-    model = model.get
-
-    # get arguments
-    arguments = measure.arguments(model)
-    argument_map = OpenStudio::Measure::OSArgumentMap.new
-
-    lighting_generation = arguments[0].clone
-    assert(lighting_generation.setValue('gen7_led'))
-    argument_map['lighting_generation'] = lighting_generation
-
-    # run the measure
-    measure.run(model, runner, argument_map)
-    result = runner.result
-
-    # show the output
-    show_output(result)
-
-    # assert that it ran correctly
-    assert_equal('Success', result.value.valueName)
-
-    # save the model to test output directory
-    output_file_path = "#{File.dirname(__FILE__)}/output/test_RtL.osm"
-    model.save(output_file_path, true)
+    assert(measure.run(model, runner, arguments))
+    runner.result
   end
 end

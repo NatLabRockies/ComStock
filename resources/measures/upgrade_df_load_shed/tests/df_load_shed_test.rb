@@ -9,7 +9,7 @@ require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
 # require all .rb files in resources folder (sorted)
-Dir["#{File.dirname(__FILE__)}/../resources/*.rb"].sort.each { |file| require file }
+Dir["#{__dir__}/../resources/*.rb"].sort.each { |file| require file }
 
 class DFLoadShedTest < Minitest::Test
   # def setup
@@ -170,9 +170,6 @@ class DFLoadShedTest < Minitest::Test
   end
 
   def test_models
-    test_name = 'test_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"
@@ -264,7 +261,7 @@ class DFLoadShedTest < Minitest::Test
       # argument_map['apply_measure'] = apply_measure
 
       # actual hourly timestep
-      if demand_flexibility_objective.valueAsString == 'grid peak load' or demand_flexibility_objective.valueAsString == 'emissions'
+      if (demand_flexibility_objective.valueAsString == 'grid peak load') || (demand_flexibility_objective.valueAsString == 'emissions')
         timestep = 1
       else
         timestep = num_timesteps_in_hr.valueAsInteger

@@ -41,12 +41,10 @@ require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'fileutils'
 require 'minitest/autorun'
-require_relative '../measure.rb'
+require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class SetEnvelopeToCurrentCodeTest < Minitest::Test
-
   # return file paths to test models in test directory
   def models_for_tests
     paths = Dir.glob(File.join(File.dirname(__FILE__), '../../../tests/models/*.osm'))
@@ -101,18 +99,16 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     assert(File.exist?(epw_path))
 
     # create run directory if it does not exist
-    if !File.exist?(run_dir(test_name))
-      FileUtils.mkdir_p(run_dir(test_name))
-    end
+
+    FileUtils.mkdir_p(run_dir(test_name))
+
     assert(File.exist?(run_dir(test_name)))
 
     # remove prior runs if they exist
-    if File.exist?(model_output_path(test_name))
-      FileUtils.rm(model_output_path(test_name))
-    end
-    if File.exist?(report_path(test_name))
-      FileUtils.rm(report_path(test_name))
-    end
+
+    FileUtils.rm_f(model_output_path(test_name))
+
+    FileUtils.rm_f(report_path(test_name))
 
     # create an instance of a runner
     runner = OpenStudio::Measure::OSRunner.new(OpenStudio::WorkflowJSON.new)
@@ -154,9 +150,6 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = SetEnvelopeToCurrentCode.new
 
@@ -251,6 +244,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     old_ext_surf_material = nil
     model.getSurfaces.each do |surface|
       next unless (surface.outsideBoundaryCondition == 'Outdoors') && (surface.surfaceType == 'Wall')
+
       surf_const = surface.construction.get.to_LayeredConstruction.get
       old_r_val_si = 1 / surface.thermalConductance.to_f
       old_r_val_ip = OpenStudio.convert(old_r_val_si, 'm^2*K/W', 'ft^2*h*R/Btu').get
@@ -265,6 +259,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     model = load_model(model_output_path(__method__))
     model.getSurfaces.each do |surface|
       next unless (surface.outsideBoundaryCondition == 'Outdoors') && (surface.surfaceType == 'Wall')
+
       surf_const = surface.construction.get.to_LayeredConstruction.get
       new_r_val_si = 1.0 / surface.thermalConductance.to_f
       new_r_val_ip = OpenStudio.convert(new_r_val_si, 'm^2*K/W', 'ft^2*h*R/Btu').get
@@ -311,6 +306,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     old_ext_surf_material = nil
     model.getSurfaces.each do |surface|
       next unless (surface.outsideBoundaryCondition == 'Outdoors') && (surface.surfaceType == 'Wall')
+
       surf_const = surface.construction.get.to_LayeredConstruction.get
       old_r_val_si = 1 / surface.thermalConductance.to_f
       old_r_val_ip = OpenStudio.convert(old_r_val_si, 'm^2*K/W', 'ft^2*h*R/Btu').get
@@ -325,6 +321,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     model = load_model(model_output_path(__method__))
     model.getSurfaces.each do |surface|
       next unless (surface.outsideBoundaryCondition == 'Outdoors') && (surface.surfaceType == 'Wall')
+
       surf_const = surface.construction.get.to_LayeredConstruction.get
       new_r_val_si = 1.0 / surface.thermalConductance.to_f
       new_r_val_ip = OpenStudio.convert(new_r_val_si, 'm^2*K/W', 'ft^2*h*R/Btu').get
@@ -435,6 +432,7 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     old_ext_surf_material = nil
     model.getSurfaces.each do |surface|
       next unless (surface.outsideBoundaryCondition == 'Outdoors') && (surface.surfaceType == 'Wall')
+
       surf_const = surface.construction.get.to_LayeredConstruction.get
       old_r_val_si = 1 / surface.thermalConductance.to_f
       old_r_val_ip = OpenStudio.convert(old_r_val_si, 'm^2*K/W', 'ft^2*h*R/Btu').get
@@ -450,4 +448,3 @@ class SetEnvelopeToCurrentCodeTest < Minitest::Test
     assert_equal('NA', result.value.valueName)
   end
 end
-

@@ -1,1 +1,6 @@
 *.twb binary
+*.rb text eol=crlf
+*.rake text eol=crlf
+Gemfile text eol=crlf
+Rakefile text eol=crlf
+/test/base_results/upgrades/results_up*.csv text eol=crlf

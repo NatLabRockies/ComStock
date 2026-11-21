@@ -8,7 +8,7 @@
 # from a previous run, a secondary building type's overrides silently dropped.
 
 # dependencies
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require_relative '../measure'
 
@@ -66,7 +66,7 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
     assert_nil(options['add_daylighting_controls'])
 
     # nothing spec-managed, bar-only, or consumed by this measure reaches typical_options
-    %w[template climate_zone bldg_type_a system_type swh_src clg_sp_f ltg_wkdy_bpr].each do |key|
+    ['template', 'climate_zone', 'bldg_type_a', 'system_type', 'swh_src', 'clg_sp_f', 'ltg_wkdy_bpr'].each do |key|
       refute(options.key?(key), "'#{key}' should not be forwarded")
     end
   end
@@ -140,8 +140,7 @@ class CreateCustomBuildingFromSpecTest < Minitest::Test
   # carries the restaurant as a tenant.
   def test_definitions_carry_every_override_family
     definition = @measure.definition_for('FullServiceRestaurant', 'NA', 'ComStock 90.1-2013')
-    %w[thermostat_overrides service_water_heating_overrides exhaust_overrides ventilation_overrides
-       occupancy_overrides schedule_overrides load_overrides].each do |family|
+    ['thermostat_overrides', 'service_water_heating_overrides', 'exhaust_overrides', 'ventilation_overrides', 'occupancy_overrides', 'schedule_overrides', 'load_overrides'].each do |family|
       assert(definition.key?(family), "definition_for should carry #{family}")
     end
     kitchen = definition['service_water_heating_overrides'].find { |o| o['space_type'] == 'food preparation' }

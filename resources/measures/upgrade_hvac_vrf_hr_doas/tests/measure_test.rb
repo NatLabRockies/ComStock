@@ -148,9 +148,6 @@ class HvacVrfHrDoasTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = HvacVrfHrDoas.new
 
@@ -202,9 +199,6 @@ class HvacVrfHrDoasTest < Minitest::Test
 
   def test_table_lookup_format
     # This test ensures the format of lookup tables
-    test_name = 'test_lookup_table_format'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
     json_files.each do |file_path|
@@ -291,9 +285,6 @@ class HvacVrfHrDoasTest < Minitest::Test
   end
 
   def test_models
-    test_name = 'test_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

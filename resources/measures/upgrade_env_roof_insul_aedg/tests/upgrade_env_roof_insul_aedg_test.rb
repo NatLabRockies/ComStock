@@ -52,9 +52,6 @@ class EnvRoofInsulAedgTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # create an instance of the measure
     measure = EnvRoofInsulAedg.new
 
@@ -114,7 +111,6 @@ class EnvRoofInsulAedgTest < Minitest::Test
     FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
-
     # remove prior runs if they exist
     FileUtils.rm_f(model_output_path(test_name))
     FileUtils.rm_f(report_path(test_name))
@@ -165,9 +161,6 @@ class EnvRoofInsulAedgTest < Minitest::Test
   end
 
   def test_doe_models
-    test_name = 'test_doe_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

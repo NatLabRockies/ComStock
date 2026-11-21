@@ -41,57 +41,57 @@ require 'date'
 require 'comstock-typical'
 
 def cambium_emissions_scenarios
-  %w[
-    AER_95DecarbBy2035
-    AER_95DecarbBy2050
-    AER_HighRECost
-    AER_LowRECost
-    AER_MidCase
-    LRMER_95DecarbBy2035_15
-    LRMER_95DecarbBy2035_30
-    LRMER_95DecarbBy2035_15_2025start
-    LRMER_95DecarbBy2035_25_2025start
-    LRMER_95DecarbBy2050_15
-    LRMER_95DecarbBy2050_30
-    LRMER_HighRECost_15
-    LRMER_HighRECost_30
-    LRMER_LowRECost_15
-    LRMER_LowRECost_30
-    LRMER_LowRECost_15_2025start
-    LRMER_LowRECost_25_2025start
-    LRMER_MidCase_15
-    LRMER_MidCase_30
-    LRMER_MidCase_15_2025start
-    LRMER_MidCase_25_2025start
+  [
+    'AER_95DecarbBy2035',
+    'AER_95DecarbBy2050',
+    'AER_HighRECost',
+    'AER_LowRECost',
+    'AER_MidCase',
+    'LRMER_95DecarbBy2035_15',
+    'LRMER_95DecarbBy2035_30',
+    'LRMER_95DecarbBy2035_15_2025start',
+    'LRMER_95DecarbBy2035_25_2025start',
+    'LRMER_95DecarbBy2050_15',
+    'LRMER_95DecarbBy2050_30',
+    'LRMER_HighRECost_15',
+    'LRMER_HighRECost_30',
+    'LRMER_LowRECost_15',
+    'LRMER_LowRECost_30',
+    'LRMER_LowRECost_15_2025start',
+    'LRMER_LowRECost_25_2025start',
+    'LRMER_MidCase_15',
+    'LRMER_MidCase_30',
+    'LRMER_MidCase_15_2025start',
+    'LRMER_MidCase_25_2025start'
   ]
 end
 
 def grid_regions
-  %w[
-    AZNMc
-    AKGD
-    AKMS
-    CAMXc
-    ERCTc
-    FRCCc
-    HIMS
-    HIOA
-    MROEc
-    MROWc
-    NEWEc
-    NWPPc
-    NYSTc
-    RFCEc
-    RFCMc
-    RFCWc
-    RMPAc
-    SPNOc
-    SPSOc
-    SRMVc
-    SRMWc
-    SRSOc
-    SRTVc
-    SRVCc
+  [
+    'AZNMc',
+    'AKGD',
+    'AKMS',
+    'CAMXc',
+    'ERCTc',
+    'FRCCc',
+    'HIMS',
+    'HIOA',
+    'MROEc',
+    'MROWc',
+    'NEWEc',
+    'NWPPc',
+    'NYSTc',
+    'RFCEc',
+    'RFCMc',
+    'RFCWc',
+    'RMPAc',
+    'SPNOc',
+    'SPSOc',
+    'SRMVc',
+    'SRMWc',
+    'SRSOc',
+    'SRTVc',
+    'SRVCc'
   ]
 end
 
@@ -914,7 +914,7 @@ def read_emission_factors(model, scenario, year = 2021)
 
   grid_region = grid_region.get
   puts("Using grid region #{grid_region} from model building additional properties.")
-  if %w[AKMS AKGD HIMS HIOA].include? grid_region
+  if ['AKMS', 'AKGD', 'HIMS', 'HIOA'].include? grid_region
     cambium_grid_region = nil
     egrid_region = grid_region
     puts("Grid region '#{grid_region}' is not available in Cambium.  Using eGrid factors only for electricty related emissions.")
@@ -981,7 +981,7 @@ def emissions_prediction(load, factor, num_timesteps_in_hr)
         raise 'Unable to calculate emissions for run periods not of length 8760 or 8784'
       end
 
-      puts("Leap year but emissions factor data has 8760 hours. Copying Feb 28 data for Feb 29.")
+      puts('Leap year but emissions factor data has 8760 hours. Copying Feb 28 data for Feb 29.')
       factor = factor[0..1415] + factor[1392..1415] + factor[1416..8759]
     end
     hourly_emissions_kg = hourly_load_mwh.zip(factor).map { |n, f| n * f }
@@ -998,20 +998,20 @@ end
 def load_prediction_from_grid_data(model, scenario = 'Load_MidCase_2035')
   grid_region = model.getBuilding.additionalProperties.getFeatureAsString('grid_region')
   raise 'Unable to find grid region in model building additional properties' unless grid_region.is_initialized
+
   grid_region = grid_region.get
   load_csv = "#{File.dirname(__FILE__)}/cambium/#{scenario}/#{grid_region}.csv"
   raise "Unable to find file: #{load_csv}" unless File.file?(load_csv)
+
   grid_load_data = CSV.read(load_csv, converters: :float).flatten
   year = model.getYearDescription.calendarYear.to_i
-  if leap_year?(year)
-    if grid_load_data.size == 8760
-      puts("Leap year but grid load data has 8760 hours. Copying Feb 28 data for Feb 29.")
-      # hour index at which Feb 28 starts in a non-leap year
-      feb_28_start = (31 + 28 - 1) * 24
-      grid_load_data = grid_load_data[0...feb_28_start + 24] + 
-                      grid_load_data[feb_28_start...feb_28_start + 24] + 
-                      grid_load_data[feb_28_start + 24..-1]
-    end
+  if leap_year?(year) && (grid_load_data.size == 8760)
+    puts('Leap year but grid load data has 8760 hours. Copying Feb 28 data for Feb 29.')
+    # hour index at which Feb 28 starts in a non-leap year
+    feb_28_start = (31 + 28 - 1) * 24
+    grid_load_data = grid_load_data[0...feb_28_start + 24] +
+                     grid_load_data[feb_28_start...feb_28_start + 24] +
+                     grid_load_data[feb_28_start + 24..]
   end
   grid_load_data
 end

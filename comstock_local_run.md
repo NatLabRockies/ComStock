@@ -90,6 +90,38 @@ Run the simulation:
 $ buildstock_local my_run.yml
 ```
 
+### Debugging CI postprocessing failures
+
+If the integration run fails, download its `integration-crash-details`,
+`integration-results-raw-partial`, and `integration-postprocessing-inputs` artifacts
+when available. The crash log includes local variables. The raw CSVs may be
+incomplete or absent: BuildStockBatch creates them during postprocessing, not
+during the simulations.
+
+The CSVs alone cannot be used with `--postprocessonly`. That command reads
+`simulation_output/results_job*.json.gz` and the individual time-series Parquet
+files; commercial publication also needs `national/housing_characteristics/buildstock.csv`.
+These inputs are included in `integration-postprocessing-inputs` if they existed
+when the run failed. A failure before simulation completion may not provide enough
+inputs to replay.
+
+To replay, use a checkout of the ComStock revision from the failed run and a
+matching BuildStockBatch environment (including ComStock postprocessing, OpenStudio,
+Ruby, and the custom gems). The workflow's BuildStockBatch branch and unpinned
+Python dependencies can change, so use the versions from the failed run when
+possible. Extract `integration-postprocessing-inputs` into the repository root,
+preserving its paths. Start with a fresh `upgrades_test_output` directory so
+partial CSV and Parquet output from an earlier attempt does not conflict; preserve
+any existing results elsewhere first. Then run from the repository root:
+
+```
+$ buildstock_local --postprocessonly ymls/bsb-integration-test-upgrades.yml
+```
+
+This skips simulations but still validates the project and installs custom gems.
+The publication stage may also require access to its external truth data. Fixes
+to BuildStockBatch or its dependencies may be needed to get past the original error.
+
 __If you get a run error related to custom gem installation, try deleting  ComStock/.custom_gems/Gemfile.lock and rerunning__
 
 

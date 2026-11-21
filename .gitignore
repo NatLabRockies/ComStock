@@ -22,6 +22,7 @@ __pycache__/
 *.sif
 *.simg
 baseline_test_output/
+upgrades_test_output/
 lib/
 /sampling/output-buildstocks
 /sampling/truth_data

@@ -179,7 +179,7 @@ class TimeseriesCSVExport < OpenStudio::Measure::ReportingMeasure
     dt_utc = dt - (utc_offset_hr_float / 24.0)
     dt_utc_str = dt_utc.strftime('%Y-%m-%d %H:%M:%S')
 
-    "#{dt_str},#{dt_dst_str},#{dt_utc_str}," + new_line.split(',')[1..-1].join(',')
+    "#{dt_str},#{dt_dst_str},#{dt_utc_str}," + new_line.split(',')[1..].join(',')
   end
 
   def output_vars
@@ -240,7 +240,7 @@ class TimeseriesCSVExport < OpenStudio::Measure::ReportingMeasure
     end
 
     # add outputs for PV
-    #result << OpenStudio::IdfObject.load("Output:Meter,#{subcat},#{reporting_frequency};").get
+    # result << OpenStudio::IdfObject.load("Output:Meter,#{subcat},#{reporting_frequency};").get
 
     # Request the output for each variable
     if inc_output_variables

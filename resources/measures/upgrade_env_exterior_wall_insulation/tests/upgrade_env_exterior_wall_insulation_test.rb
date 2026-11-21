@@ -44,7 +44,6 @@ require 'minitest/autorun'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class ExteriorWallInsulationTest < Minitest::Test
   # return file paths to test models in test directory
   def models_for_tests
@@ -147,9 +146,6 @@ class ExteriorWallInsulationTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = ExteriorWallInsulation.new
 

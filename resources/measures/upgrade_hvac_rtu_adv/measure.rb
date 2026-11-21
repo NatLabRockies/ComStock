@@ -17,28 +17,28 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
 
   # human readable description
   def description
-    return 'replaces exisiting RTUs with top-of-the-line RTUs in the current (as of 7/30/2025)'\
-           ' market. Improvements are from increased rated efficiencies, off-rated performances,'\
-           ' and part-load performances.'
+    return 'replaces exisiting RTUs with top-of-the-line RTUs in the current (as of 7/30/2025) ' \
+           'market. Improvements are from increased rated efficiencies, off-rated performances, ' \
+           'and part-load performances.'
   end
 
   # human readable description of modeling approach
   def modeler_description
-    return 'The high-efficiency RTU measure is applicable to ComStock models with either gas'\
-           ' furnace RTUs (“PSZ-AC with gas coil”), electric resistance RTUs (“PSZ-AC with'\
-           ' electric coil”), gas boilers (“PSZ-AC with gas boiler”), or district heating'\
-           ' (“PSZ-AC with district hot water”). This analysis includes only products that'\
-           ' meet or exceed current building energy'\
-           ' codes while representing the highest-performing'\
-           ' models available on the market today. If the building currently uses gas for space'\
-           ' heating, the upgraded RTU will be equipped with a gas furnace. If the building uses'\
-           ' electricity for space heating, the RTU will include electric resistance heating.'\
-           ' Heat/Energy Recovery Ventilator (H/ERVs) can be included in this measure,'\
-           ' and the implementation and modeling will follow'\
-           ' the approach used in previous H/ERV work.'\
-           ' Demand Control Ventilation (DCV) can be included in this measure,'\
-           ' and the implementation and modeling will follow'\
-           ' the approach used in previous DCV work.'
+    return 'The high-efficiency RTU measure is applicable to ComStock models with either gas ' \
+           'furnace RTUs (“PSZ-AC with gas coil”), electric resistance RTUs (“PSZ-AC with ' \
+           'electric coil”), gas boilers (“PSZ-AC with gas boiler”), or district heating ' \
+           '(“PSZ-AC with district hot water”). This analysis includes only products that ' \
+           'meet or exceed current building energy ' \
+           'codes while representing the highest-performing ' \
+           'models available on the market today. If the building currently uses gas for space ' \
+           'heating, the upgraded RTU will be equipped with a gas furnace. If the building uses ' \
+           'electricity for space heating, the RTU will include electric resistance heating. ' \
+           'Heat/Energy Recovery Ventilator (H/ERVs) can be included in this measure, ' \
+           'and the implementation and modeling will follow ' \
+           'the approach used in previous H/ERV work. ' \
+           'Demand Control Ventilation (DCV) can be included in this measure, ' \
+           'and the implementation and modeling will follow ' \
+           'the approach used in previous DCV work.'
   end
 
   # define the arguments that the user will input
@@ -614,7 +614,6 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
   #### End predefined functions
 
   # define what happens when the measure is run
-  # rubocop:disable Naming/PredicateMethod
   def run(model, runner, user_arguments)
     super
 
@@ -895,8 +894,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
           min_oa_flow_ratio.round(2)
         } which exceeds the maximum allowable limit of #{
             oa_ration_allowance
-          } (due to an EnergyPlus night cycling bug with multispeed coils)"\
-            ' making this RTU not applicable at this time.')
+          } (due to an EnergyPlus night cycling bug with multispeed coils) " \
+            'making this RTU not applicable at this time.')
       # remove air loop from applicable list
       selected_air_loops.delete(air_loop_hvac)
       applicable_area_m2 -= thermal_zone.floorArea * thermal_zone.multiplier
@@ -948,12 +947,12 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     btype_erv_applicable = false if building_types_to_exclude.include?(model_building_type.downcase)
     # warn user if they selected to add ERV but building type is not applicable for ERV
     if (hr == true) && (btype_erv_applicable == false)
-      runner.registerWarning('The user chose to include energy recovery in the'\
-                              ' high-efficiency RTUs,'\
-                             " but the building type -#{
+      runner.registerWarning('The user chose to include energy recovery in the ' \
+                              'high-efficiency RTUs, ' \
+                             "but the building type -#{
                               model_building_type
-                            }- is not applicable for energy recovery."\
-                             ' Energy recovery will not be added.')
+                            }- is not applicable for energy recovery. " \
+                             'Energy recovery will not be added.')
     end
 
     # get climate full string and classification (i.e. "5A")
@@ -1294,8 +1293,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original cooling coil capacity for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
             if orig_clg_coil.autosizedRatedAirFlowRate == true
               orig_clg_coil_rated_airflow_m_3_per_s = orig_clg_coil.autosizedRatedAirFlowRate.get
@@ -1304,8 +1303,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original cooling coil airflow for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
           # check for two speed DX cooling coil
           elsif orig_clg_coil.to_CoilCoolingDXTwoSpeed.is_initialized
@@ -1319,8 +1318,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original cooling coil capacity for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
             if orig_clg_coil.autosizedRatedHighSpeedAirFlowRate.is_initialized
               orig_clg_coil_rated_airflow_m_3_per_s =
@@ -1331,8 +1330,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original cooling coil airflow for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
           else
             runner.registerError("Original cooling coil is of type #{
@@ -1352,8 +1351,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original heating coil capacity for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
           elsif orig_htg_coil.to_CoilHeatingGas.is_initialized
             orig_htg_coil = orig_htg_coil.to_CoilHeatingGas.get
@@ -1365,8 +1364,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original heating coil capacity for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-                ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+                'or sizing run data is not available.')
             end
           elsif orig_htg_coil.to_CoilHeatingWater.is_initialized
             orig_htg_coil = orig_htg_coil.to_CoilHeatingWater.get
@@ -1379,14 +1378,14 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
             else
               runner.registerError("Original heating coil capacity for #{
                 air_loop_hvac.name
-              } not found. Either it was not directly specified,"\
-              ' or sizing run data is not available.')
+              } not found. Either it was not directly specified, " \
+              'or sizing run data is not available.')
             end
           else
             runner.registerError("Heating coil for #{
               air_loop_hvac.name
-            } is of an unsupported type. This measure currently supports"\
-              ' CoilHeatingElectric and CoilHeatingGas object types.')
+            } is of an unsupported type. This measure currently supports " \
+              'CoilHeatingElectric and CoilHeatingGas object types.')
           end
         end
 
@@ -1710,8 +1709,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       if orig_htg_coil_obj_existing.instance_of?(OpenStudio::Model::CoilHeatingWater)
         if debug_verbose
-          runner.registerInfo('--- adding existing main water heating coil back'\
-                              ' to the hot water loop')
+          runner.registerInfo('--- adding existing main water heating coil back ' \
+                              'to the hot water loop')
         end
         hot_water_loop.addDemandBranchForComponent(orig_htg_coil_obj_existing)
       end
@@ -1721,8 +1720,8 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
       # -------------------------------------------------------
       if debug_verbose
         runner.registerInfo('--- adding new unitary system')
-        runner.registerInfo('--- and re-applying existing heating coil to the'\
-                            " new unitary system: #{orig_htg_coil_obj_existing.name}")
+        runner.registerInfo('--- and re-applying existing heating coil to the ' \
+                            "new unitary system: #{orig_htg_coil_obj_existing.name}")
       end
       # add new unitary system object
       new_rtu = OpenStudio::Model::AirLoopHVACUnitarySystem.new(model)
@@ -1793,11 +1792,11 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
 
       # check for space type applicability: no energy recovery on kitchens and dining
       if OpenstudioStandards::SpaceType.thermal_zone_serves_space_types?(thermal_zone, ['food preparation', 'dining'])
-        runner.registerWarning('The user selected to add energy recovery to the HP-RTUs,'\
-        " but thermal zone #{
+        runner.registerWarning('The user selected to add energy recovery to the HP-RTUs, ' \
+        "but thermal zone #{
           thermal_zone.name
-        } is a non-applicable space type for energy recovery. Any existing energy recovery will"\
-          ' remain for consistancy, but no new energy recovery will be added.')
+        } is a non-applicable space type for energy recovery. Any existing energy recovery will " \
+          'remain for consistancy, but no new energy recovery will be added.')
       else
         if debug_verbose
           runner.registerInfo('--- adding H/ERV')
@@ -1912,13 +1911,12 @@ class UpgradeHvacRtuAdv < OpenStudio::Measure::ModelMeasure
     end
 
     # report final condition of model
-    condition_final = 'The building finished with high-efficiency RTUs replacing'\
-                      " the HVAC equipment for #{selected_air_loops.size} air loops."
+    condition_final = 'The building finished with high-efficiency RTUs replacing ' \
+                      "the HVAC equipment for #{selected_air_loops.size} air loops."
     runner.registerFinalCondition(condition_final)
 
     true
   end
-  # rubocop:enable Naming/PredicateMethod
 end
 
 # register the measure to be used by the application

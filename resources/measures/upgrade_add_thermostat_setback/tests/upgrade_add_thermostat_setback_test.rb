@@ -2,20 +2,21 @@
 
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
+require 'minitest/mock'
 require 'fileutils'
 
 require_relative '../measure'
 
 class UpgradeAddThermostatSetbackTest < Minitest::Test
   def models_for_tests
-    paths = Dir.glob(File.join(File.dirname(__FILE__), '../../../tests/models/*.osm'))
+    paths = Dir.glob(File.join(__dir__, '../../../tests/models/*.osm'))
     paths.map { |path| File.expand_path(path) }
   end
 
   # return file paths to epw files in test directory
   def epws_for_tests
-    paths = Dir.glob(File.join(File.dirname(__FILE__), '../../../tests/weather/*.epw'))
+    paths = Dir.glob(File.join(__dir__, '../../../tests/weather/*.epw'))
     paths.map { |path| File.expand_path(path) }
   end
 
@@ -28,16 +29,16 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
 
   def run_dir(test_name)
     # always generate test output in specially named 'output' directory so result files are not made part of the measure
-    "#{File.dirname(__FILE__)}/output/#{test_name}"
+    "#{__dir__}/output/#{test_name}"
   end
 
   def model_input_path(osm_name)
     # return models_for_tests.select { |x| set[:model] == osm_name }
-    File.join(File.dirname(__FILE__), '../../../tests/models', osm_name)
+    File.join(__dir__, '../../../tests/models', osm_name)
   end
 
   def epw_input_path(epw_name)
-    File.join(File.dirname(__FILE__), '../../../tests/weather', epw_name)
+    File.join(__dir__, '../../../tests/weather', epw_name)
   end
 
   def model_output_path(test_name)
@@ -55,21 +56,21 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
   # applies the measure and then runs the model
   def set_weather_and_apply_measure_and_run(test_name, measure, argument_map, osm_path, epw_path, run_model: false,
                                             model: nil, apply: true, expected_results: 'Success')
+    start_dir = Dir.pwd
     assert(File.exist?(osm_path))
     assert(File.exist?(epw_path))
     ddy_path = "#{epw_path.gsub('.epw', '')}.ddy"
 
     # create run directory if it does not exist
-    FileUtils.mkdir_p(run_dir(test_name)) unless File.exist?(run_dir(test_name))
+    FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
     # change into run directory for tests
-    start_dir = Dir.pwd
     Dir.chdir run_dir(test_name)
 
     # remove prior runs if they exist
-    FileUtils.rm(model_output_path(test_name)) if File.exist?(model_output_path(test_name))
-    FileUtils.rm(report_path(test_name)) if File.exist?(report_path(test_name))
+    FileUtils.rm_f(model_output_path(test_name))
+    FileUtils.rm_f(report_path(test_name))
 
     # copy the osm and epw to the test directory
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
@@ -118,7 +119,7 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
       end
 
       # assert
-      assert_equal(false, model.getDesignDays.size.zero?)
+      assert_equal(false, model.getDesignDays.empty?)
     end
 
     if apply
@@ -148,17 +149,31 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
       assert(File.exist?(sql_path(test_name)))
     end
 
-    # change back directory
-    Dir.chdir(start_dir)
-
     result
+  ensure
+    Dir.chdir(start_dir)
+  end
+
+  def test_restores_working_directory_when_copy_fails
+    start_dir = Dir.pwd
+    copy_failure = ->(*_args) { raise IOError, 'copy failed' }
+
+    FileUtils.stub(:cp, copy_failure) do
+      assert_raises(IOError) do
+        set_weather_and_apply_measure_and_run(
+          __method__, nil, nil,
+          model_input_path('380_psz_ac_with_gas_boiler.osm'),
+          epw_input_path('NE_Kearney_Muni_725526_16.epw')
+        )
+      end
+    end
+    assert_equal(start_dir, Dir.pwd)
+  ensure
+    Dir.chdir(start_dir)
   end
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = UpgradeAddThermostatSetback.new
 
@@ -180,10 +195,6 @@ class UpgradeAddThermostatSetbackTest < Minitest::Test
     # confirm that any heating setbacks are now 2F
     osm_name = '380_psz_ac_with_gas_boiler.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
-
-    test_name = 'confirm_heating_setback_change_square_wave'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
 
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)

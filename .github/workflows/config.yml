@@ -1,0 +1,228 @@
+name: ComStock tests (draft)
+
+# Allow branch-only testing before this workflow is merged.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci-testing]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OPENSTUDIO_VER: '3.10.0'
+  OPENSTUDIO_SHA: '86d7e215a1'
+  OPENSTUDIO_PLATFORM: Ubuntu-24.04-x86_64
+  # This branch must be pushed to BuildStockBatch before running the integration job.
+  BUILDSTOCK_BATCH_REF: comstock-publication-hook
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/resources/Gemfile
+      BUNDLE_PATH: ${{ github.workspace }}/.custom_gems
+      BUNDLE_WITHOUT: ''
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.2'
+          bundler: '2.4.10'
+
+      - name: Install official OpenStudio
+        run: |
+          package="OpenStudio-${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}-${OPENSTUDIO_PLATFORM}.deb"
+          curl --fail --location --retry 3 \
+            "https://github.com/NatLabRockies/OpenStudio/releases/download/v${OPENSTUDIO_VER}/${package}" \
+            --output "${RUNNER_TEMP}/${package}"
+          sudo apt-get update
+          sudo apt-get install -y "${RUNNER_TEMP}/${package}"
+          os_root="/usr/local/openstudio-${OPENSTUDIO_VER}"
+          echo "${os_root}/bin" >> "$GITHUB_PATH"
+          echo "RUBYLIB=${os_root}/Ruby" >> "$GITHUB_ENV"
+          "${os_root}/bin/openstudio" --version
+
+      - name: Install measure dependencies
+        run: |
+          python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
+          bundle _2.4.10_ install
+
+      - name: Run RuboCop
+        run: |
+          bundle _2.4.10_ exec rake 'rubocop[true]'
+          git diff --exit-code
+
+      - name: Run measure tests through Rake
+        id: measure-tests
+        run: bundle _2.4.10_ exec rake unit_tests:all_tests
+
+      - name: Check tests actually ran
+        if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          cases = [case for report in Path("test/reports").glob("**/*.xml")
+                   for case in ET.parse(report).getroot().iter("testcase")]
+          if not any(case.find("skipped") is None for case in cases):
+              raise SystemExit("No executed tests in JUnit reports; check Rake worker execution")
+          if any(case.find("failure") is not None or case.find("error") is not None for case in cases):
+              raise SystemExit("JUnit reports contain failures or errors")
+          PY
+
+      - name: Upload measure test reports
+        if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: measure-test-reports
+          path: test/reports/
+
+  integration-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install measure Python dependencies
+        run: python -m pip install "numpy<2" GHEDesigner==1.0 NREL-PySAM==4.2.0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.12'
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.2'
+          bundler: '2.4.10'
+
+      - name: Install official OpenStudio
+        run: |
+          package="OpenStudio-${OPENSTUDIO_VER}+${OPENSTUDIO_SHA}-${OPENSTUDIO_PLATFORM}.deb"
+          curl --fail --location --retry 3 \
+            "https://github.com/NatLabRockies/OpenStudio/releases/download/v${OPENSTUDIO_VER}/${package}" \
+            --output "${RUNNER_TEMP}/${package}"
+          sudo apt-get update
+          sudo apt-get install -y "${RUNNER_TEMP}/${package}"
+          os_exe="/usr/local/openstudio-${OPENSTUDIO_VER}/bin/openstudio"
+          echo "$(dirname "$os_exe")" >> "$GITHUB_PATH"
+          echo "OPENSTUDIO_EXE=${os_exe}" >> "$GITHUB_ENV"
+          "$os_exe" --version
+
+      - name: Install BuildStockBatch and ComStock postprocessing
+        run: |
+          python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
+          python -m pip install -e ./postprocessing
+          python3.11 -c "import PySAM"
+          ghedesigner --help > /dev/null
+          python -c "import comstockpostproc.buildstockbatch"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+          role-duration-seconds: 1200
+          role-session-name: MySession
+
+      - name: Run baseline and upgrade simulations with BuildStockBatch postprocessing
+        id: integration-run
+        run: buildstock_local --low-disk ymls/bsb-integration-test-upgrades.yml -j 4
+
+      - name: Decompress raw integration results CSVs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'success' }}
+        run: gunzip -k upgrades_test_output/results_csvs/*.csv.gz
+
+      - name: Upload raw integration results CSVs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results-raw
+          path: upgrades_test_output/results_csvs/*.csv
+          if-no-files-found: error
+
+      - name: Upload BuildStockBatch crash details
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-crash-details
+          path: buildstockbatch_crash_details.log
+          if-no-files-found: warn
+
+      - name: Upload available raw integration results CSVs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results-raw-partial
+          path: upgrades_test_output/results_csvs/
+          if-no-files-found: warn
+
+      - name: Upload integration postprocessing inputs
+        if: ${{ !cancelled() && steps.integration-run.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-postprocessing-inputs
+          path: |
+            upgrades_test_output/simulation_output/results_job*.json.gz
+            upgrades_test_output/simulation_output/timeseries/
+            national/housing_characteristics/buildstock.csv
+          if-no-files-found: warn
+
+      - name: Check baseline and upgrade simulation results
+        run: |
+          python .github/scripts/check_baseline_results.py \
+            samples/bsb-integration-test-upgrades.csv \
+            upgrades_test_output/simulation_output/results_job0.json.gz \
+            --project-file ymls/bsb-integration-test-upgrades.yml
+
+      - name: Prepare published integration results CSVs
+        run: |
+          mkdir -p test/base_results/upgrades
+          for archive in upgrades_test_output/results_csvs_pub/results_up*.csv.gz; do
+            gunzip -k "$archive"
+            cp "${archive%.gz}" test/base_results/upgrades/
+          done
+          while IFS= read -r -d '' file; do
+            if [[ ! -f "upgrades_test_output/results_csvs_pub/${file##*/}.gz" ]]; then
+              rm -- "$file"
+            fi
+          done < <(git ls-files -z -- 'test/base_results/upgrades/results_up*.csv')
+
+      - name: Commit and push upgrade integration results CSVs
+        if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add -A -- 'test/base_results/upgrades/results_up*.csv'
+          if ! git diff --cached --quiet -- 'test/base_results/upgrades/results_up*.csv'; then
+            git -c user.name="GitHub Actions" -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "Upgrade integration test results [skip ci]" -- 'test/base_results/upgrades/results_up*.csv'
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+              push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          fi

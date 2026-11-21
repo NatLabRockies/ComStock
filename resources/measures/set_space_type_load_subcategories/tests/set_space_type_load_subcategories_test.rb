@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
@@ -107,8 +107,6 @@ class SetSpaceTypeLoadSubcategoriesTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SetSpaceTypeLoadSubcategories.new
 
@@ -121,8 +119,6 @@ class SetSpaceTypeLoadSubcategoriesTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an array of hashes with model name, weather, expected result, and any specific
     models_to_test = []
     models_to_test << { model: 'Small_Office_CEC8', weather: 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16', result: 'Success' }

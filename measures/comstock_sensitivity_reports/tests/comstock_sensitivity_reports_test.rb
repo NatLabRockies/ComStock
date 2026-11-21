@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'comstock-typical'
@@ -125,8 +125,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = ComStockSensitivityReports.new
 
@@ -137,7 +135,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg25
     # retail_resforcedair
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000025.osm"
     epw_path = "#{__dir__}/USA_MI_Detroit.City.725375_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -145,7 +142,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg31
     # quick_service_restaurant_pthp
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000031.osm"
     epw_path = "#{__dir__}/USA_OH_Toledo.Express.725360_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -153,7 +149,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg43
     # warehouse_baseboardelec
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000043.osm"
     epw_path = "#{__dir__}/USA_NV_Nellis.Afb.723865_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -161,7 +156,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg45
     # stripmall_windowac
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000045.osm"
     epw_path = "#{__dir__}/USA_TX_San.Marcos.Muni.722539_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -169,7 +163,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg53
     # smallhotel_pszac
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000053.osm"
     epw_path = "#{__dir__}/USA_MI_Cherry.Capital.726387_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -177,7 +170,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg82
     # hospital_vav
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000082.osm"
     epw_path = "#{__dir__}/USA_KY_Bowman.Fld.724235_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -185,7 +177,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg03
     # smalloffice_pszac
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000003.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -193,7 +184,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_bldg04
     # retail_pszacnoheat
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000004.osm"
     epw_path = "#{__dir__}/FortCollins2016.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -201,7 +191,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_fuel_oil_boiler
     # fuel_oil_boiler
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000034.osm"
     epw_path = "#{__dir__}/USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -209,7 +198,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_propane_boiler
     # propane_boiler
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0000090.osm"
     epw_path = "#{__dir__}/USA_NV_Nellis.Afb.723865_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -217,7 +205,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_vrf
     # vrf
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0146294.osm"
     epw_path = "#{__dir__}/USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -225,7 +212,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_multispeed_heat_pump
     # multispeed_heat_pump
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/multispeed_hps.osm"
     epw_path = "#{__dir__}/USA_MI_Detroit.City.725375_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -233,7 +219,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_heat_pump_boiler_1
     # heat_pump_boiler_1
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/heat_pump_boiler_1.osm"
     epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -241,7 +226,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_heat_pump_boiler_2
     # heat_pump_boiler_2
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/heat_pump_boiler_2.osm"
     epw_path = "#{__dir__}/USA_KY_Bowman.Fld.724235_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -249,7 +233,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_shw_hpwh
     # shw_hpwh
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/hpwh002.osm"
     epw_path = "#{__dir__}/USA_NV_Nellis.Afb.723865_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -257,7 +240,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_ghx_outputs
     # ground_heat_exchanger_outputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/ground_heat_exchanger.osm"
     epw_path = "#{__dir__}/USA_MI_Detroit.City.725375_2012.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -265,7 +247,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_hp_rtu_gas_backup
     # hp_rtu_gas_backup
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/hp_rtu_gas_backup.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -273,7 +254,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_vrf_cold_climate
     # vrf_cold_climate
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/vrf_cold_climate.osm"
     epw_path = "#{__dir__}/USA_MN_Duluth.Intl.AP.727450_TMY.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -281,7 +261,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_8172d17_0000008
     # 8172d17_0000008
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/8172d17_0000008.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -289,7 +268,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_base_0000008
     # base_0000008
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/base_0000008.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -297,7 +275,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_grocery_store
     # test_grocery_store
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/grocery.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
     assert(run_test(__method__, osm_path, epw_path))
@@ -305,7 +282,6 @@ class ComStockSensitivityReportsTest < Minitest::Test
 
   def test_pump_spec
     # bldg0006100
-    puts "\n######\nTEST:#{__method__}\n######\n"
     osm_path = "#{__dir__}/bldg0006100.osm"
     epw_path = "#{__dir__}/USA_AL_Mobile-Downtown.AP.722235_TMY3.epw"
     result = assert(run_test(__method__, osm_path, epw_path))

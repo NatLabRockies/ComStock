@@ -896,7 +896,7 @@ def read_emission_factors(model, scenario, year = 2021)
   if [2018, 2019, 2020, 2021].include?(year)
     egrid_co2e_kg_per_mwh = egrid_subregion_hsh[0][:"#{year}"] * lbm_to_kg
   elsif year == 'average'
-    egrid_co2e_kg_per_mwh = (egrid_subregion_hsh[0][:"2018"] + egrid_subregion_hsh[0][:"2019"] + egrid_subregion_hsh[0][:"2020"] + egrid_subregion_hsh[0][:"2021"]) / 4.0 * lbm_to_kg
+    egrid_co2e_kg_per_mwh = (egrid_subregion_hsh[0][:'2018'] + egrid_subregion_hsh[0][:'2019'] + egrid_subregion_hsh[0][:'2020'] + egrid_subregion_hsh[0][:'2021']) / 4.0 * lbm_to_kg
   else
     raise "Unable to find eGRID data for year: #{year}"
   end
