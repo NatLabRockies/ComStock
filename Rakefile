@@ -14,6 +14,7 @@ def run_measure_tests(file_list, summary: nil)
     process_failure = nil
     test_failures = []
     failed_count = 0
+    skipped_count = 0
     passes = []
     discovered_count = nil
     reported_count = 0
@@ -43,7 +44,11 @@ def run_measure_tests(file_list, summary: nil)
       name = "#{test_case.attributes['classname']}##{test_case.attributes['name']}"
       failures = test_case.get_elements('failure|error')
       if failures.empty?
-        passes << name if summary && test_case.get_elements('skipped').empty?
+        if test_case.get_elements('skipped').empty?
+          passes << name if summary
+        else
+          skipped_count += 1
+        end
       else
         failed_count += 1
         failures.each { |failure| test_failures << "  #{name}: #{failure.attributes['message']}" }
@@ -56,18 +61,19 @@ def run_measure_tests(file_list, summary: nil)
     end
     raise 'JUnit reports contain failures or errors' unless test_failures.empty?
 
-    { file: file, passes: passes, failed_count: failed_count, discovered_count: discovered_count, reported_count: reported_count }
+    { file: file, passes: passes, failed_count: failed_count, skipped_count: skipped_count, discovered_count: discovered_count, reported_count: reported_count }
   rescue StandardError => e
     reason = [process_failure, e.message].compact.uniq.join('; ')
     message = "FAIL: #{file} (#{reason})"
     message += "\n#{test_failures.join("\n")}" unless test_failures.empty?
-    { file: file, passes: passes, failed_count: failed_count, discovered_count: discovered_count, reported_count: reported_count, error: message }
+    { file: file, passes: passes, failed_count: failed_count, skipped_count: skipped_count, discovered_count: discovered_count, reported_count: reported_count, error: message }
   end
 
   if summary
     results.each do |result|
       summary[:passes][result[:file]] = result[:passes] unless result[:passes].empty?
       summary[:failed_count] += result[:failed_count]
+      summary[:skipped_count] += result[:skipped_count]
       summary[:discovered_counts] << result[:discovered_count]
       summary[:reported_count] += result[:reported_count]
     end
@@ -104,7 +110,7 @@ namespace :unit_tests do
     step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     summaries = {}
     errors = filters.keys.filter_map do |group|
-      summaries[group] = { passes: {}, failed_count: 0, discovered_counts: [], reported_count: 0, completed: false } if step_summary
+      summaries[group] = { passes: {}, failed_count: 0, skipped_count: 0, discovered_counts: [], reported_count: 0, completed: false } if step_summary
       run_group.call(group, summaries[group])
       nil
     rescue StandardError => e
@@ -116,6 +122,7 @@ namespace :unit_tests do
     if step_summary
       failed_count = summaries.values.sum { |summary| summary[:failed_count] }
       passed_count = summaries.values.sum { |summary| summary[:passes].values.sum(&:length) }
+      skipped_count = summaries.values.sum { |summary| summary[:skipped_count] }
       counts = summaries.values.flat_map { |summary| summary[:discovered_counts] }
       total_count = counts.sum if summaries.values.all? { |summary| summary[:completed] } && counts.none?(&:nil?)
       reported_count = summaries.values.sum { |summary| summary[:reported_count] }
@@ -131,11 +138,12 @@ namespace :unit_tests do
         end
         failed_range = percentages.call(failed_count)
         passed_range = percentages.call(passed_count)
+        skipped_range = percentages.call(skipped_count)
       end
       File.open(step_summary, 'a') do |file|
         file.puts "Discovered tests: #{total_count || 'unavailable'}; JUnit results: #{reported_count}."
         if total_count&.positive?
-          file.puts "Percentages are rounded; ranges include unreported tests as possible passes or failures. Reported skips are neither.\n"
+          file.puts "Percentages are rounded; ranges include unreported tests as possible passes, failures, or skips.\n"
         else
           file.puts "Percentage ranges are unavailable when discovery is incomplete or no tests were discovered.\n"
         end
@@ -144,6 +152,7 @@ namespace :unit_tests do
           file.puts "\nFile or group failures without a JUnit test result are listed below but not counted as failed tests.\n"
           file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
         end
+        file.puts "\n## Measure tests skipped (#{skipped_count}#{skipped_range ? ", #{skipped_range}" : ''})\n"
         file.puts "\n## Measure tests passed (#{passed_count}#{passed_range ? ", #{passed_range}" : ''})\n"
         summaries.each do |group, summary|
           next if summary[:passes].empty?

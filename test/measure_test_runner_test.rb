@@ -229,6 +229,7 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(failed, 'Discovered tests: unavailable; JUnit results: 5.')
       assert_includes(failed, 'Percentage ranges are unavailable')
       assert_includes(failed, '## Measure tests failed (2)')
+      assert_includes(failed, '## Measure tests skipped (1)')
       assert_includes(failed, 'without a JUnit test result are listed below but not counted')
       assert_includes(failed, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
       assert_equal(<<~SUMMARY.chomp, passed.strip)
@@ -253,12 +254,21 @@ class MeasureTestRunnerTest < Minitest::Test
     original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      File.write('reporting_fixture_test.rb', <<~RUBY)
+        #{passing_test}
+        class FixtureTest
+          def test_skipped
+            skip 'not a pass'
+          end
+        end
+      RUBY
       Rake::Task['unit_tests:all_tests'].invoke
 
       summary = File.read('step-summary.md')
-      assert_includes(summary, 'Discovered tests: 3; JUnit results: 3.')
+      assert_includes(summary, 'Discovered tests: 4; JUnit results: 4.')
       assert_includes(summary, '## Measure tests failed (0, 0.00%)')
-      assert_includes(summary, '## Measure tests passed (3, 100.00%)')
+      assert_includes(summary, '## Measure tests skipped (1, 25.00%)')
+      assert_includes(summary, '## Measure tests passed (3, 75.00%)')
       assert_equal(3, summary.scan(/^    PASS:/).size)
       refute_includes(summary, 'FAIL:')
       reports = Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), '*_fixture_test', 'TEST-*.xml'))
@@ -306,6 +316,7 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(summary, 'Discovered tests: 7; JUnit results: 5.')
       assert_includes(summary, '## Measure tests failed (2, 28.57-57.14%)')
       assert_includes(summary, '## Measure tests passed (2, 28.57-57.14%)')
+      assert_includes(summary, '## Measure tests skipped (1, 14.29-42.86%)')
     end
   ensure
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
