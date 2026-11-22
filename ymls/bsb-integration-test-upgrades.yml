@@ -69,9 +69,9 @@ upgrades:
 #   - upgrade_name: HP Boiler G Backup
 #     options:
 #       - option: hvac_replace_boiler_by_heatpump|gas_boiler_backup_new_hot_water_setpoint_coil_autosize
-#   - upgrade_name: Economizer
-#     options:
-#       - option: hvac_economizer|apply_measure
+  - upgrade_name: Economizer
+    options:
+      - option: hvac_economizer|apply_measure
 #   - upgrade_name: DCV
 #     options:
 #       - option: hvac_dcv_v2|demand_control_ventilation
@@ -98,18 +98,18 @@ upgrades:
 #       - option: hvac_hydronic_geothermal_hp|hydronic_ghp
 #       - option: hvac_packaged_geothermal_hp|packaged_ghp_dcv_econ
 #       - option: hvac_console_geothermal_hp|console_ghp
-  - upgrade_name: shedfb
-    options:
-      - option: thermostat_control_load_shed|shed_full_baseline_15min
+#   - upgrade_name: shedfb
+#     options:
+#       - option: thermostat_control_load_shed|shed_full_baseline_15min
 #   - upgrade_name: shiftfb
 #     options:
 #       - option: thermostat_control_load_shift|shift_full_baseline_15min
-  - upgrade_name: LED Lighting
-    options:
-      - option: light_led|lighting_technology_gen5
-#   - upgrade_name: Electric Kitchen Equipment
+#   - upgrade_name: LED Lighting
 #     options:
-#       - option: ppl_electric_kitchen_equip|electric_kitchen_equip
+#       - option: light_led|lighting_technology_gen5
+  - upgrade_name: Electric Kitchen Equipment
+    options:
+      - option: ppl_electric_kitchen_equip|electric_kitchen_equip
   - upgrade_name: Wall Insulation
     options:
       - option: env_exterior_wall_insulation|exterior_wall_insulation
