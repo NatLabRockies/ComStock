@@ -40,10 +40,6 @@ postprocessing:
     s3:
       bucket: comstock-core
       prefix: comstock_ci
-  comstock:
-    stock_estimation_version: '2026R1'
-    truth_data_version: 'v01'
-    comstock_year: 2018
 
 upgrades:
   - upgrade_name: HP RTU E Backup

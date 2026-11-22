@@ -12,12 +12,12 @@ from .comstock_apportionment import Apportion
 
 
 def publish_results(fs, results_dir, buildstock_csv_filename, cfg):
-    settings = cfg.get('postprocessing', {}).get('comstock')
-    if settings is None:
-        raise ValueError('Commercial publication requires postprocessing.comstock settings.')
     if cfg.get('baseline', {}).get('skip_sims', False):
         raise ValueError('Commercial publication requires baseline simulation results.')
 
+    stock_estimation_version = '2025R3'
+    truth_data_version = 'v01'
+    comstock_year = 2018
     upgrade_ids = range(len(cfg.get('upgrades', [])) + 1)
     with tempfile.TemporaryDirectory(prefix='comstock-publication-') as tmpdir:
         data_dir = Path(tmpdir) / 'data'
@@ -35,9 +35,9 @@ def publish_results(fs, results_dir, buildstock_csv_filename, cfg):
             s3_base_dir=None,
             comstock_run_name='buildstockbatch',
             comstock_run_version='buildstockbatch',
-            comstock_year=settings['comstock_year'],
+            comstock_year=comstock_year,
             athena_table_name=None,
-            truth_data_version=settings['truth_data_version'],
+            truth_data_version=truth_data_version,
             data_dir=str(data_dir),
             output_dir=str(output_dir),
             skip_missing_columns=True,
@@ -49,16 +49,16 @@ def publish_results(fs, results_dir, buildstock_csv_filename, cfg):
         utility_map = os.path.join(comstock.truth_data_dir, comstock.tract_to_util_map_file_name)
         if not os.path.exists(utility_map):
             comstock.download_truth_data_file(
-                f'truth_data/{settings["truth_data_version"]}/{comstock.tract_to_util_map_file_name}'
+                f'truth_data/{truth_data_version}/{comstock.tract_to_util_map_file_name}'
             )
         estimate = Apportion(
-            stock_estimation_version=settings['stock_estimation_version'],
-            truth_data_version=settings['truth_data_version'],
+            stock_estimation_version=stock_estimation_version,
+            truth_data_version=truth_data_version,
             output_dir=str(output_dir / 'apportionment'),
         )
         baseline = comstock.get_sim_outs_for_upgrade(0)
         comstock.create_allocated_weights(estimate, baseline)
-        cbecs = CBECS(cbecs_year=2018, truth_data_version=settings['truth_data_version'])
+        cbecs = CBECS(cbecs_year=2018, truth_data_version=truth_data_version)
         comstock.create_allocated_weights_scaled_to_cbecs(
             cbecs, baseline, comstock.get_allocated_weights(), remove_non_comstock_bldg_types_from_cbecs=True
         )

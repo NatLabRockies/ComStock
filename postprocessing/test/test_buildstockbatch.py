@@ -35,6 +35,8 @@ def test_publishes_weighted_results_after_staging_inputs(tmp_path, monkeypatch, 
     def create_comstock(**kwargs):
         staged = tmp_path / 'sample.csv'
         data_dir = Path(kwargs['data_dir'])
+        assert kwargs['comstock_year'] == 2018
+        assert kwargs['truth_data_version'] == 'v01'
         assert kwargs['upgrade_names'] == {i: upgrade['upgrade_name'] for i, upgrade in enumerate(upgrades, 1)}
         assert (data_dir / 'buildstock.csv').read_text() == staged.read_text()
         assert sorted(p.name for p in data_dir.glob('*.parquet')) == [
@@ -43,13 +45,16 @@ def test_publishes_weighted_results_after_staging_inputs(tmp_path, monkeypatch, 
         return cs
 
     monkeypatch.setattr(buildstockbatch, 'ComStock', create_comstock)
-    monkeypatch.setattr(buildstockbatch, 'Apportion', MagicMock())
-    monkeypatch.setattr(buildstockbatch, 'CBECS', MagicMock())
-    cfg = {'upgrades': upgrades, 'postprocessing': {'comstock': {
-        'stock_estimation_version': '2026R1', 'truth_data_version': 'v01', 'comstock_year': 2018,
-    }}}
+    apportion = MagicMock()
+    cbecs = MagicMock()
+    monkeypatch.setattr(buildstockbatch, 'Apportion', apportion)
+    monkeypatch.setattr(buildstockbatch, 'CBECS', cbecs)
+    cfg = {'upgrades': upgrades, 'postprocessing': {'publish_annual_results': True}}
     buildstockbatch.publish_results(fsspec.filesystem('file'), str(results), str(sample), cfg)
 
+    assert apportion.call_args.kwargs['stock_estimation_version'] == '2025R3'
+    assert apportion.call_args.kwargs['truth_data_version'] == 'v01'
+    cbecs.assert_called_once_with(cbecs_year=2018, truth_data_version='v01')
     cs.download_truth_data_file.assert_called_once_with('truth_data/v01/tract_to_elec_util_v2.csv')
     assert cs.create_allocated_weights_plus_util_bills_for_upgrade.call_count == len(upgrades) + 1
     for call in cs.create_weighted_aggregate_output.call_args_list:
@@ -64,13 +69,11 @@ def test_publishes_weighted_results_after_staging_inputs(tmp_path, monkeypatch, 
         assert pl.read_parquet(results / 'parquet' / 'pub_annual' / f'upgrade={upgrade_id}' / f'{name}.parquet').shape == (1, 4)
 
 
-def test_rejects_missing_settings_and_skipped_baseline(tmp_path):
+def test_rejects_skipped_baseline(tmp_path):
     fs = fsspec.filesystem('file')
-    with pytest.raises(ValueError, match='requires postprocessing.comstock'):
-        buildstockbatch.publish_results(fs, str(tmp_path), 'sample.csv', {})
     with pytest.raises(ValueError, match='requires baseline'):
         buildstockbatch.publish_results(fs, str(tmp_path), 'sample.csv', {
-            'baseline': {'skip_sims': True}, 'postprocessing': {'comstock': {}},
+            'baseline': {'skip_sims': True},
         })
 
 
@@ -78,9 +81,7 @@ def test_missing_raw_parquet_raises(tmp_path):
     sample = tmp_path / 'sample.csv'
     sample.write_text('Building\n1\n')
     with pytest.raises(FileNotFoundError):
-        buildstockbatch.publish_results(fsspec.filesystem('file'), str(tmp_path), str(sample), {
-            'postprocessing': {'comstock': {}},
-        })
+        buildstockbatch.publish_results(fsspec.filesystem('file'), str(tmp_path), str(sample), {})
 
 
 def load_raw_results(tmp_path, baseline, upgrade=None, upgrade_names=None):
