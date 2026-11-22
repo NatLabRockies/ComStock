@@ -81,13 +81,17 @@ def run_measure_tests(file_list, summary: nil)
   end
 
   if summary
-    results.each do |result|
+    summary_results = results.reject do |result|
+      File.expand_path(result[:file]).start_with?("#{File.expand_path('test')}#{File::SEPARATOR}")
+    end
+    summary_results.each do |result|
       summary[:passes][result[:file]] = result[:passes] unless result[:passes].empty?
       summary[:failed_count] += result[:failed_count]
       summary[:skipped_count] += result[:skipped_count]
       summary[:discovered_counts] << result[:discovered_count]
       summary[:reported_count] += result[:reported_count]
     end
+    summary[:errors] = summary_results.filter_map { |result| result[:error] }
     summary[:completed] = true
   end
   errors = results.filter_map { |result| result[:error] }
@@ -120,11 +124,23 @@ namespace :unit_tests do
     puts 'Running all measure tests:'
     step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     summaries = {}
+    summary_errors = []
     errors = filters.keys.filter_map do |group|
       summaries[group] = { passes: {}, failed_count: 0, skipped_count: 0, discovered_counts: [], reported_count: 0, completed: false } if step_summary
       run_group.call(group, summaries[group])
       nil
     rescue StandardError => e
+      if step_summary
+        group_summary = summaries.fetch(group)
+        if group_summary[:completed]
+          group_errors = group_summary.fetch(:errors)
+          unless group_errors.empty?
+            summary_errors << "#{group}_measure_tests:\nMeasure test failures (#{group_errors.length}):\n#{group_errors.join("\n")}"
+          end
+        else
+          summary_errors << "#{group}_measure_tests:\n#{e.message}"
+        end
+      end
       "#{group}_measure_tests:\n#{e.message}"
     end
 
@@ -170,8 +186,8 @@ namespace :unit_tests do
           end
         end
         file.puts "\n## Measure tests failed (#{failed_count}#{failed_range ? ", #{failed_range}" : ''})\n"
-        unless errors.empty?
-          file.puts "### #{heading}\n\n#{details.gsub(/^/, '    ')}\n"
+        unless summary_errors.empty?
+          file.puts "### Measure test groups failed (#{summary_errors.length})\n\n#{summary_errors.join("\n\n").gsub(/^/, '    ')}\n"
         end
         file.puts "\n## Measure tests skipped (#{skipped_count}#{skipped_range ? ", #{skipped_range}" : ''})\n"
         file.puts "\n## Measure tests without classified outcomes (#{unknown_count || 'unavailable'}#{unknown_percentage ? ", #{unknown_percentage}" : ''})\n"
