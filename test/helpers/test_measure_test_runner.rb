@@ -1,12 +1,12 @@
 # Regression tests for subprocess failures, fresh JUnit reports, readable failure
 # summaries, and continuing through all test groups before reporting failure.
 
-require_relative 'helpers/minitest_helper'
+require_relative 'minitest_helper'
 require 'open3'
 require 'rake'
 require 'tmpdir'
 
-load File.expand_path('../Rakefile', __dir__)
+load File.expand_path('../../Rakefile', __dir__)
 
 class MeasureTestRunnerTest < Minitest::Test
   include Rake::DSL
@@ -33,7 +33,7 @@ class MeasureTestRunnerTest < Minitest::Test
   end
 
   def with_test_groups
-    names = ['all_tests', 'reporting_measure_tests', 'workflow_measure_tests', 'upgrade_measure_tests']
+    names = ['measure_tests', 'helper_tests', 'reporting_measure_tests', 'workflow_measure_tests', 'upgrade_measure_tests']
     original_tasks = names.map { |name| Rake::Task["unit_tests:#{name}"] }
 
     with_fixture do
@@ -71,7 +71,7 @@ class MeasureTestRunnerTest < Minitest::Test
 
   def test_helper_formats_direct_runs_without_creating_junit_reports
     with_fixture do
-      helper = File.expand_path('helpers/minitest_helper.rb', __dir__)
+      helper = File.expand_path('minitest_helper.rb', __dir__)
       File.write('fixture_test.rb', passing_test.sub("require 'minitest/autorun'", "require #{helper.inspect}"))
 
       stdout, stderr, status = Open3.capture3(
@@ -88,8 +88,8 @@ class MeasureTestRunnerTest < Minitest::Test
 
   def test_runner_formats_results_and_preserves_per_file_junit_with_shared_helper
     with_fixture do
-      helper = File.expand_path('helpers/minitest_helper.rb', __dir__)
-      runner = File.expand_path('helpers/measure_test_runner.rb', __dir__)
+      helper = File.expand_path('minitest_helper.rb', __dir__)
+      runner = File.expand_path('measure_test_runner.rb', __dir__)
       report_dir = File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'fixture_test')
       File.write('fixture_test.rb', "require #{helper.inspect}\n#{passing_test}")
 
@@ -190,7 +190,7 @@ class MeasureTestRunnerTest < Minitest::Test
     end
   end
 
-  def test_all_tests_continues_after_failures_and_prints_one_final_summary
+  def test_measure_tests_continues_after_failures_and_prints_one_final_summary
     original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
@@ -213,7 +213,7 @@ class MeasureTestRunnerTest < Minitest::Test
       RUBY
 
       _, stderr = capture_io do
-        error = assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke }
+        error = assert_raises(SystemExit) { Rake::Task['unit_tests:measure_tests'].invoke }
         assert_equal(1, error.status)
       end
 
@@ -256,7 +256,7 @@ class MeasureTestRunnerTest < Minitest::Test
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
   end
 
-  def test_all_tests_succeeds_when_every_group_passes
+  def test_measure_tests_succeeds_when_every_group_passes
     original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
@@ -268,7 +268,7 @@ class MeasureTestRunnerTest < Minitest::Test
           end
         end
       RUBY
-      Rake::Task['unit_tests:all_tests'].invoke
+      Rake::Task['unit_tests:measure_tests'].invoke
 
       summary = File.read('step-summary.md')
       assert_includes(summary, 'Discovered tests: 4; JUnit results: 4.')
@@ -285,59 +285,66 @@ class MeasureTestRunnerTest < Minitest::Test
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
   end
 
-  def test_root_tests_run_and_fail_without_appearing_in_measure_summary
+  def write_helper_fixture(body)
+    FileUtils.mkdir_p('test/helpers')
+    File.write('test/helpers/test_helper_fixture.rb', body)
+  end
+
+  def test_helper_tests_summarize_passes_and_failures
     original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
-      File.write('test/root_fixture_test.rb', <<~RUBY)
+      write_helper_fixture(<<~RUBY)
         #{passing_test}
         class FixtureTest
-          def test_root_failure
-            flunk 'root test failed'
+          def test_helper_failure
+            flunk 'helper test failed'
           end
         end
       RUBY
-      File.write('workflow_fixture_test.rb', <<~RUBY)
-        #{passing_test}
-        class FixtureTest
-          def test_measure_failure
-            flunk 'measure test failed'
-          end
-        end
-      RUBY
-      File.write('test/workflow_measure_tests.txt', "workflow_fixture_test.rb\n./test/root_fixture_test.rb\n")
 
-      _, stderr = capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
-      assert_includes(stderr, 'root test failed')
-      assert_includes(stderr, 'measure test failed')
+      _, stderr = capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:helper_tests'].invoke } }
+      assert_includes(stderr, 'Helper test failures (1):')
+      assert_includes(stderr, 'FixtureTest#test_helper_failure: helper test failed')
       summary = File.read('step-summary.md')
-      assert_includes(summary, 'Discovered tests: 4; JUnit results: 4.')
-      assert_includes(summary, '## Measure tests passed (3, 75.00%)')
-      assert_includes(summary, '## Measure tests failed (1, 25.00%)')
-      assert_includes(summary, 'Measure test failures (1):')
-      assert_includes(summary, 'measure test failed')
-      refute_includes(summary, 'root_fixture_test')
-      refute_includes(summary, 'root test failed')
-      refute_empty(Dir.glob(File.join(ENV.fetch('MINITEST_REPORTERS_REPORTS_DIR'), 'test', 'root_fixture_test', 'TEST-*.xml')))
+      assert_includes(summary, '## Helper tests passed (1)')
+      assert_includes(summary, "    PASS: test/helpers/test_helper_fixture.rb\n      FixtureTest#test_passes")
+      assert_includes(summary, '## Helper tests failed (1)')
+      assert_includes(summary, 'helper test failed')
+      assert_includes(summary, '## Helper tests skipped (0)')
+      refute_includes(summary, '## Measure tests')
     end
   ensure
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
   end
 
-  def test_root_test_failure_alone_does_not_create_measure_failure_details
+  def test_helper_tests_report_crash_in_summary
     original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     with_test_groups do
       ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
-      File.write('test/root_fixture_test.rb', "exit! 42\n")
-      File.write('test/workflow_measure_tests.txt', "workflow_fixture_test.rb\ntest/root_fixture_test.rb\n")
+      write_helper_fixture("exit! 42\n")
 
-      _, stderr = capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
-      assert_includes(stderr, 'root_fixture_test.rb (exit 42)')
+      _, stderr = capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:helper_tests'].invoke } }
+      assert_includes(stderr, 'test_helper_fixture.rb (exit 42')
       summary = File.read('step-summary.md')
-      assert_includes(summary, 'Discovered tests: 3; JUnit results: 3.')
-      assert_includes(summary, '## Measure tests failed (0, 0.00%)')
-      refute_includes(summary, 'Measure test groups failed')
-      refute_includes(summary, 'root_fixture_test')
+      assert_includes(summary, '## Helper tests passed (0)')
+      assert_includes(summary, 'test_helper_fixture.rb (exit 42')
+    end
+  ensure
+    ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
+  end
+
+  def test_helper_tests_succeed_when_every_test_passes
+    original_step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+    with_test_groups do
+      ENV['GITHUB_STEP_SUMMARY'] = File.expand_path('step-summary.md')
+      write_helper_fixture(passing_test)
+
+      capture_io { Rake::Task['unit_tests:helper_tests'].invoke }
+      summary = File.read('step-summary.md')
+      assert_includes(summary, '## Helper tests passed (1)')
+      assert_includes(summary, '## Helper tests failed (0)')
+      refute_includes(summary, 'FAIL:')
     end
   ensure
     ENV['GITHUB_STEP_SUMMARY'] = original_step_summary
@@ -375,7 +382,7 @@ class MeasureTestRunnerTest < Minitest::Test
           end
         end
       RUBY
-      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:measure_tests'].invoke } }
 
       summary = File.read('step-summary.md')
       assert_includes(summary, 'Discovered tests: 7; JUnit results: 5.')
@@ -407,7 +414,7 @@ class MeasureTestRunnerTest < Minitest::Test
         end
       RUBY
 
-      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:measure_tests'].invoke } }
 
       summary = File.read('step-summary.md')
       assert_includes(summary, 'Discovered tests: 5; JUnit results: 5.')
@@ -433,7 +440,7 @@ class MeasureTestRunnerTest < Minitest::Test
         end
       RUBY
 
-      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:measure_tests'].invoke } }
 
       summary = File.read('step-summary.md')
       assert_includes(summary, 'Discovered tests: 3; JUnit results: 3.')
@@ -463,7 +470,7 @@ class MeasureTestRunnerTest < Minitest::Test
         end
       RUBY
 
-      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:all_tests'].invoke } }
+      capture_io { assert_raises(SystemExit) { Rake::Task['unit_tests:measure_tests'].invoke } }
 
       summary = File.read('step-summary.md')
       assert_includes(summary, 'Discovered tests: 4; JUnit results: 3.')

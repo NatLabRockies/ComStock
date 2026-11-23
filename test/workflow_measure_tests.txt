@@ -27,4 +27,3 @@ resources/measures/set_space_type_load_subcategories/tests/set_space_type_load_s
 resources/measures/set_wall_template/tests/set_wall_template_test.rb
 resources/measures/simulation_settings/tests/simulation_settings_test.rb
 resources/measures/thermal_bridging_derating/tests/thermal_bridging_derating_test.rb
-test/measure_test_runner_test.rb

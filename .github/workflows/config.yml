@@ -71,7 +71,7 @@ jobs:
 
       - name: Run measure tests through Rake
         id: measure-tests
-        run: bundle _2.4.10_ exec rake unit_tests:all_tests
+        run: bundle _2.4.10_ exec rake unit_tests:measure_tests
 
       - name: Check tests actually ran
         if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}
@@ -87,6 +87,10 @@ jobs:
           if any(case.find("failure") is not None or case.find("error") is not None for case in cases):
               raise SystemExit("JUnit reports contain failures or errors")
           PY
+
+      - name: Run helper tests through Rake
+        if: ${{ !cancelled() }}
+        run: bundle _2.4.10_ exec rake unit_tests:helper_tests
 
       - name: Upload measure test reports
         if: ${{ !cancelled() && (steps.measure-tests.outcome == 'success' || steps.measure-tests.outcome == 'failure') }}

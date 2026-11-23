@@ -82,10 +82,11 @@ pip install NREL-PySAM==4.2.0
 ## Measure Tests
 After completing the developer setup above, run:
 
-- `bundle exec rake unit_tests:all_tests` for all measure tests.
+- `bundle exec rake unit_tests:measure_tests` for all measure tests.
 - `bundle exec rake unit_tests:reporting_measure_tests` for reporting tests.
 - `bundle exec rake unit_tests:workflow_measure_tests` for workflow tests.
 - `bundle exec rake unit_tests:upgrade_measure_tests` for upgrade tests.
+- `bundle exec rake unit_tests:helper_tests` for the measure test runner's own tests in `test/helpers/test_*.rb`.
 
 Rake prints a failure summary and saves JUnit reports in `test/reports`. In GitHub Actions,
 the reports are available in the `measure-test-reports` artifact, even if tests fail.

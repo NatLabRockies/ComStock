@@ -81,22 +81,49 @@ def run_measure_tests(file_list, summary: nil)
   end
 
   if summary
-    summary_results = results.reject do |result|
-      File.expand_path(result[:file]).start_with?("#{File.expand_path('test')}#{File::SEPARATOR}")
-    end
-    summary_results.each do |result|
+    results.each do |result|
       summary[:passes][result[:file]] = result[:passes] unless result[:passes].empty?
       summary[:failed_count] += result[:failed_count]
       summary[:skipped_count] += result[:skipped_count]
       summary[:discovered_counts] << result[:discovered_count]
       summary[:reported_count] += result[:reported_count]
     end
-    summary[:errors] = summary_results.filter_map { |result| result[:error] }
-    summary[:completed] = true
   end
   errors = results.filter_map { |result| result[:error] }
+  if summary
+    summary[:errors] = errors
+    summary[:completed] = true
+  end
 
   raise "Measure test failures (#{errors.length}):\n#{errors.join("\n")}" unless errors.empty?
+end
+
+# Runs the test runner's own tests in test/helpers, writes a helper test section to the
+# GitHub step summary, and aborts if any of them failed.
+def run_helper_tests(files)
+  puts 'Running all helper tests:'
+  summary = { passes: {}, failed_count: 0, skipped_count: 0, discovered_counts: [], reported_count: 0, completed: false }
+  begin
+    run_measure_tests(files, summary: summary)
+  rescue StandardError => e
+    summary[:errors] = [e.message] unless summary[:completed]
+  end
+
+  errors = summary.fetch(:errors, [])
+  step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
+  if step_summary
+    File.open(step_summary, 'a') do |file|
+      file.puts "\n## Helper tests passed (#{summary[:passes].values.sum(&:length)})\n"
+      summary[:passes].each do |test_file, names|
+        file.puts "\n    PASS: #{test_file}"
+        names.each { |name| file.puts "      #{name}" }
+      end
+      file.puts "\n## Helper tests failed (#{summary[:failed_count]})\n"
+      file.puts "\n#{errors.join("\n\n").gsub(/^/, '    ')}\n" unless errors.empty?
+      file.puts "\n## Helper tests skipped (#{summary[:skipped_count]})\n"
+    end
+  end
+  abort "Helper test failures (#{errors.length}):\n#{errors.join("\n\n")}" unless errors.empty?
 end
 
 desc 'Run measure tests'
@@ -120,7 +147,7 @@ namespace :unit_tests do
   end
 
   desc 'Run all measure tests'
-  task :all_tests do
+  task :measure_tests do
     puts 'Running all measure tests:'
     step_summary = ENV.fetch('GITHUB_STEP_SUMMARY', nil)
     summaries = {}
@@ -196,6 +223,14 @@ namespace :unit_tests do
       end
     end
     abort "#{heading}:\n#{details}" unless errors.empty?
+  end
+
+  desc 'Run helper tests for the measure test runner'
+  task :helper_tests do
+    files = FileList['test/helpers/test_*.rb']
+    abort 'No helper tests found matching test/helpers/test_*.rb' if files.empty?
+
+    run_helper_tests(files)
   end
 end
 
