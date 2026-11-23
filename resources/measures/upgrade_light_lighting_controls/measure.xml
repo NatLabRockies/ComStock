@@ -141,7 +141,7 @@
       <checksum>3ECF4E78</checksum>
     </file>
     <file>
-      <filename>light_led_test.rb</filename>
+      <filename>lighting_controls_test.rb</filename>
       <filetype>rb</filetype>
       <usage_type>test</usage_type>
       <checksum>96DE7EDD</checksum>
