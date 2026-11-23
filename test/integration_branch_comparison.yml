@@ -1,0 +1,64 @@
+# Paths are relative to the ComStock repository root.
+feature_results_dir: test/base_results/upgrades
+# For local real-base comparisons, set this to a checkout of the base branch.
+# The commented workflow steps set it only for pull-request runs.
+# base_results_dir: test/base_branch_checkout/test/base_results/upgrades
+output_dir: test/base_results/upgrades/branch_comparison_plots
+feature_label: Feature branch
+base_label: Base branch
+match_columns:
+  - bldg_id
+  - in.state
+building_type_column: in.comstock_building_type
+mock_base_noise_fraction: 0.05
+mock_base_seed: 20261123
+
+plots:
+  total:
+    title: Total site energy
+    metrics:
+      - label: Total site energy
+        column: calc.weighted.site_energy.total.energy_consumption..tbtu
+        units: TBtu
+      - label: Net site energy
+        column: calc.weighted.site_energy.net.energy_consumption..tbtu
+        units: TBtu
+  fuels:
+    title: Fuel consumption
+    metrics:
+      - label: Electricity
+        column: calc.weighted.electricity.total.energy_consumption..tbtu
+        units: TBtu
+      - label: Natural gas
+        column: calc.weighted.natural_gas.total.energy_consumption..tbtu
+        units: TBtu
+      - label: Fuel oil
+        column: calc.weighted.fuel_oil.total.energy_consumption..tbtu
+        units: TBtu
+      - label: Propane
+        column: calc.weighted.propane.total.energy_consumption..tbtu
+        units: TBtu
+      - label: District heating
+        column: calc.weighted.district_heating.total.energy_consumption..tbtu
+        units: TBtu
+      - label: District cooling
+        column: calc.weighted.district_cooling.total.energy_consumption..tbtu
+        units: TBtu
+  end_uses:
+    title: Site energy end uses
+    metrics:
+      - label: HVAC
+        column: calc.weighted.enduse_group.site_energy.hvac.energy_consumption..tbtu
+        units: TBtu
+      - label: Interior equipment
+        column: calc.weighted.enduse_group.site_energy.interior_equipment.energy_consumption..tbtu
+        units: TBtu
+      - label: Lighting
+        column: calc.weighted.enduse_group.site_energy.lighting.energy_consumption..tbtu
+        units: TBtu
+      - label: Refrigeration
+        column: calc.weighted.enduse_group.site_energy.refrigeration.energy_consumption..tbtu
+        units: TBtu
+      - label: Water systems
+        column: calc.weighted.enduse_group.site_energy.water_systems.energy_consumption..tbtu
+        units: TBtu

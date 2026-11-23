@@ -52,6 +52,7 @@ postprocessing/*.egg-info/
 
 # test results
 test/reports
+test/base_results/upgrades/branch_comparison_plots/
 # Results dashboard output (generated; large self-contained dashboards).
 # Written to a results_dashboard/ subfolder of whichever output folder the run's other
 # results already go to.
