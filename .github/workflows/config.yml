@@ -151,7 +151,8 @@ jobs:
           python -m pip install pytest
           python -m pytest -v \
             postprocessing/test/test_buildstockbatch.py \
-            test/test_plot_integration_branch_comparison.py
+            test/test_plot_integration_branch_comparison.py \
+            test/test_sort_results_csv.py
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
@@ -232,7 +233,9 @@ jobs:
           mkdir -p test/base_results/upgrades
           for archive in upgrades_test_output/results_csvs_pub/results_up*.csv.gz; do
             gunzip -k "$archive"
-            cp "${archive%.gz}" test/base_results/upgrades/
+            # BuildStockBatch row order can vary between runs; sort so diffs show only real changes.
+            csv="${archive%.gz}"
+            python .github/scripts/sort_results_csv.py "$csv" "test/base_results/upgrades/${csv##*/}"
           done
           while IFS= read -r -d '' file; do
             if [[ ! -f "upgrades_test_output/results_csvs_pub/${file##*/}.gz" ]]; then
