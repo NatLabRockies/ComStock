@@ -229,6 +229,41 @@ jobs:
             fi
           done < <(git ls-files -z -- 'test/base_results/upgrades/results_up*.csv')
 
+      # Once base-branch results are available and pull_request runs are enabled,
+      # uncomment these steps to use real results for pull requests only.
+      # - name: Checkout base branch results
+      #   if: github.event_name == 'pull_request'
+      #   uses: actions/checkout@v6
+      #   with:
+      #     ref: ${{ github.event.pull_request.base.sha }}
+      #     path: test/base_branch_checkout
+      #     persist-credentials: false
+      # - name: Configure base branch comparison
+      #   if: github.event_name == 'pull_request'
+      #   run: |
+      #     python - <<'PY'
+      #     import os
+      #     from pathlib import Path
+      #     import yaml
+      #
+      #     config = yaml.safe_load(Path('test/integration_branch_comparison.yml').read_text())
+      #     config['base_results_dir'] = 'test/base_branch_checkout/test/base_results/upgrades'
+      #     config_path = Path(os.environ['RUNNER_TEMP']) / 'integration_branch_comparison.yml'
+      #     config_path.write_text(yaml.safe_dump(config))
+      #     with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+      #         env_file.write(f'COMPARISON_CONFIG={config_path}\n')
+      #     PY
+
+      - name: Plot integration branch comparison
+        run: python test/plot_integration_branch_comparison.py --config "${COMPARISON_CONFIG:-test/integration_branch_comparison.yml}"
+
+      - name: Upload integration branch comparison
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-branch-comparison
+          path: test/base_results/upgrades/branch_comparison_plots/
+          if-no-files-found: error
+
       - name: Commit and push upgrade integration results CSVs
         if: ${{ github.ref_type == 'branch' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         env:
