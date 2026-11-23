@@ -731,7 +731,6 @@ class EnvWindowFilm < OpenStudio::Measure::ModelMeasure
     ################################################################
 
     if area_changed_m2 == 0
-      area_changed_m2 == 0
       runner.registerAsNotApplicable('No changes in U-factor/SHGC/VLT since window film is not added.')
       return true
     else
