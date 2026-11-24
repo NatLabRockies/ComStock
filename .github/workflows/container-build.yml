@@ -19,7 +19,8 @@ defaults:
 env:
   OPENSTUDIO_VER: '3.10.0'
   OPENSTUDIO_SHA: '86d7e215a1'
-  BUILDSTOCK_BATCH_REF: 88dd3b107cf8074acbae282b0ff6f8dfaf8a21e1
+  # Match config.yml; this branch includes the postprocessing fix for baseline-only projects.
+  BUILDSTOCK_BATCH_REF: comstock-publication-hook
 
 jobs:
   container-build:
