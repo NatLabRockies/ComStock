@@ -37,8 +37,8 @@ def load_ami(truth_data_version: str = "v01", **kwargs):
     # Mirrors how AMI.__init__ derives output_dir, rather than constructing one
     # just to ask it -- construction is what does the expensive work.
     here = os.path.dirname(os.path.abspath(__file__))
-    csv = os.path.join(here, "..", "..", "output",
-                       f"AMI {truth_data_version}", "AMI long.csv")
+    csv = os.path.normpath(os.path.join(here, "..", "..", "output",
+                                        f"AMI {truth_data_version}", "AMI long.csv"))
     have = os.path.exists(csv)
     logger.info("AMI: %s 'AMI long.csv'", "reloading" if have else "building")
     # A present export is sufficient on its own: with it, the constructor is
@@ -63,8 +63,8 @@ def load_cbecs(cbecs_year: int = 2018, truth_data_version: str = "v01",
     from ..cbecs import CBECS
 
     here = os.path.dirname(os.path.abspath(__file__))
-    csv = os.path.join(here, "..", "..", "output",
-                       f"CBECS {cbecs_year}", "CBECS wide.csv")
+    csv = os.path.normpath(os.path.join(here, "..", "..", "output",
+                                        f"CBECS {cbecs_year}", "CBECS wide.csv"))
     have = os.path.exists(csv)
     logger.info("CBECS: %s 'CBECS wide.csv'", "reloading" if have else "building")
     cbecs = CBECS(cbecs_year=cbecs_year, truth_data_version=truth_data_version,
@@ -108,24 +108,27 @@ def _stale_bills(upgrade_dirs, alloc_path, decision):
 
 def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
                   truth_data_version: str = "v01", reuse: bool = True,
-                  output_dir: str | None = None, allocations: dict | None = None) -> list[dict]:
+                  output_dir: str | None = None, allocations: dict | None = None,
+                  weights: dict | None = None) -> list[dict]:
     """Log one line per cache a driver will touch -- what it is, whether it will be
     REUSED or BUILT, when it was written and where -- and return the rows.
 
     `allocations` maps a run version to what the driver decided about its stock
     allocation (a `Decision.describe()` from comstockpostproc.allocation: "REUSE own
-    draw", "SHARE <run>'s draw", ...); the allocated-weights row then shows that
-    decision instead of the old "recomputed on every pass".
+    draw", "SHARE <run>'s draw", ...). `weights` maps a run version to a single-run
+    driver's WEIGHTS setting ('auto', or the file it names). Without either the row
+    says what 'auto' does with the file on disk.
 
     The drivers decide each cache from the disk (a cache that exists is reused,
     one that does not is built), so nobody has to remember what a machine holds;
     this makes that decision visible before anything expensive starts, with the
-    dates that give a stale cache away. `reuse=False` is a driver's switch to
-    rebuild the run-specific caches regardless -- simulation outputs, the
-    apportionment, the bills -- for the case the disk cannot show: the inputs
-    changed but the files still exist. CBECS and AMI depend on no run and are
-    always reused; the allocated weights are recomputed by the drivers on every
-    pass whatever the switch says.
+    dates that give a stale cache away. `reuse=False` (REUSE_CACHES) is a driver's
+    switch to rebuild the run-specific caches regardless -- simulation outputs, the
+    apportionment, the bills -- for the case the disk cannot show: the code or an
+    estimate changed but the files still exist. CBECS and AMI depend on no run and
+    are always reused. The stock allocation is not a cache in that sense -- it is a
+    random draw, and redrawing changes every weighted result -- so it follows the
+    weights setting, never this switch.
     """
     import glob
     import os
@@ -133,7 +136,10 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
     from datetime import datetime
 
     here = os.path.dirname(os.path.abspath(__file__))
-    out = output_dir or os.path.join(here, "..", "..", "output")
+    # Collapsed: an uncollapsed "results_dashboard/../../" adds 41 characters, which from a
+    # deep checkout pushed the cached simulation output paths past Windows' 260, where
+    # os.path.exists says False for a file the directory listing has just returned.
+    out = os.path.normpath(output_dir or os.path.join(here, "..", "..", "output"))
     rows: list[dict] = []
 
     def add(scope, cache, paths, folder, run_specific=True, detail="", caveat="",
@@ -159,12 +165,35 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
                       for m in [re.search(pattern, os.path.basename(p))] if m})
         return f"upgrades {', '.join(map(str, ids))}" if ids else ""
 
+    def older_than_results(paths_by_upgrade, results):
+        """Upgrades whose cache predates its results file (results replaced since)."""
+        return sorted(u for u, paths in paths_by_upgrade.items()
+                      if u in results and paths and results[u] > min(os.path.getmtime(p) for p in paths))
+
     for v in run_versions:
         base = os.path.join(out, f"ComStock {v}")
+        # The run's results files (comstock_data/<v>/, beside output/): a cache older than
+        # its results file is rebuilt by the library, so the rows say so too.
+        results = {}
+        for p in glob.glob(os.path.join(os.path.dirname(out), "comstock_data", v, "results_up*.parquet")):
+            m = re.search(r"results_up(\d+)\.parquet$", os.path.basename(p))
+            if m:
+                results[int(m.group(1))] = os.path.getmtime(p)
         sim_dir = os.path.join(base, "cached_simulation_outputs")
         sim = glob.glob(os.path.join(sim_dir, "**", "cached_simulation_outputs_upgrade*.parquet"),
                         recursive=True)
-        add(v, "simulation outputs", sim, sim_dir, detail=upgrades_in(sim, r"upgrade(\d+)"))
+        sim_by_upgrade = {}
+        for p in sim:
+            m = re.search(r"upgrade(\d+)\.parquet$", os.path.basename(p))
+            if m:
+                sim_by_upgrade.setdefault(int(m.group(1)), []).append(p)
+        replaced = older_than_results(sim_by_upgrade, results)
+        add(v, "simulation outputs", sim, sim_dir, detail=upgrades_in(sim, r"upgrade(\d+)"),
+            caveat=(f"older than the results files of upgrades {', '.join(map(str, replaced))}: rebuilt"
+                    if replaced else
+                    "reloaded only if it covers every upgrade the run loads; the ComStock line below "
+                    "says which") if sim and reuse else "",
+            action_override="REBUILD" if replaced else None)
         alloc = os.path.join(base, "cached_ComStock_alloc_wts.parquet")
         if allocations and v in allocations:
             # The driver's allocation plan (comstockpostproc.allocation.plan_allocations):
@@ -176,21 +205,41 @@ def report_caches(run_versions=(), estimate_versions=(), cbecs_year: int = 2018,
                          "newest": max((os.path.getmtime(p) for p in found), default=None),
                          "detail": rest, "caveat": ""})
         else:
-            add(v, "allocated weights", [alloc], alloc, recompute=True,
-                caveat="recomputed from the apportionment on every pass")
+            # A single-run driver's WEIGHTS: a named file, or 'auto' (this run's own file
+            # when it fits the run, else a new draw saved there).
+            setting = (weights or {}).get(v, "auto")
+            found = [p for p in [alloc] if os.path.exists(p)]
+            if not (isinstance(setting, str) and setting.strip().lower() == "auto"):
+                action, detail = "USE", str(setting)
+            elif found:
+                action, detail = "CHECK", "reused if drawn for this estimate and sample, else drawn again"
+            else:
+                action, detail = "DRAW", "no weights file yet"
+            rows.append({"scope": v, "cache": "stock allocation", "action": action,
+                         "path": os.path.normpath(alloc),
+                         "newest": max((os.path.getmtime(p) for p in found), default=None),
+                         "detail": detail, "caveat": ""})
         bills_dir = os.path.join(base, "cached_allocated_weights_plus_bills")
         bills = glob.glob(os.path.join(bills_dir, "upgrade=*"))
         # The bills follow the draw: each upgrade folder carries the id of the draw it
         # was built from, and the library rebuilds a folder whose id differs from the
         # run's draw (or that has none while the draw has an id). Say so here, per
-        # upgrade, instead of promising a reuse that step 4 will not honour.
+        # upgrade, instead of promising a reuse that the bills step will not honour.
         stale = _stale_bills(bills, alloc, (allocations or {}).get(v))
-        if bills and stale is None:
-            caveat = "rebuilt in step 4 unless built from the draw this run adopts"
+        replaced = older_than_results(
+            {int(m.group(1)): glob.glob(os.path.join(d, "**", "*.parquet"), recursive=True)
+             for d in bills for m in [re.search(r"upgrade=(\d+)$", d)] if m}, results)
+        if replaced:
+            stale = sorted(set(stale or []) | set(replaced))
+        if bills and replaced:
+            caveat = (f"upgrades {', '.join(map(str, stale))} were built from another draw or older "
+                      "results: rebuilt")
+        elif bills and stale is None:
+            caveat = "reused per upgrade when built from the weights this pass uses, else rebuilt"
         elif bills and stale:
-            caveat = f"upgrades {', '.join(map(str, stale))} were built from another draw: rebuilt in step 4"
+            caveat = f"upgrades {', '.join(map(str, stale))} were built from another draw: rebuilt"
         else:
-            caveat = "reuse=False deletes it"
+            caveat = "REUSE_CACHES=False rebuilds it"
         add(v, "bills", bills, bills_dir, detail=upgrades_in(bills, r"upgrade=(\d+)"),
             caveat=caveat, recompute=False,
             action_override=("REBUILD" if (bills and stale) else "CHECK" if (bills and stale is None) else None))

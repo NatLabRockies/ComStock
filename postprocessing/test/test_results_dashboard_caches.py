@@ -35,7 +35,7 @@ def test_report_names_each_cache_and_its_action(tmp_path):
     assert rows[("r1", "simulation outputs")]["detail"] == "upgrades 0, 3"
     assert rows[("r2", "simulation outputs")]["action"] == "BUILD"
     assert rows[("r1", "bills")]["action"] == "REUSE" and rows[("r1", "bills")]["detail"] == "upgrades 0"
-    assert rows[("r1", "allocated weights")]["action"] == "RECOMPUTE"
+    assert rows[("r1", "stock allocation")]["action"] == "DRAW"      # no weights file yet
     assert rows[("2026R1", "apportionment")]["action"] == "REUSE"
     assert rows[("2025R3", "apportionment")]["action"] == "BUILD"
     assert rows[("CBECS 2018", "CBECS wide.csv")]["action"] == "REUSE"
@@ -51,7 +51,7 @@ def test_report_names_each_cache_and_its_action(tmp_path):
     assert rows[("CBECS 2018", "CBECS wide.csv")]["action"] == "REUSE"
 
 
-def test_the_drivers_allocation_plan_replaces_the_recompute_row(tmp_path):
+def test_the_stock_allocation_row_says_what_the_weights_setting_will_do(tmp_path):
     out = str(tmp_path)
     _touch(os.path.join(out, "ComStock r1", "cached_ComStock_alloc_wts.parquet"))
     rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(
@@ -61,10 +61,16 @@ def test_the_drivers_allocation_plan_replaces_the_recompute_row(tmp_path):
     assert rows[("r1", "stock allocation")]["newest"] is not None
     assert rows[("r2", "stock allocation")]["action"] == "SHARE"
     assert rows[("r2", "stock allocation")]["detail"] == "r1's draw (same sample and estimate)"
-    assert ("r1", "allocated weights") not in rows
-    # without a plan the old row stands
+    # a single-run driver: WEIGHTS='auto' checks the file on disk, a named file is used
     rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(["r1"], [], output_dir=out)}
-    assert rows[("r1", "allocated weights")]["action"] == "RECOMPUTE"
+    assert rows[("r1", "stock allocation")]["action"] == "CHECK"
+    rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(
+        ["r1"], [], output_dir=out, weights={"r1": "s3://bucket/run/run/cached_ComStock_alloc_wts.parquet"})}
+    assert rows[("r1", "stock allocation")]["action"] == "USE"
+    assert rows[("r1", "stock allocation")]["detail"].startswith("s3://bucket/")
+    # REUSE_CACHES=False never redraws: the row is the same
+    rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(["r1"], [], reuse=False, output_dir=out)}
+    assert rows[("r1", "stock allocation")]["action"] == "CHECK"
 
 
 def test_bills_rows_predict_the_rebuild_the_draw_will_cause(tmp_path):
@@ -92,7 +98,7 @@ def test_bills_rows_predict_the_rebuild_the_draw_will_cause(tmp_path):
     b = bills("DRAW (no draw on disk)")
     assert b["action"] == "REBUILD" and "upgrades 0, 3" in b["caveat"]
     b = bills("SHARE r2's draw")
-    assert b["action"] == "CHECK" and "unless built from the draw this run adopts" in b["caveat"]
+    assert b["action"] == "CHECK" and "when built from the weights this pass uses" in b["caveat"]
     # every folder current: a plain reuse
     al.write_marker(os.path.join(base, "cached_allocated_weights_plus_bills", "upgrade=3"), prov.allocation_id)
     assert bills("REUSE own draw")["action"] == "REUSE"
@@ -100,3 +106,25 @@ def test_bills_rows_predict_the_rebuild_the_draw_will_cause(tmp_path):
     rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(
         ["r1"], [], output_dir=out, reuse=False, allocations={"r1": "REUSE own draw"})}
     assert rows[("r1", "bills")]["action"] == "REBUILD"
+
+
+def test_caches_older_than_replaced_results_are_reported_as_rebuilt(tmp_path):
+    out = os.path.join(str(tmp_path), "output")
+    sim = os.path.join(out, "ComStock r1", "cached_simulation_outputs", "upgrade=0",
+                       "cached_simulation_outputs_upgrade0.parquet")
+    bills = os.path.join(out, "ComStock r1", "cached_allocated_weights_plus_bills", "upgrade=0", "in.state=CO",
+                         "upgrade0_CO.parquet")
+    results = os.path.join(str(tmp_path), "comstock_data", "r1", "results_up00.parquet")
+    for f in (sim, bills, results):
+        _touch(f)
+    then = os.path.getmtime(sim)
+    os.utime(results, (then - 60, then - 60))
+    rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(["r1"], [], output_dir=out)}
+    assert rows[("r1", "simulation outputs")]["action"] == "REUSE"
+    assert rows[("r1", "bills")]["action"] in ("REUSE", "CHECK")
+    # the results file replaced after both caches were written
+    os.utime(results, (then + 60, then + 60))
+    rows = {(r["scope"], r["cache"]): r for r in exports.report_caches(["r1"], [], output_dir=out)}
+    assert rows[("r1", "simulation outputs")]["action"] == "REBUILD"
+    assert "older than the results files of upgrades 0" in rows[("r1", "simulation outputs")]["caveat"]
+    assert rows[("r1", "bills")]["action"] == "REBUILD" and "older results" in rows[("r1", "bills")]["caveat"]

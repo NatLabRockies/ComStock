@@ -51,6 +51,13 @@ class ComStockToCBECSComparison(NamingMixin, UnitsMixin, PlottingMixin):
         # Optional building type filter for faster plotting.
         requested_building_type = self._validate_building_type(building_type)
 
+        # No figures, no work: each run's plotting table (cached_plotting_by_upgrade, minutes per upgrade)
+        # exists only for these figures. The results dashboard takes nothing from this object but output_dir.
+        if not make_comparison_plots:
+            self.output_dir = comparison_folder(comstock_list, self.name, 'cbecs_comparison')
+            logger.info('make_comparison_plots is False: no CBECS comparison figures, so no plotting tables are built')
+            return
+
         # Concatenate the datasets and create a color map
         dfs_to_concat = []
         comstock_dfs_to_concat = []

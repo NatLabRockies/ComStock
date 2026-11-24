@@ -21,22 +21,14 @@ class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
 
         # Initialize members
         assert isinstance(comstock_object.data, pl.LazyFrame)
-        # Instantiate the plotting data lazyframe if it doesn't yet exist:
-        if not isinstance(comstock_object.plotting_data, pl.LazyFrame):
-            logger.info(f'Instantiating plotting lazyframe for comstock dataset {comstock_object.dataset_name}.')
-            comstock_object.create_plotting_lazyframe()
-        assert isinstance(comstock_object.plotting_data, pl.LazyFrame)
-        self.data = comstock_object.plotting_data.clone() #not really a deep copy, only schema is copied but not data.
-        assert isinstance(self.data, pl.LazyFrame)
 
         # Store reference to ComStock object for use in plotting methods
         self.comstock_object = comstock_object
         self.color_map = {}
         self.image_type = image_type
         self.name = name
-
-        upgrade_name_mapping = self.data.select(self.UPGRADE_ID, self.UPGRADE_NAME).unique().collect().sort(self.UPGRADE_ID).to_dict(as_series=False)
-        self.dict_upid_to_upname = dict(zip(upgrade_name_mapping[self.UPGRADE_ID], upgrade_name_mapping[self.UPGRADE_NAME]))
+        self.data = None
+        self.dict_upid_to_upname = {}
 
         self.dataset_name = comstock_object.dataset_name
         self.output_dir = os.path.join(run_folder(comstock_object), 'measure_runs')  # the run's folder (output_folders.py)
@@ -49,6 +41,25 @@ class ComStockMeasureComparison(NamingMixin, UnitsMixin, PlottingMixin):
         self.timeseries_locations_to_plot = timeseries_locations_to_plot
         self.make_timeseries_plots = make_timeseries_plots
         self.lazyframe_plotter = LazyFramePlotter()
+
+        # No figures, no work: the plotting table (cached_plotting_by_upgrade, minutes per upgrade) and the
+        # per-upgrade folders exist only for these figures, and timeseries figures are drawn with them only.
+        # The results dashboard takes nothing from this object but output_dir.
+        if not make_comparison_plots:
+            logger.info('make_comparison_plots is False: no measure comparison figures, so their plotting '
+                        'table is not built')
+            return
+
+        # Instantiate the plotting data lazyframe if it doesn't yet exist:
+        if not isinstance(comstock_object.plotting_data, pl.LazyFrame):
+            logger.info(f'Instantiating plotting lazyframe for comstock dataset {comstock_object.dataset_name}.')
+            comstock_object.create_plotting_lazyframe()
+        assert isinstance(comstock_object.plotting_data, pl.LazyFrame)
+        self.data = comstock_object.plotting_data.clone() #not really a deep copy, only schema is copied but not data.
+        assert isinstance(self.data, pl.LazyFrame)
+
+        upgrade_name_mapping = self.data.select(self.UPGRADE_ID, self.UPGRADE_NAME).unique().collect().sort(self.UPGRADE_ID).to_dict(as_series=False)
+        self.dict_upid_to_upname = dict(zip(upgrade_name_mapping[self.UPGRADE_ID], upgrade_name_mapping[self.UPGRADE_NAME]))
 
         # Ensure that the comstock object has savings columns included
         if not comstock_object.include_upgrades:

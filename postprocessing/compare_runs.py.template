@@ -11,88 +11,64 @@ logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
 logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
-# Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
-                                   # the timeseries plots and the AMI comparison hard-code it
-REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
-                                   # True:  export and crawl again (what is up there is stale)
-COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # the comparison folder under postprocessing/output/:
-                                   # plots, CSVs and results_dashboard/ all land in it. A comparison of several
-                                   # runs needs this name; nothing makes one up from the run names.
-                                   # On Windows keep it short: the deepest plot path beneath it must stay under
-                                   # 260 characters, and the plot filenames alone take about 100 of those
-MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures (slow); False leaves them to
-                                   # the dashboard
-INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
-                                   # and the run's <run>_timeseries table (from buildstockbatch's crawl)
-COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
-#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
-#         database='buildstock_sdr', color='#E69F00')]
+# What each setting does and where the files go: README, "Template settings".
+
+# Runs (baseline only; for upgrades use compare_runs_and_upgrades), the run under review first.
+# version names the run's folder, output/ComStock <version>/ (keep it short on Windows).
+# weights: 'auto' uses that folder's cached_ComStock_alloc_wts.parquet when it was drawn for this
+# estimate and sample, else draws new weights there; or a weights file path or s3:// URL. RUN_B
+# may name RUN_A's file to share it.
+RUN_A = dict(s3_base_dir='eulp/euss_com', run='s3_baseline_run_name', version='baseline',
+             acceptable_failures=0.25, color='#b2df8a', weights='auto')
+RUN_B = dict(s3_base_dir='eulp/euss_com', run='s3_change_run_name', version='change',
+             acceptable_failures=0.9, color='#1f78b4', weights='auto')
+STOCK_ESTIMATE = '2026R1'  # MUST be the estimate both samples were drawn from; if they differ, use
+                           # compare_runs_and_upgrades
+REUSE_CACHES   = True      # False rebuilds the runs' caches, after postprocessing code or an estimate changed
+
+# Athena tables
+ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
+REBUILD_ATHENA_TABLES = False     # True overwrites the runs' S3 exports and Athena tables
+
+# Outputs, all in output/<COMPARISON_NAME>/
+COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # keep it short on Windows
+MAKE_RESULTS_DASHBOARD = True   # results_dashboard/dashboard.html
+INCLUDE_AMI            = False  # the dashboard's AMI tab; needs each run's <run>_timeseries table
+COMPARE_TO_RELEASES    = []     # e.g. [dict(key='r3_2025', label='2025 R3', database='buildstock_sdr',
+                                #   md_table='comstock_amy2018_r3_2025_md_agg_national_parquet', color='#E69F00')]
+MAKE_COMPARISON_PLOTS  = False  # ComStock-vs-CBECS figures (slow); the dashboard does not need them
 
 
 def main():
-    # What is on this disk and what this pass will do with it: one log line per
-    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
-    # Keep the versions here in step with the objects below.
-    cspp.report_caches(run_versions=['baseline', 'change'], estimate_versions=['2026R1'])
-    # First ComStock run
-    comstock_a = cspp.ComStock(
-        s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
-        comstock_run_name='s3_baseline_run_name',  # Name of the run on S3
-        comstock_run_version='baseline',  # Use whatever you want to see in plot and folder names
-        comstock_year=2018,  # Typically don't change this
-        athena_table_name=None,  # Typically don't change this
-        truth_data_version='v01',  # Typically don't change this
-        buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
-        acceptable_failure_percentage=0.25,  # Can increase this when testing and high failure are OK
-        drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
-        color_hex='#b2df8a',  # Color used to represent this run in plots
-        skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
-        reload_from_cache=False, # True if CSV already made and want faster reload times
-        include_upgrades=False  # False if not looking at upgrades
-        )
+    # Refuse a mistyped weights setting now, not after the runs have loaded. Run B may name
+    # run A's weights file before it exists: run A is weighted first.
+    cspp.allocation.weights_arguments(RUN_A['weights'])
+    if not same_file(RUN_B['weights'], own_weights_file(RUN_A)):
+        cspp.allocation.weights_arguments(RUN_B['weights'])
 
-    # Second ComStock run
-    comstock_b = cspp.ComStock(
-        s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
-        comstock_run_name='s3_change_run_name',  # Name of the run on S3
-        comstock_run_version='change',  # Use whatever you want to see in plot and folder names
-        comstock_year=2018,  # Typically don't change this
-        athena_table_name=None,  # Typically same as comstock_run_name or None
-        truth_data_version='v01',  # Typically don't change this
-        buildstock_csv_name='buildstock.csv', # Download buildstock.csv manually
-        acceptable_failure_percentage=0.9,  # Can increase this when testing and high failure are OK
-        drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
-        color_hex='#1f78b4',  # Color used to represent this run in plots
-        skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
-        reload_from_cache=False, # True if CSV already made and want faster reload times
-        include_upgrades=False  # False if not looking at upgrades
-        )
+    # What is on this disk and what this pass will do with it: one log line per
+    # cache (simulation outputs, apportionment, weights, bills, CBECS, AMI) with its date.
+    cspp.report_caches(run_versions=[RUN_A['version'], RUN_B['version']], estimate_versions=[STOCK_ESTIMATE],
+                       reuse=REUSE_CACHES, weights={r['version']: r['weights'] for r in (RUN_A, RUN_B)})
+    caches = 'auto' if REUSE_CACHES else False  # 'auto': reuse a cache that fits, build what is missing
+
+    # The two ComStock runs (settings at the top)
+    comstock_a = comstock_run(RUN_A, caches)
+    comstock_b = comstock_run(RUN_B, caches)
 
     # Stock Estimation for Apportionment. Both runs use it, so both samples must be drawn
-    # from this estimate: the one their bucket file was generated from (sampling/README.md
-    # lists each bucket file with its estimate). The cache is per stock_estimation_version
-    # and reload_from_cache=True RAISES when it is absent, so apportionment() below detects
-    # it rather than remembering.
-    stock_estimate = apportionment('2026R1')
-
-    # If the runs were sampled against DIFFERENT stock estimates, this file is the wrong
-    # starting point -- use compare_runs_different_samples.py.template instead.
+    # from this estimate (sampling/README.md lists each bucket file with its estimate).
+    stock_estimate = cspp.Apportion(stock_estimation_version=STOCK_ESTIMATE, truth_data_version='v01',
+                                    reload_from_cache=caches)
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock_a.get_sim_outs_for_upgrade(0)
-    comstock_a.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
+    comstock_a.create_allocated_weights(stock_estimate, base_sim_outs, weights=RUN_A['weights'])
     base_sim_outs = comstock_b.get_sim_outs_for_upgrade(0)
-    comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
+    comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, weights=RUN_B['weights'])
 
-    # CBECS
-    cbecs = cspp.CBECS(
-        cbecs_year=2018,  # 2012 and 2018 currently available
-        truth_data_version='v01',  # Typically don't change this
-        color_hex='#33a02c',  # Color used to represent CBECS in plots
-        reload_from_csv=False  # True if CSV already made and want faster reload times
-    )
+    # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
+    cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#33a02c')
 
     # First scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     # Then scale both ComStock runs to CBECS 2018 AND remove non-ComStock buildings from CBECS
@@ -100,15 +76,13 @@ def main():
     base_sim_outs = comstock_a.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock_a.get_allocated_weights()
     comstock_a.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
-    comstock_a.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    comstock_a.create_allocated_weights_plus_util_bills_for_upgrade(0, reuse=REUSE_CACHES)
 
     base_sim_outs = comstock_b.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock_b.get_allocated_weights()
     comstock_b.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
-    comstock_b.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    comstock_b.create_allocated_weights_plus_util_bills_for_upgrade(0, reuse=REUSE_CACHES)
 
-    # Export CBECS and ComStock data to wide and long formats for Tableau and to skip processing later
-    cbecs.export_to_csv_wide()  # the results dashboard reads 'CBECS wide.csv'
     # TODO This (long CSV export) is not yet re-implemented
     # comstock_a.export_to_csv_long()  # Long format useful for stacking end uses and fuels
     # comstock_b.export_to_csv_long()  # Long format useful for stacking end uses and fuels
@@ -149,17 +123,36 @@ def main():
         else:
             logger.info('results dashboard: %s', dashboard.dashboard_path)
 
-def apportionment(version, truth_data_version='v01'):
-    """A cspp.Apportion that reuses its cache when the cache exists and builds it
-    otherwise. Apportion(reload_from_cache=True) raises on a machine that has never
-    apportioned this estimate, and False rebuilds for nothing on one that has; the
-    answer is on disk, so read it from disk."""
+def own_weights_file(r):
+    """Where a run keeps its weights: output/ComStock <version>/cached_ComStock_alloc_wts.parquet."""
     here = os.path.dirname(os.path.abspath(__file__))
-    cache = os.path.join(here, 'output', f'Stock Estimation {version}',
-                         'cached_ComStock_apportionment.parquet')
-    return cspp.Apportion(stock_estimation_version=version,
-                          truth_data_version=truth_data_version,
-                          reload_from_cache=os.path.exists(cache))
+    return os.path.join(here, 'output', f"ComStock {r['version']}", cspp.allocation.FILE_NAME)
+
+
+def same_file(setting, path):
+    """True when a weights setting names this local file, however the path is written."""
+    if not isinstance(setting, (str, os.PathLike)) or '://' in str(setting):
+        return False
+    return os.path.normcase(os.path.abspath(setting)) == os.path.normcase(os.path.abspath(path))
+
+
+def comstock_run(r, caches):
+    """A baseline-only cspp.ComStock for one RUN_ settings dict."""
+    return cspp.ComStock(
+        s3_base_dir=r['s3_base_dir'],
+        comstock_run_name=r['run'],
+        comstock_run_version=r['version'],
+        comstock_year=2018,  # Typically don't change this
+        athena_table_name=None,  # Typically don't change this
+        truth_data_version='v01',  # Typically don't change this
+        buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
+        acceptable_failure_percentage=r['acceptable_failures'],
+        drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
+        color_hex=r['color'],
+        skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
+        reload_from_cache=caches,  # REUSE_CACHES at the top
+        include_upgrades=False,  # this template compares baselines
+        )
 
 
 # Code to execute the script

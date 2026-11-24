@@ -10,60 +10,76 @@ logging.basicConfig(level='DEBUG')  # Use DEBUG, INFO, or WARNING
 logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
-# Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
-                                   # the timeseries plots and the AMI comparison hard-code it
-EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
-REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
-                                   # True:  export and crawl again (what is up there is stale)
-MAKE_RESULTS_DASHBOARD = True      # write output/ComStock <run>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-AMI figures (slow); False leaves them to
-                                   # the dashboard's AMI tab
-INCLUDE_AMI            = True      # metered load-shape tab. False only drops the tab: the county export
-                                   # still runs (ami=True below) because the AMI comparison needs it
-COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
-#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
-#         database='buildstock_sdr', color='#E69F00')]
+# What each setting does and where the files go: README, "Template settings".
+
+# Run (baseline only; sampled from sampling/resources/ami_comparison.csv, see README)
+S3_BASE_DIR         = 'com-sdr'     # bucket/prefix the run was uploaded to
+RUN_NAME            = 'rtuadv_v11'  # the run's name on S3, and its Athena table prefix
+RUN_VERSION         = RUN_NAME      # names the run's folder, output/ComStock <RUN_VERSION>/; keep it short on Windows
+ACCEPTABLE_FAILURES = 0.25          # share of failed simulations tolerated
+REUSE_CACHES        = True          # False rebuilds the run's caches, after postprocessing code or an estimate changed
+
+# Weights: every result is weighted by them
+STOCK_ESTIMATE = '2026R1'  # MUST be the estimate the run's sample was drawn from (sampling/README.md)
+WEIGHTS        = 'auto'    # 'auto': output/ComStock <RUN_VERSION>/cached_ComStock_alloc_wts.parquet when it was drawn
+                           #   for this estimate and sample, else new weights saved there (delete it to redraw).
+                           #   Or a weights file path or s3:// URL, e.g. a published run's, to match its results
+
+# Athena tables and exports
+ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
+REBUILD_ATHENA_TABLES = False     # True overwrites the run's S3 exports and Athena tables
+LOCAL_EXPORTS         = []        # files for other tools in the run's folder: 'national_by_state', 'by_state_and_county'
+
+# Outputs
+MAKE_RESULTS_DASHBOARD = True   # results_dashboard/dashboard.html in the run's folder
+INCLUDE_AMI            = True   # the dashboard's AMI tab; needs the run's <run>_timeseries table
+COMPARE_TO_RELEASES    = []     # e.g. [dict(key='r3_2025', label='2025 R3', database='buildstock_sdr',
+                                #   md_table='comstock_amy2018_r3_2025_md_agg_national_parquet', color='#E69F00')]
+MAKE_COMPARISON_PLOTS  = False  # ComStock-vs-AMI figures in ami_comparison/ (slow); the AMI tab does not need them
 
 
 def main():
+    # Refuse a mistyped setting now, not after the run has loaded.
+    cspp.allocation.weights_arguments(WEIGHTS)
+    cspp.athena_tables.export_levels(LOCAL_EXPORTS, 'LOCAL_EXPORTS')
+
     # What is on this disk and what this pass will do with it: one log line per
-    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
-    # Keep the versions here in step with the objects below.
-    cspp.report_caches(run_versions=['rtuadv_v11'], estimate_versions=['2026R1'])
+    # cache (simulation outputs, apportionment, weights, bills, CBECS, AMI) with its date.
+    cspp.report_caches(run_versions=[RUN_VERSION], estimate_versions=[STOCK_ESTIMATE],
+                       reuse=REUSE_CACHES, weights={RUN_VERSION: WEIGHTS})
+    caches = 'auto' if REUSE_CACHES else False  # 'auto': reuse a cache that fits, build what is missing
+
     # ComStock run
     comstock = cspp.ComStock(
-    s3_base_dir='com-sdr',  # If run not on S3, download results_up**.parquet manually
-    comstock_run_name='rtuadv_v11',  # Name of the run on S3
-    comstock_run_version='rtuadv_v11',  # Use whatever you want to see in plot and folder names
-    comstock_year=2018,  # Typically don't change this
-    athena_table_name=None,  # Typically don't change this
-    truth_data_version='v01',  # Typically don't change this
-    buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
-    acceptable_failure_percentage=0.25,  # Can increase this when testing and high failure are OK
-    drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
-    color_hex='#0072B2',  # Color used to represent this run in plots
-    skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
-    reload_from_cache=False, # True if CSV already made and want faster reload times
-    include_upgrades=False,  # False if not looking at upgrades
-    # output_dir = 's3://oedi-data-lake/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2025/comstock_amy2018_release_1'
-    )
+        s3_base_dir=S3_BASE_DIR,  # settings at the top
+        comstock_run_name=RUN_NAME,
+        comstock_run_version=RUN_VERSION,
+        comstock_year=2018,  # Typically don't change this
+        athena_table_name=None,  # Typically don't change this
+        truth_data_version='v01',  # Typically don't change this
+        buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
+        acceptable_failure_percentage=ACCEPTABLE_FAILURES,
+        drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
+        color_hex='#0072B2',  # Color used to represent this run in plots
+        skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
+        reload_from_cache=caches,  # REUSE_CACHES at the top
+        include_upgrades=False,  # the AMI comparison is baseline only
+        # output_dir = 's3://oedi-data-lake/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2025/comstock_amy2018_release_1'
+        )
 
 
     # Stock Estimation for Apportionment:
     stock_estimate = cspp.Apportion(
-        stock_estimation_version='2026R1',  # The estimate the run's sample (its bucket file) was generated from; see sampling/README.md
+        stock_estimation_version=STOCK_ESTIMATE,  # settings at the top
         truth_data_version='v01',  # Typically don't change this
-        reload_from_cache=False  # Set to "True" if you have already run apportionment and would like to keep consistant values between postprocessing runs.
+        reload_from_cache=caches,  # REUSE_CACHES at the top
     )
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
-    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
+    comstock.create_allocated_weights(stock_estimate, base_sim_outs, weights=WEIGHTS)  # WEIGHTS at the top
 
-    # CBECS. load_cbecs reads 'CBECS wide.csv' when it exists and builds and exports
-    # it when it does not; CBECS(reload_from_csv=True) raised on any machine that had
-    # never exported it, after the run above had been processed.
+    # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
     cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#009E73')
 
     # First scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
@@ -72,60 +88,62 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock.get_allocated_weights()
     comstock.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
-    comstock.create_allocated_weights_plus_util_bills_for_upgrade(0)
-    # 'CBECS wide.csv' exists after load_cbecs, whichever way it got it; the
-    # results dashboard reads it.
+    comstock.create_allocated_weights_plus_util_bills_for_upgrade(0, reuse=REUSE_CACHES)
 
-
-    # county resolution, files by state and county
-    county_resolution = {
-        'geo_top_dir': 'by_state_and_county',
-        'partition_cols': {
-            comstock.STATE_ABBRV: 'state',
-            comstock.COUNTY_ID: 'county',
+    # Local copies of the metadata aggregates (LOCAL_EXPORTS at the top). Nothing here
+    # reads them; the S3 exports behind the Athena tables are chosen below.
+    levels = {
+        # state level resolution, one single national file
+        'national_by_state': {
+            'geo_top_dir': 'national_by_state',
+            'partition_cols': {},
+            'aggregation_levels': [[comstock.STATE_ABBRV, comstock.CZ_ASHRAE]],
+            'data_types': ['full'], # other options: 'detailed', 'basic' **If using multiple options, order must go from more detailed to less detailed.
+            'file_types': ['parquet'], # other options:'csv'
         },
-        'aggregation_levels': [comstock.COUNTY_ID],
-        'data_types': ['full'],
-        'file_types': ['parquet'],
+        # county resolution, files by state and county
+        'by_state_and_county': {
+            'geo_top_dir': 'by_state_and_county',
+            'partition_cols': {
+                comstock.STATE_ABBRV: 'state',
+                comstock.COUNTY_ID: 'county',
+            },
+            'aggregation_levels': [comstock.COUNTY_ID],
+            'data_types': ['full'],
+            'file_types': ['parquet'],
+        },
     }
-
-    # state level resolution, one single national file
-    state_resolution = {
-        'geo_top_dir': 'national_by_state',
-        'partition_cols': {},
-        'aggregation_levels': [[comstock.STATE_ABBRV, comstock.CZ_ASHRAE]],
-        'data_types': ['full'], # other options: 'detailed', 'basic' **If using multiple options, order must go from more detailed to less detailed.
-        'file_types': ['parquet'], # other options:'parquet'
-                        }
-
-    # Export level for LOCAL metadata files (EXPORT_LOCAL_METADATA at the top).
-    # The S3 side -- the county aggregate this comparison reads, the national
-    # one the results dashboard reads, and the _vu views -- is handled below.
-    geo_exports = [county_resolution]
-
-    if EXPORT_LOCAL_METADATA:
+    geo_exports = [levels[name] for name in LOCAL_EXPORTS if name in levels]
+    if geo_exports:
         comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id=0, geo_exports=geo_exports)
 
     # ---- S3 exports + Athena tables ----------------------------------------
-    # One call replaces the export / crawl / views block. It checks Glue first
-    # and builds only what this run is missing, unless REBUILD_ATHENA_TABLES.
-    tables_ok = cspp.prepare_athena_tables(comstock, database=ATHENA_DATABASE,
-                                           ami=True, rebuild=REBUILD_ATHENA_TABLES)
-    if not tables_ok:
-        # The AMI comparison below reads the county view and cannot skip.
-        raise RuntimeError(f'Athena tables for {comstock.comstock_run_name} could not be '
-                           'prepared (see the warning above); the AMI comparison needs them')
+    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES redoes it).
+    # The dashboard reads the national aggregate; the AMI figures and the AMI tab read the
+    # county one, which is exported only when one of them is on.
+    if MAKE_COMPARISON_PLOTS or MAKE_RESULTS_DASHBOARD:
+        tables_ok = cspp.prepare_athena_tables(comstock, database=ATHENA_DATABASE,
+                                               ami=MAKE_COMPARISON_PLOTS or INCLUDE_AMI,
+                                               rebuild=REBUILD_ATHENA_TABLES)
+        if not tables_ok and MAKE_COMPARISON_PLOTS:
+            # The dashboard skips and says why; the AMI figures cannot.
+            raise RuntimeError(f'Athena tables for {comstock.comstock_run_name} could not be '
+                               'prepared (see the warning above); the AMI figures need them')
 
-    # AMI
-    ami = cspp.AMI(
-        truth_data_version='v01',
-        reload_from_csv=False
-        )
-    comstock.download_timeseries_data_for_ami_comparison(ami, reload_from_csv=False, save_individual_regions=False)
+    # AMI metered data, for the figures and the dashboard's AMI tab: reads 'AMI long.csv'
+    # when it exists, builds it otherwise
+    ami = None
+    if MAKE_COMPARISON_PLOTS or (MAKE_RESULTS_DASHBOARD and INCLUDE_AMI):
+        ami = cspp.load_ami(truth_data_version='v01')
 
-    # comparison
-    comparison = cspp.ComStockToAMIComparison(comstock, ami, make_comparison_plots=MAKE_COMPARISON_PLOTS)
-    #comparison.export_plot_data_to_csv_wide()
+    # ComStock-vs-AMI figures (MAKE_COMPARISON_PLOTS). They need this run's load shapes
+    # for the AMI regions, queried from Athena; the dashboard reads Athena itself and
+    # needs neither, so with the figures off nothing is queried or built.
+    comparison = None
+    if MAKE_COMPARISON_PLOTS:
+        comstock.download_timeseries_data_for_ami_comparison(ami, reload_from_csv=False, save_individual_regions=False)
+        comparison = cspp.ComStockToAMIComparison(comstock, ami, make_comparison_plots=True)
+        #comparison.export_plot_data_to_csv_wide()
 
     # ---- Results dashboard --------------------------------------
     # Reads the Athena tables prepared above and creates none of its own. It
@@ -137,7 +155,8 @@ def main():
             cbecs=cbecs,
             ami=ami if INCLUDE_AMI else None,
             comparison_runs=[cspp.AthenaRunRef(**r) for r in COMPARE_TO_RELEASES],
-            comparison=comparison,       # -> output/ComStock <run>/results_dashboard/; figures in ami_comparison/
+            comparison=comparison,       # -> output/ComStock <run>/results_dashboard/ with or without the figures
+                                         # (those go to ami_comparison/)
             database=ATHENA_DATABASE,
             )
         if dashboard.skipped_reason:

@@ -138,6 +138,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.weighted_ghg_units = weighted_ghg_units
         self.weighted_utility_units = weighted_utility_units
         self.skip_missing_columns = skip_missing_columns
+        # False: the baseline only. Measure results already in the run's data folder (from an earlier pass with
+        # measures) are neither downloaded, loaded nor reloaded from cache; see skips_upgrade.
         self.include_upgrades = include_upgrades
         # Accept ints, numpy ints or zero-padded strings ('01'); every comparison below uses ints
         self.upgrade_ids_to_skip = [int(u) for u in (upgrade_ids_to_skip or [])]
@@ -185,15 +187,18 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.download_data()
 
         # Get upgrades to process based on available results parquet files
-        results_paths = glob.glob(os.path.join(self.data_dir, 'results_up*.parquet'))
-        results_paths.sort()
-        for results_path in results_paths:
-            upgrade_id = np.int64(os.path.basename(results_path).replace('results_up', '').replace('.parquet', ''))
-            if upgrade_id in self.upgrade_ids_to_skip:
-                continue
-            self.upgrade_ids_to_process.append(upgrade_id)
+        self.upgrade_ids_to_process, left_out = self.results_upgrade_ids()
+        if left_out:
+            logger.info(f'Leaving out upgrade(s) {[int(u) for u in left_out]} found in {self.data_dir} '
+                        f'(upgrade_ids_to_skip={self.upgrade_ids_to_skip}, include_upgrades={self.include_upgrades})')
 
         pl.enable_string_cache()
+        # reload_from_cache: True reloads the cached simulation outputs (raises when there are none),
+        # False rebuilds them from the results files, 'auto' reloads when they can stand in for the
+        # results files (simulation_outputs_cache) and rebuilds otherwise.
+        if reload_from_cache == 'auto':
+            reload_from_cache, why = self.simulation_outputs_cache()
+            logger.info(f'{self.dataset_name}: cached simulation outputs {why}')
         if reload_from_cache:
             pqt_glob = f'{self.output_dir["fs_path"]}/cached_simulation_outputs/**/cached_simulation_outputs_upgrade*.parquet'
             upgrade_pqts = []
@@ -208,7 +213,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 for file_path in upgrade_pqts:
                     bn = os.path.basename(file_path)
                     up_id = int(bn.replace('cached_simulation_outputs_upgrade', '').replace('.parquet', ''))
-                    if up_id in self.upgrade_ids_to_skip:
+                    if self.skips_upgrade(up_id):
                         logger.info(f'Skipping reload for upgrade {up_id}')
                         continue
                     logger.info(f'Reloading data from: {file_path}')
@@ -227,19 +232,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                         })
         else:
 
-            # Get upgrades to process based on available results parquet files
-            upgrade_ids = []
-            results_paths = glob.glob(os.path.join(self.data_dir, 'results_up*.parquet'))
-            results_paths.sort()
-            for results_path in results_paths:
-                upgrade_id = np.int64(os.path.basename(results_path).replace('results_up', '').replace('.parquet', ''))
-
-                # Skip specified upgrades
-                if upgrade_id in self.upgrade_ids_to_skip:
-                    logger.info(f'Skipping upgrade {upgrade_id}')
-                    continue
-
-                upgrade_ids.append(upgrade_id)
+            # The upgrades found above: results files on disk, less the ones this run leaves out
+            upgrade_ids = list(self.upgrade_ids_to_process)
 
             # Import columns from buildstock, results.csv, and other files
             up_lazyframes = []
@@ -2181,6 +2175,50 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         ])
         self.data = self.data.with_columns(pl.col(self.DATASET))
 
+    def skips_upgrade(self, upgrade_id):
+        """True for an upgrade this run leaves out: one in upgrade_ids_to_skip, or any measure when
+        include_upgrades is False. Measure results left in the run's data folder by an earlier pass with
+        measures are then neither loaded nor reloaded from cache, and nothing (bills, exports) is built
+        from them."""
+        return int(upgrade_id) in self.upgrade_ids_to_skip or (not self.include_upgrades and int(upgrade_id) != 0)
+
+    def results_upgrade_ids(self):
+        """(used, left_out): upgrade ids of the results_upNN.parquet files in the run's data folder, in
+        order, split by skips_upgrade."""
+        used, left_out = [], []
+        for results_path in sorted(glob.glob(os.path.join(self.data_dir, 'results_up*.parquet'))):
+            upgrade_id = np.int64(os.path.basename(results_path).replace('results_up', '').replace('.parquet', ''))
+            (left_out if self.skips_upgrade(upgrade_id) else used).append(upgrade_id)
+        return used, left_out
+
+    def simulation_outputs_cache(self):
+        """(reusable, why): can the cached simulation outputs (output/ComStock <version>/
+        cached_simulation_outputs/) stand in for the results files? Only when every upgrade this run
+        processes has one, written after its results_upNN.parquet: a cache that lacks an upgrade (a pass
+        that died partway, an upgrade taken off the skip list) or predates replaced results is rebuilt.
+        Not seen from here: changed postprocessing code, which is what reload_from_cache=False is for."""
+        fs = self.output_dir['fs']
+        on_s3 = isinstance(fs, s3fs.S3FileSystem)
+        root = f'{self.output_dir["fs_path"]}/cached_simulation_outputs'
+        results = self.results_files()
+        missing, older = [], []
+        for up in sorted(int(u) for u in self.upgrade_ids_to_process):
+            cache = f'{root}/upgrade={up}/cached_simulation_outputs_upgrade{up}.parquet'
+            if not fs.exists(f's3://{cache}' if on_s3 else cache):
+                missing.append(up)
+            elif not on_s3 and up in results and os.path.getmtime(results[up]) > os.path.getmtime(cache):
+                older.append(up)
+        if missing:
+            return False, f'missing for upgrade(s) {missing}: building them all from the results files'
+        if older:
+            return False, f'older than the results files of upgrade(s) {older}: rebuilding them all'
+        return True, f'found for every upgrade: reloading {root}'
+
+    def results_files(self):
+        """{upgrade id: path} of the results_upNN.parquet files in the run's data folder."""
+        return {int(os.path.basename(p).replace('results_up', '').replace('.parquet', '')): p
+                for p in glob.glob(os.path.join(self.data_dir, 'results_up*.parquet'))}
+
     def upgrade_definitions(self):
         # One row per upgrade publication name: its measure_id from measure_name_crosswalk.csv, which an upgrade keeps
         # across releases while its upgrade number (its position in the yml) and sometimes its name change, and a
@@ -2594,7 +2632,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         if not self.output_dir['fs'].exists(alloc_wts_bills_dir):
             raise Exception(f"{alloc_wts_bills_dir} does not exist. Ensure create_allocated_weights_plus_util_bills_for_upgrade has been called previously.")
         state_pqts = []
-        pqt_glob = f'{alloc_wts_bills_dir}/**/cached_allocated_weights_plus_bills_*.parquet'
+        # Every parquet file in the folder: upgrade<N>_<state>.parquet, or the longer
+        # cached_allocated_weights_plus_bills_upgrade<N>_<state>.parquet of older caches
+        pqt_glob = f'{alloc_wts_bills_dir}/**/*.parquet'
         for p in self.output_dir['fs'].glob(pqt_glob):
             if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
                 state_pqts.append(f's3://{p}')
@@ -2628,7 +2668,11 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
         return alloc_wts
 
-    def create_allocated_weights_plus_util_bills_for_upgrade(self, upgrade_id):
+    def create_allocated_weights_plus_util_bills_for_upgrade(self, upgrade_id, reuse=True):
+        """Weights plus utility bills for one upgrade, cached in output/ComStock <version>/
+        cached_allocated_weights_plus_bills/upgrade=<id>/. reuse=True reloads that folder when it was
+        built from the run's current stock allocation and rebuilds it otherwise; reuse=False rebuilds it
+        regardless (the bills code or its inputs changed)."""
 
         # Ensure this is a valid upgrade ID
         avail_up_ids = pl.Series(self.data.select(pl.col(self.UPGRADE_ID)).unique().collect()).to_list()
@@ -2647,6 +2691,18 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
             alloc_wts_bills_root = f's3://{alloc_wts_bills_root}'
         alloc_wts_bills_dir = f'{alloc_wts_bills_root}/upgrade={upgrade_id}'
+        if not reuse and self.output_dir['fs'].exists(alloc_wts_bills_dir):
+            logger.info(f'Rebuilding the bills for upgrade {upgrade_id} (reuse=False): removing {alloc_wts_bills_dir}')
+            self.output_dir['fs'].rm(alloc_wts_bills_dir, recursive=True)
+        if self.output_dir['fs'].exists(alloc_wts_bills_dir) and not isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
+            # The bills come from the results too: replaced results make them stale, the same
+            # rule the cached simulation outputs follow (simulation_outputs_cache).
+            results = self.results_files().get(int(upgrade_id))
+            built = [os.path.getmtime(p) for p in glob.glob(f'{alloc_wts_bills_dir}/**/*.parquet', recursive=True)]
+            if results and built and os.path.getmtime(results) > min(built):
+                logger.warning(f'{alloc_wts_bills_dir} is older than {os.path.basename(results)}: '
+                               f'rebuilding the bills for upgrade {upgrade_id}')
+                self.output_dir['fs'].rm(alloc_wts_bills_dir, recursive=True)
         if self.output_dir['fs'].exists(alloc_wts_bills_dir):
             # The bills are derived from the stock allocation. A folder built from
             # another draw, or before draws carried an id, is rebuilt rather than
@@ -2659,7 +2715,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 self.output_dir['fs'].rm(alloc_wts_bills_dir, recursive=True)
         if self.output_dir['fs'].exists(alloc_wts_bills_dir):
             state_pqts = []
-            pqt_glob = f'{alloc_wts_bills_dir}/**/cached_allocated_weights_plus_bills_*.parquet'
+            # Every parquet file in the folder, older caches' longer file names included
+            pqt_glob = f'{alloc_wts_bills_dir}/**/*.parquet'
             for p in self.output_dir['fs'].glob(pqt_glob):
                 if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
                     state_pqts.append(f's3://{p}')
@@ -2861,7 +2918,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         state_pqts = []
         for state_abbv, state_alloc_wts in alloc_wts.group_by(self.STATE_ABBRV):
             state_abbv = state_abbv[0]
-            cached_file_name = f'cached_allocated_weights_plus_bills_upgrade{upgrade_id}_{state_abbv}.parquet'
+            # Short name: the folders above already say what it is, and the whole path must stay under
+            # Windows' 260 characters. A rebuild removes the upgrade folder first, so old and new names
+            # never sit side by side.
+            cached_file_name = f'upgrade{upgrade_id}_{state_abbv}.parquet'
             logger.info(f'Caching {cached_file_name}')
             alloc_wts_bills_state_dir = f'{alloc_wts_bills_dir}/{self.STATE_ABBRV}={state_abbv}'
             if not isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
@@ -3558,10 +3618,14 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                                 base_sim_outs: pl.LazyFrame,
                                 keep_n_per_apportionment_group=False,
                                 reload_from_cache=False,
-                                allocation_path=None):
+                                allocation_path=None,
+                                weights=None):
         """Give this run its stock allocation: a model for every (bootstrapped) building
         in the estimate, with the weight that makes the model stand for it.
 
+          weights            the templates' WEIGHTS setting, in place of the two below:
+                             'auto' (reload_from_cache='auto') or a path or s3:// URL
+                             (allocation_path). See allocation.weights_arguments.
           allocation_path    use THIS draw (local or s3://): one made for another run
                              on the same sample, or the one a published run was
                              postprocessed with, so plots made here match. Checked
@@ -3581,6 +3645,13 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # This function doesn't support already CBECS-weighted self.data - error out
         if self.CBECS_WEIGHTS_APPLIED:
             raise RuntimeError('Unable to apply apportionment weighting after CBECS weighting - reverse order.')
+
+        if weights is not None:
+            if reload_from_cache is not False or allocation_path is not None:
+                raise ValueError('create_allocated_weights: give weights= or reload_from_cache/allocation_path, not both')
+            how = allocation.weights_arguments(weights)
+            reload_from_cache = how.get('reload_from_cache', False)
+            allocation_path = how.get('allocation_path')
 
         # Path to cached allocated weights file
         fkt_file_path = self.allocation_path

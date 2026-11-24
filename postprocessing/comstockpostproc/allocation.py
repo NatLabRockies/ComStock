@@ -196,6 +196,32 @@ def published_draw_url(s3_base_dir: str, run: str, name: str = FILE_NAME) -> str
     return f"s3://{s3_base_dir.strip('/')}/{run}/{run}/{name}"
 
 
+def weights_arguments(weights) -> dict:
+    """The templates' WEIGHTS setting as `create_allocated_weights` arguments.
+
+      'auto'            reuse the run's own file (output/ComStock <version>/FILE_NAME)
+                        when it fits the run, otherwise draw new weights and save them
+                        there: reload_from_cache='auto'.
+      a path or s3://   use exactly that file, checked against the run and copied into
+                        its folder: allocation_path=<it>.
+
+    A local path that does not exist is refused here, so a mistyped setting stops the
+    run instead of being read as a request for something else. An s3:// URL is checked
+    when it is read.
+    """
+    import os
+    if isinstance(weights, str) and weights.strip().lower() == "auto":
+        return dict(reload_from_cache="auto")
+    if not isinstance(weights, (str, os.PathLike)) or not str(weights).strip():
+        raise TypeError(f"WEIGHTS must be 'auto' or the path or s3:// URL of a weights file "
+                        f"({FILE_NAME}), not {weights!r}")
+    path = str(weights).strip()
+    if "://" not in path and not os.path.isfile(path):
+        raise FileNotFoundError(f"WEIGHTS={path!r}: no such file. Use 'auto', or the path or s3:// URL "
+                                f"of a weights file ({FILE_NAME}).")
+    return dict(allocation_path=path)
+
+
 def draw_model_ids(path: str, fs=None, id_col: str = "bldg_id") -> set[int]:
     """The models a draw gives weight to."""
     import polars as pl

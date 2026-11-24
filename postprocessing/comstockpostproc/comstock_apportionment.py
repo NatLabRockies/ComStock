@@ -73,6 +73,12 @@ class Apportion(NamingMixin, UnitsMixin, S3UtilitiesMixin):
         file_path = f'{self.output_dir["fs_path"]}/cached_ComStock_apportionment.parquet'
         if isinstance(self.output_dir['fs'], s3fs.S3FileSystem):
             file_path = f's3://{file_path}'
+        # reload_from_cache: True reloads the cache (raises when absent), False rebuilds it, 'auto'
+        # reloads it when it exists and builds it otherwise.
+        if reload_from_cache == 'auto':
+            reload_from_cache = self.output_dir['fs'].exists(file_path)
+            logger.info(f'{self.dataset_name}: apportionment cache '
+                        f'{"found, reloading it" if reload_from_cache else "not found, building it"}')
         if reload_from_cache:
             if not self.output_dir['fs'].exists(file_path):
                 raise FileNotFoundError(
