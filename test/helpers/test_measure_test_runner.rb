@@ -231,7 +231,11 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_includes(summary, '## Measure tests failed (2)')
       assert_includes(summary, '## Measure tests skipped (1)')
       assert_includes(summary, '## Measure tests without classified outcomes (unavailable)')
-      assert_includes(summary, "### #{heading.delete_suffix(':')}\n\n#{details.chomp.gsub(/^/, '    ')}")
+      failed_groups = details.chomp.split("\n\n").map do |group|
+        group_name, group_details = group.split("\n", 2)
+        "**#{group_name}**\n\n#{group_details.gsub(/^/, '    ')}"
+      end
+      assert_includes(summary, "### #{heading.delete_suffix(':')}\n\n#{failed_groups.join("\n\n")}")
       assert_equal([
                      '## Measure tests passed (2)',
                      '## Measure tests failed (2)',
@@ -241,11 +245,13 @@ class MeasureTestRunnerTest < Minitest::Test
       assert_equal(<<~SUMMARY.chomp, passed.strip)
         (2)
 
-            workflow_measure_tests:
+        **workflow_measure_tests:**
+
             PASS: workflow_fixture_test.rb
               FixtureTest#test_passes
 
-            upgrade_measure_tests:
+        **upgrade_measure_tests:**
+
             PASS: upgrade_fixture_test.rb
               FixtureTest#test_passes
       SUMMARY

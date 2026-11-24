@@ -98,6 +98,15 @@ def run_measure_tests(file_list, summary: nil)
   raise "Measure test failures (#{errors.length}):\n#{errors.join("\n")}" unless errors.empty?
 end
 
+# Formats "<group>_measure_tests:\n<details>" failure entries for the step summary: the group name
+# in bold, followed by its details as an indented (code block) section.
+def bold_group_names(group_failures)
+  group_failures.map do |failure|
+    group_name, group_details = failure.split("\n", 2)
+    "**#{group_name}**\n\n#{group_details.to_s.gsub(/^/, '    ')}"
+  end.join("\n\n")
+end
+
 # Runs the test runner's own tests in test/helpers, writes a helper test section to the
 # GitHub step summary, and aborts if any of them failed.
 def run_helper_tests(files)
@@ -206,7 +215,7 @@ namespace :unit_tests do
         summaries.each do |group, summary|
           next if summary[:passes].empty?
 
-          file.puts "\n    #{group}_measure_tests:"
+          file.puts "\n**#{group}_measure_tests:**\n\n"
           summary[:passes].each do |test_file, passes|
             file.puts "    PASS: #{test_file}"
             passes.each { |test_name| file.puts "      #{test_name}" }
@@ -214,7 +223,7 @@ namespace :unit_tests do
         end
         file.puts "\n## Measure tests failed (#{failed_count}#{failed_range ? ", #{failed_range}" : ''})\n"
         unless summary_errors.empty?
-          file.puts "### Measure test groups failed (#{summary_errors.length})\n\n#{summary_errors.join("\n\n").gsub(/^/, '    ')}\n"
+          file.puts "### Measure test groups failed (#{summary_errors.length})\n\n#{bold_group_names(summary_errors)}\n"
         end
         file.puts "\n## Measure tests skipped (#{skipped_count}#{skipped_range ? ", #{skipped_range}" : ''})\n"
         file.puts "\n## Measure tests without classified outcomes (#{unknown_count || 'unavailable'}#{unknown_percentage ? ", #{unknown_percentage}" : ''})\n"
