@@ -233,9 +233,11 @@ jobs:
           mkdir -p test/base_results/upgrades
           for archive in upgrades_test_output/results_csvs_pub/results_up*.csv.gz; do
             gunzip -k "$archive"
-            # BuildStockBatch row order can vary between runs; sort so diffs show only real changes.
+            # BuildStockBatch row order and the last digits of some values vary between runs; sort, and
+            # keep committed values that match within the default tolerance, so diffs show only real changes.
             csv="${archive%.gz}"
-            python .github/scripts/sort_results_csv.py "$csv" "test/base_results/upgrades/${csv##*/}"
+            committed="test/base_results/upgrades/${csv##*/}"
+            python .github/scripts/sort_results_csv.py "$csv" "$committed" --previous "$committed"
           done
           while IFS= read -r -d '' file; do
             if [[ ! -f "upgrades_test_output/results_csvs_pub/${file##*/}.gz" ]]; then
