@@ -19,7 +19,7 @@ class AddHVACSystemTest < Minitest::Test
     # [system_type, allowable_htg_unmet_hrs, allowable_clg_unmet_hrs]
     hvac_systems = [
       ['Baseboard district hot water', 600, 8760],
-      ['Baseboard electric heat', 600, 8760],
+      ['Baseboard electric', 600, 8760],
       ['Baseboard gas boiler', 600, 8760],
       ['Direct evap coolers with baseboard district hot water', 600, 600],
       ['Direct evap coolers with baseboard electric', 600, 600],
