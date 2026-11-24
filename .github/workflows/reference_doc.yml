@@ -40,14 +40,14 @@ jobs:
           args: -interaction=nonstopmode -file-line-error
 
       - name: Upload PDF
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ComStock_Reference_Documentation
           path: documentation/reference_doc/output/main.pdf
 
       - name: Upload build log on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: latex-log
           path: documentation/reference_doc/output/main.log
