@@ -1,9 +1,13 @@
-name: ComStock container builds
+name: Full Build
 
+# Run manually from the Actions tab; the "Use workflow from" dropdown selects the branch.
 on:
   workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    inputs:
+      tag:
+        description: SIF version name, as in build_apptainer_image.ps1 (e.g. os_310_typ_010)
+        required: false
+        default: ci
 
 permissions:
   contents: read
@@ -18,70 +22,13 @@ env:
   BUILDSTOCK_BATCH_REF: 88dd3b107cf8074acbae282b0ff6f8dfaf8a21e1
 
 jobs:
-  check-build-needed:
-    # Temporarily skip the workflow; remove this guard to restore conditional builds.
-    if: ${{ false }}
-    runs-on: ubuntu-24.04
-    permissions:
-      pull-requests: read
-    outputs:
-      build: ${{ steps.filter.outputs.result }}
-    steps:
-      - uses: actions/github-script@v8
-        id: filter
-        with:
-          script: |
-            if (context.eventName === 'workflow_dispatch') {
-              return true;
-            }
-            if (context.payload.action === 'labeled') {
-              return context.payload.label.name === 'ci:containers';
-            }
-
-            const pr = context.payload.pull_request;
-            if (pr.labels.some(label => label.name === 'ci:containers')) {
-              return true;
-            }
-            if (pr.changed_files > 3000) {
-              core.info('Building containers because the PR exceeds GitHub\'s 3,000-file listing limit.');
-              return true;
-            }
-
-            const inputs = new Set([
-              'resources/Gemfile',
-              'build/Dockerfile',
-              'build/apptainer/Dockerfile',
-              '.dockerignore',
-              'build/.dockerignore',
-              'build/Dockerfile.dockerignore',
-              'build/apptainer/Dockerfile.dockerignore',
-              '.github/workflows/container-build.yml',
-              '.github/scripts/openstudio-docker.sh',
-              '.github/scripts/openstudio-sif.sh',
-              '.github/scripts/check_baseline_results.py',
-              'ymls/bsb-integration-test-baseline.yml',
-              'samples/bsb-integration-test.csv',
-              'samples/bsb-integration-test-weather.zip',
-            ]);
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              ...context.repo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            const changed = files.flatMap(file => [file.filename, file.previous_filename])
-              .filter(filename => inputs.has(filename));
-            core.info(`Changed container inputs: ${changed.join(', ') || 'none'}`);
-            return changed.length > 0;
-
   container-build:
-    needs: check-build-needed
-    if: needs.check-build-needed.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
       OPENSTUDIO_EXE: ${{ github.workspace }}/.github/scripts/openstudio-docker.sh
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
@@ -92,16 +39,53 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Resolve comstock-typical commit and SIF name
+        env:
+          TAG: ${{ inputs.tag || 'ci' }}
+        run: |
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            echo "Tag '$TAG' may only contain letters, digits, '.', '_' and '-'" >&2
+            exit 1
+          fi
+          refs="$(sed -nE "s/^[[:space:]]*gem[[:space:]]+'comstock-typical'.*ref:[[:space:]]*'([0-9a-fA-F]+)'.*/\1/p" resources/Gemfile)"
+          if [[ "$(wc -w <<<"$refs")" -ne 1 ]]; then
+            echo "Expected one active comstock-typical gem line with a git ref in resources/Gemfile, found: '${refs}'" >&2
+            exit 1
+          fi
+          commit="${refs:0:12}"
+          sif_name="OpenStudio-${TAG}.${commit}-Apptainer.sif"
+          echo "comstock-typical commit: ${commit}; SIF: ${sif_name}"
+          echo "COMSTOCK_TYPICAL_COMMIT=${commit}" >> "$GITHUB_ENV"
+          echo "SIF_NAME=${sif_name}" >> "$GITHUB_ENV"
+
       - name: Build image
-        run: docker build --file build/Dockerfile --tag comstock-ci .
+        # build/Dockerfile downloads the NREL root certificates, which only works on the NREL network.
+        # Build from a CI copy that takes them from the NREL_ROOT_CERT and NREL_XCA1_CERT repository
+        # secrets (PEM text) when both are set, and otherwise builds without them.
+        env:
+          NREL_ROOT_CERT: ${{ secrets.NREL_ROOT_CERT }}
+          NREL_XCA1_CERT: ${{ secrets.NREL_XCA1_CERT }}
+        run: |
+          cert_args=()
+          if [[ -n "$NREL_ROOT_CERT" && -n "$NREL_XCA1_CERT" ]]; then
+            echo "Installing NREL root certificates from repository secrets"
+            mkdir -p build/ci-nrel-certs
+            printf '%s\n' "$NREL_ROOT_CERT" > build/ci-nrel-certs/nrel_root.pem
+            printf '%s\n' "$NREL_XCA1_CERT" > build/ci-nrel-certs/nrel_xca1.pem
+            cert_args=(--cert-dir build/ci-nrel-certs)
+          else
+            echo "::warning::NREL_ROOT_CERT and NREL_XCA1_CERT secrets are not both set; building without NREL root certificates"
+          fi
+          python .github/scripts/ci_dockerfile.py build/Dockerfile build/Dockerfile.ci "${cert_args[@]}"
+          docker build --file build/Dockerfile.ci --tag comstock-ci .
 
       - name: Install BuildStockBatch on the runner
         run: python -m pip install "git+https://github.com/NatLabRockies/buildstockbatch.git@${BUILDSTOCK_BATCH_REF}"
 
       - name: Configure container OpenStudio wrappers
-        run: chmod +x .github/scripts/openstudio-docker.sh .github/scripts/openstudio-sif.sh
+        run: chmod +x .github/scripts/openstudio-docker.sh .github/scripts/openstudio-sif.sh .github/scripts/check_comstock_typical_commit.sh
 
-      - name: Prepare container integration configurations
+      - name: Prepare SIF integration configuration
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -109,12 +93,23 @@ jobs:
 
           source = Path("ymls/bsb-integration-test-baseline.yml")
           config = yaml.safe_load(source.read_text())
-          # The wrappers supply the image's bundled gems, not a host-side bundle.
+
+          # Keep this a quick smoke test of the SIF: simulate only the first sample building
+          # (a one-story strip mall) and skip the timestep timeseries CSV export.
+          sample = Path("samples/bsb-integration-test.csv")
+          header, first_building = sample.read_text().splitlines()[:2]
+          Path("samples/bsb-integration-test-sif.csv").write_text(f"{header}\n{first_building}\n")
+          config["sampler"]["args"]["sample_file"] = "../samples/bsb-integration-test-sif.csv"
+          config["workflow_generator"]["args"].pop("timeseries_csv_export", None)
+
+          # Test the gems bundled in the image. openstudio-sif.sh already passes
+          # --bundle /var/oscli/Gemfile and --bundle_path /var/oscli/gems. With custom_gems true,
+          # buildstock_local would instead run `bundle install` with the runner's Ruby into
+          # <buildstock>/.custom_gems and add a second, conflicting set of --bundle arguments
+          # pointing there (see BuildStockBatch local.py; its docs do not cover wrappers).
           config["baseline"]["custom_gems"] = False
-          for runtime in ("docker", "sif"):
-              config["output_directory"] = f"../{runtime}_baseline_test_output"
-              destination = source.with_name(f"bsb-integration-test-{runtime}.yml")
-              destination.write_text(yaml.safe_dump(config, sort_keys=False))
+          config["output_directory"] = "../sif_baseline_test_output"
+          source.with_name("bsb-integration-test-sif.yml").write_text(yaml.safe_dump(config, sort_keys=False))
           PY
 
       - name: Check OpenStudio version
@@ -127,14 +122,8 @@ jobs:
         run: |
           "$OPENSTUDIO_EXE" -e 'require "comstock-typical"; puts "comstock-typical loaded"'
 
-      - name: Run Docker baseline simulations and host postprocessing
-        run: buildstock_local ymls/bsb-integration-test-docker.yml -j 2
-
-      - name: Check every Docker sample building succeeded
-        run: |
-          python .github/scripts/check_baseline_results.py \
-            samples/bsb-integration-test.csv \
-            docker_baseline_test_output/simulation_output/results_job0.json.gz
+      - name: Check comstock-typical commit
+        run: .github/scripts/check_comstock_typical_commit.sh
 
       - name: Build Apptainer builder image
         run: docker build --file build/apptainer/Dockerfile --tag apptainer-ci ./build
@@ -162,13 +151,31 @@ jobs:
         run: |
           "$OPENSTUDIO_EXE" -e 'require "comstock-typical"; puts "comstock-typical loaded"'
 
+      - name: Check comstock-typical commit inside SIF
+        env:
+          OPENSTUDIO_EXE: ${{ github.workspace }}/.github/scripts/openstudio-sif.sh
+        run: .github/scripts/check_comstock_typical_commit.sh
+
       - name: Run SIF baseline simulations and host postprocessing
         env:
           OPENSTUDIO_EXE: ${{ github.workspace }}/.github/scripts/openstudio-sif.sh
-        run: buildstock_local ymls/bsb-integration-test-sif.yml -j 2
+        run: buildstock_local ymls/bsb-integration-test-sif.yml -j 4
 
       - name: Check every SIF sample building succeeded
         run: |
           python .github/scripts/check_baseline_results.py \
-            samples/bsb-integration-test.csv \
+            samples/bsb-integration-test-sif.csv \
             sif_baseline_test_output/simulation_output/results_job0.json.gz
+
+      - name: Name SIF image
+        run: mv build/comstock-ci.sif "build/${SIF_NAME}"
+
+      - name: Upload SIF image
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.SIF_NAME }}
+          path: build/${{ env.SIF_NAME }}
+          if-no-files-found: error
+          # The SIF is already a compressed SquashFS image.
+          compression-level: 0
+          retention-days: 7
