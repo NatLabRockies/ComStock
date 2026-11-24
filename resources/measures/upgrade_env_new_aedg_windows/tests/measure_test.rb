@@ -158,9 +158,6 @@ class EnvNewAedgWindowsTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = EnvNewAedgWindows.new
 

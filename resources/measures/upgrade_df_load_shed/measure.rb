@@ -128,28 +128,28 @@ class DFLoadShed < OpenStudio::Measure::ModelMeasure
     peak_window_strategy.setDefaultValue('center with peak')
     args << peak_window_strategy
 
-    choices_scenarios = %w[
-      AER_95DecarbBy2035
-      AER_95DecarbBy2050
-      AER_HighRECost
-      AER_LowRECost
-      AER_MidCase
-      LRMER_95DecarbBy2035_15
-      LRMER_95DecarbBy2035_30
-      LRMER_95DecarbBy2035_15_2025start
-      LRMER_95DecarbBy2035_25_2025start
-      LRMER_95DecarbBy2050_15
-      LRMER_95DecarbBy2050_30
-      LRMER_HighRECost_15
-      LRMER_HighRECost_30
-      LRMER_LowRECost_15
-      LRMER_LowRECost_30
-      LRMER_LowRECost_15_2025start
-      LRMER_LowRECost_25_2025start
-      LRMER_MidCase_15
-      LRMER_MidCase_30
-      LRMER_MidCase_15_2025start
-      LRMER_MidCase_25_2025start
+    choices_scenarios = [
+      'AER_95DecarbBy2035',
+      'AER_95DecarbBy2050',
+      'AER_HighRECost',
+      'AER_LowRECost',
+      'AER_MidCase',
+      'LRMER_95DecarbBy2035_15',
+      'LRMER_95DecarbBy2035_30',
+      'LRMER_95DecarbBy2035_15_2025start',
+      'LRMER_95DecarbBy2035_25_2025start',
+      'LRMER_95DecarbBy2050_15',
+      'LRMER_95DecarbBy2050_30',
+      'LRMER_HighRECost_15',
+      'LRMER_HighRECost_30',
+      'LRMER_LowRECost_15',
+      'LRMER_LowRECost_30',
+      'LRMER_LowRECost_15_2025start',
+      'LRMER_LowRECost_25_2025start',
+      'LRMER_MidCase_15',
+      'LRMER_MidCase_30',
+      'LRMER_MidCase_15_2025start',
+      'LRMER_MidCase_25_2025start'
     ]
     cambium_scenario = OpenStudio::Ruleset::OSArgument.makeChoiceArgument('cambium_scenario', choices_scenarios, true)
     cambium_scenario.setDisplayName('Cambium scenario of emission factor')
@@ -547,7 +547,7 @@ class DFLoadShed < OpenStudio::Measure::ModelMeasure
       raise 'Unable to find grid region in model building additional properties' unless grid_region.is_initialized
 
       grid_region = grid_region.get
-      if %w[AKMS AKGD HIMS HIOA].include? grid_region
+      if ['AKMS', 'AKGD', 'HIMS', 'HIOA'].include? grid_region
         runner.registerAsNotApplicable('applicability not passed for grid load data availability')
         return true
       else

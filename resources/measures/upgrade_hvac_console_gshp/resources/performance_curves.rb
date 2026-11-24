@@ -564,7 +564,6 @@ module MakePerformanceCurves
       rated_heating_capacity_watts = 86.7 * 1000
       rated_heating_eir = 0.23419 # J/kgK # J/kgK at 0 C # K # K # m3/s # kg/m3 # kg/m3
 
-
       air_flow_scaling_factor = 1
       water_flow_scaling_factor = 1
 

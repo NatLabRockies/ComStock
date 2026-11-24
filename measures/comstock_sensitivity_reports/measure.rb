@@ -648,7 +648,7 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
       end
     end
 
-    if (ann_env_pd.nil?) || (ann_env_pd == false)
+    if ann_env_pd.nil? || (ann_env_pd == false)
       runner.registerError('Cannot find a weather runperiod. Make sure you ran an annual simulation, not just the design days.')
       return false
     end
@@ -664,7 +664,7 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     # build standard to access methods
     std = Standard.build('ComStock 90.1-2013')
 
-    standard_air_density = 1.225 #kg/m3, using standard air density since need a single value
+    standard_air_density = 1.225 # kg/m3, using standard air density since need a single value
 
     # get building floor area properties
     total_building_area_m2 = 0.0
@@ -1150,10 +1150,10 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
       ts_ahu_ma_flow_rate_kg_s = sql.timeSeries(ann_env_pd, timeseries_timestep, 'Air System Mixed Air Mass Flow Rate', air_loop_hvac.name.to_s.upcase)
       ts_ahu_ma_flow_rate_kg_s_list = convert_timeseries_to_list(ts_ahu_ma_flow_rate_kg_s)
 
-      unless ts_ahu_ma_flow_rate_kg_s_list.nil?
-        average_non_zero_loop_mass_flow_kg_s = ts_ahu_ma_flow_rate_kg_s_list.reject(&:zero?).sum.to_f / ts_ahu_ma_flow_rate_kg_s_list.reject(&:zero?).count
-      else
+      if ts_ahu_ma_flow_rate_kg_s_list.nil?
         average_non_zero_loop_mass_flow_kg_s = 0.0
+      else
+        average_non_zero_loop_mass_flow_kg_s = ts_ahu_ma_flow_rate_kg_s_list.reject(&:zero?).sum.to_f / ts_ahu_ma_flow_rate_kg_s_list.reject(&:zero?).count
       end
 
       # Add to weighted
@@ -1179,7 +1179,7 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
     runner.registerValue('com_report_air_system_fan_static_pressure', air_system_fan_static_pressure, 'Pa')
     air_system_fan_total_efficiency = air_system_total_mass_flow_kg_s > 0.0 ? air_system_weighted_fan_efficiency / air_system_total_mass_flow_kg_s : 0.0
     runner.registerValue('com_report_air_system_fan_total_efficiency', air_system_fan_total_efficiency)
-    air_system_vav_avg_flow_ratio = air_system_total_des_flow_rate_kg_s > 0.0 ? air_system_total_vav_mass_flow_kg_s.to_f / air_system_total_des_flow_rate_kg_s.to_f : -999
+    air_system_vav_avg_flow_ratio = air_system_total_des_flow_rate_kg_s > 0.0 ? air_system_total_vav_mass_flow_kg_s.to_f / air_system_total_des_flow_rate_kg_s : -999
 
     # calculate economizer variables
     if economizer_statistics.empty?
@@ -1386,11 +1386,11 @@ class ComStockSensitivityReports < OpenStudio::Measure::ReportingMeasure
 
       plant_loop = loop.get
       if plant_loop.supplyComponents.any? do |comp|
-          comp.to_WaterHeaterMixed.is_initialized || comp.to_WaterHeaterStratified.is_initialized
-        end
-        :swh  # Service Water Heating
+           comp.to_WaterHeaterMixed.is_initialized || comp.to_WaterHeaterStratified.is_initialized
+         end
+        :swh # Service Water Heating
       else
-        :hvac  # Space Heating/Cooling
+        :hvac # Space Heating/Cooling
       end
     end
 

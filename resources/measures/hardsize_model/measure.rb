@@ -152,6 +152,7 @@ class HardsizeModel < OpenStudio::Measure::ModelMeasure
       controller_oa = air_loop.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
       next unless controller_oa.minimumOutdoorAirFlowRate.is_initialized
       next unless controller_oa.minimumOutdoorAirFlowRate.get > 0.0
+
       # a plain string in this SDK; an optional in older ones
       limit_type = controller_oa.getMinimumLimitType
       limit_type = limit_type.is_initialized ? limit_type.get : nil if limit_type.respond_to?(:is_initialized)

@@ -1,8 +1,12 @@
 require 'minitest/autorun'
+# minitest-reporters 1.4.x uses the legacy MiniTest constant.
+require 'minitest/unit'
 require 'minitest/reporters'
+require 'minitest/reporters/spec_reporter'
 require 'json'
 
-
-if ENV['JENKINS_HOME']
-  Minitest::Reporters.use! [Minitest::Reporters::JUnitReporter.new(reports_dir = "test/reports", empty = true)]
+reporters = [Minitest::Reporters::SpecReporter.new]
+if ENV['MINITEST_REPORTERS_REPORTS_DIR'] || ENV['JENKINS_HOME']
+  reporters << Minitest::Reporters::JUnitReporter.new
 end
+Minitest::Reporters.use! reporters

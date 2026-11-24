@@ -100,7 +100,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     ddy_path = "#{epw_path.gsub('.epw', '')}.ddy"
 
     # create run directory if it does not exist
-    FileUtils.mkdir_p(run_dir(test_name)) unless File.exist?(run_dir(test_name))
+    FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
     # change into run directory for tests
@@ -108,8 +108,8 @@ class AddHeatPumpRtuTest < Minitest::Test
     Dir.chdir run_dir(test_name)
 
     # remove prior runs if they exist
-    FileUtils.rm(model_output_path(test_name)) if File.exist?(model_output_path(test_name))
-    FileUtils.rm(report_path(test_name)) if File.exist?(report_path(test_name))
+    FileUtils.rm_f(model_output_path(test_name))
+    FileUtils.rm_f(report_path(test_name))
 
     # copy the osm and epw to the test directory
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
@@ -158,7 +158,7 @@ class AddHeatPumpRtuTest < Minitest::Test
       end
 
       # assert
-      assert_equal(false, model.getDesignDays.size.zero?)
+      assert_equal(false, model.getDesignDays.empty?)
     end
 
     if apply
@@ -194,13 +194,13 @@ class AddHeatPumpRtuTest < Minitest::Test
       'Site Outdoor Air Drybulb Temperature',
       'Heating Coil Crankcase Heater Electricity Rate',
       'Heating Coil Defrost Electricity Rate',
-      'Zone Windows Total Transmitted Solar Radiation Rate',
+      'Zone Windows Total Transmitted Solar Radiation Rate'
     ]
     out_vars.each do |out_var_name|
-        ov = OpenStudio::Model::OutputVariable.new('ov', model)
-        ov.setKeyValue('*')
-        ov.setReportingFrequency('hourly')
-        ov.setVariableName(out_var_name)
+      ov = OpenStudio::Model::OutputVariable.new('ov', model)
+      ov.setKeyValue('*')
+      ov.setReportingFrequency('hourly')
+      ov.setVariableName(out_var_name)
     end
     model.getOutputControlFiles.setOutputCSV(true)
 
@@ -225,9 +225,6 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = AddHeatPumpRtu.new
 
@@ -265,8 +262,8 @@ class AddHeatPumpRtuTest < Minitest::Test
 
       # Extract and sort data_point keys numerically
       points = table.select { |k, _| k.to_s.match?(/^data_point\d+$/) }
-          .sort_by { |k, _| k.to_s.match(/\d+/)[0].to_i }
-          .map { |_, v| v.split(',').first(2).map(&:to_f) }
+                    .sort_by { |k, _| k.to_s.match(/\d+/)[0].to_i }
+                    .map { |_, v| v.split(',').first(2).map(&:to_f) }
 
       # Now check if x2 varies first (should see repeated x1s for several rows)
       x1s, x2s = points.transpose
@@ -285,32 +282,27 @@ class AddHeatPumpRtuTest < Minitest::Test
       end
 
       # If x1 changes more frequently while x2 is stable, the ordering is wrong
-      assert(x2_first_changes >= x1_first_changes, "Invalid data point order: x1 varies before x2 in some cases")
+      assert(x2_first_changes >= x1_first_changes, 'Invalid data point order: x1 varies before x2 in some cases')
     end
   end
 
   def test_table_lookup_format
     # This test ensures the format of lookup tables
-    test_name = 'test_lookup_table_format'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
     json_files.each do |file_path|
-      begin
-        content = File.read(file_path)
-        hash = JSON.parse(content, symbolize_names: true)
-        puts("### checking json file: #{file_path}")
+      content = File.read(file_path)
+      hash = JSON.parse(content, symbolize_names: true)
+      puts("### checking json file: #{file_path}")
 
-        # Now `hash` is your Ruby hash from JSON
-        # You can insert your test logic here
-        assert(hash[:tables], "Missing :tables key in #{file_path}")
+      # Now `hash` is your Ruby hash from JSON
+      # You can insert your test logic here
+      assert(hash[:tables], "Missing :tables key in #{file_path}")
 
-        # check lookup table format
-        data_point_ordering_check(hash)
-      rescue JSON::ParserError => e
-        flunk "JSON parsing failed for #{file_path}: #{e.message}"
-      end
+      # check lookup table format
+      data_point_ordering_check(hash)
+    rescue JSON::ParserError => e
+      flunk "JSON parsing failed for #{file_path}: #{e.message}"
     end
   end
 
@@ -327,7 +319,7 @@ class AddHeatPumpRtuTest < Minitest::Test
       'cool_eir_ft2' => 'cooling',
       'cool_eir_ft3' => 'cooling',
       'cool_eir_ft4' => 'cooling',
-      'defrost_eir'  => 'heating',
+      'defrost_eir' => 'heating',
       'heat_cap_ft1' => 'heating',
       'heat_cap_ft2' => 'heating',
       'heat_cap_ft3' => 'heating',
@@ -374,24 +366,20 @@ class AddHeatPumpRtuTest < Minitest::Test
 
   def test_biquadratic_format
     # This test ensures the format of biquadratic curves used in DX units
-    test_name = 'test_biquadratic_format'
-    puts "\n######\nTEST: #{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
 
     json_files.each do |file_path|
-      begin
-        content = File.read(file_path)
-        hash = JSON.parse(content, symbolize_names: true)
+      content = File.read(file_path)
+      hash = JSON.parse(content, symbolize_names: true)
 
-        assert(hash[:tables], "Missing :tables key in #{file_path}")
+      assert(hash[:tables], "Missing :tables key in #{file_path}")
 
-        # Check lookup table format
-        biquadratic_format_check(hash, file_path)
-      rescue JSON::ParserError => e
-        flunk "JSON parsing failed for #{file_path}: #{e.message}"
-      end
+      # Check lookup table format
+      biquadratic_format_check(hash, file_path)
+    rescue JSON::ParserError => e
+      flunk "JSON parsing failed for #{file_path}: #{e.message}"
+    end
   end
 
   def calc_cfm_per_ton_singlespdcoil_heating(model, cfm_per_ton_min, cfm_per_ton_max)
@@ -705,11 +693,10 @@ class AddHeatPumpRtuTest < Minitest::Test
       if model.version > OpenStudio::VersionString.new('3.4.0')
         coil_design_cop = coil.ratedCOP
       else
-        if coil.ratedCOP.is_initialized
-          coil_design_cop = coil.ratedCOP.get
-        else
-          raise "'Rated COP' not available for DX coil '#{coil.name}'."
-        end
+        raise "'Rated COP' not available for DX coil '#{coil.name}'." unless coil.ratedCOP.is_initialized
+
+        coil_design_cop = coil.ratedCOP.get
+
       end
     elsif coil.to_CoilCoolingDXTwoSpeed.is_initialized
       coil = coil.to_CoilCoolingDXTwoSpeed.get
@@ -727,11 +714,10 @@ class AddHeatPumpRtuTest < Minitest::Test
       if model.version > OpenStudio::VersionString.new('3.4.0')
         coil_design_cop = coil.ratedHighSpeedCOP
       else
-        if coil.ratedHighSpeedCOP.is_initialized
-          coil_design_cop = coil.ratedHighSpeedCOP.get
-        else
-          raise "'Rated High Speed COP' not available for DX coil '#{coil.name}'."
-        end
+        raise "'Rated High Speed COP' not available for DX coil '#{coil.name}'." unless coil.ratedHighSpeedCOP.is_initialized
+
+        coil_design_cop = coil.ratedHighSpeedCOP.get
+
       end
     elsif coil.to_CoilCoolingDXMultiSpeed.is_initialized
       coil = coil.to_CoilCoolingDXMultiSpeed.get
@@ -1149,10 +1135,10 @@ class AddHeatPumpRtuTest < Minitest::Test
     test_name = 'test_sizing_model_in_alaska'
 
     lookup_table_test = {
-      'table_name': 'c_cap_high_T',
-      'ind1': 22.22,
-      'ind2': 29.44,
-      'dep': 1.1677
+      table_name: 'c_cap_high_T',
+      ind1: 22.22,
+      ind2: 29.44,
+      dep: 1.1677
     }
 
     puts "\n######\nTEST:#{osm_name}\n######\n"
@@ -1222,6 +1208,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     performance_category = nil
     result.stepValues.each do |input_arg|
       next unless input_arg.name == 'hprtu_scenario'
+
       performance_category = input_arg.valueAsString
     end
 
@@ -1230,7 +1217,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     if performance_category == 'two_speed_standard_eff'
       # Check if lookup table is available
       lookup_table_name = lookup_table_test[:table_name]
-      #table_multivar_lookups = model.getTableMultiVariableLookups
+      # table_multivar_lookups = model.getTableMultiVariableLookups
       table_multivar_lookups = model.getTableLookups
       lookup_table = table_multivar_lookups.find { |table| table.name.to_s == lookup_table_name }
       refute_nil(lookup_table, "Cannot find table named #{lookup_table_name} from model.")
@@ -1357,15 +1344,16 @@ class AddHeatPumpRtuTest < Minitest::Test
     # populate argument with specified hash value if specified
     arguments.each_with_index do |arg, idx|
       temp_arg_var = arg.clone
-      if arg.name == 'hprtu_scenario'
+      case arg.name
+      when 'hprtu_scenario'
         hprtu_scenario = arguments[idx].clone
         hprtu_scenario.setValue('variable_speed_high_eff') # override std_perf arg
         argument_map[arg.name] = hprtu_scenario
-      elsif arg.name == 'roof'
+      when 'roof'
         roof = arguments[idx].clone
         roof.setValue(true)
         argument_map[arg.name] = roof
-      elsif arg.name == 'window'
+      when 'window'
         window = arguments[idx].clone
         window.setValue(true)
         argument_map[arg.name] = window
@@ -1374,13 +1362,12 @@ class AddHeatPumpRtuTest < Minitest::Test
       end
     end
     test_result = verify_hp_rtu(test_name, model, measure, argument_map, osm_path, epw_path)
-    
+
     # check roof/window measure implementation
     roof_measure_implemented = false
     window_measure_implemented = false
     test_result = JSON.parse(test_result.to_s)
     test_result['step_values'].each do |step_value|
-
       # check if roof measure variable is available
       if step_value['name'] == 'env_roof_insul_roof_area_ft_2'
         roof_measure_implemented = true
@@ -1390,10 +1377,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       if step_value['name'] == 'env_secondary_window_fen_area_ft_2'
         window_measure_implemented = true
       end
-
     end
-    assert_equal(roof_measure_implemented, true, "cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2")
-    assert_equal(window_measure_implemented, true, "cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2")
+    assert_equal(roof_measure_implemented, true, 'cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2')
+    assert_equal(window_measure_implemented, true, 'cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2')
   end
 
   def test_380_small_office_psz_gas_coil_7A
@@ -1436,7 +1422,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     window_measure_implemented = false
     test_result = JSON.parse(test_result.to_s)
     test_result['step_values'].each do |step_value|
-
       # check if roof measure variable is available
       if step_value['name'] == 'env_roof_insul_roof_area_ft_2'
         roof_measure_implemented = true
@@ -1446,10 +1431,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       if step_value['name'] == 'env_secondary_window_fen_area_ft_2'
         window_measure_implemented = true
       end
-
     end
-    assert_equal(roof_measure_implemented, false, "cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2")
-    assert_equal(window_measure_implemented, false, "cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2")
+    assert_equal(roof_measure_implemented, false, 'cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2')
+    assert_equal(window_measure_implemented, false, 'cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2')
   end
 
   def test_small_office_psz_not_hard_sized
@@ -1496,7 +1480,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     window_measure_implemented = false
     test_result = JSON.parse(test_result.to_s)
     test_result['step_values'].each do |step_value|
-
       # check if roof measure variable is available
       if step_value['name'] == 'env_roof_insul_roof_area_ft_2'
         roof_measure_implemented = true
@@ -1506,10 +1489,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       if step_value['name'] == 'env_secondary_window_fen_area_ft_2'
         window_measure_implemented = true
       end
-
     end
-    assert_equal(roof_measure_implemented, true, "cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2")
-    assert_equal(window_measure_implemented, false, "cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2")
+    assert_equal(roof_measure_implemented, true, 'cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2')
+    assert_equal(window_measure_implemented, false, 'cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2')
   end
 
   def test_380_retail_psz_gas_6B
@@ -1556,7 +1538,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     window_measure_implemented = false
     test_result = JSON.parse(test_result.to_s)
     test_result['step_values'].each do |step_value|
-
       # check if roof measure variable is available
       if step_value['name'] == 'env_roof_insul_roof_area_ft_2'
         roof_measure_implemented = true
@@ -1566,10 +1547,9 @@ class AddHeatPumpRtuTest < Minitest::Test
       if step_value['name'] == 'env_secondary_window_fen_area_ft_2'
         window_measure_implemented = true
       end
-
     end
-    assert_equal(roof_measure_implemented, false, "cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2")
-    assert_equal(window_measure_implemented, true, "cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2")
+    assert_equal(roof_measure_implemented, false, 'cannot find variable that was saved in roof upgrade measure via registerValue: env_roof_insul_roof_area_ft_2')
+    assert_equal(window_measure_implemented, true, 'cannot find variable that was saved in window upgrade measure via registerValue: env_secondary_window_fen_area_ft_2')
   end
 
   ##########################################################################
@@ -1616,7 +1596,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     model.getAirLoopHVACUnitarySystems.sort.each do |unitary_sys|
       # skip kitchen spaces
       thermal_zone_names_to_exclude = ['Kitchen', 'kitchen', 'KITCHEN']
-      if thermal_zone_names_to_exclude.any? { |word| (unitary_sys.name.to_s).include?(word) }
+      if thermal_zone_names_to_exclude.any? { |word| unitary_sys.name.to_s.include?(word) }
         tz_kitchens << unitary_sys
 
         # add kitchen heating coil to list
@@ -1644,7 +1624,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     model.getAirLoopHVACUnitarySystems.sort.each do |unitary_sys|
       # skip kitchen spaces
       thermal_zone_names_to_exclude = ['Kitchen', 'kitchen', 'KITCHEN']
-      if thermal_zone_names_to_exclude.any? { |word| (unitary_sys.name.to_s).include?(word) }
+      if thermal_zone_names_to_exclude.any? { |word| unitary_sys.name.to_s.include?(word) }
         tz_kitchens_final << unitary_sys
 
         # add kitchen heating coil to list
@@ -1685,10 +1665,10 @@ class AddHeatPumpRtuTest < Minitest::Test
     puts "\n######\nTEST:#{osm_name}\n######\n"
 
     lookup_table_test = {
-      'table_name': 'h_cap_T',
-      'ind1': 21.11,
-      'ind2': -17.78,
-      'dep': 0.3974
+      table_name: 'h_cap_T',
+      ind1: 21.11,
+      ind2: -17.78,
+      dep: 0.3974
     }
 
     osm_path = model_input_path(osm_name)
@@ -1725,6 +1705,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     performance_category = nil
     result.stepValues.each do |input_arg|
       next unless input_arg.name == 'hprtu_scenario'
+
       performance_category = input_arg.valueAsString
     end
 
@@ -1733,7 +1714,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     if performance_category == 'two_speed_standard_eff'
       # Check if lookup table is available
       lookup_table_name = lookup_table_test[:table_name]
-      #table_multivar_lookups = model.getTableMultiVariableLookups
+      # table_multivar_lookups = model.getTableMultiVariableLookups
       table_multivar_lookups = model.getTableLookups
       lookup_table = table_multivar_lookups.find { |table| table.name.to_s == lookup_table_name }
       refute_nil(lookup_table, "Cannot find table named #{lookup_table_name} from model.")
@@ -1868,10 +1849,10 @@ class AddHeatPumpRtuTest < Minitest::Test
     puts "\n######\nTEST:#{osm_name}\n######\n"
 
     lookup_table_test = {
-      'table_name': 'c_eir_high_T',
-      'ind1': 22.22,
-      'ind2': 35.0,
-      'dep': 0.9438
+      table_name: 'c_eir_high_T',
+      ind1: 22.22,
+      ind2: 35.0,
+      dep: 0.9438
     }
 
     osm_path = model_input_path(osm_name)
@@ -1927,6 +1908,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     performance_category = nil
     result.stepValues.each do |input_arg|
       next unless input_arg.name == 'hprtu_scenario'
+
       performance_category = input_arg.valueAsString
     end
 
@@ -1935,7 +1917,7 @@ class AddHeatPumpRtuTest < Minitest::Test
     if performance_category == 'two_speed_standard_eff'
       # Check if lookup table is available
       lookup_table_name = lookup_table_test[:table_name]
-      #table_multivar_lookups = model.getTableMultiVariableLookups
+      # table_multivar_lookups = model.getTableMultiVariableLookups
       table_multivar_lookups = model.getTableLookups
       lookup_table = table_multivar_lookups.find { |table| table.name.to_s == lookup_table_name }
       refute_nil(lookup_table, "Cannot find table named #{lookup_table_name} from model.")
@@ -2155,10 +2137,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     osm_name = 'Retail_PSZ-AC.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
 
-    test_name = 'confirm_heating_setback_change_square_wave'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)
 
@@ -2198,12 +2176,10 @@ class AddHeatPumpRtuTest < Minitest::Test
 
     schedule_deltas = [] # keep track of differences between min and max values in schedules
 
-
     # Loop thru zones and look at temp setbacks
     model.getAirLoopHVACs.sort.each do |air_loop_hvac|
       puts "loop class #{air_loop_hvac.class}"
       zones = air_loop_hvac.thermalZones
-
 
       zones.sort.each do |thermal_zone|
         next unless thermal_zone.thermostatSetpointDualSetpoint.is_initialized
@@ -2225,18 +2201,18 @@ class AddHeatPumpRtuTest < Minitest::Test
           tstat_profile.values.uniq.size
           tstat_profile_min = tstat_profile.values.min
           tstat_profile_max = tstat_profile.values.max
-          schedule_deltas << tstat_profile_max - tstat_profile_min # assuming that any changes in the schedule during the day represent nighttime setbacks
+          schedule_deltas << (tstat_profile_max - tstat_profile_min) # assuming that any changes in the schedule during the day represent nighttime setbacks
         end
       end
     end
 
     # Make sure no deltas are greater than the expected setback value
     deltas_out_of_range = schedule_deltas.any? { |x| x > setback_value_c }
-	
-	puts("Temperature deltas in schedule match expected values: #{(deltas_out_of_range == false)}")
+
+    puts("Temperature deltas in schedule match expected values: #{deltas_out_of_range == false}")
 
     assert_equal(deltas_out_of_range, false)
-	
+
     true
   end
 
@@ -2244,10 +2220,6 @@ class AddHeatPumpRtuTest < Minitest::Test
     # confirm that any heating setbacks are now 2F
     osm_name = 'Retail_PSZ-AC_updated_39_opt_start.osm'
     epw_name = 'NE_Kearney_Muni_725526_16.epw'
-
-    test_name = 'confirm_heating_setback_change_opt_start'
-
-    puts "\n######\nTEST:#{test_name}\n######\n"
 
     osm_path = model_input_path(osm_name)
     epw_input_path(epw_name)
@@ -2286,14 +2258,11 @@ class AddHeatPumpRtuTest < Minitest::Test
     assert_equal('Success', result.value.valueName)
     model = load_model(model_output_path(__method__))
 
-
     schedule_deltas = [] # keep track of differences between min and max values in schedules
-
 
     # Loop thru zones and look at temp setbacks
     model.getAirLoopHVACs.sort.each do |air_loop_hvac|
       zones = air_loop_hvac.thermalZones
-
 
       zones.sort.each do |thermal_zone|
         next unless thermal_zone.thermostatSetpointDualSetpoint.is_initialized
@@ -2323,19 +2292,18 @@ class AddHeatPumpRtuTest < Minitest::Test
           end
           tstat_profile_min_adj = working_profile.min
           tstat_profile_max_adj = working_profile.max
-          schedule_deltas << tstat_profile_max_adj - tstat_profile_min_adj # assuming that any changes in the schedule during the day represent nighttime setbacks
+          schedule_deltas << (tstat_profile_max_adj - tstat_profile_min_adj) # assuming that any changes in the schedule during the day represent nighttime setbacks
         end
       end
     end
 
     # Make sure no deltas are greater than the expected setback value
     deltas_out_of_range = schedule_deltas.any? { |x| x > setback_value_c }
-	
-	
-    puts("Temperature deltas in schedule match expected values: #{(deltas_out_of_range == false)}")
+
+    puts("Temperature deltas in schedule match expected values: #{deltas_out_of_range == false}")
 
     assert_equal(deltas_out_of_range, false)
-	
+
     true
   end
 end

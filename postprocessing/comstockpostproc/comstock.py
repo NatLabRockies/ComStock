@@ -69,7 +69,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
     def __init__(self, s3_base_dir, comstock_run_name, comstock_run_version, comstock_year, athena_table_name,
         truth_data_version, buildstock_csv_name = 'buildstock.csv', acceptable_failure_percentage=0.01, drop_failed_runs=True,
         color_hex=NamingMixin.COLOR_COMSTOCK_BEFORE, weighted_energy_units='tbtu', weighted_demand_units='gw', weighted_ghg_units='co2e_mmt', weighted_utility_units='billion_usd', skip_missing_columns=False,
-        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, output_dir=None, aws_profile_name=None):
+        reload_from_cache=False, make_comparison_plots=True, make_timeseries_plots=True, include_upgrades=True, upgrade_ids_to_skip=[], timeseries_locations_to_plot={}, upgrade_ids_for_comparison={}, rename_upgrades=False, output_dir=None, aws_profile_name=None, data_dir=None, upgrade_names=None):
         """
         A class to load and transform ComStock data for export, analysis, and comparison.
         Args:
@@ -80,6 +80,8 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             comstock_year (int): The year represented by this ComStock run
             comstock_run_version (str): The version string for this ComStock run
             to differentiate it from other ComStock runs
+            data_dir (str, optional): Directory containing buildstock.csv and results_up*.parquet.
+            upgrade_names (dict, optional): Upgrade IDs and names to use when results contain no name.
         """
 
         # Initialize members
@@ -89,7 +91,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.year = comstock_year
         self.truth_data_version = truth_data_version
         self.dataset_name = f'ComStock {self.comstock_run_version}'
-        self.data_dir = os.path.join(CURRENT_DIR, '..', 'comstock_data', self.comstock_run_version)
+        self.data_dir = data_dir if data_dir is not None else os.path.join(CURRENT_DIR, '..', 'comstock_data', self.comstock_run_version)
         self.truth_data_dir = os.path.join(CURRENT_DIR, '..', 'truth_data', self.truth_data_version)
         self.output_dir = self.setup_fsspec_filesystem(output_dir, aws_profile_name)
         self.results_file_name = 'results_up00.parquet'
@@ -131,6 +133,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         self.skip_missing_columns = skip_missing_columns
         self.include_upgrades = include_upgrades
         self.upgrade_ids_to_skip = upgrade_ids_to_skip
+        self.upgrade_names = upgrade_names if upgrade_names is not None else {}
         self.upgrade_ids_for_comparison = upgrade_ids_for_comparison
         self.upgrade_ids_to_process = []
         self.timeseries_locations_to_plot = timeseries_locations_to_plot
@@ -631,6 +634,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         # Create a list of results to eventually combine
         base_failed_ids = set()
         upgrade_id_to_results = {}
+        upgrade_id_to_name = {}
         failure_summaries = []
 
         # Load results, identify failed runs
@@ -652,12 +656,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             if upgrade_id == 0:
                 up_res = up_res.with_columns([pl.lit(self.BASE_NAME).alias('apply_upgrade.upgrade_name')])
                 a_up_col = 'apply_upgrade.applicable'
-                if up_res[a_up_col].dtype == pl.Boolean:
-                    up_res = up_res.with_columns([pl.lit(True).alias(a_up_col)])
-                    logger.debug('Adding apply_upgrade.applicable to baseline as Boolean')
-                elif up_res[a_up_col].dtype == pl.Utf8:
-                    up_res = up_res.with_columns([pl.lit('True').alias(a_up_col)])
-                    logger.debug('Adding apply_upgrade.applicable to baseline as String')
+                up_res = up_res.with_columns([pl.lit(True).alias(a_up_col)])
 
             # Fill Nulls in measure-within-upgrade applicability columns with False
             for c, dt in up_res.schema.items():
@@ -671,8 +670,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                         up_res = up_res.with_columns([pl.col(c).fill_null(pl.lit(False))])
                     elif dt in (pl.Utf8, pl.Categorical):
                         logger.debug(f'For {c}: Nulls set to "False" (String) in baseline')
-                        up_res = up_res.with_columns([pl.col(c).fill_null(pl.lit("False"))])
-                        up_res = up_res.with_columns([pl.when(pl.col(c).str.lengths() == 0).then(pl.lit('False')).otherwise(pl.col(c)).keep_name()])
+                        value = pl.col(c).cast(pl.String).fill_null('False')
+                        up_res = up_res.with_columns(
+                            pl.when(value.str.len_chars() == 0).then(pl.lit('False')).otherwise(value).alias(c)
+                        )
                 # make sure all columns contains no null values
                     assert up_res.get_column(c).null_count() == 0, f'Column {c} contains null values'
 
@@ -773,10 +774,12 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 raise Exception(f'Errors in correcting completion status for {num_errs} buildings, fix logic.')
 
             # Get the upgrade name
-            up_res_success = up_res.select(
-                (pl.col('apply_upgrade.upgrade_name').filter(pl.col(VERIFIED_COMP_STATUS) == ST_SUCCESS))
-            )
-            upgrade_name = up_res_success.get_column('apply_upgrade.upgrade_name').head(1).to_list()[0]
+            name_col = 'apply_upgrade.upgrade_name'
+            names = up_res.filter(pl.col(VERIFIED_COMP_STATUS) == ST_SUCCESS).get_column(name_col).to_list()
+            names = [name for name in names if name]
+            if not names:
+                names = [name for name in up_res.get_column(name_col).to_list() if name]
+            upgrade_name = names[0] if names else self.upgrade_names.get(int(upgrade_id))
 
             # Summarize the failure status counts
             fs = up_res.get_column(VERIFIED_COMP_STATUS).value_counts()
@@ -786,7 +789,6 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
 
             # Add upgrade ID and name to failure summary
             fs = fs.with_columns([pl.lit(upgrade_id).alias(str(self.UPGRADE_ID))])
-            fs = fs.with_columns([pl.lit(upgrade_name).alias(str(self.UPGRADE_NAME))])
 
             # Add missing completion statuses (not all upgrades will have all failure types)
             for fm in [ST_SUCCESS, ST_NA, ST_FAIL_BSB, ST_FAIL_NO_RES, ST_FAIL_NO_STATUS]:
@@ -825,6 +827,10 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                     f'which is above the specified acceptable limit of {acceptable_failure_percentage}.')
                 logger.error(err_msg)
                 raise Exception(err_msg)
+            if not upgrade_name:
+                raise ValueError(f'Cannot determine upgrade {upgrade_id} name from results or configured upgrade names.')
+            fs = fs.with_columns([pl.lit(upgrade_name).alias(str(self.UPGRADE_NAME))])
+            upgrade_id_to_name[upgrade_id] = upgrade_name
 
             # Find buildings that failed in the upgrade but not the baseline
             failed_in_up_success_in_base = [id for id in up_fail_ids if id not in base_failed_ids]
@@ -907,13 +913,11 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                         dt = up_res_applic.schema[col]
                         logger.info(f'Cast {col} from {orig_dt} to {dt}')
 
-            results_dfs.append(up_res_applic)
+            if not up_res_applic.is_empty():
+                results_dfs.append(up_res_applic)
 
             # Get the upgrade name
-            up_res_success = up_res_applic.select(
-                (pl.col('apply_upgrade.upgrade_name').filter(pl.col(self.COMP_STATUS) == 'Success'))
-            )
-            upgrade_name = up_res_success.get_column('apply_upgrade.upgrade_name').head(1).to_list()[0]
+            upgrade_name = upgrade_id_to_name[upgrade_id]
 
             # For buildings where the upgrade did NOT apply, add annual results columns from the Baseline run
             # The columns completed_status = "Invalid" and apply_upgrade.applicable = FALSE enable identification later,
@@ -937,6 +941,7 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
                 up_res_na = up_res_na.select(cols_to_keep).join(
                     base_res.select(cols_to_replace), how='left', on='building_id'
                 )
+                up_res_na = up_res_na.with_columns(pl.lit(upgrade_name).alias('apply_upgrade.upgrade_name'))
 
                 # Sort the columns so concat will work
                 up_res_na = up_res_na.select(sorted(up_res_na.columns))

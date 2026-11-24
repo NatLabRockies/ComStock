@@ -2,7 +2,8 @@ schema_version: '0.3'
 buildstock_directory: ../
 project_directory: national
 output_directory: ../baseline_test_output
-weather_files_url: https://data.nrel.gov/system/files/156/BuildStock_TMY3_FIPS.zip
+# weather_files_url: https://data.nlr.gov/system/files/156/BuildStock_TMY3_FIPS.zip
+weather_files_path: ../samples/bsb-integration-test-weather.zip # Temporary TMY3 subset for the counties in the precomputed sample.
 
 sampler:
   type: precomputed
@@ -22,8 +23,6 @@ workflow_generator:
     - measure_dir_name: SimulationOutputReport
     - measure_dir_name: comstock_sensitivity_reports
     - measure_dir_name: qoi_report
-      arguments:
-        run_qaqc: false
     - measure_dir_name: simulation_settings_check
       arguments:
         run_sim_settings_checks: true

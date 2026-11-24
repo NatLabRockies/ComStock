@@ -9,7 +9,7 @@ require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
 # require all .rb files in resources folder
-Dir["#{File.dirname(__FILE__)}/../resources/*.rb"].sort.each { |file| require file }
+Dir["#{__dir__}/../resources/*.rb"].sort.each { |file| require file }
 
 class DfThermostatControlLoadShiftTest < Minitest::Test
   # def setup
@@ -114,7 +114,7 @@ class DfThermostatControlLoadShiftTest < Minitest::Test
     assert(File.exist?(epw_path))
 
     # create run directory if it does not exist
-    FileUtils.mkdir_p(run_dir(test_name)) unless File.exist?(run_dir(test_name))
+    FileUtils.mkdir_p(run_dir(test_name))
     assert(File.exist?(run_dir(test_name)))
 
     # change into run directory for tests
@@ -122,8 +122,8 @@ class DfThermostatControlLoadShiftTest < Minitest::Test
     Dir.chdir run_dir(test_name)
 
     # remove prior runs if they exist
-    FileUtils.rm(model_output_path(test_name)) if File.exist?(model_output_path(test_name))
-    FileUtils.rm(report_path(test_name)) if File.exist?(report_path(test_name))
+    FileUtils.rm_f(model_output_path(test_name))
+    FileUtils.rm_f(report_path(test_name))
 
     # copy the osm and epw to the test directory
     new_osm_path = "#{run_dir(test_name)}/#{File.basename(osm_path)}"
@@ -170,9 +170,6 @@ class DfThermostatControlLoadShiftTest < Minitest::Test
   end
 
   def test_models
-    test_name = 'test_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"
@@ -310,7 +307,7 @@ class DfThermostatControlLoadShiftTest < Minitest::Test
         puts("--- Detected #{nts_clg} df adjusted cooling schedules and #{nts_htg} df adjusted heating schedules")
         assert(nts_clg + nts_htg > 0)
         puts(new_cool_schedules.keys)
-        
+
         # compare before/after schedules
         if nts_clg > 0
           cool_schedules.each do |cool_sch_name, cool_sch_vals|

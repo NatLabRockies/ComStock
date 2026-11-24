@@ -37,7 +37,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
@@ -72,8 +72,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_number_of_arguments_and_argument_names
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = SetNISTInfiltrationCorrelations.new
 
@@ -93,8 +91,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bad_airtightness_value
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # make an empty model
     model = OpenStudio::Model::Model.new
 
@@ -112,8 +108,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg03_smalloffice_pszac
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000003.osm"
@@ -143,8 +137,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg04_retail_pszacnoheat
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000004.osm"
@@ -178,8 +170,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg05_ca_rts
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000005.osm"
@@ -209,8 +199,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg25_retail_resforcedair
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000025.osm"
@@ -247,8 +235,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg25_retail_resforcedair_air_barrier
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000025.osm"
@@ -286,8 +272,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg31_quick_service_restaurant_pthp
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000031.osm"
@@ -320,8 +304,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg31_quick_service_restaurant_pthp_air_barrier
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000031.osm"
@@ -355,8 +337,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg43_warehouse_baseboardelec
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000043.osm"
@@ -389,8 +369,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg45_stripmall_windowac
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000045.osm"
@@ -422,8 +400,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg53_smallhotel_pszac
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000053.osm"
@@ -456,8 +432,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg53_smallhotel_pszac_air_barrier
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000053.osm"
@@ -491,8 +465,6 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
   end
 
   def test_bldg82_hospitalvav
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # load the test model
     translator = OpenStudio::OSVersion::VersionTranslator.new
     path = "#{File.dirname(__FILE__)}/bldg0000082.osm"
@@ -530,11 +502,11 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
     model = OpenStudio::Model::Model.new
     hvac = OpenStudio::Model::ScheduleRuleset.new(model, 0.0)
     weekdays = OpenStudio::Model::ScheduleRule.new(hvac)
-    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| weekdays.send("setApply#{d}", true) }
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].each { |d| weekdays.send("setApply#{d}", true) }
     weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 8, 0, 0), 0.0)
     weekdays.daySchedule.addValue(OpenStudio::Time.new(0, 16, 0, 0), 1.0)
     summer = OpenStudio::Model::ScheduleRule.new(hvac)
-    %w[Monday Tuesday Wednesday Thursday Friday].each { |d| summer.send("setApply#{d}", true) }
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].each { |d| summer.send("setApply#{d}", true) }
     summer.setStartDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('July'), 1))
     summer.setEndDate(OpenStudio::Date.new(OpenStudio::MonthOfYear.new('September'), 1))
 
@@ -551,7 +523,7 @@ class SetNISTInfiltrationCorrelationsTest < Minitest::Test
       date = OpenStudio::Date.new(OpenStudio::MonthOfYear.new(month), day, year)
       on_day = hvac.getDaySchedules(date, date).first
       off_day = off.getDaySchedules(date, date).first
-      (0..23).each do |hr|
+      24.times do |hr|
         t = OpenStudio::Time.new(0, hr, 30, 0)
         assert_in_delta(1.0, on_day.getValue(t) + off_day.getValue(t), 1e-9, "on + off != 1 on #{month}/#{day} #{hr}:30")
       end

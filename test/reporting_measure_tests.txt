@@ -1,5 +1,6 @@
 measures/comstock_sensitivity_reports/tests/comstock_sensitivity_reports_test.rb
 measures/emissions_reporting/tests/emissions_reporting_test.rb
+measures/loads_summary/tests/loads_summary_test.rb
 measures/qoi_report/tests/qoi_report_test.rb
 measures/simulation_settings_check/tests/simulation_settings_check_test.rb
 measures/SimulationOutputReport/tests/simulation_output_report_test.rb

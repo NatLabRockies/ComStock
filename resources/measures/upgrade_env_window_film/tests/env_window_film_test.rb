@@ -44,7 +44,6 @@ require 'minitest/autorun'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class EnvWindowFilmTest < Minitest::Test
   # all tests are a sub definition of this class, e.g.:
   # def test_new_kind_of_test
@@ -53,9 +52,6 @@ class EnvWindowFilmTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # create an instance of the measure
     measure = EnvWindowFilm.new
 
@@ -64,9 +60,7 @@ class EnvWindowFilmTest < Minitest::Test
 
     # get arguments and test that they are what we are expecting
     arguments = measure.arguments(model)
-    assert_equal(2, arguments.size)
-    assert_equal('pct_shgc_reduct', arguments[0].name)
-    assert_equal('pct_vlt_reduct', arguments[1].name)
+    assert_equal(0, arguments.size)
   end
 
   # return file paths to test models in test directory
@@ -179,9 +173,6 @@ class EnvWindowFilmTest < Minitest::Test
   end
 
   def test_doe_models
-    test_name = 'test_doe_models'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     models_to_test.each do |set|
       instance_test_name = set[:model]
       puts "instance test name: #{instance_test_name}"

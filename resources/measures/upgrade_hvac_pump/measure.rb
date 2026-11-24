@@ -46,23 +46,23 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
 
   # human readable description
   def description
-    return 'This measure evaluates the replacement of pumps with variable speed'\
-           ' high-efficiency pumps in existing water-based systems for space heating and'\
-           ' cooling, excluding domestic water heating. High-efficiency pumps considered'\
-           ' in the measure refer to top-tier products currently available in the U.S.'\
-           ' market as of July 2025. The nominal efficiencies of pump motors range from'\
-           ' 91% to 96%, depending on the motor’s horsepower, compared to ComStock pumps,'\
-           ' which typically range from 70% to 96%.'
+    return 'This measure evaluates the replacement of pumps with variable speed ' \
+           'high-efficiency pumps in existing water-based systems for space heating and ' \
+           'cooling, excluding domestic water heating. High-efficiency pumps considered ' \
+           'in the measure refer to top-tier products currently available in the U.S. ' \
+           'market as of July 2025. The nominal efficiencies of pump motors range from ' \
+           '91% to 96%, depending on the motor’s horsepower, compared to ComStock pumps, ' \
+           'which typically range from 70% to 96%.'
   end
 
   # human readable description of modeling approach
   def modeler_description
-    return 'Constant-speed pumps in existing buildings are replaced with variable-speed'\
-           ' pumps featuring advanced part-load performance enabled by modern control strategies.'\
-           ' Older variable-speed pumps are upgraded to newer models with advanced part-load'\
-           ' efficiency through modern control technologies, such as dynamic static pressure'\
-           ' reset. Applicable to pumps used for space heating and cooling: chiller system,'\
-           ' boiler system, and district heating and cooling system.'
+    return 'Constant-speed pumps in existing buildings are replaced with variable-speed ' \
+           'pumps featuring advanced part-load performance enabled by modern control strategies. ' \
+           'Older variable-speed pumps are upgraded to newer models with advanced part-load ' \
+           'efficiency through modern control technologies, such as dynamic static pressure ' \
+           'reset. Applicable to pumps used for space heating and cooling: chiller system, ' \
+           'boiler system, and district heating and cooling system.'
   end
 
   # define the arguments that the user will input
@@ -71,22 +71,22 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
 
     # add outdoor air temperature reset for chilled water supply temperature
     chw_hw_oat_reset = OpenStudio::Measure::OSArgument.makeBoolArgument('chw_hw_oat_reset', true)
-    chw_hw_oat_reset.setDisplayName('Add outdoor air temperature reset' \
-    ' for chilled/hot water supply temperature?')
+    chw_hw_oat_reset.setDisplayName('Add outdoor air temperature reset ' \
+                                    'for chilled/hot water supply temperature?')
     chw_hw_oat_reset.setDefaultValue(false)
     args << chw_hw_oat_reset
 
     # add outdoor air temperature reset for condenser water temperature
     cw_oat_reset = OpenStudio::Measure::OSArgument.makeBoolArgument('cw_oat_reset', true)
-    cw_oat_reset.setDisplayName('Add outdoor air temperature reset' \
-    ' for condenser water temperature?')
+    cw_oat_reset.setDisplayName('Add outdoor air temperature reset ' \
+                                'for condenser water temperature?')
     cw_oat_reset.setDefaultValue(false)
     args << cw_oat_reset
 
     # print out details?
     debug_verbose = OpenStudio::Measure::OSArgument.makeBoolArgument('debug_verbose', true)
-    debug_verbose.setDisplayName('Print out detailed debugging logs' \
-    ' if this parameter is true')
+    debug_verbose.setDisplayName('Print out detailed debugging logs ' \
+                                 'if this parameter is true')
     debug_verbose.setDefaultValue(false)
     args << debug_verbose
 
@@ -94,7 +94,7 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
   end
 
   # get pump specifications
-  def self.pump_specifications(applicable_pumps, pumps, std)
+  def self.pump_specifications(applicable_pumps, pumps, _std)
     # initialize variables
     pump_motor_eff_weighted_sum = 0.0
     pump_motor_bhp_weighted_sum = 0.0
@@ -141,7 +141,7 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
       pump_motor_eff = pump.motorEfficiency
 
       # pump motor BHP
-      pump_motor_bhp = std.pump_brake_horsepower(pump)
+      pump_motor_bhp = OpenstudioStandards::HVAC.pump_get_brake_horsepower(pump)
 
       # get partload curve coefficients from variable speed pump
       if pump.to_PumpVariableSpeed.is_initialized
@@ -367,7 +367,6 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
   # hard-coding this because of https://github.com/NREL/openstudio-standards/issues/1915
   # @param plant_loop [OpenStudio::Model::PlantLoop] plant loop
   # @return [Boolean] returns true if successful, false if not
-  # rubocop:disable Naming/PredicateMethod
   def plant_loop_apply_prm_baseline_condenser_water_temperatures(runner, plant_loop)
     sizing_plant = plant_loop.sizingPlant
     loop_type = sizing_plant.loopType
@@ -412,13 +411,13 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
     design_oat_wb_f = nil
     if summer_oat_wbs_f.empty?
       design_oat_wb_f = 78
-      runner.registerInfo("For #{plant_loop.name}, no design day OATwb conditions "\
-                          'were found. CTI rating condition of 78F OATwb' \
-                          ' will be used for sizing cooling towers.')
+      runner.registerInfo("For #{plant_loop.name}, no design day OATwb conditions " \
+                          'were found. CTI rating condition of 78F OATwb ' \
+                          'will be used for sizing cooling towers.')
     else
       # Take worst case condition
       design_oat_wb_f = summer_oat_wbs_f.max
-      runner.registerInfo('The maximum design wet bulb temperature from the '\
+      runner.registerInfo('The maximum design wet bulb temperature from the ' \
                           "Summer Design Day WB=>MDB is #{design_oat_wb_f} F")
     end
 
@@ -537,7 +536,6 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
     cw_t_stpt_manager.setOffsetTemperatureDifference(approach_k)
     true
   end
-  # rubocop:enable Naming/PredicateMethod
 
   # Determine the performance rating method specified
   # design condenser water temperature, approach, and range
@@ -560,16 +558,16 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
       design_oat_wb_f = 55
       runner.registerInfo("For #{
         plant_loop.name
-      }, a design OATwb of 55F will"\
-      ' be used for sizing the cooling towers because the'\
-      ' actual design value is below the limit in G3.1.3.11.')
+      }, a design OATwb of 55F will " \
+      'be used for sizing the cooling towers because the ' \
+      'actual design value is below the limit in G3.1.3.11.')
     elsif design_oat_wb_f > 90
       design_oat_wb_f = 90
       runner.registerInfo("For #{
         plant_loop.name
-      }, a design OATwb of 90F will be used for sizing the"\
-        ' cooling towers because the actual design value is'\
-        ' above the limit in G3.1.3.11.')
+      }, a design OATwb of 90F will be used for sizing the " \
+        'cooling towers because the actual design value is ' \
+        'above the limit in G3.1.3.11.')
     end
 
     # Calculate the approach
@@ -587,7 +585,6 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
   end
 
   # define what happens when the measure is run
-  # rubocop:disable Naming/PredicateMethod
   def run(model, runner, user_arguments)
     super # Do **NOT** remove this line
 
@@ -928,7 +925,6 @@ class UpgradeHvacPump < OpenStudio::Measure::ModelMeasure
 
     return true
   end
-  # rubocop:enable Naming/PredicateMethod
 end
 
 # register the measure to be used by the application

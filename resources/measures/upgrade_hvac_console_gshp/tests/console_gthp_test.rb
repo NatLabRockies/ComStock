@@ -45,7 +45,6 @@ require 'open3'
 require_relative '../measure'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class ConsoleGTHPTest < Minitest::Test
   def setup
     # Check that the test is being run in an environment that has the GHEdesigner package
@@ -54,7 +53,7 @@ class ConsoleGTHPTest < Minitest::Test
       Open3.capture3(command)
     rescue StandardError
       msg = 'GHEDesigner python package not found in this test environment, pip install GHEDesigner and retry'
-      raise LoadError.new msg
+      raise LoadError, msg
     end
   end
 

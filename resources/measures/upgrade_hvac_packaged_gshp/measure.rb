@@ -709,6 +709,7 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
           next unless ['Unitary'].any? do |word|
                         obj_type.include?(word)
                       end
+
           # TODO: There are more unitary systems types we are not including here
 
           # get unitary system
@@ -953,9 +954,8 @@ class AddPackagedGSHP < OpenStudio::Measure::ModelMeasure
       fan.setFanPowerMinimumFlowRateInputMethod('Fraction')
       fan.setFanPowerMinimumFlowFraction(min_fan_flow_ratio) # need to add check for ventilation
       # set fan curve coefficients
-      std.fan_variable_volume_set_control_type(fan, 'Single Zone VAV Fan ')
+      OpenstudioStandards::HVAC.fan_variable_volume_set_control_type(fan, control_type: 'Single Zone VAV')
       zone_data["#{thermal_zone.name} min_fan_flow_ratio"] = min_fan_flow_ratio
-
 
       # Create a new water-to-air ground source heat pump system
       unitary_system = OpenStudio::Model::AirLoopHVACUnitarySystem.new(model)

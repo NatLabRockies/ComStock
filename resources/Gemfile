@@ -6,6 +6,7 @@ gem 'addressable', '= 2.8.1'
 
 # This removes the rubocop runtime dependency on 'json ~> 2.3'.
 gem 'rubocop', github: 'jmarrec/rubocop', ref: '1.50.0-no_json'
+gem 'rubocop-checkstyle_formatter'
 gem 'rubocop-rake'
 gem 'rubocop-rspec'
 

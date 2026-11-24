@@ -14,6 +14,9 @@ inherit_from:
   - http://s3.amazonaws.com/openstudio-resources/styles/rubocop.yml
 
 # =============== ComStock Specific ===========
+Layout/EndOfLine:
+  EnforcedStyle: crlf
+
 Metrics/AbcSize:
   Max: 200
 

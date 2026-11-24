@@ -53,8 +53,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_capacity_category
-    puts('### DEBUGGING: test_get_capacity_category')
-
     # test: zero input
     rated_capacity_w = 0
     label_curve, label_category = UpgradeHvacRtuAdv.get_capacity_category(@runner, rated_capacity_w)
@@ -85,8 +83,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_stage_category
-    puts('### DEBUGGING: test_get_stage_category')
-
     # test: zero input
     stage_number = 0
     label_stage = UpgradeHvacRtuAdv.get_stage_category(@runner, stage_number)
@@ -119,8 +115,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_shr
-    puts('### DEBUGGING: test_get_shr')
-
     # test: zero input
     stage_number = 0
     shr = UpgradeHvacRtuAdv.get_shr(@runner, stage_number)
@@ -153,8 +147,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_reference_cop_ratio
-    puts('### DEBUGGING: test_get_reference_cop_ratio')
-
     # test: zero input
     stage_number = 0
     cop_ratio = UpgradeHvacRtuAdv.get_reference_cop_ratio(@runner, stage_number)
@@ -187,8 +179,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_rated_cfm_per_ton
-    puts('### DEBUGGING: test_get_rated_cfm_per_ton')
-
     # test: zero input
     rated_capacity_w = 0
     cfm_per_ton = UpgradeHvacRtuAdv.get_rated_cfm_per_ton(@runner, rated_capacity_w)
@@ -221,8 +211,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
   end
 
   def test_get_rated_cop_cooling_adv
-    puts('### DEBUGGING: test_get_rated_cop_cooling_adv')
-
     # test: zero input
     rated_capacity_w = 0
     cop = UpgradeHvacRtuAdv.get_rated_cop_cooling_adv(@runner, rated_capacity_w)
@@ -436,9 +424,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # This test ensures that the current test is matched to the measure inputs
-    test_name = 'test_number_of_arguments_and_argument_names'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # Create an instance of the measure
     measure = UpgradeHvacRtuAdv.new
 
@@ -490,9 +475,6 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
 
   def test_table_lookup_format
     # This test ensures the format of lookup tables
-    test_name = 'test_lookup_table_format'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     path_to_jsons = "#{__dir__}/../resources/*.json"
     json_files = Dir.glob(path_to_jsons)
     json_files.each do |file_path|
@@ -626,16 +608,16 @@ class UpgradeHvacRtuAdvTest < Minitest::Test
 
       # skip for inapplicable (not upgraded) RTUs
       if system.name.to_s.downcase.include?('kitchen')
-        puts('--- CHECKING: skipping for this RTU which was not'\
-             ' upgraded due to space type (i.e., kitchen)')
+        puts('--- CHECKING: skipping for this RTU which was not ' \
+             'upgraded due to space type (i.e., kitchen)')
         next
       end
 
       # skip for inapplicable (not upgraded) RTUs
       if system.name.to_s.downcase.include?('datacenter') ||
          system.name.to_s.downcase.include?('data center')
-        puts('--- CHECKING: skipping for this RTU which was'\
-             ' not upgraded due to space type (i.e., data center)')
+        puts('--- CHECKING: skipping for this RTU which was ' \
+             'not upgraded due to space type (i.e., data center)')
         next
       end
 

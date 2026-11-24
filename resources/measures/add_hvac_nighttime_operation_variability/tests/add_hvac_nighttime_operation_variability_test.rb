@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
@@ -111,8 +111,6 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddHvacNighttimeOperationVariability.new
 
@@ -126,8 +124,6 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
   end
 
   def test_models
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an array of hashes with model name, weather, expected result, and any specific
     models_to_test = []
     models_to_test << { model: 'LargeOffice_VAV_chiller_boiler', weather: 'CA_LOS-ANGELES-DOWNTOWN-USC_722874S_16', result: 'Success' }
@@ -177,8 +173,6 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
   end
 
   def test_restaurant_exhaust_fan_schedule
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = AddHvacNighttimeOperationVariability.new
 
@@ -187,7 +181,7 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
 
     # load the test model
     osm_path = "#{__dir__}/restaurant.osm"
-    epw_path = epws_for_tests.select { |x| 'MI_DETROIT_725375_12' == File.basename(x, '.epw') }[0]
+    epw_path = epws_for_tests.select { |x| File.basename(x, '.epw') == 'MI_DETROIT_725375_12' }[0]
 
     # set arguments here; will vary by measure
     arguments = measure.arguments(model)
@@ -216,7 +210,6 @@ class AddHvacNighttimeOperationVariabilityTest < Minitest::Test
   # get the night outdoor air schedule. No shipped template cycles fans, so the test overrides the
   # template's air_loop_hvac_unitary_supply_fan_cycles? to stand in for one that does.
   def test_template_cycling_fans_keep_cycling
-    puts "\n######\nTEST:#{__method__}\n######\n"
     model = OpenStudio::Model::Model.new
     std = Standard.build('ComStock DOE Ref 1980-2004')
     std.define_singleton_method(:air_loop_hvac_unitary_supply_fan_cycles?) { |_air_loop_hvac| true }

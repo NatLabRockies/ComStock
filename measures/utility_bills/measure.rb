@@ -56,7 +56,7 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
 
     # Request hourly data for fuel types with hourly bill calculations
     # result << OpenStudio::IdfObject.load("Output:Meter,Electricity:Facility,Hourly;").get
-    result << OpenStudio::IdfObject.load("Output:Meter,ElectricityPurchased:Facility,Hourly;").get
+    result << OpenStudio::IdfObject.load('Output:Meter,ElectricityPurchased:Facility,Hourly;').get
 
     return result
   end
@@ -391,7 +391,6 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
     state_avg_propane_results = ''
     state_avg_fueloil_results = ''
 
-
     state_eia_map.keys.each do |state_abbreviation|
       elec_eia_ids = state_eia_map[state_abbreviation]
 
@@ -572,11 +571,11 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
 
           # Concatenate bill statistics in certain format. The state comes last: a utility serving
           # tracts in several states of the sampling region has one block per state.
-          electricity_bill_results += stats_total[0..8].join(":") + ":"
-          electricity_bill_results += stats_demandcharge_flat[0..8].join(":") + ":"
-          electricity_bill_results += stats_demandcharge_tou[0..8].join(":") + ":"
-          electricity_bill_results += stats_energycharge[0..8].join(":") + ":"
-          electricity_bill_results += stats_fixedcharge[0..8].join(":") + ":"
+          electricity_bill_results += "#{stats_total[0..8].join(':')}:"
+          electricity_bill_results += "#{stats_demandcharge_flat[0..8].join(':')}:"
+          electricity_bill_results += "#{stats_demandcharge_tou[0..8].join(':')}:"
+          electricity_bill_results += "#{stats_energycharge[0..8].join(':')}:"
+          electricity_bill_results += "#{stats_fixedcharge[0..8].join(':')}:"
           electricity_bill_results += "#{stats_total[9]}:#{state_abbreviation}|"
         end
       end
@@ -617,13 +616,13 @@ class UtilityBills < OpenStudio::Measure::ReportingMeasure
       end
     end
 
-    runner.registerValue('electricity_utility_bill_results', "#{electricity_bill_results}")
+    runner.registerValue('electricity_utility_bill_results', electricity_bill_results.to_s)
     # Which version of the rate-file state assignments (resources/elec_rate_states.csv) billed this run
     runner.registerValue('electricity_rate_files_by_state', 'v1')
-    runner.registerValue('state_avg_electricity_cost_results', "#{state_avg_elec_results}")
-    runner.registerValue('state_avg_naturalgas_cost_results', "#{state_avg_ng_results}")
-    runner.registerValue('state_avg_propane_cost_results', "#{state_avg_propane_results}")
-    runner.registerValue('state_avg_fueloil_cost_results', "#{state_avg_fueloil_results}")
+    runner.registerValue('state_avg_electricity_cost_results', state_avg_elec_results.to_s)
+    runner.registerValue('state_avg_naturalgas_cost_results', state_avg_ng_results.to_s)
+    runner.registerValue('state_avg_propane_cost_results', state_avg_propane_results.to_s)
+    runner.registerValue('state_avg_fueloil_cost_results', state_avg_fueloil_results.to_s)
 
     # District Heating Bills
     # TODO have not found any source of rates beyond data for individual utilities

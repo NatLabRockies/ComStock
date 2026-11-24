@@ -7,7 +7,6 @@ require_relative '../measure'
 require 'fileutils'
 require_relative '../../../../test/helpers/minitest_helper'
 
-
 class LightLightingTechnologyTest < MiniTest::Test
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs

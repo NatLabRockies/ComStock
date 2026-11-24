@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require 'comstock-typical'
@@ -109,8 +109,6 @@ class QOIReportTest < Minitest::Test
 
   def test_number_of_arguments_and_argument_names
     # this test ensures that the current test is matched to the measure inputs
-    puts "\n######\nTEST:#{__method__}\n######\n"
-
     # create an instance of the measure
     measure = QOIReport.new
 
@@ -260,7 +258,6 @@ class QOIReportTest < Minitest::Test
 
   def test_bldg_retail_resforcedair
     test_name = 'test_bldg_retail_resforcedair'
-    puts "\n######\nTEST:#{test_name}\n######\n"
     osm_path = "#{__dir__}/retail_2010.osm"
     epw_path = "#{__dir__}/USA_MI_Detroit.City.725375_2012.epw"
     assert(run_test(test_name, osm_path, epw_path))
@@ -268,7 +265,6 @@ class QOIReportTest < Minitest::Test
 
   def test_bldg_cold_climate
     test_name = 'test_bldg_cold_climate'
-    puts "\n######\nTEST:#{test_name}\n######\n"
     osm_path = "#{__dir__}/cold_climate.osm"
     epw_path = "#{__dir__}/cold_climate.epw"
     assert(run_test(test_name, osm_path, epw_path))
@@ -276,8 +272,6 @@ class QOIReportTest < Minitest::Test
 
   def test_bad_grid_region
     test_name = 'test_bad_grid_region'
-    puts "\n######\nTEST:#{test_name}\n######\n"
-
     # load the test model resave with new name
     osm_path = "#{__dir__}/cold_climate.osm"
     epw_path = "#{__dir__}/cold_climate.epw"

@@ -59,7 +59,7 @@ class BuildExistingModel < OpenStudio::Measure::ModelMeasure
     workflow_json = runner.getOptionalStringArgumentValue('workflow_json', user_arguments)
 
     # Get file/dir paths
-    runner.registerInfo "Running in worker container `#{ENV['HOSTNAME']}`"
+    runner.registerInfo "Running in worker container `#{ENV.fetch('HOSTNAME', nil)}`"
     resources_dir = File.absolute_path(File.join(File.dirname(__FILE__), '..', '..', 'lib', 'resources')) # Should have been uploaded per 'Additional Analysis Files' in PAT
     characteristics_dir = File.absolute_path(File.join(File.dirname(__FILE__), '..', '..', 'lib', 'housing_characteristics')) # Should have been uploaded per 'Additional Analysis Files' in PAT
     buildstock_file = File.join(resources_dir, 'buildstock.rb')

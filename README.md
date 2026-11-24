@@ -80,12 +80,24 @@ pip install NREL-PySAM==4.2.0
 ```
 
 ## Measure Tests
-1. Follow the developer installation instructions above. In particular, `GHEDesigner==1.0` must be installed with `pip install GHEDesigner==1.0`.
-2. Run the measure tests with the rake command:
-  - `bundle exec rake unit_tests:all_tests` to run all measure tests.
-  - `bundle exec rake unit_tests:reporting_measure_tests` to run all reporting measure tests.
-  - `bundle exec rake unit_tests:workflow_measure_tests` to run all workflow measure tests.
-	- `bundle exec rake unit_tests:upgrade_measure_tests` to run all `upgrade_` measure tests.
+After completing the developer setup above, run:
+
+- `bundle exec rake unit_tests:measure_tests` for all measure tests.
+- `bundle exec rake unit_tests:reporting_measure_tests` for reporting tests.
+- `bundle exec rake unit_tests:workflow_measure_tests` for workflow tests.
+- `bundle exec rake unit_tests:upgrade_measure_tests` for upgrade tests.
+- `bundle exec rake unit_tests:helper_tests` for the measure test runner's own tests in `test/helpers/test_*.rb`.
+
+Rake prints a failure summary and saves JUnit reports in `test/reports`. In GitHub Actions,
+the reports are available in the `measure-test-reports` artifact, even if tests fail.
+The run summary includes tests without classified outcomes alongside passes, failures, and skips.
+Percentage ranges account for those unknown outcomes when test discovery is complete.
+
+To run one test from the repository root (with your test bundle configured):
+
+```bash
+bundle exec ruby -r /c/openstudio-3.10.0/Ruby/openstudio.rb measures/utility_bills/tests/utility_bills_test.rb -n test_elec_rate_states_match_rate_files
+```
 
 ## Running Rubocop
 1. Follow the developer installation instructions above
@@ -93,3 +105,11 @@ pip install NREL-PySAM==4.2.0
 3. run `bundle exec rake rubocop:show` in terminal
 4. review results by opening the `rubocop-results.html` in the `.rubocop/` directory
 5. rubcop can automatically fix errors by running `rubocop --autocorrect`. This will fix some, but not all errors, so you still need to check and make manual fixes.
+
+The Rake task checks without changing code by default. To enable all available
+corrections, run `bundle exec rake "rubocop[true]"`. This includes unsafe
+corrections that may change behavior; review the resulting diff and rerun tests.
+The CI workflow uses this option and fails the lint check if tracked files change.
+Remaining offenses alone do not fail the lint check. It does not commit corrections.
+
+Ruby files use CRLF line endings on every platform so local RuboCop checks match CI.

@@ -149,9 +149,9 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
   end
 
   # load data respirces
-  def load_standards_data()
+  def load_standards_data
     @standards_data = {}
-    battery_data = JSON.parse(File.read(File.expand_path(File.dirname(__FILE__) + "/resources/deer_t24_2022.battery_storage_system.json")))
+    battery_data = JSON.parse(File.read(File.expand_path("#{File.dirname(__FILE__)}/resources/deer_t24_2022.battery_storage_system.json")))
     @standards_data.merge!(battery_data)
     return true
   end
@@ -179,7 +179,7 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
       matching_objects << object
     end
 
-    if matching_objects.size.zero?
+    if matching_objects.empty?
       desired_object = nil
       OpenStudio.logFree(OpenStudio::Debug, 'openstudio.standards.Model', "Find objects search criteria returned no results. Search criteria: #{search_criteria}. Called from #{caller(0)[1]}")
     elsif matching_objects.size == 1
@@ -196,7 +196,7 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
   def model_get_battery_capacity(building_type)
     # populate search hash
     search_criteria = {
-      'building_type' => building_type,
+      'building_type' => building_type
     }
     # search battery storage table for energy capacity
     battery_capacity = model_find_object(@standards_data['battery_storage_system'], search_criteria)
@@ -226,7 +226,7 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
     if schedule.nil?
       # default always on
       battery_schedule = model.alwaysOnDiscreteSchedule
-    elsif schedule.class == String
+    elsif schedule.instance_of?(String)
       if schedule == 'alwaysOffDiscreteSchedule'
         battery_schedule = model.alwaysOffDiscreteSchedule
       else
@@ -332,7 +332,7 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
 
     # add electric load center distribution
     electric_load_center_distribution = OpenStudio::Model::ElectricLoadCenterDistribution.new(model)
-    electric_load_center_distribution.setName("PV Battery Load Center")
+    electric_load_center_distribution.setName('PV Battery Load Center')
     electric_load_center_distribution.setInverter(pv_inverter)
     electric_load_center_distribution.setGeneratorOperationSchemeType('TrackElectrical')
     electric_load_center_distribution.setElectricalBussType('DirectCurrentWithInverter')
@@ -350,35 +350,35 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
     if incl_batt_storage
 
       # load battery data
-      load_standards_data()
+      load_standards_data
 
       # get building type to assign battery design parameters
       if model.getBuilding.standardsBuildingType.is_initialized
         building_type = model.getBuilding.standardsBuildingType.get
       else
-        runner.registerError("Building type not found.")
+        runner.registerError('Building type not found.')
         return true
       end
 
       pv_size_kw = pv_system_capacity / 1000
-      battery_data =  model_get_battery_capacity(building_type)
+      battery_data = model_get_battery_capacity(building_type)
       if battery_data.nil?
         runner.registerError("Battery storage parameters not found for building type '#{building_type}'. Please ensure this building type exists in the battery storage JSON.")
         return false
       end
-      b_factor = battery_data["battery_storage_factor_b_energy_capacity"]
+      b_factor = battery_data['battery_storage_factor_b_energy_capacity']
 
       # D factor is Rated single charge-discharge cycle AC to AC (round-trip) efficiency of the battery storage system
       # default value is 0.95 * 0.95 from CBECC Rule Batt:RoundTripEff
       # d_factor = 0.95 * 0.95
       # set by minimum prescriptive requirement of JA12.2.2.1(b)
       d_factor = 0.80
-      battery_kwh = (pv_size_kw * b_factor) / (d_factor ** 0.5)
+      battery_kwh = (pv_size_kw * b_factor) / (d_factor**0.5)
 
       # calculate battery power capacity per Equation 140.10-C
-      c_factor = battery_data["battery_storage_factor_c_power_capacity"]
+      c_factor = battery_data['battery_storage_factor_c_power_capacity']
       battery_kw = (pv_size_kw * c_factor)
-      OpenStudio::logFree(OpenStudio::Info, 'openstudio.standards.Model', "Creating a Battery Storage system with capacity of #{battery_kwh.round(2)} kWh and charge/discharge power of #{battery_kw.round(2)} kW.")
+      OpenStudio.logFree(OpenStudio::Info, 'openstudio.standards.Model', "Creating a Battery Storage system with capacity of #{battery_kwh.round(2)} kWh and charge/discharge power of #{battery_kw.round(2)} kW.")
       battery = model_add_electric_storage_simple(model, max_storage_capacity_kwh: battery_kwh, max_charge_power_kw: battery_kw, max_discharge_power_kw: battery_kw)
       converter = model_add_electric_storage_converter(model)
 
@@ -390,38 +390,38 @@ class UpgradeAddPvwatts < OpenStudio::Measure::ModelMeasure
       electric_load_center_distribution.setStorageOperationScheme('TrackFacilityElectricDemandStoreExcessOnSite')
       # get final conditions
       elcss = model.getElectricLoadCenterStorageSimples
-      batt_size_kwh = elcss.map { |b| b.maximumStorageCapacity }.sum / 3.6e6 # convert to kWh from joules
-      total_discharge_power_kw  = elcss.map { |b| b.maximumPowerforDischarging }.sum / 1000 # convert to kw from w
-      total_charge_power_kw  = elcss.map { |b| b.maximumPowerforCharging }.sum / 1000 # convert to kw from W
+      batt_size_kwh = elcss.map(&:maximumStorageCapacity).sum / 3.6e6 # convert to kWh from joules
+      total_discharge_power_kw = elcss.map(&:maximumPowerforDischarging).sum / 1000 # convert to kw from w
+      total_charge_power_kw = elcss.map(&:maximumPowerforCharging).sum / 1000 # convert to kw from W
     end
 
     if battery.nil?
       # report final condition of model with battery
-      runner.registerFinalCondition("The building finished with " \
-        "#{(pv_system_capacity / 1000).round(0)} kW of PV covering " \
-        "#{pv_area_ft2.round(0)} ft² of roof area. The module type is " \
-        "#{pv_module_type}, the array type is " \
-        "#{pv_array_type}, the system losses are " \
-        "#{pv_system_losses}, the tilt angle is " \
-        "#{pv_title_angle.round(0)}°, and the azimuth angle is " \
-        "#{pv_azimuth_angle.round(0)}°. The inverter has a DC to AC size ratio of " \
-        "#{pv_inverter.dcToACSizeRatio} and an inverter efficiency of " \
-        "#{(pv_inverter.inverterEfficiency * 100).round(0)}%.")
+      runner.registerFinalCondition('The building finished with ' \
+                                    "#{(pv_system_capacity / 1000).round(0)} kW of PV covering " \
+                                    "#{pv_area_ft2.round(0)} ft² of roof area. The module type is " \
+                                    "#{pv_module_type}, the array type is " \
+                                    "#{pv_array_type}, the system losses are " \
+                                    "#{pv_system_losses}, the tilt angle is " \
+                                    "#{pv_title_angle.round(0)}°, and the azimuth angle is " \
+                                    "#{pv_azimuth_angle.round(0)}°. The inverter has a DC to AC size ratio of " \
+                                    "#{pv_inverter.dcToACSizeRatio} and an inverter efficiency of " \
+                                    "#{(pv_inverter.inverterEfficiency * 100).round(0)}%.")
     else
       # report final condition of model with no battery
-      runner.registerFinalCondition("The building finished with " \
-        "#{(pv_system_capacity / 1000).round(0)} kW of PV covering " \
-        "#{pv_area_ft2.round(0)} ft^2 of roof area. The module type is " \
-        "#{pv_module_type}, the array type is " \
-        "#{pv_array_type}, the system losses are " \
-        "#{pv_system_losses}, the tilt angle is " \
-        "#{pv_title_angle.round(0)}°, and the azimuth angle is " \
-        "#{pv_azimuth_angle.round(0)}°. The inverter has a DC to AC size ratio of " \
-        "#{pv_inverter.dcToACSizeRatio} and an inverter efficiency of " \
-        "#{(pv_inverter.inverterEfficiency * 100).round(0)}%. For storage, the model has a total battery capacity of " \
-        "#{batt_size_kwh.round(1)} kWh, a maximum discharging power of " \
-        "#{total_discharge_power_kw.round(0)} kW, and a maximum charging power of " \
-        "#{total_charge_power_kw.round(0)} kW.")
+      runner.registerFinalCondition('The building finished with ' \
+                                    "#{(pv_system_capacity / 1000).round(0)} kW of PV covering " \
+                                    "#{pv_area_ft2.round(0)} ft^2 of roof area. The module type is " \
+                                    "#{pv_module_type}, the array type is " \
+                                    "#{pv_array_type}, the system losses are " \
+                                    "#{pv_system_losses}, the tilt angle is " \
+                                    "#{pv_title_angle.round(0)}°, and the azimuth angle is " \
+                                    "#{pv_azimuth_angle.round(0)}°. The inverter has a DC to AC size ratio of " \
+                                    "#{pv_inverter.dcToACSizeRatio} and an inverter efficiency of " \
+                                    "#{(pv_inverter.inverterEfficiency * 100).round(0)}%. For storage, the model has a total battery capacity of " \
+                                    "#{batt_size_kwh.round(1)} kWh, a maximum discharging power of " \
+                                    "#{total_discharge_power_kw.round(0)} kW, and a maximum charging power of " \
+                                    "#{total_charge_power_kw.round(0)} kW.")
     end
 
     true

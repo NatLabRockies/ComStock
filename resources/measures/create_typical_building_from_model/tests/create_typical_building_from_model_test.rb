@@ -3,7 +3,7 @@
 
 # dependencies
 require 'fileutils'
-require 'minitest/autorun'
+require_relative '../../../../test/helpers/minitest_helper'
 require 'openstudio'
 require 'openstudio/measure/ShowRunnerOutput'
 require_relative '../measure'
@@ -171,7 +171,6 @@ class CreateTypicalBuildingFromModelTest < Minitest::Test
   def test_pfp_boxes
     args = {}
     args['system_type'] = 'VAV chiller with PFP boxes'
-    puts args
     apply_measure_to_model(__method__.to_s.gsub('test_', ''), args, 'SmallOffice.osm', nil, nil)
   end
 

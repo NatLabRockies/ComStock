@@ -63,6 +63,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
 
     # skip DOAS loops, and buildings this measure does not apply to
     return true if air_loop_hvac.name.to_s =~ /doas/i
+
     building = air_loop_hvac.model.getBuilding
     if building.standardsBuildingType.is_initialized && building.standardsBuildingType.get.to_s =~ building_types_no_change
       return true
@@ -93,7 +94,8 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
     is_res_system = true
     air_loop_hvac.supplyComponents.each do |component|
       obj_type = component.iddObjectType.valueName.to_s
-	  next unless obj_type == 'OS_AirLoopHVAC_OutdoorAirSystem'
+      next unless obj_type == 'OS_AirLoopHVAC_OutdoorAirSystem'
+
       is_res_system = false
     end
     return is_res_system
@@ -104,7 +106,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
   def self.air_loop_doas?(air_loop_hvac)
     is_doas = false
     sizing_system = air_loop_hvac.sizingSystem
-    if sizing_system.allOutdoorAirinCooling && sizing_system.allOutdoorAirinHeating && (UnoccupiedOAControls.air_loop_res?(air_loop_hvac) == false) && (air_loop_hvac.name.to_s.include?("DOAS") || air_loop_hvac.name.to_s.include?("doas"))
+    if sizing_system.allOutdoorAirinCooling && sizing_system.allOutdoorAirinHeating && (UnoccupiedOAControls.air_loop_res?(air_loop_hvac) == false) && (air_loop_hvac.name.to_s.include?('DOAS') || air_loop_hvac.name.to_s.include?('doas'))
       is_doas = true
     end
     return is_doas
@@ -132,7 +134,6 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       return false
     end
 
-
     template = 'ComStock 90.1-2013'
     std = Standard.build(template)
 
@@ -158,12 +159,12 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       # check min oa for constant schedules
       air_loop_oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
       if air_loop_oa_system.minimumOutdoorAirSchedule.get.to_ScheduleConstant.is_initialized
-        constant_schedules = constant_schedules + 1
+        constant_schedules += 1
       end
       # check air loop availability for constant schedules
       avail_sched = air_loop_hvac.availabilitySchedule # got an error checking this for initialization
       if avail_sched.to_ScheduleConstant.is_initialized
-        constant_schedules = constant_schedules + 1
+        constant_schedules += 1
       end
       # among unitary systems, check supply fan operating mode for constant schedules
       if UnoccupiedOAControls.air_loop_hvac_unitary_system?(air_loop_hvac)
@@ -180,7 +181,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
             component = component.to_AirLoopHVACUnitaryHeatCoolVAVChangeoverBypass.get
             component.getSupplyAirFanOperatingModeSchedule
             if setMinimumOutdoorAirSchedule.to_ScheduleConstant.is_initialized
-              constant_schedules = constant_schedules + 1
+              constant_schedules += 1
             end
           end
         end
@@ -191,7 +192,6 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       runner.registerAsNotApplicable('No constant HVAC operation schedules or no candidate air loops found--measure not applicable.')
       return true
     end
-
 
     if (li_unitary_systems.size + li_non_unitary_systems.size) < 1
       runner.registerAsNotApplicable('No applicable systems were found.')
@@ -209,7 +209,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       end
       if air_loop_hvac.availabilitySchedule.clone.to_ScheduleConstant.is_initialized
         sch_ruleset = OpenstudioStandards::ThermalZone.thermal_zones_get_occupancy_schedule(thermal_zones = air_loop_hvac.thermalZones,
-                                                               occupied_percentage_threshold: 0.05)
+                                                                                            occupied_percentage_threshold: 0.05)
         # set air loop availability controls and night cycle manager, after oa system added
         sch_ruleset.setName("#{air_loop_hvac.name}_night_fancycle_novent_schedule")
         air_loop_hvac.setAvailabilitySchedule(sch_ruleset)
@@ -255,7 +255,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
       end
       if air_loop_hvac.availabilitySchedule.clone.to_ScheduleConstant.is_initialized # handle constant schedule
         sch_ruleset = OpenstudioStandards::ThermalZone.thermal_zones_get_occupancy_schedule(thermal_zones = air_loop_hvac.thermalZones,
-                                                               occupied_percentage_threshold: 0.05)
+                                                                                            occupied_percentage_threshold: 0.05)
         # set air loop availability controls and night cycle manager, after oa system added
         air_loop_hvac.setAvailabilitySchedule(sch_ruleset)
         air_loop_hvac.setNightCycleControlType('CycleOnAny')
@@ -263,6 +263,7 @@ class UnoccupiedOAControls < OpenStudio::Measure::ModelMeasure
         air_loop_vent_sch = sch_ruleset
       end
       next unless air_loop_hvac.airLoopHVACOutdoorAirSystem.is_initialized
+
       air_loop_oa_system = air_loop_hvac.airLoopHVACOutdoorAirSystem.get.getControllerOutdoorAir
       air_loop_oa_system.setMinimumOutdoorAirSchedule(air_loop_vent_sch)
     end

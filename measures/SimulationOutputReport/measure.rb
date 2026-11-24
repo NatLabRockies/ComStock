@@ -82,42 +82,48 @@ class SimulationOutputReport < OpenStudio::Measure::ReportingMeasure
     result
   end
 
-  def get_value_from_runner_past_results(runner, key_lookup, measure_name, error_if_missing=true)
-    key_lookup = OpenStudio::toUnderscoreCase(key_lookup)
-    success_value = OpenStudio::StepResult.new("Success")
+  def get_value_from_runner_past_results(runner, key_lookup, measure_name, error_if_missing = true)
+    key_lookup = OpenStudio.toUnderscoreCase(key_lookup)
+    success_value = OpenStudio::StepResult.new('Success')
     runner.workflow.workflowSteps.each do |step|
-        next if not step.result.is_initialized
-        step_result = step.result.get
-        next if not step_result.measureName.is_initialized
-        next if step_result.measureName.get != measure_name
-        next if step_result.value != success_value
-        step_result.stepValues.each do |step_value|
-            next if step_value.name != key_lookup
-            return step_value.valueAsString
-        end
+      next if !step.result.is_initialized
+
+      step_result = step.result.get
+      next if !step_result.measureName.is_initialized
+      next if step_result.measureName.get != measure_name
+      next if step_result.value != success_value
+
+      step_result.stepValues.each do |step_value|
+        next if step_value.name != key_lookup
+
+        return step_value.valueAsString
+      end
     end
     if error_if_missing
-        register_error("Could not find past value for '#{key_lookup}'.", runner)
+      register_error("Could not find past value for '#{key_lookup}'.", runner)
     end
     return nil
   end
 
   def get_multi_measure_upgrade_applicability_from_runner_past_results(runner)
-      applics = []
-      success_value = OpenStudio::StepResult.new("Success")
-      runner.workflow.workflowSteps.each do |step|
-          next if not step.result.is_initialized
-          step_result = step.result.get
-          next if not step_result.measureName.is_initialized
-          next if step_result.measureName.get != 'apply_upgrade'
-          next if step_result.value != success_value
-          step_result.stepValues.each do |step_value|
-              next unless step_value.name.include?('_applicable')
-              applics << {'name' => step_value.name, 'applicable' => step_value.valueAsBoolean}
-          end
-      end
+    applics = []
+    success_value = OpenStudio::StepResult.new('Success')
+    runner.workflow.workflowSteps.each do |step|
+      next if !step.result.is_initialized
 
-      return applics
+      step_result = step.result.get
+      next if !step_result.measureName.is_initialized
+      next if step_result.measureName.get != 'apply_upgrade'
+      next if step_result.value != success_value
+
+      step_result.stepValues.each do |step_value|
+        next unless step_value.name.include?('_applicable')
+
+        applics << { 'name' => step_value.name, 'applicable' => step_value.valueAsBoolean }
+      end
+    end
+
+    return applics
   end
 
   # define what happens when the measure is run
@@ -152,10 +158,10 @@ class SimulationOutputReport < OpenStudio::Measure::ReportingMeasure
     other_fuel_site_units = 'MBtu'
 
     # Get PV electricity produced
-    #pv_query = "SELECT -1*Value FROM TabularDataWithStrings WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' AND ReportForString='Entire Facility' AND TableName='Electric Loads Satisfied' AND RowName='Total On-Site Electric Sources' AND ColumnName='Electricity' AND Units='GJ'"
+    # pv_query = "SELECT -1*Value FROM TabularDataWithStrings WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' AND ReportForString='Entire Facility' AND TableName='Electric Loads Satisfied' AND RowName='Total On-Site Electric Sources' AND ColumnName='Electricity' AND Units='GJ'"
     pv_query = "SELECT -1*Value FROM TabularDataWithStrings WHERE ReportName='EnergyMeters' AND ReportForString='Entire Facility' AND TableName='Annual and Peak Values - Electricity' AND RowName='ElectricityProduced:Facility' AND ColumnName='Electricity Annual Value' AND Units='GJ'"
     pv_val = sql_file.execAndReturnFirstDouble(pv_query)
-    #purchased_electricity_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' AND ReportForString='Entire Facility' AND TableName='Electric Loads Satisfied' AND RowName='Electricity Coming From Utility' AND ColumnName='Electricity' AND Units='GJ'"
+    # purchased_electricity_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' AND ReportForString='Entire Facility' AND TableName='Electric Loads Satisfied' AND RowName='Electricity Coming From Utility' AND ColumnName='Electricity' AND Units='GJ'"
     purchased_electricity_query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName='EnergyMeters' AND ReportForString='Entire Facility' AND TableName='Annual and Peak Values - Electricity' AND RowName='ElectricityPurchased:Facility' AND ColumnName='Electricity Annual Value' AND Units='GJ'"
     purchased_electricity = sql_file.execAndReturnFirstDouble(purchased_electricity_query)
 

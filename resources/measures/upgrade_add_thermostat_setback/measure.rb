@@ -4,7 +4,7 @@
 # http://nrel.github.io/OpenStudio-user-documentation/reference/measure_writing_guide/
 
 require 'comstock-typical'
-Dir[File.dirname(__FILE__) + '/resources/*.rb'].each { |file| require file }
+Dir["#{File.dirname(__FILE__)}/resources/*.rb"].sort.each { |file| require file }
 # start the measure
 class UpgradeAddThermostatSetback < OpenStudio::Measure::ModelMeasure
   # human readable name
