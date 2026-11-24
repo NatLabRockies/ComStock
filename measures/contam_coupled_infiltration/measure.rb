@@ -230,11 +230,18 @@ class ContamCoupledInfiltration < OpenStudio::Measure::ModelMeasure
       source = model.getThermalZoneByName(source_name)
       receiving = model.getThermalZoneByName(receiving_name)
       return error(runner, "no thermal zones for mixing #{object_name.inspect}") unless source.is_initialized && receiving.is_initialized
-      mixing = OpenStudio::Model::ZoneMixing.new(receiving.get)
+      # Space to space, through each zone's first space, as for infiltration above.
+      # EnergyPlus splits a ZoneMixing that names a multi-space zone into one object per
+      # space, named '<space> <object>', and the actuator the plugin asks for by
+      # object_name never exists. A space receiver needs a space source.
+      to_space = receiving.get.spaces.min_by(&:nameString)
+      from_space = source.get.spaces.min_by(&:nameString)
+      return error(runner, "a thermal zone of mixing #{object_name.inspect} has no spaces") if to_space.nil? || from_space.nil?
+      mixing = OpenStudio::Model::ZoneMixing.new(to_space)
       return false unless named(runner, mixing, object_name)
       mixing.setSchedule(always_on)
       mixing.setDesignFlowRate(0.0)
-      mixing.setSourceZone(source.get)
+      return error(runner, "could not set the source of #{object_name.inspect}") unless mixing.setSourceSpace(from_space)
     end
 
     model.getTimestep.setNumberOfTimestepsPerHour(tph)

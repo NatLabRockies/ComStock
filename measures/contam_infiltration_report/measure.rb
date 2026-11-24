@@ -16,9 +16,9 @@ require 'open3'
 #
 # Design: osm2contam docs/comstock-integration-plan.md, section 2.4.
 class ContamInfiltrationReport < OpenStudio::Measure::ReportingMeasure
-  # What EnergyPlus reports of the infiltration the plugin actuated, read back as a
-  # check that the actuators took.
-  OUTPUT_VARIABLES = ['Zone Infiltration Mass Flow Rate'].freeze
+  # What EnergyPlus reports of the infiltration and interzone mixing the plugin actuated,
+  # read back as a check that the actuators took.
+  OUTPUT_VARIABLES = ['Zone Infiltration Mass Flow Rate', 'Zone Mixing Mass Flow Rate'].freeze
 
   def name
     return 'CONTAM Infiltration Report'
