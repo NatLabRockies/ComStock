@@ -12,7 +12,7 @@ The goal of the stock estimation process is to identify the type, floor area, an
 
 \subsection{Data Sources}\label{sec:data_sources}
 
-ComStock's stock estimation is assembled using several data sources. The primary data sources are CoStar, a commercial building real estate intelligence broker, and Homeland Infrastructure Foundation-Level Data (HIFLD), a Department of Homeland Security database that provides cross-agency information on critical infrastructure assets across the United States. Hospitals come from a third source, the American Hospital Association (AHA) Annual Survey \citep{aha_annual_survey_2022}. These data sets, due to their business-/mission-driven use cases, tend to have very high accuracy for the buildings they represent. However, the major downside of these data sources is that the buildings they do not collect data on are not represented in any manner. While this is challenging, it is easier to adjust/correct for this sparsity than to use other data sets in which buildings are incorrectly and inconsistently represented.
+ComStock's stock estimation is assembled using several data sources. The primary data sources are CoStar, a commercial building real estate intelligence broker, Homeland Infrastructure Foundation-Level Data (HIFLD), a Department of Homeland Security database that provides cross-agency information on critical infrastructure assets across the United States, and LightBox, a parcel and assessor data set that supplies the spatial and physical-characteristics backbone of the blend, including footprint geometry, square footage, number of stories, year built, and land area. Hospitals come from a fourth source, the American Hospital Association (AHA) Annual Survey \citep{aha_annual_survey_2022}. These data sets, due to their business-/mission-driven use cases, tend to have very high accuracy for the buildings they represent. However, the major downside of these data sources, at the time of purchase and processing, is that the buildings they do not collect data on are not represented in any manner. While this is challenging, it is easier to adjust/correct for this sparsity than to use other data sets in which buildings are incorrectly and inconsistently represented.
 
 CoStar is a ``leading provider of commercial real estate data and marketplace listing platforms. Its data offerings contain in-depth analytical information on over five million commercial real estate properties related to various subsections, including office, retail, multifamily, healthcare, industrial, self-storage, and data centers'' \citep{costar_10k}. CoStar's data is driven by commercial leases and commercial sales data, and is updated with millions of dollars' worth of research per year. CoStar's data set is not always complete, both in terms of geography and building type. For example, building types that are rarely bought and sold, such as schools and major hospital complexes, are less likely to be represented in CoStar's database.
 
@@ -37,7 +37,9 @@ where:\\
 
 The fences give a realistic range of floor area per bed for each category. The categories are used only for these corrections; ComStock represents every hospital with its single hospital building type. Each hospital in the 2026 R1 stock estimate carries its own census tract. That estimate holds 5,952 hospitals with 2.10 billion ft$^2$ of floor area in all 50 states and the District of Columbia; the 2025 R3 estimate, built from HIFLD, held 3,224 hospitals with 0.84 billion ft$^2$ in 48 states. As for every building type, ComStock's national hospital floor area is then matched to CBECS, as described next.
 
-Although these data sets provide excellent coverage of buildings they consider, they do not provide full and complete coverage of commercial buildings across the United States. Of particular note, using these data sources results in an estimate of U.S. commercial buildings that differs from that published by CBECS. The ComStock team, after significant discussion, has decided to treat the CBECS estimate of the floor area of each building type as a truth data set. Following the sampling of the CoStar, HIFLD, and AHA data sets, the CBECS estimates are used to ``true up'' the numbers on a national basis. As a result, ComStock's floor area estimates match CBECS' by building type on a national basis. Although other truth data sources were considered, CBECS' centrality to all commercial energy use estimation made it the obvious and consistent choice for estimating the U.S. commercial building stock's energy use.
+LightBox is a commercial provider of nationwide parcel and assessor data that connect to buildings, addresses, and zoning. Whereas CoStar and HIFLD determine which buildings enter the stock and are keyed to transaction activity and critical-infrastructure missions, LightBox supplies the spatial characteristics: footprint geometry, square footage, number of stories, year built, and land area. This parcel-level foundation is valuable because it is not conditioned on a building being bought, sold, or designated as critical infrastructure, so it provides consistent physical descriptors across the full range of commercial building types, including those sparsely represented in the transaction- and mission-driven sources. 
+
+Although these data sets provide excellent coverage of buildings they consider, they do not provide full and complete coverage of commercial buildings across the United States. Of particular note, using these data sources results in an estimate of U.S. commercial buildings that differs from that published by CBECS. The ComStock team, after significant discussion, has decided to treat the CBECS estimate of the floor area of each building type as a truth data set. Following the sampling of the CoStar, HIFLD, LightBox, and AHA data sets, the CBECS estimates are used to ``true up'' the numbers on a national basis. As a result, ComStock's floor area estimates match CBECS' by building type on a national basis. Although other truth data sources were considered, CBECS' centrality to all commercial energy use estimation made it the obvious and consistent choice for estimating the U.S. commercial building stock's energy use.
 
 \subsection{Building Type Assignments} \label{sec:btype_assignments}
 
@@ -47,7 +49,7 @@ ComStock maps the building type definitions from each data source to a specific 
 
 \input{tables/building_type_cross_datasets}
 
-It is important to note that only one of the CoStar, HIFLD, and AHA data sets is used to represent each type of DOE prototype building---that is, no building type is pulled from more than one data set. This ensures that any errors that exist in any one data set are independently corrected by the CBECS normalization. According to CBECS' estimation, the amalgamation of the CoStar, HIFLD, and AHA data sets accounts for 63\% of the energy use and 63\% of the floor area of commercial buildings in the United States. The remaining 37\% of energy use not represented is due to several CBECS building types that are not included in ComStock yet such as mixed-use office and religious worship. Figure \ref{fig:types_not_represented} shows the building types not represented in the ComStock model, on a CBECS Principal Building Activity Plus basis, and their relative contribution to the commercial building energy use in the United States. As can be seen in the figure, mixed-use offices represent the largest un-modeled building classification by energy use, followed by recreation, other, religious worship, nursing home/assisted living, and social/meeting buildings. Although these building types all consume energy, the ComStock team does not have sufficient information to make a reasonable estimate of their energy use, either annually or on a time-series basis, using the approach discussed in Section \ref{sec:space_type_ratios}.
+It is important to note that only one of the CoStar, HIFLD, LightBox, and AHA data sets is used to represent each type of DOE prototype building---that is, no building type is pulled from more than one data set. This ensures that any errors that exist in any one data set are independently corrected by the CBECS normalization. According to CBECS' estimation, the amalgamation of the CoStar, HIFLD, LightBox, and AHA data sets accounts for 63\% of the energy use and 63\% of the floor area of commercial buildings in the United States. The remaining 37\% of energy use not represented is due to several CBECS building types that are not included in ComStock yet such as mixed-use office and religious worship. Figure \ref{fig:types_not_represented} shows the building types not represented in the ComStock model, on a CBECS Principal Building Activity Plus basis, and their relative contribution to the commercial building energy use in the United States. As can be seen in the figure, mixed-use offices represent the largest un-modeled building classification by energy use, followed by recreation, other, religious worship, nursing home/assisted living, and social/meeting buildings. Although these building types all consume energy, the ComStock team does not have sufficient information to make a reasonable estimate of their energy use, either annually or on a time-series basis, using the approach discussed in Section \ref{sec:space_type_ratios}.
 
 \begin{figure}
   \centering
@@ -80,15 +82,108 @@ DOE prototype building type is used to represent a significant amount of the U.S
 
 \subsection{Data Amalgamation for Sampling} \label{sec:3.1.3data amalgamation for sampling}
 
-The data from CoStar, HIFLD, and AHA were converted from individual building data points to probability distributions for geographic areas due to data retention clauses.
+The stock estimation process draws on the four data sets, described above (CoStar, HIFLD, LightBox, and AHA), each of which describes an overlapping, and often conflicting, portion of the U.S.\ commercial building stock. Before these data sets can be sampled, they must be reconciled into a single, internally consistent inventory. The goal of the data amalgamation step is to produce a unified, anonymized, county-level characterization of the building stock by blending these source data sets into one record set from which sampling occurs. Records are not joined by address or by a shared identifier, because such keys are unreliable across independently maintained data sets. Instead, records are matched by the spatial overlap of their building footprints, and each candidate match is then accepted or rejected using a weighted distance score computed over building characteristics. The result is a per-county file that constitutes the building inventory data set from which ComStock samples are drawn (see Section 3.4, Sampling Methodology, for how samples are subsequently generated).
 
-The ComStock team tagged all individual buildings with a climate zone and a county to convert the county-level locations of buildings within the United States into a probability distribution. From this data, one distribution was created: the likelihood of a building in the United States being located in a given climate zone. In this distribution, there is a much higher likelihood of being located in a heavily populated climate zone (like 4A, which includes much of NJ, DC, MD, DE, VA, etc.) than a sparsely populated climate zone (like 8, which includes only part of AK). Next, for each climate zone, another distribution was created: the likelihood of a building being located in each county within that climate zone. In these distributions, there is a much higher likelihood of being located in a heavily populated county than a sparsely populated county. These two sets of distributions allow any ComStock sample to be assigned a climate zone and a county prior to any additional characteristics being calculated.
+\subsubsection{Data Retention and Dissemination} \label{sec:data-retention}
 
-The next characteristic to be described as a probability distribution was the building type. Based on the combined CoStar, HIFLD, and AHA data sets, the likelihood of a building being of a specific building type was calculated for each county in the United States. In some cases, the county in question had an insufficient number of buildings in these data sets to create a realistic distribution. In these cases, the county was instead assigned a distribution of building types based on all the buildings in the state. This is not frequently required for building type, but is more common for floor area, vintage, and number of stories (discussed next).
+The source data sets are licensed, and their retention and redistribution are therefore subject to the terms of the agreements under which they were obtained. As a result, the blended output is anonymized and aggregated to the county level. The published inventory characterizes the building stock without exposing any of the underlying licensed records. Raw data is deleted once its permitted use is complete.
 
-Probability distributions for three additional characteristics were created using these data sets: floor area, vintage, and number of stories. CoStar's database has excellent coverage of floor area of a building as a function of county and building type, good coverage of vintage (the year the building was constructed), and reasonable coverage of the number of stories. HIFLD, on the other hand, has good information on vintage, but not on floor area or the number of stories. For floor area, inferences were based on the number of students enrolled (for schools). Hospitals use the floor area each hospital reports to the AHA, corrected as described in Section~\ref{sec:data_sources}. The number of stories of each school was estimated based on its inferred floor area. These estimates, as well as the estimates provided by the CoStar data, were used to create distributions for each building type's characteristics on a county basis. There were several cases in which one or more characteristics could not be accurately estimated for a building type/county pair. In these cases, the aforementioned approach of using the state-level distribution was employed.
+\subsubsection{Geographic Keys and Vintages}
+\label{sec:geographic-keys}
 
-The approach employed is mathematically accurate. However, the downside to using building count when creating probability distributions is that a high sample count is required to ensure that less common but highly impactful buildings, such as buildings over one million square feet, are well represented. For example, if a county contains 100 retail stores with a floor area of 1,000 square feet each (for a total of 100,000 square feet) and one retail store (perhaps a mall) of one million square feet, the large retail store would be expected to use roughly ten times (1,000,000 square feet/ 100,000 square feet) the energy of all of the smaller retail stores put together. With the current count-based approach, around 100 samples would need to be generated from this distribution to ensure that the one million square foot retail store was represented in the model. Although the impacts of this are minimal at a higher geographic level, it is a known weakness of the current approach.
+Census geographic codes (FIPS) identify a location by its state, county, tract, and block or block group. These pieces are padded with leading zeros and combined into a single GISJOIN identifier that acts as a shared location reference across data sets. The source data contains two Census vintages (2010-based and 2020-based keys), and each identifier's construction is checked for correct length so that keys of the wrong vintage or format are flagged rather than mismatched. When a record cannot be scored into a one-to-one match, these geographic keys also serve as the fallback grouping level, as described in the handling of unresolved records below.
+
+\subsubsection{Unique Building Identifiers}
+\label{sec:ubid}
+
+The spatial matching at the core of the amalgamation relies on the Unique Building Identifier (UBID). The UBID was developed by Pacific Northwest National Laboratory (PNNL) under DOE's Building Technologies Office as an open, geospatially grounded way to identify building records, building on the Google Plus Codes open-location standard \citep{wang_ubid_2019}. It exists to overcome the shortcomings of traditional matching keys. Street addresses are brittle, prone to formatting and spelling variation, and have no geospatial basis; they also break down for buildings with multiple addresses (e.g., row homes) or with no address at all (e.g., campus buildings). Matching on a single representative latitude/longitude point is likewise fragile, since independently sourced points for the same building rarely coincide.
+
+A UBID instead encodes the north-axis-aligned bounding box of a building's footprint as a centroid plus four cardinal extents (see Figure~\ref{fig:ubid}). Its key advantage for blending is that two independently constructed UBIDs can be compared with high confidence to determine whether they reference the same building. UBIDs also obey \emph{containment}, so a building can be tested for membership within a campus, and identifiers scale naturally down to parts of buildings and up to groups of them. This makes spatial overlap, rather than string or point matching, the basis for cross-data set joins.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/ubid_generation.png}
+  \caption{UBID generation process applied to example building footprint in
+  New York City \citep{wang_ubid_2019}}
+  \label{fig:ubid}
+\end{figure}
+
+\textbf{\textit{Constructing UBIDs from tabular data.}} When a data set lists buildings as rows in a table instead of drawn shapes, UBIDs are built from three pieces of information: latitude, longitude, and an estimated footprint size in square feet. From the footprint, we work out how far to extend the box around the building's center point in each direction. That distance is then converted into small latitude and longitude offsets using a simplified version of the Haversine formula that treats latitude as fixed, which keeps the conversion straightforward while remaining accurate enough at the scale of a single building.
+
+Each box is intentionally made larger than the building's estimated footprint. This padding accounts for the fact that real buildings aren't perfect squares and that coordinates are rarely exact. Making the boxes bigger means we catch more potential matches, at the cost of some precision. The amount of padding varies by source: 1.5 for land-area boxes, 2 for point sources, and 3 for footprint boxes.
+
+\textbf{\textit{Footprint estimation feeding the geometry.}} Where a footprint is not given directly, it is derived: total square footage divided by the number of stories, with a minimum size enforced for tall buildings, and footprints for point sources inferred from stand-in measures like capacity. Because footprint size determines how big the UBID box is, these estimates directly affect which buildings overlap, and therefore which pairs are considered as possible matches.
+
+\textbf{\textit{Producing candidate pairs.}} Candidate matches are generated by identifying boxes that overlap, using PNNL's \textit{buildingid crossref} command-line tool. This step is intentionally generous: it casts a wide net to gather possible pairs, and the distance scoring described below does the actual work of accepting or rejecting each one.
+
+\subsubsection{Distance Metrics and Scoring}
+\label{sec:distance-metrics}
+
+Spatial overlap alone is insufficient to confirm a match, because nearby or overlapping boxes may belong to different buildings. Each candidate pair is therefore scored on how similar the two records are across a set of physical attributes, and the pair is rejected if the records are too dissimilar. This scoring is the core of the amalgamation method.
+
+For commercial matches, the composite distance $d$ is the sum of four normalized component distances: year built, square footage, number of stories,
+and building type:
+\begin{equation}
+  d = d_{yb} + d_{sf} + d_{ns} + d_{\mathrm{type}}
+  \label{eq:composite-distance}
+\end{equation}
+
+Each component is scaled to a comparable range so that no single attribute dominates the score:
+
+\begin{itemize}
+  \item \textbf{Year-built distance}: the absolute difference in year built, divided by an approximately 20-year normalizer, with missing values imputed to a mid-range penalty and the result capped at 1.
+  \begin{equation}
+    d_{yb} = \min\!\left(1,\ \frac{\lvert yb_{c} - yb_{l} \rvert}{20}\right)
+    \label{eq:d-yb}
+  \end{equation}
+
+  \item \textbf{Square-footage distance}: the absolute difference in area divided by a scaled sum of the two areas. Both areas feed into the denominator, and the score therefore reflects how far apart they are in proportional terms rather than by raw square footage (e.g., a 500-square-foot gap matters more between two small buildings than between two large ones).
+  \begin{equation}
+    d_{sf} = \frac{\lvert sf_{c} - sf_{l} \rvert}{(sf_{c} + sf_{l})/3}
+    \label{eq:d-sf}
+  \end{equation}
+
+  \item \textbf{Stories distance}: the difference in number of stories divided by a roughly 10-story normalizer, then square-rooted so that large gaps are compressed rather than counted at full weight. Missing values are given a mid-range penalty.
+  \begin{equation}
+    d_{ns} = \sqrt{\frac{\lvert ns_{c} - ns_{l} \rvert}{10}}
+    \label{eq:d-ns}
+  \end{equation}
+
+  \item \textbf{Type distance}: a lookup into a type-distance table that assigns a numeric penalty for pairing one data set's building type with another's more general type. This is a way of translating two different classification systems onto a single shared scale so they can be compared
+  directly.
+\end{itemize}
+
+\textbf{\textit{Acceptance thresholds (``validation limits'').}} A candidate pair is accepted only if its composite distance $d$ is below the validation limit of 2.2. The limit is an explicit, tunable parameter and differs by matcher tier (see Section~\ref{sec:cascade} below). The type-distance values carry a hard limit in the overall matcher; pairs whose building types are too dissimilar are excluded outright, no matter how well their other attributes line up.
+
+\textbf{\textit{Domain-specific validators.}} Beyond the combined distance score, point-source matches run additional sanity checks (e.g., a minimum ratio of floor area to occupant capacity) that reject pairings that are geographically plausible but don't make physical sense. These act as standalone veto conditions rather than as another factor folded into the distance score.
+
+\subsubsection{Match Resolution Cascade}
+\label{sec:cascade}
+
+Matching proceeds in ordered tiers. Each tier works only with the records left unresolved by the prior tier, so that higher-confidence scoring rules get first claim on the data:
+
+\begin{itemize}
+  \item \textbf{Tier 1---primary footprint match.} Footprint-UBID candidates are scored by the distance measure $d$, and the lowest-$d$ partner is selected for each record under the strictest validation limit.
+
+  \item \textbf{Tier 2---secondary (land-area) match.} Records still unmatched are retried using the larger land-area geometry rather than footprint geometry. This catches buildings set back from the street, whose footprints did not overlap. The same scoring is applied to the wider shape.
+
+  \item \textbf{Tier 3---aggregate match.} This tier handles the case of one large building in the parcel data corresponding to several smaller records in the commercial data (e.g., a single warehouse that the commercial data set lists as multiple tenants). The smaller records are grouped and matched to the single large record if their combined floor area is close enough to the large record's area. Because the small records are combined rather than matched one-to-one, building types are allowed to differ more than in earlier tiers. Once matched, the large record's floor area is divided among the smaller records in proportion to their sizes.
+\end{itemize}
+
+Within a tier, candidates are prioritized by size and assigned one at a time, so that each record is claimed only once. This prevents the same floor area from being double counted.
+
+\subsubsection{Handling Unresolved Records}
+
+Records that never clear a validation limit are not discarded. Instead, they are aggregated by generalized building type and location. Each aggregate keeps the sum, minimum, maximum, mean, and median of each feature, along with a count of how many records had actual (non-empty) values. This preserves the building stock these records represent without forcing a false one-to-one match. That way, unmatched floor area still contributes to the county-level inventory even where individual records could not be paired.
+
+\subsubsection{County-Level Quality Control}
+
+Several integrity checks protect the blended output before and after scoring. First, a population-density sanity check compares total parcel floor area per person against a defined cutoff and can drop an entire county's parcel contribution when the result is implausible. Second, removing duplicate UBIDs and verifying that geographic keys are the expected length further protect the integrity of the inventory throughout the process.
+
+\subsubsection{Output: The Building Inventory Data Set}
+
+The per-county outputs together form a building inventory data set; a characterization of the building stock by type, size, vintage, number of stories, and location. As a final step, the inventory is converted from individual building data points into probability distributions across geographic areas, and the stock is therefore represented by the statistical likelihood of each building characteristic within a region rather than as discrete, individually matched records. This distribution-based data set is
+the population from which ComStock models are sampled (see Section~\ref{sec:sampling_method} for more detail).
 
 \section{Characteristic Estimation} \label{Characteristic Estimation}
 
@@ -107,7 +202,7 @@ Some of the distributions described above cannot be published for contractual ag
 
 \input{tables/distribution_definitions}
 
-\section{Sampling Methodology}
+\section{Sampling Methodology}\label{sec:sampling_method}
 \subsection{Overview}
 ComStock's new segment allocation sampling methodology uses a two-step process to create the national dataset. This new approach improves upon previous methods by enhancing accuracy, particularly for rural and less densely populated areas, while also reducing computational costs. This section provides a detailed description of the processes involved in generating sampled models from defined sample segments and allocating the sampled models using the previously described stock data.
 
