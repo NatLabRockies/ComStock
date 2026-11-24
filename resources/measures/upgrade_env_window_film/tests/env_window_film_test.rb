@@ -60,9 +60,7 @@ class EnvWindowFilmTest < Minitest::Test
 
     # get arguments and test that they are what we are expecting
     arguments = measure.arguments(model)
-    assert_equal(2, arguments.size)
-    assert_equal('pct_shgc_reduct', arguments[0].name)
-    assert_equal('pct_vlt_reduct', arguments[1].name)
+    assert_equal(0, arguments.size)
   end
 
   # return file paths to test models in test directory
