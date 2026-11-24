@@ -1,4 +1,4 @@
-name: ComStock tests (draft)
+name: Unit and Integration Tests
 
 # Allow branch-only testing before this workflow is merged.
 on:
