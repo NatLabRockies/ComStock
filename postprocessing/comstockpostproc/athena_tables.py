@@ -39,6 +39,14 @@ WHAT A RUN NEEDS
 
 Both exports land under the run's `metadata_and_annual_results_aggregates`
 prefix, so ONE crawl covers both.
+
+ONE SET OF WEIGHTS
+  A run's tables are built from one stock allocation (weights), named in a record
+  beside the export. A pass with other weights never adds to them or replaces part
+  of them: its upgrades would then be compared against a baseline weighted
+  differently. `check_tables_weights` stops such a pass right after the weights
+  step, and only `rebuild=True` (REBUILD_ATHENA_TABLES) replaces the tables -- all
+  of them, every level and upgrade.
 """
 
 from __future__ import annotations
@@ -53,6 +61,10 @@ logger = logging.getLogger(__name__)
 NATIONAL_EXPORT = "national_by_state"
 COUNTY_EXPORT = "by_state_and_county"
 DEFAULT_GLUE_ROLE = "service-role/AWSGlueServiceRole-default"
+
+
+class TablesWeightsMismatch(RuntimeError):
+    """The run's Athena tables were built with other weights than this pass uses."""
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +148,6 @@ class Plan:
     unknown: bool = False                              # could not list Glue
     wants_timeseries: bool = False                     # views/timeseries were asked for
     county_skipped: bool = False                       # county wanted, but no timeseries table
-    stale: str = ""                                    # why existing tables are re-exported
     extend: dict = field(default_factory=dict)         # geo_top_dir -> upgrades its table lacks
 
     @property
@@ -160,8 +171,6 @@ class Plan:
             if self.views:
                 steps.append("create views")
             s = f"{self.run} in {self.database}: " + ", ".join(steps)
-            if self.stale:
-                s += f" (the tables up there were {self.stale})"
         if self.timeseries_missing and (self.wants_timeseries or self.county_skipped):
             s += (f". Note: {self.run}_timeseries is absent -- that table comes "
                   "from buildstockbatch's crawl, not from here, so timeseries "
@@ -172,20 +181,19 @@ class Plan:
 
 
 def plan(names: set[str] | None, run: str, database: str, county: bool = False,
-         views: bool = False, stale: str = "") -> Plan:
+         views: bool = False) -> Plan:
     """Decide what a run is missing. Pure: `names` is what Glue listed.
 
     Args:
         names: table and view names present for the run, or None if unknown.
         county: the county aggregate is wanted.
         views: the `_vu` views are wanted (timeseries plots, AMI).
-        stale: non-empty when the tables up there are known to carry another
-            stock allocation than the run now uses (the marker beside the
-            export says which); the text is the reason. Existing tables are
-            then re-exported and crawled, since table existence is not weight
-            freshness.
+
+    Whether existing tables carry the run's weights is decided before this, in
+    prepare_athena_tables: tables built with other weights are never planned
+    around, only replaced whole by a rebuild.
     """
-    p = Plan(run=run, database=database, wants_timeseries=views, stale=stale)
+    p = Plan(run=run, database=database, wants_timeseries=views)
     if names is None:
         p.unknown = True
         p.export = [NATIONAL_EXPORT] + ([COUNTY_EXPORT] if county else [])
@@ -197,7 +205,7 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
     # "county" nor a PUMA aggregate crawled alongside may change the answer.
     nat = f"{run}_md_agg_{NATIONAL_EXPORT}_parquet"
     cty = f"{run}_md_agg_{COUNTY_EXPORT}_parquet"
-    if nat not in names or stale:
+    if nat not in names:
         p.export.append(NATIONAL_EXPORT)
     ts_table = f"{run}_timeseries"
     p.timeseries_missing = ts_table not in names
@@ -211,9 +219,6 @@ def plan(names: set[str] | None, run: str, database: str, county: bool = False,
             p.county_skipped = True
         else:
             p.export.append(COUNTY_EXPORT)
-    elif county and stale:
-        # It exists, and it carries the old weights too.
-        p.export.append(COUNTY_EXPORT)
     p.crawl = bool(p.export)
     if views:
         # Only the views something reads: national always, county only when
@@ -341,11 +346,10 @@ def prepare_athena_tables(comstock, database: str = "enduse",
 
     Checks Glue first and does only what is missing: export the aggregates to
     the run's S3 prefix, crawl them, and (when wanted) fix the timeseries
-    partition dtype and create the `_vu` views. `rebuild=True` skips the check
-    and does all of it again -- for when what is up there is known to be stale.
-    It re-exports the run's current upgrades (same-named files are
-    overwritten); files for upgrades no longer in the run stay on S3 and in
-    the table.
+    partition dtype and create the `_vu` views. `rebuild=True` replaces all of
+    it: it removes the run's existing tables first (every level and upgrade,
+    the record beside the export and the published draw file), then exports
+    this pass's upgrades, crawls and creates the views.
 
     What goes up follows from what is asked for. The national aggregate covers
     every upgrade the run loaded, because every annual and measure leg reads it.
@@ -353,8 +357,10 @@ def prepare_athena_tables(comstock, database: str = "enduse",
     baseline when `ami` (the AMI comparison and AMI tab read upgrade 0), for
     every upgrade when a timeseries location is a county. A table that exists
     but lacks upgrades it is wanted for gets them added (Athena is asked which
-    upgrades it holds), unless it is kept from another stock allocation (see
-    `replace_stale`), which is never mixed with this pass's weights.
+    upgrades it holds). Tables built with other weights than the run now uses
+    are never added to or partly replaced: that raises TablesWeightsMismatch
+    (see `check_tables_weights`, which drivers call right after the weights
+    step), and only `rebuild=True` replaces them.
 
     Args:
         comstock: the run. What goes to S3 is fixed -- the parquet national
@@ -367,22 +373,21 @@ def prepare_athena_tables(comstock, database: str = "enduse",
             aggregate for every upgrade if any plotted location is a county.
         ami: the AMI comparison or AMI dashboard tab is wanted -> views, and
             the county aggregate for the baseline.
-        rebuild: export, crawl and create views regardless of what exists.
+        rebuild: remove the run's existing tables, then export, crawl and
+            create views for this pass's upgrades (REBUILD_ATHENA_TABLES).
         upgrade_ids: which upgrades the COUNTY export covers, in place of the
             rule above. Rarely needed; `extra_exports` is the driver setting.
         extra_exports: levels to export for every upgrade on top of what the
             outputs read, e.g. ['by_state_and_county'] for county tables of every
             measure. 'auto' or empty adds nothing. A typo raises.
-        replace_stale: the tables up there record the stock allocation they
-            were exported from (`postprocessing_allocation.json` beside the
-            crawled prefix, written here after every export together with the
-            draw file itself). When that record is missing, or names another
-            draw than the run now uses, the tables carry other weights. True
-            re-exports them -- the owner's case: this machine processed the run
-            before, or the driver was told to rebuild. False keeps them, logs
-            why, and records which allocation they carry in
-            `comstock.tables_allocation_id`, so a teammate reproducing a
-            published run never overwrites it by accident.
+        replace_stale: ignored; kept so older drivers still run. It once let a
+            pass re-export the tables it loaded when the record beside the
+            export (`postprocessing_allocation.json`) named other weights,
+            which left the rest of the table on the old weights.
+
+    Raises TablesWeightsMismatch when the run has tables whose record names
+    other weights than the run now uses, or none, and `rebuild` is False:
+    nothing is written then.
 
     Returns True when the tables are in place, False otherwise -- including
     when timeseries or AMI was asked for and the run has no `<run>_timeseries`
@@ -418,25 +423,22 @@ def prepare_athena_tables(comstock, database: str = "enduse",
         if rebuild:
             p = plan(None, run, database, county=county, views=views)
             p.unknown = False
-            logger.info("athena tables: REBUILD requested; %s", p.describe())
+            logger.info("athena tables: REBUILD requested; all of %s's tables are replaced: %s",
+                        run, p.describe())
+            step = "removing the run's existing tables"
+            _remove_run_tables(comstock, s3_dir, run, database)
+            comstock.tables_allocation_id = None
         else:
-            stale = _stale_allocation_reason(comstock, s3_dir)
-            kept = bool(stale and not replace_stale)
-            if kept:
-                logger.warning(
-                    "athena tables: %s's tables in %s were %s. They are KEPT: this machine has "
-                    "not processed the run before, so they may be someone else's (a published "
-                    "run). To replace them with this pass's draw, set rebuild=True on the entry. "
-                    "To match them instead, adopt the draw they were exported with -- "
-                    "compare_runs_and_upgrades does that by itself when the draw file sits beside "
-                    "the export.",
-                    run, database, stale)
-                stale = ""
             names = existing_tables(run, database)
-            p = plan(names, run, database, county=county, views=views, stale=stale)
-            if not p.unknown and not kept:
-                # Tables that exist but lack upgrades this pass wants from them. Kept
-                # tables carry another draw, and adding this pass's files would mix two.
+            if (names is not None and _has_exported_tables(names, run)
+                    and _stale_allocation_reason(comstock, s3_dir)):
+                # One set of weights per run's tables: never add to them or replace part of them.
+                raise TablesWeightsMismatch(_mismatch_message(
+                    comstock, database, s3_dir, getattr(comstock, "tables_allocation_id", None)))
+            p = plan(names, run, database, county=county, views=views)
+            if not p.unknown:
+                # Tables that exist but lack upgrades this pass wants from them; they carry
+                # this pass's weights (checked above), so the added files match them.
                 check = {level: ids for level, ids in wanted.items() if level not in p.export
                          and not (level == COUNTY_EXPORT and p.county_skipped)}
                 p.extend = _lacking_upgrades(names, run, database, check)
@@ -510,6 +512,8 @@ def prepare_athena_tables(comstock, database: str = "enduse",
                 "the dashboard's timeseries legs will skip.", run, run, database)
             return False
         return True
+    except TablesWeightsMismatch:
+        raise                                  # a choice for the user, not an AWS problem
     except Exception as exc:                                      # noqa: BLE001
         logger.warning(
             "athena tables: could not prepare %s -- failed while %s (%s). The rest "
@@ -571,6 +575,108 @@ def _record_allocation(comstock, s3_dir: str) -> str | None:
     logger.info("athena tables: recorded stock allocation %s beside %s's export, with its draw file",
                 current[:8], getattr(comstock, "comstock_run_name", "?"))
     return current
+
+
+def _has_exported_tables(names: set[str], run: str) -> bool:
+    """Does Glue hold aggregate tables this module exported for the run?"""
+    return any(n.startswith(f"{run}_md_agg_") and n.endswith("_parquet") for n in names)
+
+
+def _published_draw(comstock, s3_dir: str) -> str | None:
+    """The s3:// URL of the draw file beside the run's export, when there is one."""
+    from . import allocation
+    try:
+        out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
+        if out["fs"].exists(f"{out['fs_path']}/{allocation.FILE_NAME}"):
+            return f"{s3_dir}/{allocation.FILE_NAME}"
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("athena tables: could not look for the draw file beside %s (%s)", s3_dir, exc)
+    return None
+
+
+def _mismatch_message(comstock, database: str, s3_dir: str, remote: str | None,
+                      rebuild_setting: str = "REBUILD_ATHENA_TABLES = True",
+                      weights_setting: str = "WEIGHTS") -> str:
+    run = getattr(comstock, "comstock_run_name", "?")
+    current = (getattr(comstock, "allocation_id", None) or "none")[:8]
+    built = (f"were built with stock allocation {remote[:8]}, and this pass uses {current}" if remote
+             else f"carry no record of the weights they were built with, and this pass uses {current}")
+    msg = (f"{run}'s Athena tables in {database} {built}. A run's tables hold one set of weights, "
+           f"so nothing has been written to them. To replace them with this pass's weights, set "
+           f"{rebuild_setting}: that removes all of {run}'s tables, every upgrade, and exports the "
+           f"upgrades this pass loads.")
+    published = _published_draw(comstock, s3_dir) if remote else None
+    if published:
+        msg += f" To keep them and use their weights instead, set {weights_setting} to {published}"
+    return msg
+
+
+def check_tables_weights(comstock, database: str = "enduse", rebuild: bool = False,
+                         rebuild_setting: str = "REBUILD_ATHENA_TABLES = True",
+                         weights_setting: str = "WEIGHTS") -> None:
+    """Stop a pass whose weights differ from the ones the run's Athena tables were built with.
+
+    A run's tables hold one set of weights. Drivers call this right after the weights
+    step, so a conflict surfaces before the bills and before anything is written;
+    `prepare_athena_tables` refuses the same case at the end for drivers that do not.
+
+    Raises TablesWeightsMismatch, with what to change, when the run has aggregate tables
+    in `database` and the record beside their export names another stock allocation
+    than the run now uses, or none. Returns quietly when `rebuild` is set (the tables
+    are then replaced, all of them), when the run has no tables yet, when its draw is a
+    legacy one without an id, or when Glue or the record cannot be read (nothing to
+    compare; prepare_athena_tables does not export blind). `rebuild_setting` and
+    `weights_setting` name the driver's settings in the message.
+    """
+    run = getattr(comstock, "comstock_run_name", "?")
+    if rebuild:
+        logger.info("athena tables: %s, so all of %s's tables will be replaced with this pass's",
+                    rebuild_setting, run)
+        return
+    current = getattr(comstock, "allocation_id", None)
+    if not current:
+        return
+    names = existing_tables(run, database)
+    if not names or not _has_exported_tables(names, run):
+        return
+    s3_dir = f"s3://{comstock.s3_base_dir}/{run}/{run}"
+    try:
+        remote = _remote_allocation_id(comstock, s3_dir)
+    except Exception as exc:                                      # noqa: BLE001
+        logger.info("athena tables: could not read the allocation marker at %s (%s)", s3_dir, exc)
+        return
+    if remote == current:
+        logger.info("athena tables: %s's tables carry this pass's weights (stock allocation %s)",
+                    run, current[:8])
+        return
+    raise TablesWeightsMismatch(_mismatch_message(comstock, database, s3_dir, remote,
+                                                  rebuild_setting, weights_setting))
+
+
+def _remove_run_tables(comstock, s3_dir: str, run: str, database: str) -> None:
+    """For rebuild=True: everything this module exported for the run, so that what the
+    pass exports next is all its tables hold. The record beside the export goes first (a
+    rebuild that dies halfway then leaves no record, and the next pass stops and asks
+    again), then the published draw file, the aggregates prefix (every level, every
+    upgrade) and the run's `_md_agg_` tables and views in Glue. What buildstockbatch's
+    crawl made (<run>_baseline, _upgrades, _timeseries) stays."""
+    import boto3
+    from . import allocation
+    out = comstock.setup_fsspec_filesystem(s3_dir, aws_profile_name=None)
+    fs, root = out["fs"], out["fs_path"]
+    for name in (allocation.EXPORT_MARKER_NAME, allocation.FILE_NAME):
+        if fs.exists(f"{root}/{name}"):
+            fs.rm(f"{root}/{name}")
+    prefix = f"{root}/metadata_and_annual_results_aggregates"
+    if fs.exists(prefix):
+        fs.rm(prefix, recursive=True)
+    dropped = sorted(n for n in (existing_tables(run, database) or ()) if n.startswith(f"{run}_md_agg_"))
+    if dropped:
+        glue = boto3.client("glue", region_name="us-west-2")
+        for name in dropped:
+            glue.delete_table(DatabaseName=database, Name=name)
+    logger.warning("athena tables: REBUILD removed %s's export (%s) and its tables in %s (%s)",
+                   run, prefix, database, ", ".join(dropped) or "none listed")
 
 
 def _forget_cached_queries(run: str) -> None:

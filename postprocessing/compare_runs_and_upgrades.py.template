@@ -69,8 +69,9 @@ MAKE_COMPARISON_PLOTS  = False   # ComStock-vs-CBECS figures over the 'process' 
 #                   Optional: label; version (names its folder, output/ComStock <version>/; default
 #                   run); weights ('auto' or left out: its own weights file when it fits, else its
 #                   published weights, else a new draw shared by the runs on its sample; or a
-#                   weights file path or s3:// URL); rebuild=True (re-export its tables, replacing
-#                   published ones); acceptable_failure_percentage (default 0.25)
+#                   weights file path or s3:// URL); rebuild=True (replace all of its tables with
+#                   this pass's; a run whose tables carry other weights stops until it is set);
+#                   acceptable_failure_percentage (default 0.25)
 #   kind='athena'   already crawled: run (the table prefix), database, color; optional label
 #   kind='release'  a published release: key, label, md_table, database, color; optional
 #                   md_county_table, ts_table
@@ -116,10 +117,8 @@ def main():
     # 2. A ComStock object for every run postprocessed here. Under REUSE_CACHES its cached
     #    simulation outputs are reloaded when they cover every upgrade it loads and are newer
     #    than the results files, and rebuilt otherwise (ComStock reload_from_cache='auto').
-    objects, first_pass = {}, {}
+    objects = {}
     for r in processed:
-        # step 6: on a first pass here, tables from another draw are kept, not replaced
-        first_pass[r['run']] = not sim_cache_exists(cache_version(r))
         objects[r['run']] = cspp.ComStock(
             s3_base_dir=r['s3_base_dir'],
             comstock_run_name=r['run'],
@@ -165,13 +164,21 @@ def main():
             how = dict(allocation_path=d.source)
         obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0), **how)
     # A run whose draw changed in this pass has stale bills (the library rebuilds them in
-    # step 4, from each folder's marker) and, unless they already carry this draw, stale
-    # Athena tables (step 6, from the record beside the export).
+    # step 4, from each folder's marker).
     for run in before:
         if objects[run].allocation_id != before[run]:
-            logger.info('%s: stock allocation changed in this pass (%s -> %s); bills and Athena '
-                        'tables built from another draw will be rebuilt', run,
+            logger.info('%s: stock allocation changed in this pass (%s -> %s); bills built from '
+                        'another draw will be rebuilt', run,
                         (before[run] or 'none')[:8], (objects[run].allocation_id or 'none')[:8])
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when a run's
+    # were built with other weights (rebuild=True on its entry replaces them; weights= can name theirs).
+    if MAKE_RESULTS_DASHBOARD:
+        for r in processed:
+            cspp.athena_tables.check_tables_weights(
+                objects[r['run']], database=r.get('database', ATHENA_DATABASE),
+                rebuild=bool(r.get('rebuild')),
+                rebuild_setting=f"rebuild=True on its RUNS entry ({r['run']})",
+                weights_setting='weights= on its RUNS entry')
 
     # 4. CBECS, then scale every processed run to CBECS floor area and add utility bills.
     #    load_cbecs reads 'CBECS wide.csv' when it exists and builds it otherwise.
@@ -209,16 +216,12 @@ def main():
         # The levels follow from the dashboard: national for every upgrade the run loaded;
         # county for the baseline with INCLUDE_AMI, for every upgrade when a TIMESERIES_LOCATIONS
         # entry is a county; ATHENA_EXPORTS adds levels. A table that lacks upgrades gets them.
-        # Table existence is not weight freshness: prepare_athena_tables re-exports tables
-        # whose record beside the export names another stock allocation than the run uses,
-        # or none at all -- but only when this machine processed the run before or the entry
-        # says rebuild=True. On a first pass here the tables may be someone else's (a
-        # published run), so they are kept and the log says how to proceed.
+        # Tables built with other weights stopped the pass after step 3 unless the entry says
+        # rebuild=True, which replaces all of them here.
         ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
                                         timeseries=loads_upgrades(r), ami=INCLUDE_AMI,
                                         extra_exports=ATHENA_EXPORTS,
-                                        rebuild=bool(r.get('rebuild')),
-                                        replace_stale=bool(r.get('rebuild')) or not first_pass[r['run']])
+                                        rebuild=bool(r.get('rebuild')))
         if not ok:
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
@@ -381,15 +384,6 @@ def published_draw(entry, sample_hash, bootstrap):
     if st.state != 'missing':
         logger.warning('%s: the published draw at %s is %s; not used', entry['run'], url, st.describe())
     return None, None
-
-
-def sim_cache_exists(run_version):
-    """True when this machine has processed the run before: its cached simulation outputs
-    exist. Step 6 keeps tables from another draw on a first pass (they may be a published
-    run's) and replaces them otherwise."""
-    pattern = os.path.join(HERE, 'output', f'ComStock {run_version}', 'cached_simulation_outputs',
-                           '**', 'cached_simulation_outputs_upgrade*.parquet')
-    return bool(glob.glob(pattern, recursive=True))
 
 
 def stock_estimate(version, truth_data_version='v01'):

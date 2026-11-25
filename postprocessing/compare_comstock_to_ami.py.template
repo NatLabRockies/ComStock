@@ -32,7 +32,8 @@ WEIGHTS        = 'auto'    # 'auto': output/ComStock <RUN_VERSION>/cached_ComSto
 
 # Athena tables and exports
 ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
-REBUILD_ATHENA_TABLES = False     # True overwrites the run's S3 exports and Athena tables
+REBUILD_ATHENA_TABLES = False     # True replaces all of the run's S3 exports and Athena tables with this
+                                  #   pass's; a pass with other weights than the tables' stops until it is True
 LOCAL_EXPORTS         = []        # files for other tools in the run's folder: 'national_by_state', 'by_state_and_county'
 
 # Outputs
@@ -84,6 +85,12 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     comstock.create_allocated_weights(stock_estimate, base_sim_outs, weights=WEIGHTS)  # WEIGHTS at the top
 
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when they were
+    # built with other weights (REBUILD_ATHENA_TABLES replaces them; WEIGHTS can name theirs)
+    if MAKE_COMPARISON_PLOTS or MAKE_RESULTS_DASHBOARD:
+        cspp.athena_tables.check_tables_weights(comstock, database=ATHENA_DATABASE,
+                                                rebuild=REBUILD_ATHENA_TABLES)
+
     # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
     cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#009E73')
 
@@ -123,7 +130,7 @@ def main():
         comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id=0, geo_exports=geo_exports)
 
     # ---- S3 exports + Athena tables ----------------------------------------
-    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES redoes it).
+    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES replaces all of it).
     # The dashboard reads the national aggregate; the AMI figures and the AMI tab read the
     # county one, which is exported only when one of them is on.
     if MAKE_COMPARISON_PLOTS or MAKE_RESULTS_DASHBOARD:

@@ -123,7 +123,7 @@ other templates are baseline only and have no upgrade settings. The single-run t
 | `STOCK_ESTIMATE` | The stock estimate the run's sample was drawn from; `sampling/README.md` pairs each bucket file with its estimate. A wrong one mis-weights every result, and only `compare_runs_and_upgrades` checks it (`CHECK_SAMPLE_PAIRING`). |
 | `WEIGHTS` | `'auto'` or a weights file. See **Weights**. |
 | `ATHENA_DATABASE` | Where the run's tables are crawled and read. Keep `'enduse'`: the timeseries figures and the AMI comparison read it. |
-| `REBUILD_ATHENA_TABLES` | `True` exports and crawls the run's tables again, overwriting what is on S3. `False` builds only what is missing. |
+| `REBUILD_ATHENA_TABLES` | `True` removes all of the run's S3 exports and Athena tables, every upgrade, and exports this pass's. `False` builds only what is missing. A pass whose weights differ from the tables' stops until it is `True` (see **Weights**). |
 | `ATHENA_EXPORTS` | In `compare_upgrades`: `'auto'`, or levels to add. See **Exports**. |
 | `LOCAL_EXPORTS` | Local copies of the metadata aggregates for other tools such as Tableau, in the run's folder: `'national_by_state'` and/or `'by_state_and_county'`. Nothing in postprocessing reads them. |
 | `MAKE_RESULTS_DASHBOARD`, `INCLUDE_AMI`, `COMPARE_TO_RELEASES`, `MAKE_COMPARISON_PLOTS` | The outputs: the dashboard, its AMI tab, published releases to compare against, and the template's figures. See "Results dashboard" below. |
@@ -158,6 +158,13 @@ Every postprocessed run publishes its weights beside its exported tables, at
 your measures match a published dataset, point `WEIGHTS` at the weights that dataset was
 postprocessed with. Your run must use the same `buildstock.csv` and estimate; reading from
 S3 needs AWS access.
+
+A run's tables always hold one set of weights, and the file beside them,
+`postprocessing_allocation.json`, says which. A pass whose weights differ stops right after
+the weights step, before the bills and before anything is written, and says how to go on:
+set `WEIGHTS` to the published weights to keep the tables, or `REBUILD_ATHENA_TABLES = True`
+to replace them, all of them, with this pass's. No table ever holds some upgrades on one set
+of weights and some on another.
 
 **Caches.** A pass reuses what earlier passes built, when it still fits, and builds what is
 missing. Before anything expensive starts, the log lists every cache with what this pass will
@@ -259,15 +266,16 @@ when it is among them, else the first listed; the others copy it, and the log sa
 ("SHARE <run>'s draw"). The draw file, `output/ComStock <v>/cached_ComStock_alloc_wts.parquet`,
 carries its provenance in the parquet metadata -- the run, estimate and sample (a fingerprint
 of `buildstock.csv`) it was drawn for -- and is reused only when that matches the run; a run
-whose draw changed gets its bills and its Athena tables rebuilt. The export publishes the
+whose draw changed gets its bills rebuilt. The export publishes the
 draw beside the run's tables (`s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet`,
 with `postprocessing_allocation.json` naming it), and a `process` entry adopts that published
 draw by itself when it fits, so everyone who postprocesses or plots the run gets exactly the
 published weights; `weights='<path or s3://...>'` (earlier name `allocation=`, still accepted)
 names another file instead. The library
-checks any adopted file fits the run and reports how many models it weights. Tables whose
-record names a different draw are replaced only when this machine processed the run before
-or the entry says `rebuild=True`, so a teammate never overwrites a published run by accident.
+checks any adopted file fits the run and reports how many models it weights. A run whose
+tables were built with a different draw stops the pass right after the weights step, as in
+the single-run templates: `rebuild=True` on its entry replaces all of its tables, and
+`weights=` naming the published file keeps them.
 `comstockpostproc/allocation.py` has the details.
 
 Caches work as in the single-run templates (**Caches** under "Template settings"): each is

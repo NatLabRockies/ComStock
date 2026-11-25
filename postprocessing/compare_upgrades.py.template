@@ -43,7 +43,8 @@ UPGRADE_GROUPS        = {}     # {'<folder name>': [0, 1, 2]}: figures comparing
 
 # Athena tables and exports
 ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
-REBUILD_ATHENA_TABLES = False     # True overwrites the run's S3 exports and Athena tables
+REBUILD_ATHENA_TABLES = False     # True replaces all of the run's S3 exports and Athena tables with this
+                                  #   pass's; a pass with other weights than the tables' stops until it is True
 ATHENA_EXPORTS        = 'auto'    # 'auto' exports what the outputs read; a list adds levels for every
                                   # upgrade, e.g. ['by_state_and_county']
 LOCAL_EXPORTS         = []        # files for other tools in the run's folder: 'national_by_state', 'by_state_and_county'
@@ -103,6 +104,13 @@ def main():
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     comstock.create_allocated_weights(stock_estimate, base_sim_outs, weights=WEIGHTS)  # WEIGHTS at the top
 
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when they were
+    # built with other weights (REBUILD_ATHENA_TABLES replaces them; WEIGHTS can name theirs)
+    timeseries_figures = MAKE_COMPARISON_PLOTS and MAKE_TIMESERIES_PLOTS
+    if timeseries_figures or MAKE_RESULTS_DASHBOARD:
+        cspp.athena_tables.check_tables_weights(comstock, database=ATHENA_DATABASE,
+                                                rebuild=REBUILD_ATHENA_TABLES)
+
     # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
     cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#009E73')
 
@@ -144,10 +152,9 @@ def main():
             comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id, geo_exports)
 
     # ---- S3 exports + Athena tables ----------------------------------------
-    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES redoes it).
+    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES replaces all of it).
     # The levels follow from the outputs: national for every upgrade; county for the
     # baseline with INCLUDE_AMI, for every upgrade with a county in TIMESERIES_LOCATIONS.
-    timeseries_figures = MAKE_COMPARISON_PLOTS and MAKE_TIMESERIES_PLOTS
     if timeseries_figures or MAKE_RESULTS_DASHBOARD:
         tables_ok = cspp.prepare_athena_tables(
             comstock, database=ATHENA_DATABASE,

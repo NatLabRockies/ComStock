@@ -33,7 +33,8 @@ REUSE_CACHES   = True      # True reuses these caches in output/ when current; F
 
 # Athena tables
 ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
-REBUILD_ATHENA_TABLES = False     # True overwrites the runs' S3 exports and Athena tables
+REBUILD_ATHENA_TABLES = False     # True replaces all of each run's S3 exports and Athena tables with this
+                                  #   pass's; a run with other weights than its tables' stops until it is True
 
 # Outputs, all in output/<COMPARISON_NAME>/
 COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # keep it short on Windows
@@ -72,6 +73,14 @@ def main():
     base_sim_outs = comstock_b.get_sim_outs_for_upgrade(0)
     comstock_b.create_allocated_weights(stock_estimate, base_sim_outs, weights=RUN_B['weights'])
 
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when a run's
+    # were built with other weights (REBUILD_ATHENA_TABLES replaces them; its weights can name theirs)
+    if MAKE_RESULTS_DASHBOARD:
+        for name, run in (('RUN_A', comstock_a), ('RUN_B', comstock_b)):
+            cspp.athena_tables.check_tables_weights(run, database=ATHENA_DATABASE,
+                                                    rebuild=REBUILD_ATHENA_TABLES,
+                                                    weights_setting=f"weights in {name}")
+
     # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
     cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#33a02c')
 
@@ -104,7 +113,7 @@ def main():
     # ---- Results dashboard --------------------------------------
     # The assessment reads each run's Athena tables and creates none of its own,
     # so prepare_athena_tables makes sure they exist first: it checks Glue and
-    # builds only what is missing (REBUILD_ATHENA_TABLES at the top redoes it).
+    # builds only what is missing (REBUILD_ATHENA_TABLES at the top replaces all of it).
     # Both log and skip rather than raising, so an AWS problem here cannot cost
     # you the plots above. See README for the full contract.
     if MAKE_RESULTS_DASHBOARD:
