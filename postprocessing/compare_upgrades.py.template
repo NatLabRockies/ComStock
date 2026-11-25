@@ -15,7 +15,12 @@ S3_BASE_DIR         = 'eulp/euss_com/0_production_runs_2026R1/tests'  # bucket/p
 RUN_NAME            = 'sdr_2026r1_all_measure_10k_6'  # the run's name on S3, and its Athena table prefix
 RUN_VERSION         = RUN_NAME  # names the run's folder, output/ComStock <RUN_VERSION>/; keep it short on Windows
 ACCEPTABLE_FAILURES = 0.05      # share of failed simulations tolerated
-REUSE_CACHES        = True      # False rebuilds the run's caches, after postprocessing code or an estimate changed
+REUSE_CACHES        = True      # True reuses these caches in output/ when current; False rebuilds all three:
+                                #   - simulation outputs: current when newer than the results files
+                                #   - apportionment: current once built
+                                #   - bills: current when newer than the results files and from the same weights
+                                #   Use False after postprocessing code or an estimate changed.
+                                #   It never redraws weights or rebuilds the CBECS and AMI files
 
 # Weights: every result is weighted by them
 STOCK_ESTIMATE = '2026R1'  # MUST be the estimate the run's sample was drawn from (sampling/README.md)

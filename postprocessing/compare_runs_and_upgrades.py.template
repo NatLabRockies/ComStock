@@ -34,8 +34,12 @@ logger = logging.getLogger(__name__)
 COMPARISON_NAME      = 'my comparison'       # output/<COMPARISON_NAME>/ holds everything; keep it short on Windows
 REVIEW_RUN           = '<run_under_review>'  # the RUNS entry under review (findings, scorecard, Measures tabs)
 DELTA_REF            = '<existing_run_a>'    # the comparison run the deltas are measured against
-REUSE_CACHES         = True      # False rebuilds the 'process' runs' caches, after postprocessing code or an
-                                 # estimate changed. It never redraws weights; delete a run's weights file for that
+REUSE_CACHES         = True      # True reuses these caches in output/ when current; False rebuilds all three:
+                                 #   - simulation outputs: current when newer than the results files
+                                 #   - apportionment: current once built
+                                 #   - bills: current when newer than the results files and from the same weights
+                                 #   Use False after postprocessing code or an estimate changed.
+                                 #   It never redraws weights or rebuilds the CBECS and AMI files
 CHECK_SAMPLE_PAIRING = True      # stop when a 'process' run's sample does not match its estimate
 
 # Upgrades: those of REVIEW_RUN, which must then be a 'process' run; every other run loads its baseline

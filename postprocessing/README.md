@@ -119,7 +119,7 @@ other templates are baseline only and have no upgrade settings. The single-run t
 | `S3_BASE_DIR`, `RUN_NAME` | Where the run was uploaded (`postprocessing.aws.s3` in its yml) and its name, which is also the prefix of its Athena tables. For a run that is not on S3, put its `results_up*.parquet` files in `comstock_data/<RUN_VERSION>/` by hand. |
 | `RUN_VERSION` | Names the run's folder, `output/ComStock <RUN_VERSION>/`, and labels the run in plots. On Windows the checkout path, this name and about 150 more characters must stay under 260. |
 | `ACCEPTABLE_FAILURES` | The share of failed simulations tolerated. |
-| `REUSE_CACHES` | `True` reuses what earlier passes built when it still fits; `False` rebuilds it. See **Caches**. |
+| `REUSE_CACHES` | `True` reuses the cached simulation outputs, apportionment and bills when they are current; `False` rebuilds those three. It never redraws weights or rebuilds the CBECS and AMI files. See **Caches**. |
 | `STOCK_ESTIMATE` | The stock estimate the run's sample was drawn from; `sampling/README.md` pairs each bucket file with its estimate. A wrong one mis-weights every result, and only `compare_runs_and_upgrades` checks it (`CHECK_SAMPLE_PAIRING`). |
 | `WEIGHTS` | `'auto'` or a weights file. See **Weights**. |
 | `ATHENA_DATABASE` | Where the run's tables are crawled and read. Keep `'enduse'`: the timeseries figures and the AMI comparison read it. |
@@ -169,7 +169,7 @@ do with it and when it was written.
 | Processed simulation outputs | `output/ComStock <RUN_VERSION>/cached_simulation_outputs/` | There is one for every upgrade the run loads, newer than its results file. |
 | Apportionment | `output/Stock Estimation <STOCK_ESTIMATE>/` | It exists. Every run on that estimate shares it. |
 | Weights | `output/ComStock <RUN_VERSION>/cached_ComStock_alloc_wts.parquet` | It fits the run; `WEIGHTS` decides (above). |
-| Bills | `output/ComStock <RUN_VERSION>/cached_allocated_weights_plus_bills/` | It was built from the weights this pass uses; checked per upgrade. |
+| Bills | `output/ComStock <RUN_VERSION>/cached_allocated_weights_plus_bills/` | It is newer than its results file and was built from the weights this pass uses; checked per upgrade. |
 | CBECS and AMI | `output/CBECS 2018/`, `output/AMI v01/` | Always: they depend on no run. |
 
 `REUSE_CACHES = False` rebuilds the processed simulation outputs, the apportionment and the

@@ -24,7 +24,12 @@ RUN_B = dict(s3_base_dir='eulp/euss_com', run='s3_change_run_name', version='cha
              acceptable_failures=0.9, color='#1f78b4', weights='auto')
 STOCK_ESTIMATE = '2026R1'  # MUST be the estimate both samples were drawn from; if they differ, use
                            # compare_runs_and_upgrades
-REUSE_CACHES   = True      # False rebuilds the runs' caches, after postprocessing code or an estimate changed
+REUSE_CACHES   = True      # True reuses these caches in output/ when current; False rebuilds all three:
+                           #   - simulation outputs: current when newer than the results files
+                           #   - apportionment: current once built
+                           #   - bills: current when newer than the results files and from the same weights
+                           #   Use False after postprocessing code or an estimate changed.
+                           #   It never redraws weights or rebuilds the CBECS and AMI files
 
 # Athena tables
 ATHENA_DATABASE       = 'enduse'  # keep 'enduse'

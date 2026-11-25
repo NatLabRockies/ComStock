@@ -16,7 +16,12 @@ S3_BASE_DIR         = 'com-sdr'      # bucket/prefix the run was uploaded to
 RUN_NAME            = 's3_run_name'  # the run's name on S3, and its Athena table prefix
 RUN_VERSION         = 'baseline'     # names the run's folder, output/ComStock <RUN_VERSION>/; keep it short on Windows
 ACCEPTABLE_FAILURES = 0.25           # share of failed simulations tolerated
-REUSE_CACHES        = True           # False rebuilds the run's caches, after postprocessing code or an estimate changed
+REUSE_CACHES        = True           # True reuses these caches in output/ when current; False rebuilds all three:
+                                     #   - simulation outputs: current when newer than the results files
+                                     #   - apportionment: current once built
+                                     #   - bills: current when newer than the results files and from the same weights
+                                     #   Use False after postprocessing code or an estimate changed.
+                                     #   It never redraws weights or rebuilds the CBECS and AMI files
 
 # Weights: every result is weighted by them
 STOCK_ESTIMATE = '2026R1'  # MUST be the estimate the run's sample was drawn from (sampling/README.md)
