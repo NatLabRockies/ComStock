@@ -133,7 +133,7 @@ The **Upgrades** section of `compare_upgrades`:
 | Setting | What it does |
 |---|---|
 | `UPGRADE_IDS_TO_SKIP` | Upgrades to leave out; every other upgrade of the run on S3 is loaded. |
-| `UPGRADE_ALIASES` | Short upgrade names in figures. See "Upgrade names, plot aliases and measure IDs" below. |
+| `UPGRADE_ALIASES` | Short upgrade names in figures and folders, nothing else: the measure ID column, `in.upgrade_measure_id`, is added either way. See "Upgrade names, plot aliases and measure IDs" below. |
 | `TIMESERIES_LOCATIONS` | Load-shape locations for the dashboard's Measures tab and the measure figures: state codes or county IDs such as `'G2500250'`, a tuple key combining several. A county adds county tables for every upgrade (see **Exports**). |
 | `MAKE_COMPARISON_PLOTS`, `MAKE_TIMESERIES_PLOTS`, `UPGRADE_GROUPS` | The measure figures in `measure_runs/`, their load-shape figures, and figures comparing groups of upgrades. The dashboard needs none of them. |
 
@@ -204,15 +204,20 @@ added: Athena is asked which upgrades the table holds.
 How postprocessing uses it:
 
 - Every run gets an `in.upgrade_measure_id` column when it loads, matched on the publication
-  name, and every export carries it. To match an upgrade across releases, use this column,
-  not `upgrade` or `in.upgrade_name`.
+  name, and every export carries it, whatever `UPGRADE_ALIASES` says. To match an upgrade
+  across releases, use this column, not `upgrade` or `in.upgrade_name`.
 - `UPGRADE_ALIASES = True`, in the templates that load upgrades (`compare_upgrades`, and
   `compare_runs_and_upgrades` with `INCLUDE_UPGRADES`), labels figures and the measure
   comparison's `upNN_<name>` folders with the plot alias. Exported and cached files keep the
   publication name.
-- An upgrade whose name is not in the file still runs: its `in.upgrade_measure_id` is empty,
-  its figures keep the publication name, and a warning at load lists it. A run whose yml uses
-  short names instead of the publication names gets this warning for every upgrade.
+- A run that loads upgrades checks their names against the file right after its results
+  files are downloaded, before any processing, and warns about each upgrade without a measure
+  ID, with the lines to add. Such an upgrade still runs: its `in.upgrade_measure_id` is empty
+  and its figures keep the publication name. A run whose yml uses short names instead of the
+  publication names gets this warning for every upgrade.
+- The ID is looked up at every load, not cached, so after you add the lines a rerun picks
+  them up while reusing the caches. Athena tables exported before the fix keep the empty ID
+  until a pass with `REBUILD_ATHENA_TABLES = True`.
 
 To add a measure, add a row with its publication name exactly as in the yml, its measure ID
 (from the release's `measure_name_crosswalk.csv`, or the ID assigned to a new measure) and a

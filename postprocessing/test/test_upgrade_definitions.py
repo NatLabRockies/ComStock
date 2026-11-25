@@ -91,3 +91,46 @@ def test_blank_and_repeated_resource_entries_warn(tmp_path, monkeypatch, caplog)
         obj.check_upgrade_aliases()
     assert "'Envelope': ['Roof Insulation', 'Wall Insulation']" in caplog.text
     assert 'no measure_id on line(s)' not in caplog.text
+
+
+def comstock_with_results(tmp_path, names_by_upgrade, process=None):
+    """A ComStock whose results files hold only the upgrade-name column, as check_upgrade_measure_ids reads it."""
+    for up, names in names_by_upgrade.items():
+        pl.DataFrame({'apply_upgrade.upgrade_name': names}, schema={'apply_upgrade.upgrade_name': pl.Utf8}).write_parquet(
+            tmp_path / f'results_up{up:02d}.parquet')
+    obj = ComStock.__new__(ComStock)
+    obj.data_dir = str(tmp_path)
+    obj.upgrade_ids_to_process = sorted(names_by_upgrade) if process is None else process
+    return obj
+
+
+def test_upgrades_without_a_measure_id_are_reported_before_processing(tmp_path, caplog):
+    obj = comstock_with_results(tmp_path, {0: [None], 1: ['Wall Insulation', 'Wall Insulation', None],
+                                           2: ['A name nobody listed']})
+    with caplog.at_level(logging.WARNING, logger='comstockpostproc.comstock'):
+        assert obj.check_upgrade_measure_ids() == [(2, 'A name nobody listed')]
+    assert '2: A name nobody listed' in caplog.text
+    assert '"A name nobody listed",<measure_id>,<plot_alias>' in caplog.text
+    assert 'REBUILD_ATHENA_TABLES' in caplog.text and 'Wall Insulation' not in caplog.text
+    # the end of the load adds the column and does not repeat the warning
+    obj.data = pl.LazyFrame({obj.UPGRADE_ID: [0, 1, 2],
+                             obj.UPGRADE_NAME: ['Baseline', 'Wall Insulation', 'A name nobody listed']})
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger='comstockpostproc.comstock'):
+        obj.add_upgrade_measure_id_column()
+    assert caplog.text == ''
+    assert obj.data.collect()[obj.UPGRADE_MEASURE_ID].to_list() == ['baseline', 'env_0001', None]
+
+
+def test_a_run_whose_upgrades_all_have_measure_ids_reports_nothing(tmp_path, caplog):
+    obj = comstock_with_results(tmp_path, {1: ['Wall Insulation'], 2: ['Package 3, Package 1 + Package 2']})
+    with caplog.at_level(logging.WARNING, logger='comstockpostproc.comstock'):
+        assert obj.check_upgrade_measure_ids() == []
+    assert caplog.text == ''
+
+
+def test_upgrades_the_run_leaves_out_are_not_checked(tmp_path, caplog):
+    obj = comstock_with_results(tmp_path, {1: ['Wall Insulation'], 2: ['A name nobody listed']}, process=[0, 1])
+    with caplog.at_level(logging.WARNING, logger='comstockpostproc.comstock'):
+        assert obj.check_upgrade_measure_ids() == []
+    assert caplog.text == ''

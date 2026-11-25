@@ -192,6 +192,11 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
             logger.info(f'Leaving out upgrade(s) {[int(u) for u in left_out]} found in {self.data_dir} '
                         f'(upgrade_ids_to_skip={self.upgrade_ids_to_skip}, include_upgrades={self.include_upgrades})')
 
+        # Upgrades with no measure id, reported now rather than after the processing: in.upgrade_measure_id is added
+        # at the end of the load. A rename map changes the names after this point, so that case is left to the end.
+        if self.include_upgrades and not self.rename_upgrades:
+            self.check_upgrade_measure_ids()
+
         pl.enable_string_cache()
         # reload_from_cache: True reloads the cached simulation outputs (raises when there are none),
         # False rebuilds them from the results files, 'auto' reloads when they can stand in for the
@@ -2247,6 +2252,47 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         pairs = self.data.select(pl.col(self.UPGRADE_ID), pl.col(self.UPGRADE_NAME).cast(pl.Utf8)).unique().collect()
         return sorted(pairs.iter_rows())
 
+    def results_upgrade_names(self):
+        """{upgrade id: [publication names]} of the upgrades this run processes, read from the
+        apply_upgrade.upgrade_name column of their results files, one column per file, before anything
+        is processed. The baseline is left out: it is always named BASE_NAME."""
+        files, names = self.results_files(), {}
+        for up in sorted(int(u) for u in self.upgrade_ids_to_process):
+            if up == 0 or up not in files:
+                continue
+            try:
+                found = (pl.scan_parquet(files[up]).select(pl.col('apply_upgrade.upgrade_name').cast(pl.Utf8))
+                         .drop_nulls().unique().collect().to_series().to_list())
+            except Exception as exc:  # noqa: BLE001
+                logger.info(f'Could not read the upgrade name from {files[up]} ({exc}); it is checked after the load')
+                continue
+            if found:
+                names[up] = sorted(found)
+        return names
+
+    def check_upgrade_measure_ids(self):
+        """Report, before the processing starts, every upgrade whose publication name has no measure_id in
+        comstock_upgrade_definitions.csv, with the lines to add; in.upgrade_measure_id would be empty for it.
+        The run goes on either way. Returns the (upgrade id, name) pairs it reported."""
+        defs = self.upgrade_definitions()
+        known = {name for name, mid in zip(defs['upgrade_name'], defs['measure_id']) if name and mid}
+        missing = [(up, name) for up, found in self.results_upgrade_names().items() for name in found
+                   if name not in known]
+        self._measure_ids_reported = {name for _, name in missing}
+        if missing:
+            upgrades = '\n'.join(f'    {up}: {name}' for up, name in missing)
+            lines = '\n'.join('    "{}",<measure_id>,<plot_alias>'.format(name.replace('"', '""')) for _, name in missing)
+            logger.warning(
+                f'{len(missing)} upgrade(s) of this run have no measure_id in {UPGRADE_DEFINITION_FILE_NAME}, so '
+                f'{self.UPGRADE_MEASURE_ID} will be empty for them:\n{upgrades}\n'
+                f'To fix it, add a line per upgrade to comstockpostproc/resources/{UPGRADE_DEFINITION_FILE_NAME}:\n'
+                f'{lines}\n'
+                "taking the measure_id from the release's measure_name_crosswalk.csv (a new measure gets the next "
+                "free one; for a release, change the release's upgrade table, which generates this file). Then "
+                'rerun: the id is looked up at every load, so the caches are reused, but Athena tables exported '
+                'before the fix keep the empty id until a pass with REBUILD_ATHENA_TABLES = True.')
+        return missing
+
     def add_upgrade_measure_id_column(self):
         # Computed from the publication name on every load rather than cached, so simulation output caches written
         # before this column existed still export it. An upgrade the definitions file does not list gets a null.
@@ -2259,7 +2305,9 @@ class ComStock(NamingMixin, UnitsMixin, GasCorrectionModelMixin, S3UtilitiesMixi
         shared = {name: ids for name, ids in ids_by_name.items() if len(ids) > 1}
         if shared:
             logger.warning(f'Upgrades with the same name share a measure id, and figures merge them: {shared}')
-        missing = [f'{up_id}: {name}' for up_id, name in pairs if name not in name_to_id]
+        # Names check_upgrade_measure_ids already reported before the processing are not repeated here.
+        reported = getattr(self, '_measure_ids_reported', set())
+        missing = [f'{up_id}: {name}' for up_id, name in pairs if name not in name_to_id and name not in reported]
         if missing:
             logger.warning(f'{UPGRADE_DEFINITION_FILE_NAME} has no measure_id for {len(missing)} upgrade(s), so '
                            f'{self.UPGRADE_MEASURE_ID} is empty for them: {missing}. Add each publication name with '

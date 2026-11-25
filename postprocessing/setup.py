@@ -51,7 +51,9 @@ setup(
         'joblib',
         'natsort',
         'nbformat',
-        'pandas',
+        # pandas 3 stores strings as Arrow strings, which results_dashboard/heating_fuel.py
+        # cannot fill with 0.0; postprocessing is tested on pandas 2.
+        'pandas<3',
         # Batched figure export (plotly.io.write_images) needs plotly >=6.1 backed by
         # Kaleido v1. Kaleido is a hard requirement rather than a platform extra now,
         # because v1 dropped the per-platform binaries the old pins were working around.
@@ -66,6 +68,10 @@ setup(
         'SQLAlchemy==1.4.46',
         'sqlalchemy-views==0.3.2',
         'xlrd',
+        # buildstock_query queries Athena through PyAthena's SQLAlchemy dialect. PyAthena 4 needs
+        # SQLAlchemy 2 (its import fails on sqlalchemy.types.DOUBLE), and SQLAlchemy is pinned to
+        # 1.4.46 here and by buildstock_query, which accepts any PyAthena >= 3.19.
+        'PyAthena<4',
         'buildstock_query @ git+https://github.com/NREL/buildstock-query@0479759'
     ],
     extras_require={

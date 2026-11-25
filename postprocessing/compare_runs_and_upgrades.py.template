@@ -45,7 +45,7 @@ UPGRADE_IDS_TO_SKIP  = []        # e.g. [1, 3]
 TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}  # Measures-tab load shapes: state or
                                  # county ID ('G2500250') -> name, a tuple key combines several; a county adds
                                  # county tables for every upgrade (~3,100 files each)
-UPGRADE_ALIASES      = False     # short upgrade names (README, "Upgrade names, plot aliases and measure IDs")
+UPGRADE_ALIASES      = False     # short names in figures and folders; in.upgrade_measure_id is added either way
 
 # Athena tables and exports
 ATHENA_DATABASE      = 'enduse'  # for entries without `database`; keep 'enduse' for 'process' runs
