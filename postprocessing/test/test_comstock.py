@@ -9,6 +9,11 @@ import comstockpostproc.comstock
 import comstockpostproc.cbecs
 
 
+@pytest.mark.skip(reason=(
+    "Obsolete: written for the weighting pipeline that 615499514 (2025-08-04) replaced. It passes "
+    "reload_from_csv to ComStock and calls add_national_scaling_weights, both removed, and its S3 run "
+    "(com-sdr lbl_df_geb_measures_10k_7) no longer exists. It checked that after scaling, ComStock's "
+    "weighted floor area matches CBECS by building type and energy totals equal their end-use sums."))
 def test_comstock_vs_cbecs_2012():
     comstock = comstockpostproc.comstock.ComStock(
         s3_base_dir='com-sdr',  # If run not on S3, download results_up**.parquet manually

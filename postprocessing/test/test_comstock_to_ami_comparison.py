@@ -13,6 +13,11 @@ import comstockpostproc.comstock_to_ami_comparison
 import comstockpostproc.cbecs
 
 
+@pytest.mark.skip(reason=(
+    "Obsolete: written for the weighting pipeline that 615499514 (2025-08-04) replaced. It passes "
+    "reload_from_csv to ComStock and calls add_national_scaling_weights and ComStock.export_to_csv_wide, "
+    "all removed, and its S3 run (eulp comstock_core/ami_comparison) no longer exists. It checked that "
+    "the ComStock-to-AMI comparison (used by compare_comstock_to_ami) runs and makes its plots."))
 def test_ami_plot_generation(caplog):
     caplog.set_level(logging.INFO)
     # ComStock

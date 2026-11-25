@@ -106,6 +106,132 @@ $ pip install -e .[dev,gap]
 
 ## Usage
 
+### Template settings
+
+Each template starts with a settings block: the things you change from run to run. The
+code below `main()` reads them and normally needs no edits. Only `compare_upgrades` and
+`compare_runs_and_upgrades` load upgrades, and each has an **Upgrades** section for them. The
+other templates are baseline only and have no upgrade settings. The single-run templates
+(`compare_upgrades`, `compare_comstock_to_cbecs`, `compare_comstock_to_ami`) take:
+
+| Setting | What it does |
+|---|---|
+| `S3_BASE_DIR`, `RUN_NAME` | Where the run was uploaded (`postprocessing.aws.s3` in its yml) and its name, which is also the prefix of its Athena tables. For a run that is not on S3, put its `results_up*.parquet` files in `comstock_data/<RUN_VERSION>/` by hand. |
+| `RUN_VERSION` | Names the run's folder, `output/ComStock <RUN_VERSION>/`, and labels the run in plots. On Windows the checkout path, this name and about 150 more characters must stay under 260. |
+| `ACCEPTABLE_FAILURES` | The share of failed simulations tolerated. |
+| `REUSE_CACHES` | `True` reuses the cached simulation outputs, apportionment and bills when they are current; `False` rebuilds those three. It never redraws weights or rebuilds the CBECS and AMI files. See **Caches**. |
+| `STOCK_ESTIMATE` | The stock estimate the run's sample was drawn from; `sampling/README.md` pairs each bucket file with its estimate. A wrong one mis-weights every result, and only `compare_runs_and_upgrades` checks it (`CHECK_SAMPLE_PAIRING`). |
+| `WEIGHTS` | `'auto'` or a weights file. See **Weights**. |
+| `ATHENA_DATABASE` | Where the run's tables are crawled and read. Keep `'enduse'`: the timeseries figures and the AMI comparison read it. |
+| `REBUILD_ATHENA_TABLES` | `True` removes all of the run's S3 exports and Athena tables, every upgrade, and exports this pass's. `False` builds only what is missing. A pass whose weights differ from the tables' stops until it is `True` (see **Weights**). |
+| `ATHENA_EXPORTS` | In `compare_upgrades`: `'auto'`, or levels to add. See **Exports**. |
+| `LOCAL_EXPORTS` | Local copies of the metadata aggregates for other tools such as Tableau, in the run's folder: `'national_by_state'` and/or `'by_state_and_county'`. Nothing in postprocessing reads them. |
+| `MAKE_RESULTS_DASHBOARD`, `INCLUDE_AMI`, `COMPARE_TO_RELEASES`, `MAKE_COMPARISON_PLOTS` | The outputs: the dashboard, its AMI tab, published releases to compare against, and the template's figures. See "Results dashboard" below. |
+
+The **Upgrades** section of `compare_upgrades`:
+
+| Setting | What it does |
+|---|---|
+| `UPGRADE_IDS_TO_SKIP` | Upgrades to leave out; every other upgrade of the run on S3 is loaded. |
+| `UPGRADE_ALIASES` | Short upgrade names in figures and folders, nothing else: the measure ID column, `in.upgrade_measure_id`, is added either way. See "Upgrade names, plot aliases and measure IDs" below. |
+| `TIMESERIES_LOCATIONS` | Load-shape locations for the dashboard's Measures tab and the measure figures: state codes or county IDs such as `'G2500250'`, a tuple key combining several. A county adds county tables for every upgrade (see **Exports**). |
+| `MAKE_COMPARISON_PLOTS`, `MAKE_TIMESERIES_PLOTS`, `UPGRADE_GROUPS` | The measure figures in `measure_runs/`, their load-shape figures, and figures comparing groups of upgrades. The dashboard needs none of them. |
+
+`compare_runs` takes one settings dict per run (`RUN_A`, `RUN_B`) with the same items, and
+`weights` in place of `WEIGHTS`. `compare_runs_and_upgrades` takes its `RUNS` list, and an
+Upgrades section that adds `INCLUDE_UPGRADES` and applies to the run under review (see "Any
+mix of runs and upgrades" below). Use it for runs sampled against different stock estimates,
+or to compare one run's upgrades with other runs.
+
+**Weights.** The stock allocation weights say which model stands for each building in the
+stock estimate, and with what weight. Bills, exports and Athena tables are built from them.
+The draw is random, so two draws differ model by model; reusing one file keeps results
+repeatable. `WEIGHTS` takes:
+
+| Value | What happens |
+|---|---|
+| `'auto'` (default) | Use `output/ComStock <RUN_VERSION>/cached_ComStock_alloc_wts.parquet` when it was drawn for this estimate and sample (a fingerprint of `buildstock.csv`). Otherwise draw new weights and save them there. To draw again, delete that file. |
+| a path or `s3://` URL | Use exactly that weights file. It is checked against the run (same estimate, bootstrap coefficient and sample; otherwise the run stops) and copied into the run's folder, where `'auto'` finds it next time. |
+
+Every postprocessed run publishes its weights beside its exported tables, at
+`s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet`. To make a run of only
+your measures match a published dataset, point `WEIGHTS` at the weights that dataset was
+postprocessed with. Your run must use the same `buildstock.csv` and estimate; reading from
+S3 needs AWS access.
+
+A run's tables always hold one set of weights, and the file beside them,
+`postprocessing_allocation.json`, says which. A pass whose weights differ stops right after
+the weights step, before the bills and before anything is written, and says how to go on:
+set `WEIGHTS` to the published weights to keep the tables, or `REBUILD_ATHENA_TABLES = True`
+to replace them, all of them, with this pass's. No table ever holds some upgrades on one set
+of weights and some on another.
+
+**Caches.** A pass reuses what earlier passes built, when it still fits, and builds what is
+missing. Before anything expensive starts, the log lists every cache with what this pass will
+do with it and when it was written.
+
+| Cache | Where | Reused when |
+|---|---|---|
+| Downloaded results and `buildstock.csv` | `comstock_data/<RUN_VERSION>/` | Always: a file is downloaded only when it is absent. Delete it to download it again. |
+| Processed simulation outputs | `output/ComStock <RUN_VERSION>/cached_simulation_outputs/` | There is one for every upgrade the run loads, newer than its results file. |
+| Apportionment | `output/Stock Estimation <STOCK_ESTIMATE>/` | It exists. Every run on that estimate shares it. |
+| Weights | `output/ComStock <RUN_VERSION>/cached_ComStock_alloc_wts.parquet` | It fits the run; `WEIGHTS` decides (above). |
+| Bills | `output/ComStock <RUN_VERSION>/cached_allocated_weights_plus_bills/` | It is newer than its results file and was built from the weights this pass uses; checked per upgrade. |
+| CBECS and AMI | `output/CBECS 2018/`, `output/AMI v01/` | Always: they depend on no run. |
+
+`REUSE_CACHES = False` rebuilds the processed simulation outputs, the apportionment and the
+bills, for changes the files cannot show: new postprocessing code or a changed estimate
+file. It never redraws the weights. They are a random draw rather than a cache, and a new
+draw changes every weighted result; to draw again, delete the weights file. Do that too when
+an estimate file changed under the same name: the weights are matched to the estimate by
+name, so the old draw would still fit. So a run can be
+postprocessed from its results alone around existing weights: set `WEIGHTS` to the weights
+file, and every cache is built (or rebuilt, with `REUSE_CACHES = False`) around it.
+
+**Exports.** The S3 exports and Athena tables follow from the outputs you ask for, so no
+template asks you to choose them. The national aggregate is exported for every upgrade the
+run loads; the dashboard reads it. The county aggregate is exported for the baseline when
+`INCLUDE_AMI` is on (the AMI tab and the AMI figures read upgrade 0 only), and for every
+upgrade when a `TIMESERIES_LOCATIONS` entry is a county. In the two upgrade templates,
+`ATHENA_EXPORTS = 'auto'` adds nothing, and a list adds levels for every upgrade, e.g.
+`['by_state_and_county']` for county tables of every measure (about 3,100 files and 15
+minutes per upgrade). A table that exists but lacks an upgrade this pass needs gets it
+added: Athena is asked which upgrades the table holds.
+
+### Upgrade names, plot aliases and measure IDs
+
+`comstockpostproc/resources/comstock_upgrade_definitions.csv` has one row per upgrade:
+
+| Column | Meaning |
+|---|---|
+| `upgrade_name` | The publication name: the upgrade's `upgrade_name` in the run's yml, exactly as it appears in the results. |
+| `measure_id` | The measure or package ID, for example `hvac_0005` or `pkg_0003` (`baseline` for the baseline). It stays the same across releases, while upgrade numbers (positions in the yml) and sometimes names change. |
+| `plot_alias` | A short name for figures and folders. |
+
+How postprocessing uses it:
+
+- Every run gets an `in.upgrade_measure_id` column when it loads, matched on the publication
+  name, and every export carries it, whatever `UPGRADE_ALIASES` says. To match an upgrade
+  across releases, use this column, not `upgrade` or `in.upgrade_name`.
+- `UPGRADE_ALIASES = True`, in the templates that load upgrades (`compare_upgrades`, and
+  `compare_runs_and_upgrades` with `INCLUDE_UPGRADES`), labels figures and the measure
+  comparison's `upNN_<name>` folders with the plot alias. Exported and cached files keep the
+  publication name.
+- A run that loads upgrades checks their names against the file right after its results
+  files are downloaded, before any processing, and warns about each upgrade without a measure
+  ID, with the lines to add. Such an upgrade still runs: its `in.upgrade_measure_id` is empty
+  and its figures keep the publication name. A run whose yml uses short names instead of the
+  publication names gets this warning for every upgrade.
+- The ID is looked up at every load, not cached, so after you add the lines a rerun picks
+  them up while reusing the caches. Athena tables exported before the fix keep the empty ID
+  until a pass with `REBUILD_ATHENA_TABLES = True`.
+
+To add a measure, add a row with its publication name exactly as in the yml, its measure ID
+(from the release's `measure_name_crosswalk.csv`, or the ID assigned to a new measure) and a
+short alias. Never change or reuse an existing measure ID. For a release, this file is
+generated with the yml from the release's upgrade table, so change names in that table, not
+only here.
+
 ### Comparing one or more ComStock runs to each other and CBECS
 
 1. Copy the `compare_runs.py.template` file to `compare_runs.py`
@@ -117,9 +243,10 @@ $ pip install -e .[dev,gap]
     ```
 4. Look in the `/output` directory for results
 
-### Any mix of runs: already in Athena, postprocessed here, on one sample or several
+### Any mix of runs and upgrades: already in Athena, postprocessed here, on one sample or several
 
-`compare_runs_mixed.py.template` is the general form of the two-run driver. Instead of one
+`compare_runs_and_upgrades.py.template` is the general form of the two-run driver, and can
+add the upgrades of the run under review. Instead of one
 code block per run it takes a single `RUNS` list, one entry per run, each entry saying what
 kind it is: `process` (postprocessed here: download, apportion to the entry's own stock
 estimate, scale to CBECS, export, crawl), `athena` (already crawled by an earlier driver:
@@ -139,33 +266,55 @@ when it is among them, else the first listed; the others copy it, and the log sa
 ("SHARE <run>'s draw"). The draw file, `output/ComStock <v>/cached_ComStock_alloc_wts.parquet`,
 carries its provenance in the parquet metadata -- the run, estimate and sample (a fingerprint
 of `buildstock.csv`) it was drawn for -- and is reused only when that matches the run; a run
-whose draw changed gets its bills and its Athena tables rebuilt. The export publishes the
+whose draw changed gets its bills rebuilt. The export publishes the
 draw beside the run's tables (`s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet`,
 with `postprocessing_allocation.json` naming it), and a `process` entry adopts that published
 draw by itself when it fits, so everyone who postprocesses or plots the run gets exactly the
-published weights; `allocation='<path or s3://...>'` names another file instead. The library
-checks any adopted file fits the run and reports how many models it weights. Tables whose
-record names a different draw are replaced only when this machine processed the run before
-or the entry says `rebuild=True`, so a teammate never overwrites a published run by accident.
+published weights; `weights='<path or s3://...>'` (earlier name `allocation=`, still accepted)
+names another file instead. The library
+checks any adopted file fits the run and reports how many models it weights. A run whose
+tables were built with a different draw stops the pass right after the weights step, as in
+the single-run templates: `rebuild=True` on its entry replaces all of its tables, and
+`weights=` naming the published file keeps them.
 `comstockpostproc/allocation.py` has the details.
 
-Every cache the run will touch is listed in the log before anything expensive starts --
-simulation outputs, apportionment, the stock allocation, bills, `CBECS wide.csv`,
-`AMI long.csv` -- with what this pass will do (reuse, build, draw, share), when the cache
-was written and where it is (`cspp.report_caches`). Caches are detected, never assumed: one
-that exists is reused, one that does not is built. `REUSE_CACHES = False` is the override
-for the case the disk cannot show, an estimate, export or weight code that changed while
-the files stayed: it rebuilds the run-specific caches -- the draw is redrawn -- and deletes
-each `process` run's `cached_allocated_weights_plus_bills` folder. CBECS and AMI files
-depend on no run and are always reused; Athena tables are re-exported when a run's draw
-changed, and otherwise follow each entry's `rebuild` flag.
+Caches work as in the single-run templates (**Caches** under "Template settings"): each is
+reused when it fits and built when it is missing, and the log lists them before anything
+expensive starts. `REUSE_CACHES = False` rebuilds every `process` run's simulation outputs,
+apportionment and bills; it never redraws a run's weights. To redraw them, delete the run's
+weights file, and set `rebuild=True` on the entry when its tables were published with the old
+weights, so that they are replaced and the published weights are not adopted again. The
+Athena exports follow from the dashboard as described under **Exports**; `ATHENA_EXPORTS`
+adds levels for every `process` run.
 
-1. Copy `compare_runs_mixed.py.template` to `compare_runs_mixed.py`
+**Samples.** Each `process` entry names the stock estimate its sample was drawn from. Runs on
+different estimates may be compared, and the log says which run sits on which, but for the
+building types the estimates allocate differently a difference is the estimate and the run,
+not the run alone; say so wherever the results are presented. `CHECK_SAMPLE_PAIRING` checks
+every pairing first: each (building type, tract) pair in the run's `buildstock.csv` must
+exist in the estimate, since apportionment matches models to buildings on that pair. A
+correct pairing has zero missing pairs; a wrong one misses hundreds to thousands, and without
+the check it is silent (floor areas still match CBECS while the weights within each building
+type are wrong).
+
+**Order and upgrades.** Every view draws CBECS first and then the runs in `RUNS` order. The
+findings, the scorecard, the AMI end-use stack and the Measures tabs are about `REVIEW_RUN`;
+the delta arrows, the "moved toward CBECS" line and the heating-fuel gap column measure it
+against `DELTA_REF`. In the Upgrades settings, `INCLUDE_UPGRADES = True` postprocesses the
+upgrades of `REVIEW_RUN` (a `process` run) too: the dashboard gets its Measures tabs, each
+upgrade against the run's own baseline, and the measure load shapes at `TIMESERIES_LOCATIONS`.
+`UPGRADE_IDS_TO_SKIP` and `UPGRADE_ALIASES` work as in `compare_upgrades`. Comparison runs
+load only their baseline.
+
+1. Copy `compare_runs_and_upgrades.py.template` to `compare_runs_and_upgrades.py`
 2. Fill in `RUNS` (in the order you want them drawn), `REVIEW_RUN`, `COMPARISON_NAME` and
-   `DELTA_REF` at the top
+   `DELTA_REF` at the top, and the Upgrades settings if you want the run's upgrades
 3. Run it as above; everything lands in `output/<COMPARISON_NAME>/`
 
 ### Comparing upgrades in a single ComStock run
+
+To compare one run's upgrades with other runs as well, use `compare_runs_and_upgrades` with
+`INCLUDE_UPGRADES = True` (above).
 
 1. Copy the `compare_upgrades.py.template` file to `compare_upgrades.py`
 2. Edit `compare_upgrades.py` to point to the ComStock runs you want to plot
@@ -197,36 +346,23 @@ pandas, and a hand-written JS bundle.
 
 **For a run you are postprocessing**, this is a step inside the driver you
 already use -- `compare_runs.py`, `compare_upgrades.py`,
-`compare_comstock_to_cbecs.py` or `compare_comstock_to_ami.py` -- each of which
-carries these settings near the top (`compare_runs.py` has no local
-metadata export and omits `EXPORT_LOCAL_METADATA`; only the multi-run
-drivers carry `COMPARISON_NAME`):
+`compare_comstock_to_cbecs.py` or `compare_comstock_to_ami.py` -- set by the
+output settings at its top: `MAKE_RESULTS_DASHBOARD`, `INCLUDE_AMI` (the AMI tab),
+`COMPARE_TO_RELEASES` (published releases to compare against) and
+`MAKE_COMPARISON_PLOTS`. The multi-run drivers add `COMPARISON_NAME`, the folder
+under `output/` that holds the comparison and its dashboard; keep it short on
+Windows. A release is given as
+`dict(key='r3_2025', label='2025 R3', database='buildstock_sdr',
+md_table='comstock_amy2018_r3_2025_md_agg_national_parquet', color='#E69F00')`.
 
-```python
-# ---- Settings ---------------------------------------------------------------
-# Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
-                                   # the timeseries plots and the AMI comparison hard-code it
-EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
-REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
-                                   # True:  export and crawl again (what is up there is stale)
-COMPARISON_NAME        = 'CBECS 2018 vs baseline vs change'  # multi-run drivers: the comparison folder under
-                                   # output/ (plots, CSVs, results_dashboard/). Required when a comparison has
-                                   # several runs; keep it short on Windows
-MAKE_RESULTS_DASHBOARD = True      # write results_dashboard/dashboard.html (where: see below)
-MAKE_COMPARISON_PLOTS  = False     # True also writes the comparison figures (slow); False writes only the
-                                   # CSVs and the dashboard
-INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
-                                   # and the run's <run>_timeseries table (from buildstockbatch's crawl)
-COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
-#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
-#         database='buildstock_sdr', color='#E69F00')]
-```
-
-Every template writes the dashboard and skips the figures by default. Set
-`MAKE_COMPARISON_PLOTS = True` to get the figures as well, and in `compare_upgrades.py` also
-`MAKE_TIMESERIES_PLOTS = True` for the measure timeseries figures; the Athena tables the
-dashboard reads are prepared either way.
+Every template writes the dashboard and skips the figures by default. The dashboard reads
+only the Athena tables, so with `MAKE_COMPARISON_PLOTS = False` nothing is built for the
+figures either: not the per-upgrade plotting table (`cached_plotting_by_upgrade`, minutes
+per upgrade), nor the AMI template's timeseries download. Set `MAKE_COMPARISON_PLOTS = True`
+to get the figures as well. In `compare_upgrades.py`, `MAKE_TIMESERIES_PLOTS = True` adds the
+measure timeseries figures to them, so it does nothing on its own. The dashboard's
+timeseries tab needs neither setting: the Athena tables it reads are prepared either way,
+and it draws the locations in `TIMESERIES_LOCATIONS`.
 
 The dashboard reads the same Athena tables the timeseries plots and the AMI
 comparison do, and every driver gets them the same way: one
@@ -257,8 +393,7 @@ figures of every comparison of that run alone (`measure_runs/` from
 `compare_upgrades.py`, `cbecs_comparison/` from `compare_comstock_to_cbecs.py`,
 `ami_comparison/` from `compare_comstock_to_ami.py`) and its dashboard,
 `results_dashboard/dashboard.html`, whichever of those drivers made it. A comparison
-of several runs (`compare_runs.py`, `compare_runs_different_samples.py`,
-`compare_runs_mixed.py`) goes in `output/<COMPARISON_NAME>/`, the name set at the top
+of several runs (`compare_runs.py`, `compare_runs_and_upgrades.py`) goes in `output/<COMPARISON_NAME>/`, the name set at the top
 of the driver (keep it short on Windows), with its dashboard in `results_dashboard/`
 there; a comparison of several runs without a name is refused rather than named
 after the runs. Shared by every run that uses them, and so in no run's folder:
@@ -289,8 +424,8 @@ Notes:
    reads the run's `_md_agg_by_state_and_county_parquet` table, which only
    exists if that resolution was exported. `INCLUDE_AMI = True` is all a driver
    has to say: `prepare_athena_tables(..., ami=True)` exports the county
-   resolution -- the expensive one, one file per state-county pair, per upgrade
-   -- and crawls it. Without it the AMI leg skips and says so, and the cause is
+   resolution for the baseline -- the expensive one, one file per state-county
+   pair (about 3,100) -- and crawls it. Without it the AMI leg skips and says so, and the cause is
    the export config, not the run.
  - **The AMI leg also needs a timeseries table, and nothing here creates one.**
    `<run>_timeseries` comes from buildstockbatch's own postprocessing crawl of
@@ -360,7 +495,7 @@ be stated explicitly for the same reason. This file only READS -- if the run has
 not been crawled yet, run it through one of the four drivers with
 `MAKE_RESULTS_DASHBOARD = True` first; their `prepare_athena_tables` call exports
 and crawls the tables.
-`compare_runs_mixed.py.template` with only `athena` and `release` entries does the same
+`compare_runs_and_upgrades.py.template` with only `athena` and `release` entries does the same
 job from one run list, and can take the not-yet-crawled runs as `process` entries.
 
 ### NREL Staff - Extracting simulations and summarizing EnergyPlus warnings and errors on HPC

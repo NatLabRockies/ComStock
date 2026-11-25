@@ -85,6 +85,12 @@ def configure(database: str | None = None, reflect_table: str | None = None) -> 
     _STATE["client"] = None            # force a reconnect on the next query
 
 
+def configured() -> tuple[str | None, str | None]:
+    """The (database, reflect_table) the last `configure` set, so a caller asking
+    several questions can skip a reconfigure: each one costs a reconnect (6-7 s)."""
+    return _STATE["database"], _STATE["reflect_table"]
+
+
 def _cfg() -> dict:
     return {
         "database": _STATE["database"] or os.environ.get("ATHENA_DATABASE", DEFAULT_DATABASE),

@@ -9,6 +9,7 @@ review's draw; a derived cache built from another draw is not inherited.
 """
 
 import os
+from types import SimpleNamespace
 
 import polars as pl
 import pytest
@@ -185,3 +186,121 @@ def test_derived_cache_follows_the_draw(tmp_path):
     al.write_marker(folder, "abc")
     assert al.read_marker(folder) == "abc"
     assert os.path.basename(os.listdir(folder)[0]).startswith("_")   # skipped by hive readers
+
+
+# ------------------------------------------------------------------ the templates' WEIGHTS setting
+
+def test_weights_auto_reuses_the_runs_own_file_or_draws():
+    assert al.weights_arguments("auto") == {"reload_from_cache": "auto"}
+    assert al.weights_arguments(" AUTO ") == {"reload_from_cache": "auto"}
+
+
+def test_weights_path_or_s3_url_names_the_file(tmp_path):
+    f = tmp_path / al.FILE_NAME
+    al.write_allocation(_draw(), str(f), _prov())
+    assert al.weights_arguments(str(f)) == {"allocation_path": str(f)}
+    assert al.weights_arguments(f) == {"allocation_path": str(f)}           # a pathlib.Path
+    url = "s3://bucket/run/run/" + al.FILE_NAME
+    assert al.weights_arguments(url) == {"allocation_path": url}            # checked when it is read
+
+
+@pytest.mark.parametrize("value", ["new", "autoo", "missing.parquet"])
+def test_weights_a_mistyped_setting_or_missing_file_stops_the_run(value, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError, match="WEIGHTS="):
+        al.weights_arguments(value)
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", 3, True])
+def test_weights_must_be_auto_or_a_file(value):
+    with pytest.raises(TypeError, match="WEIGHTS must be"):
+        al.weights_arguments(value)
+
+
+class _Stop(Exception):
+    """Raised by a stub where the real code would go on to read results or draw."""
+
+
+class _NoDraw:
+    """base_sim_outs for a test that must stop where a new draw would start."""
+    def select(self, *args, **kwargs):
+        raise _Stop("draw")
+
+
+ESTIMATE = SimpleNamespace(stock_estimation_version="2026R1", bootstrap_coefficient=3)
+
+
+def _bare_comstock(tmp_path):
+    """A ComStock holding only what create_allocated_weights and _adopt_allocation read
+    before they load results: its folder, name and sample fingerprint."""
+    import fsspec
+    from comstockpostproc.comstock import ComStock
+    cs = ComStock.__new__(ComStock)
+    cs.CBECS_WEIGHTS_APPLIED = False
+    cs.comstock_run_name = "runA"
+    os.makedirs(tmp_path / "own")
+    cs.output_dir = {"fs_path": str(tmp_path / "own").replace("\\", "/"),
+                     "fs": fsspec.filesystem("file"), "storage_options": None}
+    cs._sample_fingerprint = ("s" * 64, 3)
+    return cs
+
+
+def test_create_allocated_weights_follows_the_weights_setting(tmp_path, monkeypatch):
+    cs = _bare_comstock(tmp_path)
+    adopted = []
+
+    def adopt(apportionment, base_sim_outs, source=None):
+        adopted.append(source)
+        raise _Stop("adopt")
+
+    monkeypatch.setattr(cs, "_adopt_allocation", adopt)
+
+    # 'auto' and no file in the run's folder: a new draw
+    with pytest.raises(_Stop, match="draw"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights="auto")
+    assert adopted == []
+
+    # a file: that file is adopted
+    release = tmp_path / "release.parquet"
+    al.write_allocation(_draw(), str(release), _prov())
+    with pytest.raises(_Stop, match="adopt"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights=str(release))
+    assert adopted == [str(release)]
+
+    # 'auto' and a file in the run's folder that fits: the run's own file is adopted
+    al.write_allocation(_draw(), cs.allocation_path, _prov())
+    with pytest.raises(_Stop, match="adopt"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights="auto")
+    assert adopted == [str(release), None]
+
+    # 'auto' and a file in the run's folder drawn for another estimate: a new draw
+    al.write_allocation(_draw(), cs.allocation_path, _prov(estimate_version="2025R3"))
+    with pytest.raises(_Stop, match="draw"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights="auto")
+    assert adopted == [str(release), None]
+
+    # weights= replaces reload_from_cache/allocation_path; both at once is refused
+    with pytest.raises(ValueError, match="not both"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights="auto", reload_from_cache=True)
+    with pytest.raises(ValueError, match="not both"):
+        cs.create_allocated_weights(ESTIMATE, _NoDraw(), weights="auto", allocation_path=str(release))
+
+
+def test_a_weights_file_is_copied_into_the_run_only_when_it_fits(tmp_path):
+    cs = _bare_comstock(tmp_path)
+    run_models = pl.LazyFrame({"bldg_id": [1, 2, 10]})
+
+    other = tmp_path / "other_estimate.parquet"
+    al.write_allocation(_draw(), str(other), _prov(estimate_version="2025R3"))
+    with pytest.raises(al.AllocationError, match="does not fit"):
+        cs._adopt_allocation(ESTIMATE, run_models, source=str(other))
+    assert not os.path.exists(cs.allocation_path)                           # nothing copied
+
+    release = tmp_path / "release.parquet"
+    al.write_allocation(_draw(), str(release), _prov(drawn_for="release_run"))
+    cs._adopt_allocation(ESTIMATE, run_models, source=str(release))
+    copied = al.read_provenance(cs.allocation_path)
+    assert copied.drawn_for == "release_run" and copied.copied_from == str(release)
+    assert al.status_of(cs.allocation_path, estimate_version="2026R1", bootstrap_coefficient=3,
+                        sample_hash="s" * 64).state == "valid"              # 'auto' reuses it next time
+    assert pl.read_parquet(cs.allocation_path).equals(_draw())
