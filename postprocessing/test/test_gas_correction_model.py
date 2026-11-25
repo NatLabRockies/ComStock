@@ -11,6 +11,12 @@ import comstockpostproc.comstock
 import comstockpostproc.cbecs
 
 
+@pytest.mark.skip(reason=(
+    "Obsolete: written for the weighting pipeline that 615499514 (2025-08-04) replaced. It passes "
+    "reload_from_csv to ComStock, calls add_national_scaling_weights (removed) and treats ComStock's "
+    "data as an eager pandas-style frame (polars groupby). It checked that "
+    "correct_comstock_gas_to_match_cbecs leaves electricity unchanged, changes total energy, and makes "
+    "weighted gas end uses match CBECS by building type and census division."))
 def test_gas_correction_model():
     comstock = comstockpostproc.comstock.ComStock(
         s3_base_dir='comstock-core/test',  # If run not on S3, download results_up**.parquet manually

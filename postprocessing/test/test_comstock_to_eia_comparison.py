@@ -12,6 +12,11 @@ import comstockpostproc.comstock_to_eia_comparison
 import comstockpostproc.cbecs
 
 
+@pytest.mark.skip(reason=(
+    "Obsolete: written for the weighting pipeline that 615499514 (2025-08-04) replaced. It passes "
+    "reload_from_csv to ComStock and calls add_national_scaling_weights and ComStock.export_to_csv_wide, "
+    "all removed, and its S3 run (eulp euss_com/baseline_data_10k) no longer exists. It checked that the "
+    "ComStock-to-EIA comparison runs and writes its plots and wide csv."))
 def test_eia_plot_generation():
     # ComStock
     comstock = comstockpostproc.comstock.ComStock(
