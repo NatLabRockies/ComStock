@@ -248,6 +248,7 @@ def make_comstock(tmp_path, monkeypatch, sim_outs=SIM_OUTS):
     monkeypatch.setattr(ubj, 'BILL_STATES_FILE', (truth_dir / 'bill_states.csv').as_posix())
     cs.output_dir = {'fs': fsspec.filesystem('file'), 'fs_path': out_dir.as_posix(), 'storage_options': None}
     cs.truth_data_dir = truth_dir.as_posix()
+    cs.data_dir = (tmp_path / 'data').as_posix()      # the run's results files, none by default
     cs.tract_to_util_map_file_name = 'tract_to_util.csv'
     cs.geospatial_lookup_file_name = 'geo.csv'
     cs.weighted_utility_units = 'billion_usd'
@@ -278,6 +279,46 @@ def test_bills_stage_preserves_rows_and_weights(tmp_path, monkeypatch):
     cached = cs.get_allocated_weights_plus_util_bills_for_upgrade(0).collect()
     assert cached.height == out.height and cached[N.BLDG_WEIGHT].sum() == out[N.BLDG_WEIGHT].sum()
     assert sorted(cached[N.UTIL_BILL_ELEC].to_list()) == sorted(out[N.UTIL_BILL_ELEC].to_list())
+
+
+def test_bills_cache_files_have_short_names_and_older_names_still_read(tmp_path, monkeypatch):
+    # Short file names keep the deepest cache path under Windows' 260 characters
+    cs, root = make_comstock(tmp_path, monkeypatch)
+    out = read_stage(cs.create_allocated_weights_plus_util_bills_for_upgrade(0))
+    folder = tmp_path / 'output' / 'cached_allocated_weights_plus_bills' / 'upgrade=0'
+    names = sorted(p.name for p in folder.rglob('*.parquet'))
+    assert names and all(n.startswith('upgrade0_') and len(n) == len('upgrade0_XX.parquet') for n in names)
+    # A cache written under the older, longer names is read by the getter and reused by the stage
+    for p in list(folder.rglob('*.parquet')):
+        p.rename(p.with_name('cached_allocated_weights_plus_bills_' + p.name))
+    assert cs.get_allocated_weights_plus_util_bills_for_upgrade(0).collect().height == out.height
+    cs.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    assert sorted(p.name for p in folder.rglob('*.parquet')) == ['cached_allocated_weights_plus_bills_' + n for n in names]
+
+
+def test_bills_are_rebuilt_after_their_results_file_is_replaced_or_on_request(tmp_path, monkeypatch):
+    cs, root = make_comstock(tmp_path, monkeypatch)
+    os.makedirs(cs.data_dir)
+    results = os.path.join(cs.data_dir, 'results_up00.parquet')
+    open(results, 'wb').close()
+    folder = tmp_path / 'output' / 'cached_allocated_weights_plus_bills' / 'upgrade=0'
+    cs.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    first = {p: p.stat().st_mtime_ns for p in folder.rglob('*.parquet')}
+    # older results: reused as they are
+    old = min(first.values()) / 1e9 - 60
+    os.utime(results, (old, old))
+    cs.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    assert {p: p.stat().st_mtime_ns for p in folder.rglob('*.parquet')} == first
+    # results replaced after the bills were built: rebuilt
+    new = max(first.values()) / 1e9 + 60
+    os.utime(results, (new, new))
+    cs.create_allocated_weights_plus_util_bills_for_upgrade(0)
+    second = {p: p.stat().st_mtime_ns for p in folder.rglob('*.parquet')}
+    assert second.keys() == first.keys() and all(second[p] > first[p] for p in first)
+    # reuse=False rebuilds regardless
+    os.utime(results, (old, old))
+    cs.create_allocated_weights_plus_util_bills_for_upgrade(0, reuse=False)
+    assert all(p.stat().st_mtime_ns > second[p] for p in second)
 
 
 def test_bills_stage_is_the_same_with_and_without_the_state_field(tmp_path, monkeypatch):

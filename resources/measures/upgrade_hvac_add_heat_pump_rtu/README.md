@@ -20,7 +20,7 @@ ModelMeasure
 
 
 ### Backup Heat Type
-Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, the heating fuel type will match the primary heating fuel type of the original model. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.
+Specifies if the backup heat fuel type is a gas furnace or electric resistance coil. If match original primary heating fuel is selected, each AHU gets backup matching its own original heating: electric resistance where it heated electrically, and the same fuel (natural gas, propane, or fuel oil) where it burned fuel. If electric resistance is selected, AHUs will get electric resistance backup. If dual fuel gas furnace is selected, AHUs will get a natural gas backup coil (dual fuel RTU) regardless of the original heating fuel.
 **Name:** backup_ht_fuel_scheme,
 **Type:** Choice,
 **Units:** ,
@@ -78,7 +78,7 @@ Specifies minimum outdoor air temperature for locking out heat pump compressor w
 
 
 ### Minimum outdoor air temperature that locks out heat pump compressor with gas backup heat, F
-Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and that fuel is gas or another combustion fuel; with electric resistance backup, the electric backup lockout temperature is used instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.
+Specifies minimum outdoor air temperature for locking out heat pump compressor when the backup heating coil is a gas furnace (dual fuel). This applies when the backup heat type is dual fuel gas furnace, or is set to match the original primary heating fuel and the original heating of the AHU burned gas or another fuel; AHUs given electric resistance backup use the electric backup lockout temperature instead. Heat pump heating does not operate below this temperature and backup heating will operate if heating is still needed.
 **Name:** hp_min_comp_lockout_temp_gas_backup_f,
 **Type:** Double,
 **Units:** ,

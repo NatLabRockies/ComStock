@@ -6,7 +6,9 @@ import comstockpostproc.gap.eia861
 
 def test_eia_861():
     # annual, all data
-    annual_all = comstockpostproc.gap.eia861.EIA861(type='Annual')
+    # reload_from_csv=False: download and process the truth file, which the checks below
+    # expect, even when an earlier run left the processed csv behind
+    annual_all = comstockpostproc.gap.eia861.EIA861(type='Annual', reload_from_csv=False)
 
     print(annual_all.data.columns)
     checks = ['COMMERCIAL', 'RESIDENTIAL', 'INDUSTRIAL', 'TOTAL', 'Sales', 'Customers', 'Revenues']

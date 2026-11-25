@@ -8,27 +8,52 @@ logging.basicConfig(level='INFO')  # Use DEBUG, INFO, or WARNING
 logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
-# Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # database the run's tables are crawled into and read from. Keep 'enduse':
-                                   # the timeseries plots and the AMI comparison hard-code it
-EXPORT_LOCAL_METADATA  = False     # local copies of the metadata aggregates (Tableau); nothing here reads them
-REBUILD_ATHENA_TABLES  = False     # False: reuse S3 exports + Athena tables that exist, build only what is missing
-                                   # True:  export and crawl again (what is up there is stale)
-MAKE_RESULTS_DASHBOARD = True      # write output/ComStock <run>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = False     # True also writes the measure comparison figures (slow); False leaves them to
-                                   # the dashboard's Measures tabs
-MAKE_TIMESERIES_PLOTS  = False     # True also writes the measure timeseries figures at timeseries_locations_to_plot
-                                   # below (slow); the locations still feed the Athena tables the dashboard reads
-UPGRADE_ALIASES        = False     # True: figure labels and the per-upgrade folders (measure_runs/upNN_<name>,
-                                   # cut to 20 characters) use each upgrade's short plot_alias from
-                                   # comstockpostproc/resources/comstock_upgrade_definitions.csv instead of its
-                                   # publication name; exported files keep the publication names. Upgrades
-                                   # without an alias are listed in a warning when the run loads
-INCLUDE_AMI            = False     # metered load-shape tab; needs the county export (~3,100 files per upgrade)
-                                   # and the run's <run>_timeseries table (from buildstockbatch's crawl)
-COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
-#   [dict(key='r3_2025', label='2025 R3', md_table='comstock_amy2018_r3_2025_md_agg_national_parquet',
-#         database='buildstock_sdr', color='#E69F00')]
+# What each setting does and where the files go: README, "Template settings".
+
+# Run
+S3_BASE_DIR         = 'eulp/euss_com/0_production_runs_2026R1/tests'  # bucket/prefix the run was uploaded to
+RUN_NAME            = 'sdr_2026r1_all_measure_10k_6'  # the run's name on S3, and its Athena table prefix
+RUN_VERSION         = RUN_NAME  # names the run's folder, output/ComStock <RUN_VERSION>/; keep it short on Windows
+ACCEPTABLE_FAILURES = 0.05      # share of failed simulations tolerated
+REUSE_CACHES        = True      # True reuses these caches in output/ when current; False rebuilds all three:
+                                #   - simulation outputs: current when newer than the results files
+                                #   - apportionment: current once built
+                                #   - bills: current when newer than the results files and from the same weights
+                                #   Use False after postprocessing code or an estimate changed.
+                                #   It never redraws weights or rebuilds the CBECS and AMI files
+
+# Weights: every result is weighted by them
+STOCK_ESTIMATE = '2026R1'  # MUST be the estimate the run's sample was drawn from (sampling/README.md)
+WEIGHTS        = 'auto'    # 'auto': output/ComStock <RUN_VERSION>/cached_ComStock_alloc_wts.parquet when it was drawn
+                           #   for this estimate and sample, else new weights saved there (delete it to redraw).
+                           #   Or a weights file path or s3:// URL, e.g. a published run's, to match its results
+
+# Upgrades: every upgrade of the run on S3 is loaded, less the skipped ones
+UPGRADE_IDS_TO_SKIP   = []     # e.g. [1, 3]
+UPGRADE_ALIASES       = False  # short names in figures and folders; in.upgrade_measure_id is added either way
+TIMESERIES_LOCATIONS  = {      # load shapes in the dashboard's Measures tab and the figures: state or county ID
+                               # -> name, a tuple key combines several; a county adds county tables for every
+                               # upgrade (~3,100 files each)
+    'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona',
+    # 'G2500250': 'Boston', ('MA', 'NH', 'CT', 'VT', 'RI'): 'New England',
+}
+MAKE_COMPARISON_PLOTS = False  # measure figures in measure_runs/ (slow); the dashboard does not need them
+MAKE_TIMESERIES_PLOTS = False  # adds load-shape figures to them (only with MAKE_COMPARISON_PLOTS)
+UPGRADE_GROUPS        = {}     # {'<folder name>': [0, 1, 2]}: figures comparing several upgrades
+
+# Athena tables and exports
+ATHENA_DATABASE       = 'enduse'  # keep 'enduse'
+REBUILD_ATHENA_TABLES = False     # True replaces all of the run's S3 exports and Athena tables with this
+                                  #   pass's; a pass with other weights than the tables' stops until it is True
+ATHENA_EXPORTS        = 'auto'    # 'auto' exports what the outputs read; a list adds levels for every
+                                  # upgrade, e.g. ['by_state_and_county']
+LOCAL_EXPORTS         = []        # files for other tools in the run's folder: 'national_by_state', 'by_state_and_county'
+
+# Outputs
+MAKE_RESULTS_DASHBOARD = True   # results_dashboard/dashboard.html in the run's folder
+INCLUDE_AMI            = False  # the dashboard's AMI tab; needs the run's <run>_timeseries table
+COMPARE_TO_RELEASES    = []     # e.g. [dict(key='r3_2025', label='2025 R3', database='buildstock_sdr',
+                                #   md_table='comstock_amy2018_r3_2025_md_agg_national_parquet', color='#E69F00')]
 
 
 # Kestrel (README, "Running on Kestrel")
@@ -36,128 +61,118 @@ KESTREL_JOB = None  # e.g. dict(account='eusscom'): started on a Kestrel login n
 
 
 def main():
+    # Refuse a mistyped setting now, not after the run has loaded.
+    cspp.allocation.weights_arguments(WEIGHTS)
+    cspp.athena_tables.export_levels(ATHENA_EXPORTS, 'ATHENA_EXPORTS')
+    cspp.athena_tables.export_levels(LOCAL_EXPORTS, 'LOCAL_EXPORTS')
+
     # What is on this disk and what this pass will do with it: one log line per
-    # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
-    # Keep the versions here in step with the objects below.
-    cspp.report_caches(run_versions=['cchpc_10k_3'], estimate_versions=['2026R1'])
+    # cache (simulation outputs, apportionment, weights, bills, CBECS, AMI) with its date.
+    cspp.report_caches(run_versions=[RUN_VERSION], estimate_versions=[STOCK_ESTIMATE],
+                       reuse=REUSE_CACHES, weights={RUN_VERSION: WEIGHTS})
+    caches = 'auto' if REUSE_CACHES else False  # 'auto': reuse a cache that fits, build what is missing
+
     # ComStock run
     comstock = cspp.ComStock(
-        s3_base_dir='eulp/euss_com',  # If run not on S3, download results_up**.parquet manually
-        comstock_run_name='cchpc_10k_3',  # Name of the run on S3
-        comstock_run_version='cchpc_10k_3',  # Use whatever you want to see in plot and folder names
+        s3_base_dir=S3_BASE_DIR,  # settings at the top
+        comstock_run_name=RUN_NAME,
+        comstock_run_version=RUN_VERSION,
         comstock_year=2018,  # Typically don't change this
         athena_table_name=None,  # Typically don't change this
         truth_data_version='v01',  # Typically don't change this
         buildstock_csv_name='buildstock.csv',  # Download buildstock.csv manually
-        acceptable_failure_percentage=0.05,  # Can increase this when testing and high failure are OK
+        acceptable_failure_percentage=ACCEPTABLE_FAILURES,
         drop_failed_runs=True,  # False if you want to evaluate which runs failed in raw output data
         color_hex='#0072B2',  # Color used to represent this run in plots
         skip_missing_columns=True,  # False if you want to ensure you have all data specified for export
-        reload_from_cache=False, # True if CSV already made and want faster reload times
+        reload_from_cache=caches,  # REUSE_CACHES at the top
         include_upgrades=True,  # False if not looking at upgrades
-        upgrade_ids_to_skip=[], # Use [1, 3] etc. to exclude certain upgrades
-        upgrade_aliases=UPGRADE_ALIASES,  # settings at the top
-        make_comparison_plots=MAKE_COMPARISON_PLOTS,  # settings at the top
+        upgrade_ids_to_skip=UPGRADE_IDS_TO_SKIP,
+        upgrade_aliases=UPGRADE_ALIASES,
+        make_comparison_plots=MAKE_COMPARISON_PLOTS,
         make_timeseries_plots=MAKE_TIMESERIES_PLOTS,
-        timeseries_locations_to_plot={
-                                        'MN': 'Minnesota',  # specify location (either county ID or state ID) and corresponding name for plots and folders.
-                                        #'MA':'Massachusetts',
-                                        'OH':'Ohio',
-                                        #'OR': 'Oregon',
-                                        #'LA': 'Louisiana',
-                                        'AZ': 'Arizona',
-                                        #'TN': 'Tennessee',
-                                        #('MA', 'NH', 'CT', 'VT', 'RI'): 'New England', # example of multiple states together - using tuples as keys
-                                        #'G4900350': 'Salt Lake City',
-                                        #'G2500250': 'Boston', # a county makes prepare_athena_tables below add the county S3 export (~3,100 files per upgrade)
-                                        #'G4804530': 'Austin',
-                                        #('G2500250', 'G4804530'):'Baustin'  # multiple counties together - using tuples as keys
-                                    },
-
-        upgrade_ids_for_comparison={} # Use {'<Name you want for comparison run folder>':[0,1,2]}; add as many upgrade IDs as needed, but plots look strange over 5
+        timeseries_locations_to_plot=TIMESERIES_LOCATIONS,
+        upgrade_ids_for_comparison=UPGRADE_GROUPS,
         #output_dir = 's3://oedi-data-lake/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2025/comstock_amy2018_release_1'
         )
 
     # Stock Estimation for Apportionment:
     stock_estimate = cspp.Apportion(
-        stock_estimation_version='2026R1',  # The estimate the run's sample (its bucket file) was generated from; see sampling/README.md
+        stock_estimation_version=STOCK_ESTIMATE,  # settings at the top
         truth_data_version='v01',  # Typically don't change this
-        reload_from_cache=False, # Set to "True" if you have already run apportionment and would like to keep consistent values between postprocessing runs.
+        reload_from_cache=caches,  # REUSE_CACHES at the top
         #output_dir = 's3://oedi-data-lake/nrel-pds-building-stock/end-use-load-profiles-for-us-building-stock/2025/comstock_amy2018_release_1'
     )
 
     # Scale ComStock runs to the 'truth data' from StockE V3 estimates using bucket-based apportionment
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
-    comstock.create_allocated_weights(stock_estimate, base_sim_outs, reload_from_cache='auto')  # 'auto': reuse the run's own draw when it fits (same estimate and sample), else draw
+    comstock.create_allocated_weights(stock_estimate, base_sim_outs, weights=WEIGHTS)  # WEIGHTS at the top
 
-    # CBECS
-    cbecs = cspp.CBECS(
-        cbecs_year=2018,  # 2012 and 2018 currently available
-        truth_data_version='v01',  # Typically don't change this
-        color_hex='#009E73',  # Color used to represent CBECS in plots
-        reload_from_csv=False  # True if CSV already made and want faster reload times
-        )
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when they were
+    # built with other weights (REBUILD_ATHENA_TABLES replaces them; WEIGHTS can name theirs)
+    timeseries_figures = MAKE_COMPARISON_PLOTS and MAKE_TIMESERIES_PLOTS
+    if timeseries_figures or MAKE_RESULTS_DASHBOARD:
+        cspp.athena_tables.check_tables_weights(comstock, database=ATHENA_DATABASE,
+                                                rebuild=REBUILD_ATHENA_TABLES)
+
+    # CBECS: reads 'CBECS wide.csv' when it exists (the results dashboard reads it too), builds it otherwise
+    cbecs = cspp.load_cbecs(cbecs_year=2018, color_hex='#009E73')
 
     # Scale ComStock to CBECS 2018 AND remove non-ComStock buildings from CBECS
     base_sim_outs = comstock.get_sim_outs_for_upgrade(0)
     alloc_wts = comstock.get_allocated_weights()
     comstock.create_allocated_weights_scaled_to_cbecs(cbecs, base_sim_outs, alloc_wts, remove_non_comstock_bldg_types_from_cbecs=True)
-    cbecs.export_to_csv_wide()  # the results dashboard reads 'CBECS wide.csv'
 
     # Add utility bills onto allocated weights
     for upgrade_id in comstock.upgrade_ids_to_process:
-        # up_sim_outs = comstock.get_sim_outs_for_upgrade(upgrade_id)
-        # up_alloc_wts = comstock.get_allocated_weights_scaled_to_cbecs_for_upgrade(upgrade_id)
-         comstock.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
+        comstock.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id, reuse=REUSE_CACHES)
 
-    # Specify geo exports
-    # county resolution, files by state and county
-    county_resolution =  {
-                        'geo_top_dir': 'by_state_and_county',
-                        'partition_cols': {
-                            comstock.STATE_ABBRV: 'state',
-                            comstock.COUNTY_ID: 'county',
-                        },
-                        'aggregation_levels': [comstock.COUNTY_ID], # , comstock.COUNTY_ID],  # Full tract resolution (agg=in.nhgis_tract_gisjoin)
-                        'data_types': ['full'],
-                        'file_types': ['parquet'],
-                        }
-
-    # state level resolution, one single national file
-    state_resolution = {
-                        'geo_top_dir': 'national_by_state',
-                        'partition_cols': {},
-                        'aggregation_levels': [[comstock.STATE_ABBRV, comstock.CZ_ASHRAE]],
-                        'data_types': ['full'], # other options: 'detailed', 'basic' **If using multiple options, order must go from more detailed to less detailed.
-                        'file_types': ['parquet'], # other options:'parquet'
-                        }
-
-    # Export level for the LOCAL metadata files (EXPORT_LOCAL_METADATA at the
-    # top). The S3 side is handled below: county is added there when something
-    # needs it (a county timeseries location, or INCLUDE_AMI).
-    geo_exports = [state_resolution]
-
-    if EXPORT_LOCAL_METADATA:
+    # Local copies of the metadata aggregates (LOCAL_EXPORTS at the top). Nothing here
+    # reads them; the S3 exports behind the Athena tables are chosen below.
+    levels = {
+        # state level resolution, one single national file
+        'national_by_state': {
+            'geo_top_dir': 'national_by_state',
+            'partition_cols': {},
+            'aggregation_levels': [[comstock.STATE_ABBRV, comstock.CZ_ASHRAE]],
+            'data_types': ['full'], # other options: 'detailed', 'basic' **If using multiple options, order must go from more detailed to less detailed.
+            'file_types': ['parquet'], # other options:'csv'
+        },
+        # county resolution, files by state and county
+        'by_state_and_county': {
+            'geo_top_dir': 'by_state_and_county',
+            'partition_cols': {
+                comstock.STATE_ABBRV: 'state',
+                comstock.COUNTY_ID: 'county',
+            },
+            'aggregation_levels': [comstock.COUNTY_ID],
+            'data_types': ['full'],
+            'file_types': ['parquet'],
+        },
+    }
+    geo_exports = [levels[name] for name in LOCAL_EXPORTS if name in levels]
+    if geo_exports:
         for upgrade_id in comstock.upgrade_ids_to_process:
             comstock.export_metadata_and_annual_results_for_upgrade(upgrade_id, geo_exports)
 
     # ---- S3 exports + Athena tables ----------------------------------------
-    # One call replaces the export / crawl / views block. It checks Glue first
-    # and builds only what this run is missing, unless REBUILD_ATHENA_TABLES.
-    # Read by the timeseries plots and by the results dashboard below, whose
-    # measure-timeseries tab reads the same _vu views the plots do.
-    if comstock.make_timeseries_plots or MAKE_RESULTS_DASHBOARD:
+    # Checks Glue first and builds only what is missing (REBUILD_ATHENA_TABLES replaces all of it).
+    # The levels follow from the outputs: national for every upgrade; county for the
+    # baseline with INCLUDE_AMI, for every upgrade with a county in TIMESERIES_LOCATIONS.
+    if timeseries_figures or MAKE_RESULTS_DASHBOARD:
         tables_ok = cspp.prepare_athena_tables(
             comstock, database=ATHENA_DATABASE,
-            timeseries=True,                 # the _vu views (plots and dashboard)
-            ami=INCLUDE_AMI,                 # + county export for the AMI tab
+            timeseries=True,                 # the _vu views (figures and dashboard)
+            ami=INCLUDE_AMI,
+            extra_exports=ATHENA_EXPORTS,
             rebuild=REBUILD_ATHENA_TABLES)
-        if not tables_ok and comstock.make_timeseries_plots:
-            # The dashboard skips and says why; the timeseries plots cannot.
+        if not tables_ok and timeseries_figures:
+            # The dashboard skips and says why; the timeseries figures cannot.
             raise RuntimeError(f'Athena tables for {comstock.comstock_run_name} could not be '
-                               'prepared (see the warning above); the timeseries plots need them')
+                               'prepared (see the warning above); the timeseries figures need them')
 
-    # Create measure run comparisons; only use if run has measures
+    # Measure comparison figures (MAKE_COMPARISON_PLOTS). With it False this builds nothing;
+    # the dashboard takes only its folder.
     comparison = cspp.ComStockMeasureComparison(comstock, timeseries_locations_to_plot=comstock.timeseries_locations_to_plot, make_comparison_plots = comstock.make_comparison_plots, make_timeseries_plots = comstock.make_timeseries_plots)
 
     # ---- Results dashboard --------------------------------------

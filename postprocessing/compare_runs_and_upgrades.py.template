@@ -1,72 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Any mix of runs, in one dashboard: already in Athena, or postprocessed here, on one
-sample or several, against CBECS 2018 (and AMI).
+"""Any mix of runs in one dashboard, against CBECS 2018 (and AMI), with the upgrades of the run
+under review if wanted: runs postprocessed here, runs already in Athena and published releases,
+on one sample or several.
 
-Declare the runs in RUNS below, one entry each. The file does only the work each kind
-needs, in the same order as compare_runs.py:
-
-    kind='process'   Postprocessed here: download, cache, apportion to the entry's own
-                     `estimate`, scale to CBECS, export, crawl. About 35 minutes per 100k
-                     baseline-only run on the first pass; minutes on a rerun, because the
-                     caches and Athena tables are reused. Each measure scenario adds its
-                     own download, bills and national export, plus a county export of
-                     ~3,100 files (~15 min) when those are wanted for it.
-    kind='athena'    Already crawled into its `database` by an earlier driver. Its tables
-                     are read; nothing is downloaded, apportioned, exported or crawled.
-    kind='release'   A published OEDI release in buildstock_sdr. Read-only, like 'athena'.
-
-ORDER. Every view draws CBECS first and then the runs in RUNS order, top to bottom = left
-to right. REVIEW_RUN names the run under review -- the findings, the scorecard, the AMI
-end-use stack and the Measures tabs are about it -- and it may sit anywhere in the list;
-it is measured against DELTA_REF. With no 'process' entries this is the Athena-only case
-(results_dashboard_from_athena.py) and finishes in minutes.
-
-MEASURES. measures=True on the REVIEW_RUN entry (a 'process' run) postprocesses its measure
-scenarios too: the dashboard gets its Measures tabs -- each measure against the run's own
-baseline -- and the measure load shapes at MEASURE_TIMESERIES_LOCATIONS. Comparison runs
-never need measures; the release-comparison panel simply has nothing to show. State
-locations read the national aggregate; AMI and county locations read the county one, so
-the county export always covers the baseline when INCLUDE_AMI, and covers every measure
-when COUNTY_TABLES_FOR_MEASURES or when a location is a county.
-
-SAMPLES. Each 'process' entry names the stock estimate its sample was drawn against. Runs
-on one sample share one Apportion; a run on another sample gets its own. Comparing runs
-on different estimates is legitimate, and the log says which run sits on which.
-CHECK_SAMPLE_PAIRING re-checks every pairing before anything expensive starts: every
-(building type, tract) pair in the run's buildstock.csv must exist in the estimate, since
-that pair is what apportionment matches models to real buildings on. A correct pairing
-has zero missing pairs; a wrong one is off by hundreds to thousands, spread across
-building types. Without the check a wrong pairing is silent: floor areas still match
-CBECS, the within-type weights are wrong. 'athena' and 'release' runs keep the weights
-they were exported with.
-
-STOCK ALLOCATION. Apportionment draws a model at random for every building in the estimate,
-so two draws differ model by model (two draws of one sample: 0.2% of models kept their weight,
-the median model's weight moved 18%) and anything averaged over models moves with the draw.
-Runs on one sample and estimate therefore share ONE draw: the run under review's when it is
-among them, else the first listed; the others copy it, and the log says so. A draw file
-(output/ComStock <v>/cached_ComStock_alloc_wts.parquet) carries its provenance -- the run,
-estimate and sample (a fingerprint of buildstock.csv) it was drawn for -- and is reused only
-when that matches this run; the bills and the Athena tables are rebuilt when a run's draw
-changes. The export publishes each run's draw beside its tables
-(s3://<s3_base_dir>/<run>/<run>/cached_ComStock_alloc_wts.parquet, with a record naming it) and
-a 'process' entry adopts that published draw by itself when it fits, so everyone who
-postprocesses or plots the run gets the published weights; allocation='<path or s3://...>'
-names another file. Tables whose record names a different draw are replaced only when this
-machine processed the run before or the entry says rebuild=True, so a teammate never
-overwrites a published run by accident. See comstockpostproc/allocation.py.
+Fill in the settings and RUNS below; README, "Any mix of runs and upgrades", explains each. In short:
+  - 'process' runs are postprocessed here (about 35 min per 100k baseline on a first pass,
+    minutes on a rerun); 'athena' and 'release' runs are only read.
+  - Each 'process' run names the stock estimate its sample was drawn from, and the pairing
+    is checked before anything expensive starts.
+  - 'process' runs on one sample and estimate share one set of weights, the run under review's.
+  - INCLUDE_UPGRADES adds the upgrades of REVIEW_RUN; every other run is its baseline alone.
+  - Every view draws CBECS first, then the runs in RUNS order.
 
 Launch it in the background and read the log:
-    mkdir -p logs; ( python compare_runs_mixed.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
-Success: EXIT=0, one "athena tables: <run> ..." line per 'process' run, and
-"results dashboard: <path>". Runs on the same sample and estimate print identical
-"post-apportionment scaling factors to CBECS floor area" for every building type.
+    mkdir -p logs; ( python compare_runs_and_upgrades.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
+Success: EXIT=0 and a "results dashboard: <path>" line.
 """
 import glob
 import logging
 import os
-import shutil
 
 import comstockpostproc as cspp
 
@@ -77,75 +30,52 @@ logging.basicConfig(level='INFO', format='%(asctime)s %(levelname)s:%(name)s:%(m
 logger = logging.getLogger(__name__)
 
 # ---- Settings ---------------------------------------------------------------
-# Details in README, "Results dashboard".
-ATHENA_DATABASE        = 'enduse'  # default for any RUNS entry that omits `database`. Keep 'enduse'
-                                   # for processed runs: the timeseries plots and the AMI comparison
-                                   # elsewhere in the package hard-code it
-MAKE_RESULTS_DASHBOARD = True      # write output/<COMPARISON_NAME>/results_dashboard/dashboard.html
-MAKE_COMPARISON_PLOTS  = False     # True also writes the ComStock-vs-CBECS figures over the 'process' runs
-                                   # (slow); False leaves them to the dashboard
-INCLUDE_AMI            = True     # metered load-shape tab; needs each run's <run>_timeseries table
-                                   # (from buildstockbatch's crawl) plus the county export
-UPGRADE_ALIASES        = False     # True: figure labels of the measures=True run use each upgrade's short plot_alias
-                                   # from comstockpostproc/resources/comstock_upgrade_definitions.csv instead of its
-                                   # publication name (COMPARISON_NAME names the output folder); exported files
-                                   # keep the publication names. Upgrades without an alias are listed in a
-                                   # warning when the run loads
-MEASURE_TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}
-                                   # measure load-shape profiles, used only when the REVIEW_RUN entry has
-                                   # measures=True: state codes, county gisjoins ('G2500250'), or a
-                                   # tuple of either as one profile, each with its display name
-COUNTY_TABLES_FOR_MEASURES = False # True: the county export covers every measure, not only the
-                                   # baseline (~15 min each). Nothing in the dashboard needs that: AMI and
-                                   # state profiles read the baseline's county data only, and a county
-                                   # location above turns it on by itself
-CHECK_SAMPLE_PAIRING   = True      # verify each 'process' run's sample against its estimate first:
-                                   # every sampled (building type, tract) pair must exist in it
-REUSE_CACHES           = True      # True: every cache found on disk is reused -- simulation outputs,
-                                   # apportionment, a run's own stock allocation (when it fits the run),
-                                   # bills -- and the log lists each one before anything expensive
-                                   # starts (what it is, reuse or build, when it was written).
-                                   # False: those run-specific caches are rebuilt regardless: the draw is
-                                   # redrawn, and output/ComStock <v>/cached_allocated_weights_plus_bills
-                                   # is DELETED for every 'process' run. Set False after changing an
-                                   # estimate, a results export, or the code that computes weights. CBECS
-                                   # and AMI files depend on no run and are always reused; Athena tables
-                                   # are re-exported when a run's draw changed, and otherwise follow each
-                                   # entry's rebuild flag
-COMPARISON_NAME        = 'my comparison'    # the folder under output/ for everything this file writes.
-                                            # Keep it short on Windows: the deepest plot path beneath
-                                            # it must stay under 260 characters
-REVIEW_RUN             = '<run_under_review>' # the run under review; any entry of RUNS, wherever it sits
-                                            # (RUNS order is the order every view draws the runs in)
-DELTA_REF              = '<existing_run_a>' # the comparison run the delta arrows, the "moved toward
-                                            # CBECS" line and the heating-fuel gap column measure against
+# What each setting does and where the files go: README, "Any mix of runs and upgrades".
+COMPARISON_NAME      = 'my comparison'       # output/<COMPARISON_NAME>/ holds everything; keep it short on Windows
+REVIEW_RUN           = '<run_under_review>'  # the RUNS entry under review (findings, scorecard, Measures tabs)
+DELTA_REF            = '<existing_run_a>'    # the comparison run the deltas are measured against
+REUSE_CACHES         = True      # True reuses these caches in output/ when current; False rebuilds all three:
+                                 #   - simulation outputs: current when newer than the results files
+                                 #   - apportionment: current once built
+                                 #   - bills: current when newer than the results files and from the same weights
+                                 #   Use False after postprocessing code or an estimate changed.
+                                 #   It never redraws weights or rebuilds the CBECS and AMI files
+CHECK_SAMPLE_PAIRING = True      # stop when a 'process' run's sample does not match its estimate
+
+# Upgrades: those of REVIEW_RUN, which must then be a 'process' run; every other run loads its baseline
+INCLUDE_UPGRADES     = False     # True loads every upgrade of REVIEW_RUN on S3: Measures tabs, plus bills and
+                                 # Athena tables for each upgrade
+UPGRADE_IDS_TO_SKIP  = []        # e.g. [1, 3]
+TIMESERIES_LOCATIONS = {'MN': 'Minnesota', 'OH': 'Ohio', 'AZ': 'Arizona'}  # Measures-tab load shapes: state or
+                                 # county ID ('G2500250') -> name, a tuple key combines several; a county adds
+                                 # county tables for every upgrade (~3,100 files each)
+UPGRADE_ALIASES      = False     # short names in figures and folders; in.upgrade_measure_id is added either way
+
+# Athena tables and exports
+ATHENA_DATABASE      = 'enduse'  # for entries without `database`; keep 'enduse' for 'process' runs
+ATHENA_EXPORTS       = 'auto'    # 'auto' exports what the dashboard reads; a list adds levels for every
+                                 # upgrade, e.g. ['by_state_and_county']
+
+# Outputs
+MAKE_RESULTS_DASHBOARD = True    # results_dashboard/dashboard.html
+INCLUDE_AMI            = True    # the AMI tab; needs each run's <run>_timeseries table
+MAKE_COMPARISON_PLOTS  = False   # ComStock-vs-CBECS figures over the 'process' runs (slow); the dashboard does
+                                 # not need them
 
 # ---- Runs -------------------------------------------------------------------
-# One entry per run, in the order every view draws them: top to bottom = left to right,
-# after CBECS. REVIEW_RUN above names the run under review.
-#
-#   kind='process'  run          comstock_run_name on S3; also the Athena table prefix and, unless
-#                                `version` is given, the cache folder (comstock_data/<run>,
-#                                output/ComStock <run>). Never rename a cache folder once it exists.
-#                   s3_base_dir  bucket/prefix the run was uploaded to (from its buildstockbatch
-#                                yml); the run's data is at s3://<s3_base_dir>/<run>/<run>/
-#                   estimate     stock estimate the run's sample was drawn against: the one its bucket
-#                                file was generated from (sampling/README.md lists each pair)
-#                   database     where its tables are crawled to and read from
-#                   color        hex; #009E73 is CBECS and #CC79A7 is AMI in the dashboard, do not reuse
-#                   optional     label (display name), version (cache folder), rebuild=True
-#                                (re-export and re-crawl regardless: table existence is not weight
-#                                freshness; a changed stock allocation triggers this by itself),
-#                                allocation='<path>' (a draw file this run must carry, local or s3://;
-#                                without it the run adopts its own published draw when one fits, and
-#                                runs on one sample share a draw, see STOCK ALLOCATION),
-#                                acceptable_failure_percentage (default 0.25; only 'Fail' counts,
-#                                not a measure's not-applicable models), measures=True (the
-#                                REVIEW_RUN entry only: postprocess its measure scenarios, see MEASURES),
-#                                upgrade_ids_to_skip=[...] (measures to leave out, e.g. [4, 5])
-#   kind='athena'   run          the crawled table prefix;  database  where the tables are
-#                   color; optional label (default 'ComStock <run>')
-#   kind='release'  key, label, md_table, database, color; optional md_county_table, ts_table
+# One entry per run, drawn in this order after CBECS.
+#   kind='process'  postprocessed here. Required: run (its name on S3, and its Athena table prefix),
+#                   s3_base_dir, estimate (the one its sample was drawn from), database, color.
+#                   Optional: label; version (names its folder, output/ComStock <version>/; default
+#                   run); weights ('auto' or left out: its own weights file when it fits, else its
+#                   published weights, else a new draw shared by the runs on its sample; or a
+#                   weights file path or s3:// URL); rebuild=True (replace all of its tables with
+#                   this pass's; a run whose tables carry other weights stops until it is set);
+#                   acceptable_failure_percentage (default 0.25)
+#   kind='athena'   already crawled: run (the table prefix), database, color; optional label
+#   kind='release'  a published release: key, label, md_table, database, color; optional
+#                   md_county_table, ts_table
+# #009E73 (CBECS) and #CC79A7 (AMI) are taken.
 RUNS = [
     dict(kind='process', run='<s3_run_name_a>', s3_base_dir='eulp/euss_com', estimate='2026R1',
          database='enduse', color='#D55E00'),
@@ -184,17 +114,12 @@ def main():
                        reuse=REUSE_CACHES,
                        allocations={cache_version(entry_for(d.run)): d.describe() for d in plan})
 
-    # 2. A ComStock object for every run postprocessed here.
-    objects, construct, first_pass = {}, {}, {}
+    # 2. A ComStock object for every run postprocessed here. Under REUSE_CACHES its cached
+    #    simulation outputs are reloaded when they cover every upgrade it loads and are newer
+    #    than the results files, and rebuilt otherwise (ComStock reload_from_cache='auto').
+    objects = {}
     for r in processed:
-        have = sim_cache_exists(cache_version(r))
-        first_pass[r['run']] = not have    # step 6: tables this machine did not make are kept
-        cached = REUSE_CACHES and have
-        logger.info('%s: simulation-output cache %s', r['run'],
-                    'found, reloading it' if cached
-                    else 'found but REUSE_CACHES=False, rebuilding it' if have
-                    else 'not found, first pass, building it')
-        construct[r['run']] = dict(
+        objects[r['run']] = cspp.ComStock(
             s3_base_dir=r['s3_base_dir'],
             comstock_run_name=r['run'],
             comstock_run_version=cache_version(r),
@@ -206,23 +131,13 @@ def main():
             drop_failed_runs=True,
             color_hex=r['color'],
             skip_missing_columns=True,     # build_existing_model columns may differ between runs
-            reload_from_cache=cached,
-            # measure scenarios only for the run under review (check_declaration)
-            include_upgrades=bool(r.get('measures')),
-            upgrade_aliases=UPGRADE_ALIASES and bool(r.get('measures')),
-            upgrade_ids_to_skip=list(r.get('upgrade_ids_to_skip', [])),
-            timeseries_locations_to_plot=MEASURE_TIMESERIES_LOCATIONS if r.get('measures') else {},
+            reload_from_cache='auto' if REUSE_CACHES else False,
+            # upgrades only for the run under review, under INCLUDE_UPGRADES (the Upgrades settings)
+            include_upgrades=loads_upgrades(r),
+            upgrade_aliases=UPGRADE_ALIASES and loads_upgrades(r),
+            upgrade_ids_to_skip=list(UPGRADE_IDS_TO_SKIP) if loads_upgrades(r) else [],
+            timeseries_locations_to_plot=TIMESERIES_LOCATIONS if loads_upgrades(r) else {},
             )
-        objects[r['run']] = cspp.ComStock(**construct[r['run']])
-        if r.get('measures'):
-            # A cache that lacks one of the run's upgrades (a first pass that died partway,
-            # an id taken off upgrade_ids_to_skip) would reload without it and fail in the
-            # bills step after apportionment. Rebuild it from the results instead.
-            missing = set(map(int, objects[r['run']].upgrade_ids_to_process)) - loaded_upgrades(objects[r['run']])
-            if missing:
-                logger.warning('%s: cached simulation outputs lack upgrades %s; rebuilding the '
-                               'cache from the results files', r['run'], sorted(missing))
-                objects[r['run']] = cspp.ComStock(**{**construct[r['run']], 'reload_from_cache': False})
         if r.get('label'):
             objects[r['run']].dataset_name = r['label']
 
@@ -249,13 +164,21 @@ def main():
             how = dict(allocation_path=d.source)
         obj.create_allocated_weights(estimates[r['estimate']], obj.get_sim_outs_for_upgrade(0), **how)
     # A run whose draw changed in this pass has stale bills (the library rebuilds them in
-    # step 4, from each folder's marker) and, unless they already carry this draw, stale
-    # Athena tables (step 6, from the record beside the export).
+    # step 4, from each folder's marker).
     for run in before:
         if objects[run].allocation_id != before[run]:
-            logger.info('%s: stock allocation changed in this pass (%s -> %s); bills and Athena '
-                        'tables built from another draw will be rebuilt', run,
+            logger.info('%s: stock allocation changed in this pass (%s -> %s); bills built from '
+                        'another draw will be rebuilt', run,
                         (before[run] or 'none')[:8], (objects[run].allocation_id or 'none')[:8])
+    # A run's Athena tables hold one set of weights: stop here, before the bills, when a run's
+    # were built with other weights (rebuild=True on its entry replaces them; weights= can name theirs).
+    if MAKE_RESULTS_DASHBOARD:
+        for r in processed:
+            cspp.athena_tables.check_tables_weights(
+                objects[r['run']], database=r.get('database', ATHENA_DATABASE),
+                rebuild=bool(r.get('rebuild')),
+                rebuild_setting=f"rebuild=True on its RUNS entry ({r['run']})",
+                weights_setting='weights= on its RUNS entry')
 
     # 4. CBECS, then scale every processed run to CBECS floor area and add utility bills.
     #    load_cbecs reads 'CBECS wide.csv' when it exists and builds it otherwise.
@@ -264,22 +187,13 @@ def main():
         obj.create_allocated_weights_scaled_to_cbecs(
             cbecs, obj.get_sim_outs_for_upgrade(0), obj.get_allocated_weights(),
             remove_non_comstock_bldg_types_from_cbecs=True)
-        # No reload flag: short-circuits when output/ComStock <v>/
-        # cached_allocated_weights_plus_bills/ holds the upgrade AND was built from the
-        # run's current stock allocation (its _allocation.json marker); a folder from
-        # another draw is rebuilt by the library, since the S3 export reads from it.
-        # REUSE_CACHES=False deletes it outright. One per upgrade LOADED: the baseline,
-        # plus every measure of a measures=True run. Not upgrade_ids_to_process, which
-        # lists every results file on disk.
-        if not REUSE_CACHES:
-            bills_dir = os.path.join(HERE, 'output', f'ComStock {obj.comstock_run_version}',
-                                     'cached_allocated_weights_plus_bills')
-            if os.path.isdir(bills_dir):
-                logger.warning("REUSE_CACHES=False: deleting %s so the bills are rebuilt from "
-                               "this pass's weights", bills_dir)
-                shutil.rmtree(bills_dir)
+        # Reused when output/ComStock <v>/cached_allocated_weights_plus_bills/ holds the
+        # upgrade AND was built from the run's current stock allocation (its marker); a
+        # folder from another draw is rebuilt, since the S3 export reads from it.
+        # REUSE_CACHES=False rebuilds every one. One per upgrade LOADED: the baseline, plus
+        # every upgrade of REVIEW_RUN under INCLUDE_UPGRADES (the others load only the baseline).
         for upgrade_id in sorted(loaded_upgrades(obj)):
-            obj.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id)
+            obj.create_allocated_weights_plus_util_bills_for_upgrade(upgrade_id, reuse=REUSE_CACHES)
     cbecs.export_to_csv_wide()             # the dashboard reads 'CBECS wide.csv'
 
     # 5. The processed runs against each other and CBECS: figures (optional).
@@ -299,23 +213,15 @@ def main():
     #    missing; a rerun logs "already has every table it needs". It logs and returns
     #    False rather than raising; the dashboard then says what it could not read.
     for r in processed:
-        measures = bool(r.get('measures'))
-        # The national export always covers every upgrade the run loaded. The county
-        # export (AMI, county profiles) covers the baseline, or every upgrade when
-        # asked for or when a measure location is a county.
-        county_all = measures and (COUNTY_TABLES_FOR_MEASURES
-                                   or has_county_location(MEASURE_TIMESERIES_LOCATIONS))
-        # Table existence is not weight freshness: prepare_athena_tables re-exports tables
-        # whose record beside the export names another stock allocation than the run uses,
-        # or none at all -- but only when this machine processed the run before or the entry
-        # says rebuild=True. On a first pass here the tables may be someone else's (a
-        # published run), so they are kept and the log says how to proceed.
-        rebuild = bool(r.get('rebuild')) or (measures and national_lacks_measures(r, objects[r['run']]))
+        # The levels follow from the dashboard: national for every upgrade the run loaded;
+        # county for the baseline with INCLUDE_AMI, for every upgrade when a TIMESERIES_LOCATIONS
+        # entry is a county; ATHENA_EXPORTS adds levels. A table that lacks upgrades gets them.
+        # Tables built with other weights stopped the pass after step 3 unless the entry says
+        # rebuild=True, which replaces all of them here.
         ok = cspp.prepare_athena_tables(objects[r['run']], database=r.get('database', ATHENA_DATABASE),
-                                        timeseries=measures, ami=INCLUDE_AMI,
-                                        upgrade_ids=None if county_all else [0],
-                                        rebuild=rebuild,
-                                        replace_stale=bool(r.get('rebuild')) or not first_pass[r['run']])
+                                        timeseries=loads_upgrades(r), ami=INCLUDE_AMI,
+                                        extra_exports=ATHENA_EXPORTS,
+                                        rebuild=bool(r.get('rebuild')))
         if not ok:
             logger.warning('%s: prepare_athena_tables reported a gap (see above); the '
                            'dashboard will state what it could not read', r['run'])
@@ -342,10 +248,10 @@ def main():
         database=review.get('database', ATHENA_DATABASE),   # the run under review's; refs carry their own
         delta_ref=DELTA_REF,
         display_order=[r.get('run') or r.get('key') for r in RUNS],
-        # every measure of a measures=True primary; none otherwise (a table reference
-        # has no upgrade list to take them from)
-        include_measures=None if review.get('measures') else [],
-        measure_states=MEASURE_TIMESERIES_LOCATIONS if review.get('measures') else None,
+        # every upgrade of REVIEW_RUN under INCLUDE_UPGRADES; none otherwise (a table
+        # reference has no upgrade list to take them from)
+        include_measures=None if loads_upgrades(review) else [],
+        measure_states=TIMESERIES_LOCATIONS if loads_upgrades(review) else None,
         )
     if dashboard.skipped_reason:
         logger.warning('results dashboard skipped: %s', dashboard.skipped_reason)
@@ -358,6 +264,21 @@ def main():
 # ---- Helpers ----------------------------------------------------------------
 def check_declaration():
     """Refuse a half-filled RUNS list now, not an hour in."""
+    cspp.athena_tables.export_levels(ATHENA_EXPORTS, 'ATHENA_EXPORTS')
+    for r in RUNS:
+        # Upgrade settings moved from the entries to the Upgrades settings at the top.
+        for key, setting in (('measures', 'INCLUDE_UPGRADES'), ('upgrade_ids_to_skip', 'UPGRADE_IDS_TO_SKIP')):
+            if key in r:
+                raise SystemExit(f"{r.get('run') or r.get('key')}: {key}= is now {setting} in the "
+                                 'Upgrades settings at the top; it applies to REVIEW_RUN')
+        # weights= is the key; allocation= is its earlier name and still accepted.
+        if 'allocation' in r:
+            if 'weights' in r:
+                raise SystemExit(f"{r.get('run') or r.get('key')}: give weights= or its earlier name "
+                                 'allocation=, not both')
+            r['weights'] = r.pop('allocation')
+        if isinstance(r.get('weights'), str) and r['weights'].strip().lower() == 'auto':
+            r['weights'] = None  # the same as leaving it out
     kinds = {'process', 'athena', 'release'}
     bad = [r for r in RUNS if r.get('kind') not in kinds]
     if bad or not RUNS:
@@ -379,16 +300,15 @@ def check_declaration():
                              'version its sample was drawn against)')
         if r['kind'] == 'release' and not (r.get('key') and r.get('md_table')):
             raise SystemExit(f'release entries need key and md_table: {r}')
-        if r.get('allocation') and r['kind'] != 'process':
-            raise SystemExit(f"{r.get('run') or r.get('key')}: allocation= names the draw file a "
+        if r.get('weights') and r['kind'] != 'process':
+            raise SystemExit(f"{r.get('run') or r.get('key')}: weights= names the weights file a "
                              "'process' run must carry; an 'athena' or 'release' run keeps the "
                              'weights it was exported with')
-    carry = [r.get('run') or r.get('key') for r in RUNS if r.get('measures')]
-    if carry and (carry != [REVIEW_RUN] or review_entry()['kind'] != 'process'):
-        raise SystemExit(f'measures=True belongs on the REVIEW_RUN entry ({REVIEW_RUN}), and it '
-                         f'must be a process run; found on {carry}')
-    if review_entry().get('measures') and not MEASURE_TIMESERIES_LOCATIONS:
-        logger.warning('measures=True but MEASURE_TIMESERIES_LOCATIONS is empty: the measure '
+    if INCLUDE_UPGRADES and review_entry()['kind'] != 'process':
+        raise SystemExit(f'INCLUDE_UPGRADES loads the upgrades of REVIEW_RUN ({REVIEW_RUN}), which '
+                         "must then be a 'process' run")
+    if INCLUDE_UPGRADES and not TIMESERIES_LOCATIONS:
+        logger.warning('INCLUDE_UPGRADES but TIMESERIES_LOCATIONS is empty: the measure '
                        'load-shape tab will say it has no locations')
     others = [n for n in names if n != REVIEW_RUN]
     if DELTA_REF not in others:
@@ -400,48 +320,15 @@ def review_entry():
     return next(r for r in RUNS if (r.get('run') or r.get('key')) == REVIEW_RUN)
 
 
+def loads_upgrades(entry):
+    """True for the one entry whose upgrades are loaded: REVIEW_RUN, under INCLUDE_UPGRADES."""
+    return INCLUDE_UPGRADES and (entry.get('run') or entry.get('key')) == REVIEW_RUN
+
+
 def loaded_upgrades(obj):
     """The upgrade ids a ComStock object actually holds (cache reload or fresh build)."""
     ids = obj.data.select(obj.UPGRADE_ID).unique().collect().to_series().to_list()
     return {int(i) for i in ids}
-
-
-def national_lacks_measures(entry, obj):
-    """True when the run's national table already exists but is missing some of the
-    upgrades this pass loaded -- a run crawled baseline-only earlier, for one.
-    prepare_athena_tables checks tables by name, not by content, so it would export
-    nothing and the dashboard would skip. Any failure to check says False and logs:
-    the existing tables are then used as they are, as before."""
-    from comstockpostproc.athena_tables import NATIONAL_EXPORT, existing_tables
-    from comstockpostproc.results_dashboard import athena, measures
-    run, db = entry['run'], entry.get('database', ATHENA_DATABASE)
-    national = f'{run}_md_agg_{NATIONAL_EXPORT}_parquet'
-    try:
-        names = existing_tables(run, db)
-        if not names or national not in names:
-            return False                      # first pass: prepare_athena_tables exports it
-        athena.configure(database=db, reflect_table=national)
-        have = {int(u) for u in measures.available_upgrades(national, no_cache=True)}
-        missing = sorted(loaded_upgrades(obj) - have)
-    except Exception as exc:                  # noqa: BLE001
-        logger.warning('%s: could not check which upgrades %s holds (%s); using it as is',
-                       run, national, exc)
-        return False
-    if missing:
-        logger.warning('%s: %s exists but lacks upgrades %s; re-exporting and re-crawling',
-                       run, national, missing)
-    return bool(missing)
-
-
-def has_county_location(locations):
-    """Does any measure timeseries location name a county (a gisjoin such as
-    'G2500250', alone or in a tuple)? County profiles need the county aggregate for
-    every upgrade; state codes do not."""
-    for key in (locations or {}):
-        for i in (key if isinstance(key, (tuple, list)) else (key,)):
-            if str(i).upper().startswith('G') and len(str(i)) > 2:
-                return True
-    return False
 
 
 def cache_version(entry):
@@ -466,21 +353,23 @@ def allocation_plan(entries):
     for r in entries:
         own = os.path.join(HERE, 'output', f'ComStock {cache_version(r)}', cspp.allocation.FILE_NAME)
         sample_hash, _ = cspp.allocation.sample_fingerprint(buildstock_path(r))
-        use, use_id = r.get('allocation'), None
-        if not use and REUSE_CACHES and not r.get('rebuild'):
+        use, use_id = r.get('weights'), None
+        if not use and not r.get('rebuild'):
             use, use_id = published_draw(r, sample_hash, bootstrap)
         runs.append(dict(run=r['run'], estimate=r['estimate'], sample_hash=sample_hash,
                          allocation=use, allocation_id=use_id,
                          status=cspp.allocation.status_of(
                              own, estimate_version=r['estimate'], bootstrap_coefficient=bootstrap,
                              sample_hash=sample_hash)))
-    return cspp.allocation.plan_allocations(runs, review_run=REVIEW_RUN, reuse=REUSE_CACHES)
+    # Weights are a random draw, not a cache: REUSE_CACHES never redraws them. A run's own
+    # file is reused when it fits; delete it (and set rebuild=True on a published run) to redraw.
+    return cspp.allocation.plan_allocations(runs, review_run=REVIEW_RUN)
 
 
 def published_draw(entry, sample_hash, bootstrap):
     """(url, id) of the draw a run's export published beside its tables, when it exists and
     fits this entry; (None, None) otherwise. Adopting it is what makes every machine's weights
-    the published ones. Skipped under REUSE_CACHES=False or rebuild=True: a new draw is wanted."""
+    the published ones. Skipped under rebuild=True: the run's tables are being replaced."""
     url = cspp.allocation.published_draw_url(entry['s3_base_dir'], entry['run'])
     try:
         st = cspp.allocation.status_of(url, estimate_version=entry['estimate'],
@@ -497,25 +386,13 @@ def published_draw(entry, sample_hash, bootstrap):
     return None, None
 
 
-def sim_cache_exists(run_version):
-    """True when ComStock(reload_from_cache=True) would find this run's cached simulation
-    outputs. True with no cache RAISES, and False with a cache rebuilds it from the parquet
-    for nothing, so detect on disk. Delete output/ComStock <v>/cached_simulation_outputs/
-    to force a rebuild."""
-    pattern = os.path.join(HERE, 'output', f'ComStock {run_version}', 'cached_simulation_outputs',
-                           '**', 'cached_simulation_outputs_upgrade*.parquet')
-    return bool(glob.glob(pattern, recursive=True))
-
-
 def stock_estimate(version, truth_data_version='v01'):
-    """Apportion for one stock estimation version, reloading its cache only if it exists.
-    The cache is per version (output/Stock Estimation <version>/
-    cached_ComStock_apportionment.parquet); reload_from_cache=True without one raises."""
-    cache = os.path.join(HERE, 'output', f'Stock Estimation {version}',
-                         'cached_ComStock_apportionment.parquet')
+    """Apportion for one stock estimation version. Its cache (output/Stock Estimation
+    <version>/cached_ComStock_apportionment.parquet) is reloaded when it exists, unless
+    REUSE_CACHES is False."""
     return cspp.Apportion(stock_estimation_version=version,
                           truth_data_version=truth_data_version,
-                          reload_from_cache=REUSE_CACHES and os.path.exists(cache))
+                          reload_from_cache='auto' if REUSE_CACHES else False)
 
 
 def buildstock_path(entry):

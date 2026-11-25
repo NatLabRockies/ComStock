@@ -1401,8 +1401,7 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       end
 
       # the unit night cycles if the supply fan operating schedule includes a 0
-      # TODO: include?([0, 0.0]) tests for an array element and is never true; the intended check is likely for 0 or 0.0
-      unit_night_cycles = night_cyc_sched_vals.include?([0, 0.0])
+      unit_night_cycles = night_cyc_sched_vals.any?(&:zero?)
 
       # remove from applicability if the OA limit is exceeded and the unit night cycles
       next unless (min_oa_flow_ratio > oa_ratio_allowance) && unit_night_cycles
@@ -1820,6 +1819,10 @@ class AddHeatPumpRtu < OpenStudio::Measure::ModelMeasure
       # loads, which an envelope upgrade lowers (this measure's roof and window options, or envelope measures run before
       # it), so the terminal throttled the unit below its design airflow and the zone under-heated.
       new_terminal.setMaximumAirFlowRate(design_airflow_for_sizing_m_3_per_s)
+      # the new terminal's minimum flow is the unit's minimum airflow. Left at its default of 0, the terminal asks for no air
+      # when its zone has no load. In models with no zone exhaust fan EnergyPlus then passes zero flow to the outdoor air
+      # controller, which closes the outdoor air while the unit's fan keeps running at its no-load airflow.
+      new_terminal.setZoneMinimumAirFlowFraction([min_airflow_ratio, 1.0].min)
 
       if debug_verbose
         runner.registerInfo("sizing summary: design_airflow_for_sizing_m_3_per_s = #{design_airflow_for_sizing_m_3_per_s}")
