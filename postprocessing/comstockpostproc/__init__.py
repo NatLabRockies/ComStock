@@ -20,6 +20,10 @@ from .athena_tables import prepare_athena_tables, required_geo_exports
 # provenance, the sharing plan a driver follows.
 from . import allocation
 from .utils.hpc import *
+# Drivers end with run_or_submit(main, KESTREL_JOB): main() runs where it is started, except on a Kestrel
+# login node, where the driver is queued as a Slurm job instead (README, "Running on Kestrel").
+from . import kestrel
+from .kestrel import run_or_submit
 
 from .__version__ import (
     __author__,

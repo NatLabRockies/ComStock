@@ -36,6 +36,9 @@ To download your BuildStockBatch simulation results from S3 for postprocessing, 
 
 NREL now uses a refreshable Single Sign On (SSO) approach for authentication of accounts.
 
+Kestrel has no AWS CLI, so the SSO login below does not work there. For Kestrel, see
+[AWS credentials](#aws-credentials) under "Running on Kestrel".
+
 ### If you have already configured the SSO for the resbldg AWS account:
 
 1. Set the `AWS_DEFAULT_PROFILE` environment variable to the alias for your AWS resbldg SSO account.
@@ -67,21 +70,13 @@ Note: Access to the SSO requires an NREL network account. We do not currently su
 
 ## Installation
 
-Create a new conda environment with **python 3.12.12** or above (only need to do this once):
+On Kestrel, use the shared environment instead of installing your own: see
+[Running on Kestrel](#running-on-kestrel-nrel-staff).
+
+Create a new conda environment with **python 3.12.12**, the version `setup.py` requires (only need to do this once):
 ```
-# Local
 $ conda create -y -n comstockpostproc python=3.12.12 pip
 $ conda activate comstockpostproc
-
-# HPC Eagle (NREL Staff)
-$ module load conda
-$ conda create -y --prefix /projects/cscore/envs/comstockpostproc_<myname> -c conda-forge "python=3.9"
-$ conda activate /projects/cscore/envs/comstockpostproc_<myname>
-
-# HPC Kestrel (NREL Staff)
-$ module load python
-$ python -m venv --clear --upgrade-deps --prompt "comstockpostproc_<myname>" "/kfs2/projects/cscore/envs/comstockpostproc_<myname>"
-$ source "/kfs2/projects/cscore/envs/comstockpostproc_<myname>/bin/activate"
 ```
 
 Navigate to the `/postprocessing` directory of this repo:
@@ -94,15 +89,20 @@ Make sure you are using the latest version of `pip`:
 $ pip install --upgrade pip
 ```
 
-Install the libraries needed for this repository:
+Install the libraries needed for this repository, at the versions in `constraints.txt`:
 ```
-$ pip install -e .[dev]
+$ pip install -c constraints.txt -e .[dev]
 ```
+
+`constraints.txt` pins the versions this code has been run with, on Windows and on Kestrel. Without
+it, pip installs the newest release of every package (pandas 3, for example), a combination nobody
+has tested. To check an environment against your checkout, run `python hpc/check_env.py`.
 
 If running the ComStock Gap Model, install the required libraries with:
 ```
-$ pip install -e .[dev,gap]
+$ pip install -c constraints.txt -e .[dev,gap]
 ```
+`constraints.txt` does not pin the packages only the gap extra needs.
 
 ## Usage
 
@@ -365,10 +365,10 @@ job from one run list, and can take the not-yet-crawled runs as `process` entrie
 
 ### NREL Staff - Extracting simulations and summarizing EnergyPlus warnings and errors on HPC
 
-1. First time only: install `comstockpostproc` to your `comstockpostproc_<myname>` environment on HPC (see installation instructions above)
+1. First time only: check that the shared environment exists and matches your checkout, with `bash hpc/setup_kestrel_env.sh` (see [Running on Kestrel](#running-on-kestrel-nrel-staff))
 2. Navigate to your ComStock repo checkout:
     ```
-    $ cd /projects/cscore/repos/comstock_<myname>/postprocessing
+    $ cd /kfs2/projects/<project>/repos/comstock_<myname>/postprocessing
     ```
 3. Copy the `/postprocessing/extract_models_and_errors.py.template` file to `extract_models_and_errors.py`
 4. Edit `extract_models_and_errors.py` to point to the YML for your ComStock run
@@ -394,16 +394,206 @@ job from one run list, and can take the not-yet-crawled runs as `process` entrie
 
 5. Run:
     ```
-    $ salloc --time=30 --qos=high --account=cscore --nodes=1
+    $ salloc --time=30 --account=<project> --partition=debug --nodes=1
     ```
-    to start an interactive job on a [compute node](https://www.nrel.gov/hpc/eagle-interactive-jobs.html). The postprocessing can take a while to run depending on the number of models; you can increase `--time=30` as necessary. Do not run `extract_models_and_errors.py` on a login node (i.e., without starting an interactive job), you will get an email about inappropriate login node use.
+    to start an interactive job on a compute node. The postprocessing can take a while to run depending on the number of models; you can increase `--time=30` as necessary (for longer than the debug partition allows, use `--partition=standard`). Do not run `extract_models_and_errors.py` on a login node (i.e., without starting an interactive job), you will get an email about inappropriate login node use.
 6. Navigate to your ComStock repo checkout:
     ```
-    $ cd /projects/cscore/repos/comstock_<myname>/postprocessing
+    $ cd /kfs2/projects/<project>/repos/comstock_<myname>/postprocessing
     ```
-7. Load Anaconda, activate your environment, and run the file:
+7. Load Python, activate the shared environment (named on the `env-name` line of `constraints.txt`), and run the file:
     ```
-    $ module load conda
-    $ conda activate /projects/cscore/envs/comstockpostproc_<myname>
+    $ module load python/3.12.12
+    $ source /kfs2/projects/eusscom/envs/<env-name>/bin/activate
     $ python extract_models_and_errors.py
+    ```
 8. Look in `/my_run/results/simulation_output` directory for outputs, see `/failure_summary`, `/model_files`, and `/eplusout_errors` depending on what parts of the script you included.
+
+## Running on Kestrel (NREL staff)
+
+On Kestrel, postprocessing works as it does on your own computer: activate the environment, copy a
+template, edit its settings and run it with `python`. One setting is new: `KESTREL_JOB`. Started on a
+login node, a driver whose `KESTREL_JOB` names an account checks itself and queues itself as a Slurm
+job, which runs it on a compute node. Without `KESTREL_JOB` it stops and says how to run it, because
+login nodes are not for postprocessing. On a compute node, inside a job and on your own computer, the
+setting changes nothing.
+
+Use your own checkout of this repository on Kestrel (for example under
+`/kfs2/projects/<project>/repos/`), and work in its `postprocessing/` folder:
+
+    source hpc/activate.sh                               # the shared environment
+    bash hpc/check_aws.sh                                # after pasting fresh AWS keys (below)
+    cp compare_upgrades.py.template compare_upgrades.py  # then edit its settings, including
+                                                         #   KESTREL_JOB = dict(account='eusscom')
+    python compare_upgrades.py                           # checks, submits, prints the job id and log
+
+The job writes its outputs where a local run writes them, and its log names the dashboard when it is
+done (see "Outputs" below).
+
+| Script | What it does |
+|---|---|
+| `hpc/activate.sh` | Activates the shared environment that your checkout's `constraints.txt` names (source it) |
+| `hpc/setup_kestrel_env.sh` | Finds the shared environment for your checkout and checks it; builds it if it does not exist |
+| `hpc/check_env.py` | Checks an environment against your checkout (works locally too) |
+| `hpc/check_aws.sh` | Checks your AWS keys without printing them |
+| `hpc/stage_run_data.py` | Copies a run's results from its Kestrel output folder into `comstock_data/` |
+| `hpc/submit_driver.sh` | Checks a driver, the environment and the keys, then submits the driver as a job (`hpc/run_driver.sbatch`); `KESTREL_JOB` runs it |
+| `hpc/aws_env.sh` | Sourced by the scripts: exports your AWS keys for the job |
+
+### Environment
+
+There is one shared environment per version of `constraints.txt`. It is in
+`/kfs2/projects/eusscom/envs/`, and the `env-name` line of `constraints.txt` gives its name. Run:
+
+    bash hpc/setup_kestrel_env.sh
+
+If the environment exists, the script checks it against your checkout: the Python version, the
+packages `setup.py` requires, the versions in `constraints.txt`, that `comstockpostproc` imports from
+your checkout, and a test figure export. If it does not exist, the script builds it, which takes a
+few minutes: a venv with the Python version `setup.py` requires (`module load python/3.12.12`), the
+packages `setup.py` requires at the versions in `constraints.txt`, and Chrome, which Kaleido needs to
+export figures. The build downloads packages, so it runs on a login node. With `--check`, the script
+only checks and never builds.
+
+The environment does not contain `comstockpostproc` itself. A driver imports the code of the checkout
+it is run from, so one environment serves every checkout whose `setup.py` and `constraints.txt` it
+matches. A finished environment is read-only for the group, so it does not drift. Whoever changes a
+version in `constraints.txt` also changes `env-name`; the next run of the script then builds the new
+environment beside the old one, which keeps working for checkouts that still use the old versions.
+
+To activate the environment, from any folder:
+
+    source <your checkout>/postprocessing/hpc/activate.sh
+
+It loads the Python module (`module load python/3.12.12`) and activates the environment that your
+checkout's `constraints.txt` names, so you never need the environment's name. Python then imports
+`comstockpostproc` from the folder you start it in, so run drivers from your checkout's
+`postprocessing/` folder, or set `PYTHONPATH=<your checkout>/postprocessing`.
+
+### AWS credentials
+
+A job reads the run from S3 and writes its tables to S3 and Athena in the resbldg account
+(402490792549), so it needs AWS keys even when the run's files are already on Kestrel. Kestrel has no
+AWS CLI, so `aws sso login` does not work there. Use the short-term keys from the AWS access portal
+(the SSO page under "AWS Access" above) instead:
+
+1. In the portal, open the resbldg account and select **Access keys** next to your role (for
+   example `resbldg-user`).
+2. Copy the block under **Option 2** ("Add a profile to your AWS credentials file"). Its first line is
+   `[402490792549_resbldg-user]`.
+3. On Kestrel, open `~/.aws/credentials` in an editor (`nano ~/.aws/credentials`). Replace the old
+   `[402490792549_resbldg-user]` section with the block, or paste the block at the end if there is no
+   such section, then save and exit. Run `chmod 600 ~/.aws/credentials` once, so only you can read it.
+4. Check the keys with `bash hpc/check_aws.sh`. It prints the account and role, never the keys. To
+   also check that the keys can read a run's folder, add the folder:
+   `bash hpc/check_aws.sh s3://eulp/euss_com/0_production_runs_2026R1/tests/<run name>/`.
+
+The keys expire a few hours after you copy them. A job reads them when it starts, so paste fresh keys
+just before you submit. In a job that runs past the expiry, the S3 and Athena steps after that point
+fail.
+
+The scripts read the keys from the `[402490792549_resbldg-user]` section (set `CSPP_AWS_PROFILE` to use
+another) and export them to the job as `AWS_*` variables. They unset `AWS_PROFILE`, because a profile
+in `~/.aws/config`, such as an old SSO profile, fails on Kestrel.
+
+### Run data
+
+`ComStock` reads a run's results from `comstock_data/<run version>/` and downloads only the files
+that are missing there. On Kestrel the run's output folder already has them, so copy them instead of
+downloading them:
+
+    python3 hpc/stage_run_data.py /kfs2/projects/eusscom/runs/<project>/<run name>
+
+This copies `results/parquet/baseline/results_up00.parquet`, each
+`results/parquet/upgrades/upgrade=<n>/results_up<nn>.parquet` and
+`housing_characteristics/buildstock.csv` into `comstock_data/<run name>/`, and compares each copy with
+its source. Use `--run-version <name>` when the driver's run version is not the run name, and
+`--upgrades 1,2,5-9` to copy only some upgrades. The driver still lists the run's upgrades on S3, so it
+still needs AWS keys.
+
+### Running a driver as a job
+
+1. Copy a template to its driver name and edit its settings, as described under Usage above (for
+   example `cp compare_upgrades.py.template compare_upgrades.py`). The driver reads the run from
+   `s3://<s3_base_dir>/<run name>/<run name>/`, buildstockbatch's upload layout: for a run uploaded to
+   the `eulp` bucket with the prefix `euss_com/0_production_runs_2026R1/tests`, `s3_base_dir` is
+   `eulp/euss_com/0_production_runs_2026R1/tests`.
+2. Set `KESTREL_JOB` near the top of the driver, at least the account:
+
+       KESTREL_JOB = dict(account='eusscom')
+
+3. Run the driver on a login node: `python compare_upgrades.py`. It first checks that the driver
+   parses, the environment matches your checkout and the AWS keys work, so a job does not wait in the
+   queue only to fail when it starts. Then it submits itself and prints the job id, the log path and
+   the commands to follow the job. The job runs the same file, with the same environment, on a compute
+   node.
+
+`KESTREL_JOB` is a dict with these keys; a string is short for the account (`KESTREL_JOB = 'eusscom'`).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `account` | required | The HPC project the job is charged to, for example `'eusscom'` |
+| `time` | `'12:00:00'` | Time limit |
+| `partition` | `'standard'` | `'standard'`: a whole node. `'bigmem'`: more memory than a standard node has. `'shared'`: part of a node, for a small job; give `mem` |
+| `mem` | the whole node | Memory, for example `'32G'`; required on the shared partition |
+| `cpus` | the whole node; 1 on shared | Cores |
+| `qos` | none | For example `'high'`, for projects that have it |
+| `mail` | none | An address that gets an email when the job ends or fails |
+| `job_name` | `cspp_<driver name>` | The job's name in `squeue` and in its log's file name |
+| `aws` | `True` | `False` for a driver that needs no AWS access: no key check and no keys in the job |
+| `sbatch_args` | none | More `sbatch` options, for example `['--constraint=lbw']` |
+
+How much to ask for, from the all-measure test run 10k_6 (8,634 buildings, 70 upgrades) on
+2026-11-19:
+
+- A first pass (outputs, weights, bills, S3 exports, Athena tables, dashboard) took about three hours
+  on a standard node and peaked at 71 GiB of memory, so the defaults fit. Most of its time goes to the
+  S3 export, the bills and the dashboard's Athena queries, which use few cores. Use `'bigmem'` for
+  runs with many more buildings.
+- A first pass of the subset test run 10k_7 (same buildings, 18 upgrades) took 29 minutes and still
+  peaked at 67 GiB: the peak comes from the stock's weights, not from the number of upgrades, so a
+  first pass needs a standard node however few upgrades the run has.
+- A rerun that reuses its caches and rebuilds the dashboard peaked at 15 GiB and used about one core.
+  `dict(account='eusscom', partition='shared', mem='32G', cpus=4, time='4:00:00')` fits it; Slurm's
+  billing for the shared partition counts that as about 13 % of a whole node.
+
+On a compute node (for example after `salloc`) and inside a job, a driver runs where it is started,
+whatever `KESTREL_JOB` says. `CSPP_RUN_ON_LOGIN_NODE=1 python <driver>` runs a small driver on a login
+node anyway.
+
+`bash hpc/submit_driver.sh <driver>` submits a driver without `KESTREL_JOB`: the same checks and the
+same job, with options for the same settings (`--account`, `--time`, `--partition`, `--mem`, `--cpus`,
+`--qos`, `--mail`, `--no-aws`; `--help` lists them). With `--dry-run` it runs the checks and prints the
+`sbatch` command instead of submitting it. `hpc/run_driver.sbatch` is the job itself;
+`sbatch --account=<project> hpc/run_driver.sbatch <driver>` submits it without the checks.
+
+### Following a job
+
+The driver prints the commands: `squeue -j <job id>` (queued or running),
+`tail -f logs/<job name>_<job id>.out` and, after the job ends,
+`sacct -j <job id> -o JobID,State,Elapsed,MaxRSS`. `scancel <job id>` stops it.
+
+### Outputs
+
+A job writes where a local run writes ("Where the outputs go", under "Results dashboard" above),
+inside your checkout's `postprocessing/` folder. The log line `results dashboard: ...` gives the
+dashboard's path. The dashboard is one self-contained file, `dashboard.html`: copy it to your computer
+to open it.
+
+### Known issues
+
+- **Expired keys.** A job whose keys have expired stops before the driver runs. Paste fresh keys and
+  submit again.
+- **Network errors during a build.** A build that stops on a network error (for example "Could not
+  resolve host") usually works when run again with `--rebuild`.
+- **`pip install -e .` into the shared environment.** Don't: it would tie the environment to your
+  checkout for everyone. It also fails when `postprocessing/ComStock_Postprocessing.egg-info` in your
+  checkout was written by another user (a permission error on `PKG-INFO`). That folder is generated,
+  so move it aside and install again.
+- **Login nodes.** They are for editing, building the environment, copying run data and submitting
+  jobs. A driver started on a login node submits itself when `KESTREL_JOB` is set and stops otherwise.
+  To work interactively, get a compute node first
+  (`salloc --account=<project> --partition=debug --time=1:00:00 --nodes=1`).
+- **A slow file system.** When `/kfs2` is slow, importing `comstockpostproc` can take many minutes (28
+  on 2026-11-19). A job therefore reads the environment's libraries and bytecode first, several files
+  at a time, which is much faster on such a day; `CSPP_PREWARM=0` skips that step.

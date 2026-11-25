@@ -31,6 +31,10 @@ COMPARE_TO_RELEASES    = []        # published releases to compare against, e.g.
 #         database='buildstock_sdr', color='#E69F00')]
 
 
+# Kestrel (README, "Running on Kestrel")
+KESTREL_JOB = None  # e.g. dict(account='eusscom'): started on a Kestrel login node, this file then runs as a Slurm job
+
+
 def main():
     # What is on this disk and what this pass will do with it: one log line per
     # cache (simulation outputs, apportionment, bills, CBECS, AMI) with its date.
@@ -179,4 +183,4 @@ def main():
 
 # Code to execute the script
 if __name__=="__main__":
-    main()
+    cspp.run_or_submit(main, KESTREL_JOB)  # main() here; on a Kestrel login node, a Slurm job that runs it

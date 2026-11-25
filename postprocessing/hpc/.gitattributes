@@ -1,0 +1,3 @@
+# These scripts run on Kestrel (Linux): keep LF line endings in every checkout, Windows included, so a
+# copy made from a Windows checkout still runs there.
+* text eol=lf
