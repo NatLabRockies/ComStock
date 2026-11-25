@@ -139,6 +139,7 @@ class NamingMixin():
     ANN_ELEC_HEATREJECT_KBTU = 'out.electricity.heat_recovery.energy_consumption..kwh'
     ANN_ELEC_HEATRECOV_KBTU = 'out.electricity.heat_rejection.energy_consumption..kwh'
     ANN_ELEC_HEAT_KBTU = 'out.electricity.heating.energy_consumption..kwh'
+    ANN_ELEC_HUMIDIFICATION_KBTU = 'out.electricity.humidification.energy_consumption..kwh'
     ANN_ELEC_INTEQUIP_KBTU = 'out.electricity.interior_equipment.energy_consumption..kwh'
     ANN_ELEC_INTLTG_KBTU = 'out.electricity.interior_lighting.energy_consumption..kwh'
     ANN_ELEC_PUMPS_KBTU = 'out.electricity.pumps.energy_consumption..kwh'
@@ -595,6 +596,7 @@ class NamingMixin():
         ANN_ELEC_HEATREJECT_KBTU,
         ANN_ELEC_HEATRECOV_KBTU,
         ANN_ELEC_HEAT_KBTU,
+        ANN_ELEC_HUMIDIFICATION_KBTU,
         ANN_ELEC_INTEQUIP_KBTU,
         ANN_ELEC_INTLTG_KBTU,
         ANN_ELEC_PUMPS_KBTU,
@@ -634,6 +636,7 @@ class NamingMixin():
         ANN_ELEC_HEATREJECT_KBTU,
         ANN_ELEC_HEATRECOV_KBTU,
         ANN_ELEC_HEAT_KBTU,
+        ANN_ELEC_HUMIDIFICATION_KBTU,
         ANN_ELEC_INTEQUIP_KBTU,
         ANN_ELEC_INTLTG_KBTU,
         ANN_ELEC_PUMPS_KBTU,
@@ -666,7 +669,8 @@ class NamingMixin():
         ANN_ELEC_FANS_KBTU,
         ANN_ELEC_PUMPS_KBTU,
         ANN_ELEC_HEATRECOV_KBTU,
-        ANN_ELEC_HEATREJECT_KBTU
+        ANN_ELEC_HEATREJECT_KBTU,
+        ANN_ELEC_HUMIDIFICATION_KBTU
     ]
 
     # List of HVAC, natural_gas end use columns
