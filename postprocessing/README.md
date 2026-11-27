@@ -127,6 +127,7 @@ other templates are baseline only and have no upgrade settings. The single-run t
 | `ATHENA_EXPORTS` | In `compare_upgrades`: `'auto'`, or levels to add. See **Exports**. |
 | `LOCAL_EXPORTS` | Local copies of the metadata aggregates for other tools such as Tableau, in the run's folder: `'national_by_state'` and/or `'by_state_and_county'`. Nothing in postprocessing reads them. |
 | `MAKE_RESULTS_DASHBOARD`, `INCLUDE_AMI`, `COMPARE_TO_RELEASES`, `MAKE_COMPARISON_PLOTS` | The outputs: the dashboard, its AMI tab, published releases to compare against, and the template's figures. See "Results dashboard" below. |
+| `KESTREL_JOB` | In every template. `None` (default) runs the driver where you start it. On Kestrel, a dict with at least the account, such as `dict(account='eusscom')`, queues the driver as a Slurm job when you start it on a login node. See "Running on Kestrel" below. |
 
 The **Upgrades** section of `compare_upgrades`:
 
@@ -653,7 +654,7 @@ still needs AWS keys.
    `s3://<s3_base_dir>/<run name>/<run name>/`, buildstockbatch's upload layout: for a run uploaded to
    the `eulp` bucket with the prefix `euss_com/0_production_runs_2026R1/tests`, `s3_base_dir` is
    `eulp/euss_com/0_production_runs_2026R1/tests`.
-2. Set `KESTREL_JOB` near the top of the driver, at least the account:
+2. Set `KESTREL_JOB`, the last item of the driver's settings block, at least the account:
 
        KESTREL_JOB = dict(account='eusscom')
 

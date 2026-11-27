@@ -43,6 +43,15 @@ COMPARE_TO_RELEASES    = []     # e.g. [dict(key='r3_2025', label='2025 R3', dat
                                 #   md_table='comstock_amy2018_r3_2025_md_agg_national_parquet', color='#E69F00')]
 MAKE_COMPARISON_PLOTS  = False  # ComStock-vs-CBECS figures in cbecs_comparison/ (slow); the dashboard does not need them
 
+# Kestrel (README, "Running on Kestrel")
+# On your own computer or a compute node, leave KESTREL_JOB = None: the file runs where you start it.
+# On Kestrel, put your HPC project (allocation) here and run `python <this file>` on a login node; it then
+# submits itself as a Slurm job. For example:
+#   KESTREL_JOB = dict(account='eusscom')                                    # 12 h on a whole node
+#   KESTREL_JOB = dict(account='eusscom', time='4:00:00', qos='high')        # shorter, high priority
+#   KESTREL_JOB = dict(account='eusscom', partition='shared', mem='32G', cpus=4)  # a rerun from caches
+KESTREL_JOB = None
+
 
 def main():
     # Refuse a mistyped setting now, not after the run has loaded.
@@ -164,4 +173,4 @@ def main():
 
 # Code to execute the script
 if __name__ == "__main__":
-    main()
+    cspp.run_or_submit(main, KESTREL_JOB)  # main() here; on a Kestrel login node, a Slurm job that runs it

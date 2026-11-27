@@ -118,6 +118,11 @@ fi
 mkdir -p "$CSPP_PP_DIR/logs"
 JOB_ID=$(sbatch "${SBATCH_ARGS[@]}" "$CSPP_HPC_DIR/run_driver.sbatch" "$DRIVER")
 JOB_ID=${JOB_ID%%;*}
+if [ -z "$JOB_ID" ]; then
+    # sbatch succeeded without a job id: an extra option such as --test-only kept it from queuing one
+    echo "== sbatch gave no job id, so nothing was queued ($RESOURCES)"
+    exit 0
+fi
 LOG=$CSPP_PP_DIR/logs/${JOB_NAME}_$JOB_ID.out
 
 echo "== submitted job $JOB_ID ($JOB_NAME)"

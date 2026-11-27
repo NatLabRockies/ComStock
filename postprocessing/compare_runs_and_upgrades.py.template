@@ -15,7 +15,8 @@ Fill in the settings and RUNS below; README, "Any mix of runs and upgrades", exp
 
 Launch it in the background and read the log:
     mkdir -p logs; ( python compare_runs_and_upgrades.py; echo "EXIT=$?" ) > logs/<name>.log 2>&1 &
-Success: EXIT=0 and a "results dashboard: <path>" line.
+Success: EXIT=0 and a "results dashboard: <path>" line. On a Kestrel login node, set KESTREL_JOB
+and run it with python: it is queued as a Slurm job (README, "Running on Kestrel").
 """
 import glob
 import logging
@@ -61,6 +62,15 @@ MAKE_RESULTS_DASHBOARD = True    # results_dashboard/dashboard.html
 INCLUDE_AMI            = True    # the AMI tab; needs each run's <run>_timeseries table
 MAKE_COMPARISON_PLOTS  = False   # ComStock-vs-CBECS figures over the 'process' runs (slow); the dashboard does
                                  # not need them
+
+# Kestrel (README, "Running on Kestrel")
+# On your own computer or a compute node, leave KESTREL_JOB = None: the file runs where you start it.
+# On Kestrel, put your HPC project (allocation) here and run `python <this file>` on a login node; it then
+# submits itself as a Slurm job. For example:
+#   KESTREL_JOB = dict(account='eusscom')                                    # 12 h on a whole node
+#   KESTREL_JOB = dict(account='eusscom', time='4:00:00', qos='high')        # shorter, high priority
+#   KESTREL_JOB = dict(account='eusscom', partition='shared', mem='32G', cpus=4)  # a rerun from caches
+KESTREL_JOB = None
 
 # ---- Runs -------------------------------------------------------------------
 # One entry per run, drawn in this order after CBECS.
@@ -511,4 +521,4 @@ def reference(entry):
 
 
 if __name__ == '__main__':
-    main()
+    cspp.run_or_submit(main, KESTREL_JOB)  # main() here; on a Kestrel login node, a Slurm job that runs it
